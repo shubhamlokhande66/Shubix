@@ -23,7 +23,7 @@ export const TRANSITIONS = ["hard", "fadein", "flash", "whip", "zoom", "glitch",
   "slideleft", "slideright", "slideup", "slidedown", "swipeup", "zoomout", "blur", "flip", "luma", "pixelate", "clock", "doors", "ripple", "burn", "dropin"] as const;
 /** eases of a camera move into its keyframe (the studio's EASE) */
 export const EASES = ["lin", "inOut", "outCubic", "outExpo", "outBack"] as const;
-export const EFFECTS = ["none", "hook", "zoomburst", "punch", "punch-soft", "tilt", "shake", "bounce", "pan", "pan-soft", "drift", "snap",
+export const EFFECTS = ["none", "hook", "zoomburst", "punch", "punch-soft", "tilt", "shake", "bounce", "pan", "pan-soft", "drift", "snap", "jump",
   /* beat shapes and beat effects (they step on the shot's beats) */
   "boxgrow", "grid", "strips", "circle", "heartbeat", "starbeat", "frame", "mirror", "kaleido", "triple", "vhs", "strobe", "rgbpulse", "blurpulse"] as const;
 export const SPEEDS = ["normal", "slow", "fast", "velocity", "ramp", "freeze", "hold"] as const;   // hold = a freeze frame for the whole shot
@@ -35,6 +35,10 @@ export const PACES = [1, 2, 4, 8] as const;
 /** cuts per AI call: longer Reels are planned in parts, at the same time */
 export const CHUNK = 20;
 export const LIMITS = { slots: 150, candidates: 3, clips: 30, sections: 24, accents: 4, keys: 16, moveKeys: 16, recent: 40 } as const;
+const OVERLAY_STYLES = ["bold", "box", "neon", "clean", "tag", "outline", "shadow", "bubble", "glow", "stack"] as const;
+const OVERLAY_ANIMS = ["pop", "fade", "slide", "type", "none"] as const;
+const SFX = ["whoosh", "pop", "boom", "click", "riser", "ding"] as const;
+const LAYER_LAYOUTS = ["tl", "tr", "bl", "br", "top", "bottom", "left", "right", "full"] as const;
 /** "New mix": other plans for the same cuts, asked in one call (the input is sent once; each alternative is a compact
  * plan without the reasons), so a few mixes cost far less than one call each */
 export const MAX_VARIANTS = 4;
@@ -96,7 +100,9 @@ export const DirectIn = z.object({
   /** the tools used in the creator's last Reels (most used first): this one should feel new */
   recent: z.array(z.string().max(24)).max(LIMITS.recent).default([]),
   /** what this person's plan opens (the studio refuses the rest): the AI picks from these */
-  allowed: z.object({ fx: z.array(z.string().max(24)).max(80), tr: z.array(z.string().max(24)).max(80) }).optional(),
+  allowed: z.object({ fx: z.array(z.string().max(24)).max(80), tr: z.array(z.string().max(24)).max(80), motion: z.boolean().default(true) }).optional(),
+  /** Existing user supplied overlay media the AI may place; media itself stays on the user's device. */
+  layers: z.array(z.object({ alias: z.string().max(8), kind: z.enum(["photo", "video", "gif"]) })).max(12).default([]),
   /** what the creator asked for in the studio's chat ("more zooms", "calm, cinematic", "show my face first"): it wins */
   wish: z.string().max(WISH_MAX).default(""),
   /** the template's kind of Reel (car, wedding...): its trend comes first in the AI's guide */
@@ -130,6 +136,9 @@ const SlotAnswer = z.object({
   keys: z.array(z.object({ at: z.coerce.number(), do: z.preprocess(lower, z.string()) })).default([]),
   move: z.array(z.object({ at: z.coerce.number(), s: z.coerce.number().default(1), x: z.coerce.number().default(0), y: z.coerce.number().default(0), r: z.coerce.number().default(0), ez: z.preprocess(lower, z.string()).default("inOut") })).default([]),
   clip: z.record(z.string(), z.unknown()).nullish(),
+  overlay: z.object({ text: z.string().max(60), emoji: z.boolean().default(false), style: z.string().max(16).default("bold"), color: z.string().max(12).default("#FFFFFF"), anim: z.string().max(12).default("pop"), x: z.coerce.number().optional(), y: z.coerce.number().optional(), size: z.coerce.number().optional(), at: z.coerce.number().optional(), len: z.coerce.number().optional() }).nullish(),
+  sfx: z.object({ kind: z.string().max(16), at: z.coerce.number().optional() }).nullish(),
+  layer: z.object({ media: z.string().max(8), layout: z.string().max(12).default("tr") }).nullish(),
   why: z.string().default(""),
 });
 const Answer = z.object({ slots: z.array(SlotAnswer), story: z.string().default("") });
@@ -142,7 +151,7 @@ export interface Accent { at: number; do: (typeof ACCENTS)[number] }
 export interface MoveKey { at: number; s: number; x: number; y: number; r: number; ez: (typeof EASES)[number] }
 /** the shot's own settings, as the creator's clip tools set them (the engine's e.cs) */
 export interface ClipLook { rot?: number; fh?: boolean; fv?: boolean; fit?: boolean; bg?: string; bgc?: string; bd?: number; bdc?: string; bri?: number; con?: number; sat?: number; warm?: number; hi?: number; sh?: number; hue?: number; sharp?: number; vig?: number; beauty?: number; stab?: number; fin?: number; fout?: number }
-export interface DirectedSlot { i: number; shot: string | null; transition: string | null; effect: string | null; speed: string | null; keys: Accent[]; move: MoveKey[]; clip?: ClipLook; why: string }
+export interface DirectedSlot { i: number; shot: string | null; transition: string | null; effect: string | null; speed: string | null; keys: Accent[]; move: MoveKey[]; clip?: ClipLook; overlay?: { text: string; emoji: boolean; style: (typeof OVERLAY_STYLES)[number]; color: string; anim: (typeof OVERLAY_ANIMS)[number]; x: number; y: number; size: number; at: number; len: number }; sfx?: { kind: (typeof SFX)[number]; at: number }; layer?: { media: string; layout: (typeof LAYER_LAYOUTS)[number] }; why: string }
 
 const GUIDE = `You are the editor's brain. Decide every creative choice from the music and the footage, like a top Reels editor.
 How to read the music of each cut ("music"): loud/bass/drums/voice are 0-1 for THIS song (1 = its fullest). trend: getting louder or quieter. vox: what the singer does. hits: the strongest hits inside the shot, "at" = seconds from the shot's start, k = kick (bass drum), dhol (dhol/tom, deep hand drum), snare (snare, clap or tabla stroke), hat (hi-hat, cymbal), p = 1-3 strength. toDrop: beats left before the drop (a build-up). gapEnd: the shot ends in the short silence before a drop.
@@ -160,6 +169,10 @@ Decide like this:
 - Style "smooth" asks for a calm feel, "fast" for energy on almost every cut: a direction, not a rule; break it when the moment is better for it.
 - Beat shapes and beat effects (effect names) step on the beats INSIDE a shot, best on shots of 1 s or more with 2+ beats: boxgrow (the shot in a small box on the subject that grows on each beat to full frame), grid (2x2 or 3x3 windows opening one per beat), strips (3 strips one per beat), circle / heartbeat / starbeat (the shot in that shape, pulsing on each beat), frame (frame in frame on its blurred copy), mirror, kaleido (kaleidoscope), triple (the shot three times, one band per beat), vhs (retro tape), strobe (black and white flash on each beat), rgbpulse (colour split on each beat), blurpulse (blur on each beat).
 - Each shot's own look ("clip", optional): rot (0/90/180/270), fh (mirror), fv (flip), fit (whole picture) with bg "blur" or a colour "#RRGGBB" and a border bd 0-1 with bdc colour, bri / con / sat / warm / hi (highlights) / sh (shadows) / hue (-1..1), sharp / vig (vignette) / beauty (smooth skin) / stab (stabilize a shaky shot) (0..1), fin / fout (fade in / out, seconds). Use it for a framed photo-like shot, a black-and-white moment (sat -1), a warm golden memory, a mirrored dance move...
+- Text and stickers ("overlay", optional): add a short title only when the creator asks for text or the story clearly benefits; use the creator's exact wording when provided. Supported styles: bold, box, neon, clean, tag, outline, shadow, bubble, glow, stack. Entrances: pop, fade, slide, type, none. Set emoji=true for a sticker. Keep text inside the safe area, show it briefly, and do not repeat it across every shot.
+- Sound effects ("sfx", optional): whoosh, pop, boom, click, riser, or ding. Add one only when it reinforces a transition, hit, or reveal; the song remains the music bed.
+- Overlay media ("layer", optional): the creator's already loaded photo/video/GIF media is listed by alias. Select only an existing alias and layout (tl, tr, bl, br, top, bottom, left, right, full). Use it sparingly; never invent a file.
+- Output these optional fields when used: overlay={text,emoji,style,color,anim,x,y,size,at,len}, where at and len are seconds from the shot start; sfx={kind,at}, where at is seconds from the shot start; layer={media,layout}, where media is one listed alias.
 - Camera moves are as free as the creator's own keyframes: zoom 0.1-4, slide -1..1 of the frame, turn -360..360 degrees, up to ${LIMITS.moveKeys} keyframes; keys on hits up to ${LIMITS.keys} a shot.
 - Use everything you know about what is trending in Reels right now (velocity edits, beat-synced zoom punches, speed ramps, 3D zooms, shake on the bass, whips on snare rolls, flash on drops...): the app applies your choices as they are, nothing is cut back.
 - There are no limits on style or budget: use the WHOLE toolbox, combine tools (a grid on the drop with an RGB split key, a box that grows while the camera turns), invent. Every Reel must feel new and different from the creator's recent ones.`;
@@ -192,6 +205,8 @@ ${d.recent.length ? `Used in this creator's last Reels (make this one feel diffe
     ...(s.music ? { music: s.music } : {}),
     candidates: s.candidates.map((c) => ({ id: c.id, clip: c.clip, at: +c.at.toFixed(1), score: +c.score.toFixed(2), note: clean(c.note, 60), roles: c.roles, motion: c.motion, people: c.people, camera: c.camera })) })))}
 ${GUIDE}
+Available overlay media for the optional per-shot layer choice: ${JSON.stringify(d.layers)}.
+Camera keyframes are ${d.allowed?.motion === false ? "unavailable on this plan; leave move empty" : "available"}.
 ${trends ? `${clean(trends, 2400)}\n` : ""}${wishText(d.wish)}Allowed transitions: ${(d.allowed ? TRANSITIONS.filter((t) => t === "hard" || d.allowed!.tr.includes(t)) : TRANSITIONS).join(", ")}. Allowed effects: ${(d.allowed ? EFFECTS.filter((e) => e === "none" || d.allowed!.fx.includes(e)) : EFFECTS).join(", ")}. Allowed speeds: ${SPEEDS.join(", ")}. Allowed keys: ${ACCENTS.join(", ")}. Allowed eases: ${EASES.join(", ")}.
 Return JSON: {"slots": [{"i": ${first}, "shot": "${first}a", "transition": "hard", "effect": "${first === 0 ? "hook" : "none"}", "speed": "normal", "keys": [{"at": 0.38, "do": "punch"}], "move": [], "clip": {}, "why": "<max 4 words>"}], "story": "<one sentence: the arc of this Reel>"} with one entry for every cut.`;
 }
@@ -261,6 +276,7 @@ export function cleanClip(raw: Record<string, unknown> | null | undefined): Clip
 export function parsePlan(d: DirectIn, a: AnswerIn): { slots: DirectedSlot[]; story: string } {
   const offered = new Map(d.slots.map((s) => [s.i, s]));
   const seen = new Set<number>(), slots: DirectedSlot[] = [];
+  const usedLayers = new Set<string>(); let overlayCount = 0, sfxCount = 0;
   for (const s of a.slots) {
     const i = Math.trunc(Number(s.i)), slot = offered.get(i);
     if (!slot || seen.has(i)) continue;
@@ -277,10 +293,27 @@ export function parsePlan(d: DirectIn, a: AnswerIn): { slots: DirectedSlot[]; st
       keys.push({ at: Math.round(at * 100) / 100, do: kind });
       if (keys.length === LIMITS.keys) break;
     }
+    const rawOverlay = s.overlay, overlayStyle = rawOverlay && OVERLAY_STYLES.find((x) => x === rawOverlay.style), overlayAnim = rawOverlay && OVERLAY_ANIMS.find((x) => x === rawOverlay.anim);
+    const overlayText = rawOverlay ? clean(rawOverlay.text, 60).trim() : "";
+    const overlay = rawOverlay && overlayText && overlayCount < 4 && slot.len >= 0.5 ? {
+      text: overlayText, emoji: rawOverlay.emoji === true, style: overlayStyle ?? "bold", color: /^#[0-9a-f]{6}$/i.test(rawOverlay.color) ? rawOverlay.color.toUpperCase() : "#FFFFFF",
+      anim: overlayAnim ?? "pop", x: r3(clampN(Number(rawOverlay.x), 0.15, 0.85, 0.5)), y: r3(clampN(Number(rawOverlay.y), 0.12, 0.88, 0.3)),
+      size: r3(clampN(Number(rawOverlay.size), 0.5, 1.5, 1)), at: r3(clampN(Number(rawOverlay.at), 0, Math.max(0, slot.len - 0.5), 0)),
+      len: r3(clampN(Number(rawOverlay.len), 0.5, Math.min(6, slot.len), Math.min(2.5, slot.len))),
+    } : undefined;
+    if (overlay) overlayCount++;
+    const sfxKind = s.sfx && SFX.find((x) => x === s.sfx!.kind), sfxAt = s.sfx ? Number(s.sfx.at) : NaN;
+    const sfx = sfxKind && sfxCount < 12 ? { kind: sfxKind, at: r3(clampN(sfxAt, 0, Math.max(0, slot.len - 0.05), 0)) } : undefined;
+    if (sfx) sfxCount++;
+    const layerMedia = s.layer?.media, layerLayout = s.layer && LAYER_LAYOUTS.find((x) => x === s.layer!.layout);
+    const layer = layerMedia && layerLayout && !usedLayers.has(layerMedia) && d.layers.some((x) => x.alias === layerMedia)
+      ? { media: layerMedia, layout: layerLayout } : undefined;
+    if (layer) usedLayers.add(layer.media);
     slots.push({
       i, shot: ids.has(shot) ? shot : null,
       transition: one(s.transition, TRANSITIONS), effect: one(s.effect, EFFECTS), speed: one(s.speed, SPEEDS),
-      keys: keys.sort((x, y) => x.at - y.at), move: cleanMove(s.move ?? []), ...(cleanClip(s.clip) ? { clip: cleanClip(s.clip) } : {}), why: clean(s.why, 60),
+      keys: keys.sort((x, y) => x.at - y.at), move: cleanMove(s.move ?? []), ...(cleanClip(s.clip) ? { clip: cleanClip(s.clip) } : {}),
+      ...(overlay ? { overlay } : {}), ...(sfx ? { sfx } : {}), ...(layer ? { layer } : {}), why: clean(s.why, 60),
     });
   }
   if (!slots.length) throw new AIResponseError("The AI director returned no usable plan.");

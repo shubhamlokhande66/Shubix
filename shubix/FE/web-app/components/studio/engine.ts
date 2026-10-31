@@ -1975,11 +1975,18 @@ FX_OK.copy = FX_OK.auto;
 // the director's transitions / effects / speeds, each checked; returns how many were used and how many were corrected
 function applyDirectorStyle(){
   if(!aiOn || !director || director.key !== dirKey()) return null;
-  let used = 0, fixed = 0, asked = 0;
+  let used = 0, fixed = 0, asked = 0, overlayCount = 0, sfxCount = 0;
   const exact = copyExact();
+  const copyOwnTools = exact && !wish && !chatN;
+  if(!copyOwnTools){
+    overlays = overlays.filter(o => !o.aiDirector);
+    layers = layers.filter(L => !L.aiDirector);
+    sfxList = sfxList.filter(x => !x.aiDirector);
+  }
+  const usedLayerMedia = new Set();
   plan.forEach((s,i)=>{
     const d = director.slots[i], len = s.end - s.start;
-    if(exact && !wish && !chatN) return;   // copying a Reel exactly: its own transitions, effects and moves (copyShots), the AI picks the moments; what the creator asks in the chat changes them
+    if(copyOwnTools) return;   // copying a Reel exactly: its own transitions, effects and moves (copyShots), the AI picks the moments; what the creator asks in the chat changes them
     // The AI decides the whole Reel: the rules' own choices (styleEdit: a bounce, a shake, a hook, a speed) go, and what
     // the AI leaves out of a shot stays plain (its answer's own defaults: a hard cut, no effect, normal speed)
     s.tr = 'hard'; s.efx = 'none'; s.sp = SPEED.normal; s.trByDir = false; s.fxByDir = false; s.ak = []; s.acc = [];
@@ -2008,7 +2015,7 @@ function applyDirectorStyle(){
     // the camera moves inside the shot: the AI's keyframes (at = fraction of the shot), on top of the shot's framing;
     // its effect steps aside (a zoom effect and a zoom keyframe would fight)
     s.ak = [];
-    if(d.move && d.move.length >= 2 && len >= 0.3){ asked++;
+    if(d.move && d.move.length >= 2 && len >= 0.3 && !isLocked('studio', 'motion')){ asked++;
       s.ak = d.move.map(k=>({ t: +(k.at*len).toFixed(3), s: k.s, x: k.x, y: k.y, r: k.r, o: 1, ez: k.ez || 'inOut' }));
       if(!['snap','hook'].includes(s.efx) && !(d.fx && d.fx !== 'none')) s.efx = 'none';
       used++; }
@@ -2016,7 +2023,30 @@ function applyDirectorStyle(){
     s.acc = [];
     if(d.keys && d.keys.length){ asked += d.keys.length;
       for(const k of d.keys){ if(k.at > Math.max(0.04, (i && TR_DUR[s.tr]) || 0) && k.at < len-0.05 && ACCENTS.includes(k.do)){ s.acc.push({at:k.at, do:k.do}); used++; } else fixed++; } }
+    if(d.overlay && typeof d.overlay.text === 'string' && d.overlay.text.trim() && len >= 0.5 && overlayCount < 4 && !isLocked('studio', 'text')){
+      asked++;
+      const style = Object.hasOwn(OV_STYLES, d.overlay.style) ? d.overlay.style : 'bold', anim = Object.hasOwn(OV_ANIMS, d.overlay.anim) ? d.overlay.anim : 'pop';
+      const at = Math.max(0, Math.min(len - 0.5, +d.overlay.at || 0)), start = s.start + at, end = Math.min(s.end, start + Math.max(0.5, Math.min(6, +d.overlay.len || 2.5)));
+      overlays.push({ id: ++ovSeq, text: d.overlay.text.trim().slice(0, 60), emoji: !!d.overlay.emoji, style, color: /^#[0-9a-f]{6}$/i.test(d.overlay.color || '') ? d.overlay.color.toUpperCase() : '#FFFFFF', anim,
+        t0: start, t1: end, x: Math.max(0.15, Math.min(0.85, +d.overlay.x || 0.5)), y: Math.max(0.12, Math.min(0.88, +d.overlay.y || 0.3)), size: Math.max(0.5, Math.min(1.5, +d.overlay.size || 1)), all: false, aiDirector: true });
+      overlayCount++; used++;
+    }
+    if(d.sfx && SFX_NAMES[d.sfx.kind] && s.start < buf.duration && sfxCount < 12){
+      asked++; const at = Math.max(0, Math.min(len - 0.05, +d.sfx.at || 0));
+      sfxList.push({ id: ++sfxSeq, at: +(s.start + at).toFixed(3), kind: d.sfx.kind, aiDirector: true }); used++;
+      sfxCount++;
+    }
+    if(d.layer && !isLocked('studio', 'layers')){
+      const mi = Number(String(d.layer.media).replace(/^l/, ''));
+      if(Number.isInteger(mi) && mi >= 0 && mi < Math.min(12, lmedia.length) && !usedLayerMedia.has(mi)){
+        asked++; usedLayerMedia.add(mi);
+        const base = layers.find(L => L.m === mi) || LY0, L = { ...JSON.parse(JSON.stringify(LY0)), ...JSON.parse(JSON.stringify(base)), id: ++lySeq, m: mi, t0: s.start, t1: s.end, in: 0, vol: 0, aiDirector: true };
+        layoutLayer(L, ['tl','tr','bl','br','top','bottom','left','right','full'].includes(d.layer.layout) ? d.layer.layout : 'tr');
+        layers.push(L); used++;
+      }else fixed++;
+    }
   });
+  if(!copyOwnTools){ renderOvList(); lyUI(); sfxUI(); clipMixKey = ''; }
   const undone = finishTransitions();
   return {used: used - undone, fixed: fixed + undone, asked};
 }
@@ -2185,7 +2215,8 @@ function dirRequest(cands){
   const req = { mode, reelId: reelIdNow(), ...(tplKind ? { reelKind: tplKind } : {}), ...(chatAsk ? { chat: { n: chatAsk.n, id: chatAsk.id, text: chatAsk.text } } : {}), wish: wish.slice(-800), duration: +buf.duration.toFixed(2), bpm: +(60/period).toFixed(1), hook: hookText.slice(0,60), story: (pc && pc.story || '').slice(0,160), reference: refContext(),
     clips: sources.map((s,k)=>({ alias:'c'+(k+1), summary: (s.ai && s.ai.summary) || '', mood: (s.ai && s.ai.mood) || '' })),
     recent: recentTools(),
-    allowed: { fx: Object.keys(FX_NAME).filter(k => !isLocked('fx', k)), tr: Object.keys(TR_DUR).filter(k => !isLocked('tr', k)) },
+    allowed: { fx: Object.keys(FX_NAME).filter(k => !isLocked('fx', k)), tr: Object.keys(TR_DUR).filter(k => !isLocked('tr', k)), motion: !isLocked('studio', 'motion') },
+    layers: !isLocked('studio', 'layers') ? lmedia.slice(0, 12).map((M,k) => ({ alias:'l'+k, kind:M.kind === 'gif' ? 'gif' : M.kind === 'photo' ? 'photo' : 'video' })) : [],
     budget: mode === 'copy' && copyBudget ? copyBudget : {whip:Math.round(2*per), spin:Math.round(per), glitch:Math.round(2*per), zoom:Math.round(3*per), iris:Math.round(3*per), dissolve:Math.round(2*per), snap:Math.round(2*per)},
     slots: plan.map((s,i)=>({ i, t:+s.start.toFixed(2), len:+(s.end-s.start).toFixed(2), type:s.type, beats: beats.filter(b=>b>s.start+0.1 && b<s.end-0.05).length,
       ...(music[i] ? { music: music[i] } : {}),
@@ -2197,7 +2228,7 @@ function dirRequest(cands){
 function toSlots(list, cands){
   const slots = [];
   for(const d of list || []){ const c = (cands[d.i]||[]).find(x=>x.id===d.shot);
-    slots[d.i] = { cand: c ? {src:c.si, in:c.a} : null, tr: d.transition, fx: d.effect, sp: d.speed, keys: Array.isArray(d.keys) ? d.keys : [], move: Array.isArray(d.move) ? d.move : [], cs: d.clip && typeof d.clip === 'object' ? d.clip : null, why: d.why || '' }; }
+    slots[d.i] = { cand: c ? {src:c.si, in:c.a} : null, tr: d.transition, fx: d.effect, sp: d.speed, keys: Array.isArray(d.keys) ? d.keys : [], move: Array.isArray(d.move) ? d.move : [], cs: d.clip && typeof d.clip === 'object' ? d.clip : null, overlay: d.overlay || null, sfx: d.sfx || null, layer: d.layer || null, why: d.why || '' }; }
   return slots;
 }
 // An AI plan made for other cuts (the song's part moved), fitted to these: every cut takes the choices of the AI's cut
@@ -2227,7 +2258,7 @@ function refitDirector(src, withShots){
     const keys = (d.keys || []).map((k,n) => ({ at: hits[n] ? hits[n].at : +(k.at / Math.max(0.05, best.len) * len).toFixed(2), do: k.do }));
     let cand = null;
     if(cands){ const c = (cands[i] || []).find(c => near(c) >= 0); if(c){ pool.splice(near(c), 1); cand = { src: c.si, in: c.a }; } }
-    slots[i] = { cand, tr: d.tr, fx: d.fx, sp: d.sp, keys, move: (d.move || []).slice(), cs: d.cs || null, why: d.why || '' };
+    slots[i] = { cand, tr: d.tr, fx: d.fx, sp: d.sp, keys, move: (d.move || []).slice(), cs: d.cs || null, overlay: d.overlay || null, sfx: d.sfx || null, layer: d.layer || null, why: d.why || '' };
   });
   return slots;
 }
@@ -2614,6 +2645,33 @@ function makeEdit(){
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
+// Keep every generated cut on the analyzed beat grid, including cuts added by the local hit edit
+// after the AI pace has been applied. The one-frame lead matches the editor's existing beat timing.
+function alignPlanToBeats(p){
+  if(mode === 'copy' || copyTimed() || !buf || p.length < 2 || beats.length < 8 || !(period > 0)) return p;
+  const dur = buf.duration, grid = gridOf(dur); if(!grid.length) return p;
+  const nearest = t => {
+    let lo = 0, hi = grid.length;
+    while(lo < hi){ const m = (lo + hi) >> 1; if(grid[m] < t) lo = m + 1; else hi = m; }
+    const a = grid[Math.max(0, lo - 1)], b = grid[Math.min(grid.length - 1, lo)];
+    return Math.abs(a - t) <= Math.abs(b - t) ? a : b;
+  };
+  const minGap = Math.max(0.18, Math.min(0.28, period * 0.45));
+  const out = [{ ...p[0], start: 0 }];
+  for(const s of p.slice(1)){
+    let t = nearest(s.start) - 1/30;
+    const last = out[out.length - 1];
+    if(t < last.start + minGap){
+      if(s.type !== 'drop' && s.type !== 'break') continue;
+      const next = grid.find(b => b - 1/30 >= last.start + minGap && b < dur - 0.08);
+      if(next === undefined) continue;
+      t = next - 1/30;
+    }
+    if(t >= dur - 0.08) continue;
+    out.push({ ...s, start: t });
+  }
+  return out.map((s, i) => ({ ...s, end: i + 1 < out.length ? out[i + 1].start : dur }));
+}
 function makeEditNow(){
   if(refReading) return;   // the Reel to copy is being read: its copy is made right after (no ordinary Reel meanwhile)
   life({ stage: 'making the Reel', clips: sources.length });
@@ -2623,7 +2681,7 @@ function makeEditNow(){
   if(story && storyEdit()) return;
   if(!buf || !sources.length) return;
   const keptUk = ukKeep();
-  stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode)))), pc.secs); } styleEdit(); const dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
+  stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode)))), pc.secs); } plan = alignPlanToBeats(plan); styleEdit(); const dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
   const gmax = Math.max(1e-6, ...sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = sources.map(()=>[]);
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
