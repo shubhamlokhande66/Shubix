@@ -62,7 +62,9 @@ export const TABS: NavTab[] = [
 
 /** Pages shown on their own (no bars), and pages open before signing in. */
 export const AUTH_PAGES = ["/login", "/forgot", "/reset", "/verify"];
-export const PUBLIC_PAGES = ["/about", "/pricing", "/terms", "/privacy", "/refunds", "/delete-account", "/contact", "/editor"];
+export const PUBLIC_PAGES = ["/", "/guides", "/about", "/pricing", "/terms", "/privacy", "/refunds", "/delete-account", "/contact", "/editor"];
+/** open before signing in: the pages above and every guide (/guides/…) */
+export const isPublic = (pathname: string) => PUBLIC_PAGES.includes(pathname) || pathname.startsWith("/guides/");
 
 export function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -91,6 +93,7 @@ const PAGES: Record<string, PageMeta> = {
   "/refunds": LEGAL,
   "/delete-account": LEGAL,
   "/contact": { title: "Contact us", tk: "nav.contact" },
+  "/guides": { title: "Guides", tk: "legal.guides", back: "/" },
   "/settings": { title: "AI settings", admin: true },
   "/voices": { title: "Voice profiles", tk: "nav.voices" },
   "/trends": { title: "My trends", admin: true },
@@ -98,7 +101,7 @@ const PAGES: Record<string, PageMeta> = {
 };
 
 /** What the phone top bar shows on each page (the designs). */
-export const pageMeta = (pathname: string): PageMeta => PAGES[pathname] ?? { title: "Shubix" };
+export const pageMeta = (pathname: string): PageMeta => PAGES[pathname] ?? (pathname.startsWith("/guides/") ? { ...PAGES["/guides"], back: "/guides" } : { title: "Shubix" });
 
 /** Phones: the bottom tab bar on every page but the studio (/create/…, /editor, which keeps the whole screen for its
  * own tool bars) and the admin pages. */

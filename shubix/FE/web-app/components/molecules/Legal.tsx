@@ -22,6 +22,7 @@ export const LEGAL_LINKS = [
   ["/delete-account", "legal.delete"],
   ["/contact", "legal.contact"],
 ] as const;
+const FOOTER_LINKS = [...LEGAL_LINKS, ["/guides", "legal.guides"], ["/pricing", "legal.pricing"]] as const;
 
 export function useSite() {
   return useQuery({ queryKey: ["site"], queryFn: api.site, staleTime: 3_600_000 });
@@ -47,7 +48,7 @@ export function LegalFooter({ className = "", compact = false }: { className?: s
   if (compact) {
     return (
       <nav aria-label="Legal" className={cn("flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted", className)}>
-        {[...LEGAL_LINKS, ["/pricing", "legal.pricing"] as const].map(([href, key]) => (
+        {FOOTER_LINKS.map(([href, key]) => (
           <Link key={href} href={href} className="inline-block rounded-sm py-1.5 transition-colors duration-200 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
             {text(key)}
           </Link>
@@ -63,7 +64,7 @@ export function LegalFooter({ className = "", compact = false }: { className?: s
           <Logo height={72} />
         </Link>
         <nav aria-label="Legal" className="flex flex-wrap items-center gap-x-4 gap-y-1.5 sm:justify-end">
-          {[...LEGAL_LINKS, ["/pricing", "legal.pricing"] as const].map(([href, key]) => (
+          {FOOTER_LINKS.map(([href, key]) => (
             <Link key={href} href={href} className="rounded-sm py-1 text-[11px] font-medium text-muted transition-colors duration-200 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
               {text(key)}
             </Link>

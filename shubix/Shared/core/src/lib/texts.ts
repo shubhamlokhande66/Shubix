@@ -157,7 +157,7 @@ Shubix is a video studio for short vertical videos. Add your song and your clips
 A Beat Reel is cut to a song. A Talking Reel keeps the words of someone speaking and adds captions. A Photo Reel brings your pictures to life. Match a Reel's Style starts from the rhythm of a Reel you like.
 
 ## Tips for a better Reel
-Start with your strongest moment, because people decide in the first seconds. Use several short clips instead of one long clip, keep your subject in the centre of the 9:16 frame, and use music you have the right to use. Read more about [Shubix](/about), or see the [plans](/pricing).`;
+Start with your strongest moment, because people decide in the first seconds. Use several short clips instead of one long clip, keep your subject in the centre of the 9:16 frame, and use music you have the right to use. Read our [guides to better Reels](/guides), more about [Shubix](/about), or see the [plans](/pricing).`;
 
 const LEGAL_DELETE = `This page explains how to delete your {name} account and its data, from the app or without it.
 
@@ -446,7 +446,7 @@ export const TEXT_GROUPS: TextGroup[] = [
     S("Delete your account", C("Page", T("legal.deleteTitle", "Title", "Delete your account"), T("legal.deleteBody", "The page", LEGAL_DELETE, true))),
     S("About Shubix", C("Page", T("legal.aboutTitle", "Title", "About Shubix"), T("legal.aboutBody", "The page", LEGAL_ABOUT, true))),
     S("Around the pages",
-      C("Tabs & footer links", T("legal.about", "About", "About"), T("legal.terms", "Terms", "Terms"), T("legal.privacy", "Privacy", "Privacy"), T("legal.refunds", "Refunds", "Refunds & cancellation"), T("legal.delete", "Delete account", "Delete account"), T("legal.contact", "Contact", "Contact"), T("legal.pricing", "Pricing", "Pricing")),
+      C("Tabs & footer links", T("legal.about", "About", "About"), T("legal.terms", "Terms", "Terms"), T("legal.privacy", "Privacy", "Privacy"), T("legal.refunds", "Refunds", "Refunds & cancellation"), T("legal.delete", "Delete account", "Delete account"), T("legal.contact", "Contact", "Contact"), T("legal.pricing", "Pricing", "Pricing"), T("legal.guides", "Guides (also the guides page title)", "Guides")),
       C("Details", T("nav.legal", "Phone top bar title", "Legal"), T("legal.updated", "Last updated ({date})", "Last updated {date}"), T("legal.sections", "Sections list (screen readers)", "Sections"),
         T("legal.writeUs", "{contact} with no email set", "write to us from the Contact page"))),
   ),
