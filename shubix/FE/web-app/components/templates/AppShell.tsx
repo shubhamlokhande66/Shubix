@@ -44,7 +44,7 @@ import { usePresence } from "@/lib/usePresence";
 import { isHidden, pauseAllMedia } from "@/lib/background";
 import { useErrorReport } from "@/lib/useErrorReport";
 import { FEATURE_LIST, linkOn, pageFeature } from "@shubix/core/lib/features-list";
-import { AUTH_PAGES, GROUPS, PUBLIC_PAGES, TABS, isActive, isStudio, pageMeta, showTabs } from "@shubix/core/lib/nav";
+import { AUTH_PAGES, GROUPS, TABS, isActive, isPublic, isStudio, pageMeta, showTabs } from "@shubix/core/lib/nav";
 
 export { GROUPS, isActive };
 
@@ -271,7 +271,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authPage = AUTH_PAGES.includes(pathname); // sign in, forgot / reset password: shown on their own
   const partnerPage = pathname === PARTNER_PAGE;
   const enginePage = pathname === "/engine"; // the phone app's hidden engine (app/engine): the studio alone, the phone signs its requests
-  const publicPage = partnerPage || enginePage || PUBLIC_PAGES.includes(pathname); // open to everyone, also before signing in
+  const publicPage = partnerPage || enginePage || isPublic(pathname); // open to everyone, also before signing in
   const signedOut = !!me.data?.authEnabled && !me.data.user;
   useEffect(() => {
     if (signedOut && !authPage && !publicPage) router.replace("/login"); // accounts on and nobody signed in: the sign-in page
