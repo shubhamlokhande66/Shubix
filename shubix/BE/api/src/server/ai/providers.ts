@@ -143,6 +143,8 @@ export class OpenAIProvider extends Provider {
       let input: unknown[] = this.input(req);
       if (format?.type === "json_object") input = [...input, { role: "user", content: "Answer in json." }];
       const body: Record<string, unknown> = { model, instructions: req.system + extra, input, store: false, ...(format ? { text: { format } } : {}) };
+      // one cache per task: the same instructions and guide on every call are read from OpenAI's cache (faster, cheaper)
+      if (!this.baseUrl && req.task) body.prompt_cache_key = `shubix-${req.task}`;
       if (settings.openaiReasoningEffort.trim()) body.reasoning = { effort: settings.openaiReasoningEffort.trim() };
       const r = await call(this, this.url("/responses"), { method: "POST", headers, body: JSON.stringify(body) }, this.timeout, "OpenAI");
       if (!r.ok) {

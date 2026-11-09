@@ -254,13 +254,14 @@ OTHER TOOLS (optional, "actions" in the JSON, run in order): you are the editor:
 
 export function prompt(d: DirectIn, taste = "", trends = "") {
   const first = d.slots[0].i, last = d.slots[d.slots.length - 1].i;
-  return `Plan this Reel. Style: ${d.mode}. Music: ${Math.round(d.bpm)} BPM, ${d.duration.toFixed(1)} s.${d.hook ? ` On-screen hook text: "${clean(d.hook, 60)}".` : ""}${d.story ? ` The story so far: "${clean(d.story, 160)}".` : ""}${first > 0 ? ` These are cuts ${first}-${last} of a longer Reel (the hook is not in this part).` : ""}
+  // the guides first: the same words on every Reel, so the AI provider reuses them (prompt caching: a faster, cheaper answer)
+  return `${GUIDE}
+${TEXT_GUIDE}
+Plan this Reel. Style: ${d.mode}. Music: ${Math.round(d.bpm)} BPM, ${d.duration.toFixed(1)} s.${d.hook ? ` On-screen hook text: "${clean(d.hook, 60)}".` : ""}${d.story ? ` The story so far: "${clean(d.story, 160)}".` : ""}${first > 0 ? ` These are cuts ${first}-${last} of a longer Reel (the hook is not in this part).` : ""}
 ${d.song ? songText(d.song) : ""}Clips: ${JSON.stringify(d.clips.map((c) => ({ alias: c.alias, ...(c.about ? { about: clean(c.about, 100) } : {}), summary: clean(c.summary, 140), mood: clean(c.mood, 20) })))}
 ${d.recent.length ? `Used in this creator's last Reels (make this one feel fresh where the feel allows: other tools, other combinations): ${d.recent.map((x) => clean(x, 24)).join(", ")}.\n` : ""}${d.reference ? `Reference Reel: ${referenceText(d.reference)}\n${COPY_GUIDE}\n` : ""}${taste ? `This creator's taste (from the changes they made to earlier edits; follow it): ${clean(taste, 400)}\n` : ""}Cuts (fixed times on the beats; for each, pick ONE of its candidate moments by id): ${JSON.stringify(d.slots.map((s) => ({ i: s.i, t: +s.t.toFixed(2), len: +s.len.toFixed(2), type: s.type, beats: s.beats,
     ...(s.music ? { music: s.music } : {}),
     candidates: s.candidates.map((c) => ({ id: c.id, clip: c.clip, at: +c.at.toFixed(1), score: +c.score.toFixed(2), note: clean(c.note, 60), roles: c.roles, motion: c.motion, people: c.people, camera: c.camera })) })))}
-${GUIDE}
-${TEXT_GUIDE}
 ${trends ? `${clean(trends, 2400)}\n` : ""}${wishText(d.wish)}Allowed transitions: ${(d.allowed ? TRANSITIONS.filter((t) => t === "hard" || d.allowed!.tr.includes(t)) : TRANSITIONS).join(", ")}. Allowed effects: ${(d.allowed ? EFFECTS.filter((e) => e === "none" || d.allowed!.fx.includes(e)) : EFFECTS).join(", ")}. Allowed speeds: ${SPEEDS.join(", ")}. Allowed keys: ${ACCENTS.join(", ")}. Allowed eases: ${EASES.join(", ")}.
 Return JSON: {"slots": [{"i": ${first}, "shot": "${first}a", "transition": "hard", "effect": "${first === 0 ? "hook" : "none"}", "speed": "normal", "keys": [{"at": 0.38, "do": "punch"}], "move": [], "clip": {}, "why": "<max 4 words>"}], "story": "<one sentence: what this Reel is about, its feel and its arc>", "texts": [], "actions": []} with one entry for every cut.`;
 }

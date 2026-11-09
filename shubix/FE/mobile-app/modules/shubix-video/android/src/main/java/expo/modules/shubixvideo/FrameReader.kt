@@ -91,7 +91,7 @@ internal fun scanFile(file: File, dur: Double, onProgress: (Double) -> Unit): Cl
   }, onProgress)
 }
 
-/** Frames as JPEGs (quality 72), each base64, in the order of the times */
+/** Frames as JPEGs (quality 62), each base64, in the order of the times */
 internal fun jpegsOfFile(file: File, w: Int, h: Int, times: DoubleArray): org.json.JSONArray {
   val out = org.json.JSONArray(); val pixels = IntArray(w * h)
   readFrames(file, w, h, times, FrameSink(w * h * 4) { _, rgba ->
@@ -99,7 +99,7 @@ internal fun jpegsOfFile(file: File, w: Int, h: Int, times: DoubleArray): org.js
     else {
       for (i in pixels.indices) { val o = i * 4; pixels[i] = (255 shl 24) or ((rgba[o].toInt() and 255) shl 16) or ((rgba[o + 1].toInt() and 255) shl 8) or (rgba[o + 2].toInt() and 255) }
       val pic = android.graphics.Bitmap.createBitmap(pixels, w, h, android.graphics.Bitmap.Config.ARGB_8888); val b = java.io.ByteArrayOutputStream()
-      pic.compress(android.graphics.Bitmap.CompressFormat.JPEG, 72, b); pic.recycle()
+      pic.compress(android.graphics.Bitmap.CompressFormat.JPEG, 62, b); pic.recycle()   // 62: Shubix AI sees them small ("low" detail): a lighter file, the same answer
       out.put(android.util.Base64.encodeToString(b.toByteArray(), android.util.Base64.NO_WRAP))
     }
   }) {}

@@ -734,10 +734,10 @@ async function clipReader(src, maxSide){
   }
 }
 
-async function scanMotion(src, onProgress, faces){
+async function scanMotion(src, onProgress, faces, pics){
   // read the clip's frames (see clipReader) and compare small frames: how much moves, where it moves, how bright.
   // faces (a faceScanner): its frames come from this same pass, so the clip is decoded once (an iPhone)
-  const rd = await clipReader(src, faces ? 480 : 256); if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
+  const rd = await clipReader(src, faces || pics ? 480 : 256);   // Shubix AI's pictures (pics) are 384 wide: read at 480 if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
   const c = document.createElement('canvas'); c.width=SW; c.height=SH; const g = c.getContext('2d', {willReadFrequently:true});
   const c2 = document.createElement('canvas'); c2.width=128; c2.height=72; const g2 = c2.getContext('2d', {willReadFrequently:true});
   let prev = null; const out = [], hists = [], lums = [];
@@ -772,7 +772,7 @@ async function scanMotion(src, onProgress, faces){
   try{
     let k = 0;
     let fi = 0; const half = step/2;
-    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img) grab(img, t); if(k % 8 === 0){ onProgress(t/src.dur); await new Promise(r=>setTimeout(r,0)); }
+    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img){ grab(img, t); if(pics) pics.take(img, t, out[out.length-1]); } if(k % 8 === 0){ onProgress(t/src.dur); await new Promise(r=>setTimeout(r,0)); }
       // the faces' times this frame stands for (within half a step: at most 0.1 s off)
       if(faces && img) while(fi < faces.ts.length && faces.ts[fi] <= t + half){ if(faces.ts[fi] >= t - half && !(await faces.each(img, faces.ts[fi]))){ faces = null; break; } fi++; }
     }
@@ -1435,8 +1435,9 @@ async function readVideo(src){
       const doFaces = () => scanFaces(src, p=>{ pf = p; show(); }).then(()=>{ src.readMs.faces = Math.round(performance.now()-tq); });
       // two decoders at once is ~40% faster, but on an iPhone it doubles the memory of a 4K video: one after the other there
       if(IOS){   // one decode of the clip for motion and faces: half the work and the memory of two decoders
-        const fsc = faceScanner(src);
-        await scanMotion(src, p=>{ pm = pf = p; show(); }, fsc); src.readMs.motion = src.readMs.faces = Math.round(performance.now()-tq);
+        const fsc = faceScanner(src), pics = aiOn && kind !== 'talk' && !src.ai ? aiPicker(src) : null;
+        await scanMotion(src, p=>{ pm = pf = p; show(); }, fsc, pics);
+        if(pics && !src.removed){ const f = pics.done(); if(f) src.aiFramesMade = f; } src.readMs.motion = src.readMs.faces = Math.round(performance.now()-tq);
         if(!fsc) src.faces = src.faces || [];
       } else await Promise.all([doMotion(), doFaces()]);
       if(!src.removed) scanPut(src);
@@ -2166,11 +2167,36 @@ function aiBonus(ai, slot, last){
   if(last && role!=='ending') fit += 0.3*(ai.roles.ending || 0);
   return ai.conf * (2.2*(ai.score - 0.5) + fit);
 }
+const aiCount = (src, many) => many ? Math.max(2, Math.min(3, Math.round(src.dur/4))) : Math.max(3, Math.min(5, Math.round(src.dur/3)));
+// an iPhone: Shubix AI's pictures from the clip's one reading (scanMotion), not a second decode of it. The clip in n parts,
+// as aiTimes: the 2 best moments of each part's middle are kept small; once the scenes are known, the best one not on a
+// scene change is the part's picture (none: aiFrames reads the clip as before)
+function aiPicker(src){
+  const n = aiCount(src, sources.filter(x => !x.removed).length + pending > 15), parts = Array.from({ length: n }, () => []);
+  const sc = Math.min(1, 384/Math.max(src.w, src.h)), w = Math.max(2, Math.round(src.w*sc)), h = Math.max(2, Math.round(src.h*sc));
+  return {
+    take(img, t, s){
+      const k = Math.min(n-1, Math.floor(t*n/src.dur)), a = src.dur*k/n, b = src.dur*(k+1)/n, L = parts[k];
+      if(!s || t < a+(b-a)*0.2 || t > a+(b-a)*0.8) return;
+      const v = s.sh * (s.b > 0.08 ? 1 : 0.2); if(L.length >= 2 && v <= L[1].v) return;
+      const c = L.length >= 2 ? L.pop().c : document.createElement('canvas'); c.width = w; c.height = h;
+      try{ c.getContext('2d').drawImage(img, 0, 0, w, h); }catch(e){ return; }
+      L.push({ t, v, c }); L.sort((x, y) => y.v - x.v);
+    },
+    done(){
+      const out = [];
+      for(const L of parts){ const p = L.find(x => !crossesScene(src, x.t-0.2, x.t+0.2));
+        if(p){ const url = p.c.toDataURL('image/jpeg', AI_JPEG); out.push({ t: +Math.min(src.dur-0.05, p.t).toFixed(2), image: url.slice(url.indexOf(',')+1) }); }
+        L.forEach(x => { x.c.width = x.c.height = 0; }); }
+      return out.length === n ? out : null;
+    } };
+}
+// the pictures' JPEG quality: Shubix AI sees them small ("low" detail), so a lighter file sends faster with the same answer
+const AI_JPEG = 0.62;
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
   // many clips: fewer pictures of each (2-3, not 3-5), so Shubix AI has less to read and costs less
-  const many = sources.filter(x => !x.removed).length > 15;
-  const n = many ? Math.max(2, Math.min(3, Math.round(src.dur/4))) : Math.max(3, Math.min(5, Math.round(src.dur/3))), out = [];
+  const n = aiCount(src, sources.filter(x => !x.removed).length > 15), out = [];
   for(let k=0;k<n;k++){
     const a = src.dur*k/n, b = src.dur*(k+1)/n, c0 = a+(b-a)*0.2, c1 = a+(b-a)*0.8;
     let best = null, bs = -1;
@@ -2187,7 +2213,7 @@ async function aiFrames(src){
   const out = [], ts = aiTimes(src).slice().sort((a,b)=>a-b);
   let k = 0;
   try{ for await (const v of rd.frames(ts)){ const t = ts[k++]; if(!v) continue;
-    g.drawImage(v, 0, 0, w, h); const url = c.toDataURL('image/jpeg', 0.72);
+    g.drawImage(v, 0, 0, w, h); const url = c.toDataURL('image/jpeg', AI_JPEG);
     out.push({ t: +t.toFixed(2), image: url.slice(url.indexOf(',')+1) });
   } } finally { rd.close(); }
   return out;
