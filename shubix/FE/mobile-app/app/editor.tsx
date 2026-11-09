@@ -19,6 +19,7 @@ import { ShubixPreviewView, type PreviewRef } from "../modules/shubix-video";
 import { type AiPlan, engine, textsOf } from "../lib/engine";
 import { TEXT_TEMPLATES } from "@mobile/core/lib/text-templates";
 import { STICKERS as SHAPES } from "@mobile/core/lib/stickers";
+import { SFX_REC } from "@mobile/core/lib/sfx-recorded";
 import Svg, { Path } from "react-native-svg";
 import { Choices, DOCK, Preview, SHOT_TOOLS, StudioBar, Timeline, ToolRow, ToolSheet, Transport } from "../components/organisms/EditorParts";
 
@@ -53,7 +54,7 @@ const TX_LOOPS = [["none", "Still"], ["bounce", "Bounce"], ["spin", "Spin"], ["w
 const TX_COLORS = [["#FFFFFF", "White"], ["#111111", "Black"], ["#FFD54A", "Gold"], ["#FF4D6D", "Red"], ["#3DDC84", "Green"], ["#4DA3FF", "Blue"], ["#FF9F1C", "Orange"], ["#C77DFF", "Purple"]];
 // the studio's sound effects (its Add buttons): [key, name]
 const SOUNDS = [["whoosh", "Whoosh"], ["pop", "Pop"], ["boom", "Boom"], ["click", "Camera click"], ["riser", "Riser"], ["ding", "Ding"], ["swish", "Swish"], ["impact", "Impact"], ["glitch", "Glitch"], ["laser", "Laser"],
-  ["heartbeat", "Heartbeat"], ["tick", "Tick"], ["chime", "Chime"], ["drop", "Bass drop"], ["rewind", "Rewind"], ["notify", "Notification"]];
+  ["heartbeat", "Heartbeat"], ["tick", "Tick"], ["chime", "Chime"], ["drop", "Bass drop"], ["rewind", "Rewind"], ["notify", "Notification"]].concat(Object.entries(SFX_REC).map(([k, v]) => [k, v.name]));
 const TSTYLES = [["pop", "Pop"], ["karaoke", "Karaoke"], ["box", "Box"], ["clean", "Clean"]];
 const CANVAS = [["blur", "Blur"], ["color", "Colour"], ["grad", "Gradient"], ["stripes", "Stripes"], ["dots", "Dots"], ["grid", "Grid"], ["checker", "Checker"]];
 const CANVAS_COLS = [["#000000", "Black"], ["#FFFFFF", "White"], ["#E85D75", "Pink"], ["#4F7CFF", "Blue"], ["#1DB954", "Green"], ["#FF9F1C", "Orange"], ["#D4B07A", "Gold"]];

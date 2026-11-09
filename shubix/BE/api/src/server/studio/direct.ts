@@ -6,6 +6,7 @@ import { clean, Text } from "../ai/text";
 import { AIResponseError } from "../ai/types";
 import { TEXT_TEMPLATES } from "@shubix/core/lib/text-templates";
 import { STICKERS } from "@shubix/core/lib/stickers";
+import { SFX_REC } from "@shubix/core/lib/sfx-recorded";
 
 /** Fast Studio's AI director: the brain of the edit, the way an editor's judgment is.
  *
@@ -166,14 +167,14 @@ export function cleanTexts(raw: z.infer<typeof TextAnswer>[] | undefined) {
  * with its own buttons. Unknown steps are left out. */
 /** the studio's colour looks and its sound effects (components/studio/engine.ts LOOKS + LOOK_EXTRA, SFX_NAMES) */
 const LOOKS = ["natural", "vivid", "cine", "mono", "warmfilm", "cool", "retro", "moody", "wedding", "golden", "tealorange", "faded", "noir", "sepia", "cyber", "pastel", "dramatic", "summer", "night", "vintage", "matte", "punchy", "forest", "rose"];
-const SOUNDS = ["whoosh", "pop", "boom", "click", "riser", "ding", "swish", "impact", "glitch", "laser", "heartbeat", "tick", "chime", "drop", "rewind", "notify"];
+const SOUNDS = ["whoosh", "pop", "boom", "click", "riser", "ding", "swish", "impact", "glitch", "laser", "heartbeat", "tick", "chime", "drop", "rewind", "notify", ...Object.keys(SFX_REC)];
 export const ACTIONS = {
   look: `the whole Reel's colour look: {"do":"look","name":"${LOOKS.join("|")}"}`,
   captions: `captions of what is said: {"do":"captions","on":true,"style":"pop|karaoke|box|clean","language":"<spoken language code or empty>","translation":"<language code to translate to, or empty>"}`,
   music: `the song's sound: {"do":"music","volume":0-1,"fadeIn":seconds,"fadeOut":seconds}`,
   voicefx: `the voice changer: {"do":"voicefx","fx":"none|deep|chipmunk|robot|radio|echo|enhance"}`,
   layer: `a clip of this Reel shown as a box on top (split screens, grids that build up on the beats, picture in picture, a frame inside the frame): {"do":"layer","clip":"<clip alias, e.g. c2>","from":<seconds into that clip>,"start":<seconds of the Reel>,"end":<seconds>,"x":0-1,"y":0-1 (its centre),"size":0-1 (its width, a fraction of the frame's),"radius":0-1 (rounded corners),"mask":"none|circle|rect","fadeIn":seconds,"fadeOut":seconds,"opacity":0-1,"rotate":degrees,"blend":"source-over|multiply|screen|overlay|darken|lighten|color-dodge|color-burn|hard-light|soft-light|difference|exclusion|hue|saturation|color|luminosity","key":"<#RRGGBB: green screen, this colour becomes see-through>","tolerance":0.05-0.9}; e.g. 4 boxes in a 2x2 grid, one more on each beat: 4 layers of size 0.5 at x/y 0.25 or 0.75, each starting on its beat`,
-  sound: `a sound effect: {"do":"sound","kind":"${SOUNDS.join("|")}","at":seconds of the Reel}`,
+  sound: `a sound effect: {"do":"sound","kind":"${SOUNDS.join("|")}","at":seconds of the Reel} (recorded: ${Object.entries(SFX_REC).map(([k, v]) => k + " = " + v.name).join(", ")}). Use them as an editor does, without being asked, a few per Reel and never on every cut: a punch or hit on a hard hit or a jump cut, a thud when something lands, glass or metal on a sharp visual hit, a bell or success on a reveal or a price, a pluck or popup when a text or sticker comes in, a scratch on a sudden stop, footsteps on walking`,
   shot: `a timeline step on a cut, as the editor's buttons: {"do":"shot","i":<cut number>,"op":"split|dup|freeze|delete|reverse","at":<seconds into the cut>} (dup = the moment plays twice, freeze = a frozen frame there, reverse = plays backwards)`,
   background: `behind the person: {"do":"background","mode":"none|blur|color","color":"#RRGGBB"}`,
   beatmark: `your own beat markers (a cut can land on each, as on the beats of the song): {"do":"beatmark","at":[seconds of the Reel],"clear":true|false}`,

@@ -14,6 +14,7 @@ import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPla
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
+import { SFX_REC, sfxRecorded } from '@shubix/core/lib/sfx-recorded';
 import { MAIN_VERT, MAIN_FRAG, PASS_VERT, GRADE_FRAG, PIC_FRAG, PIC_FX, TR_DUR } from '@shubix/core/lib/shaders';
 import { needMap, planRank, PLAN_NAME, DEFAULT_LOCKS } from '@shubix/core/lib/plan-locks';
 import { DEFAULT_TEMPLATES, liveTemplates, edgeAt } from '@shubix/core/lib/studio-templates';
@@ -7043,8 +7044,10 @@ async function ensureMix(){
  * click on a photo snap or a freeze, a pop when a text or sticker pops in); the creator adds more at the playhead. ---- */
 let sfxList = [], sfxSeq = 0;
 const SFX_NAMES = { whoosh: 'Whoosh', pop: 'Pop', boom: 'Boom', click: 'Camera click', riser: 'Riser', ding: 'Ding', swish: 'Swish', impact: 'Impact', glitch: 'Glitch', laser: 'Laser', heartbeat: 'Heartbeat', tick: 'Tick', chime: 'Chime', drop: 'Bass drop', rewind: 'Rewind', notify: 'Notification' };
+Object.entries(SFX_REC).forEach(([k, v]) => { SFX_NAMES[k] = v.name; });   // and the recorded ones (CC0, core/lib/sfx-recorded)
 const sfxCache = new Map();
 function sfxSynth(kind, sr){
+  const rec = sfxRecorded(kind, sr); if(rec) return rec;
   const key = kind + sr; if(sfxCache.has(key)) return sfxCache.get(key);
   const len = { whoosh: 0.42, pop: 0.09, boom: 0.9, click: 0.09, riser: 1.2, ding: 0.7, swish: 0.22, impact: 0.6, glitch: 0.35, laser: 0.3, heartbeat: 0.8, tick: 0.03, chime: 1.4, drop: 1.4, rewind: 0.7, notify: 0.45 }[kind] || 0.3, n = Math.round(len*sr), y = new Float32Array(n);
   let seed = 7; const rnd = () => { seed = (seed*16807) % 2147483647; return seed/2147483647*2 - 1; };

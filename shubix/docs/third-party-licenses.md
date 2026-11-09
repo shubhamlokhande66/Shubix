@@ -38,5 +38,8 @@ Android's voice choice is now by language, not by person. A language must be ins
 | `mediabunny`, `@mediabunny/aac-encoder` | MPL-2.0. The encoder is built from FFmpeg, whose licence terms need a check for the notices screen |
 | `sharp` (libvips) | Apache-2.0 and LGPL-3.0, on the server |
 | `node-forge` | BSD-3-Clause or GPL-2.0: we use it under BSD |
+| Recorded sound effects (`core/lib/sfx-recorded.ts`): 18 sounds from Kenney "Impact Sounds" 1.0 and "Interface Sounds" 1.0 (kenney.nl, downloaded 2026-11-09; licence file checked) | CC0 1.0: public domain, commercial use, no credit needed |
+| ML Kit selfie segmentation (Android, text behind the person) | Google ML Kit terms (free) |
+| Shubix stickers (`core/lib/stickers.ts`) | Our own shapes |
 
 Not checked here: ML Kit's Google terms, the licences of the bundled fonts, and FFmpeg as installed on the server.
