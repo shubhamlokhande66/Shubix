@@ -70,8 +70,9 @@ async function aiRun(){
   }catch(e){
     ES.aiBusy = false;
     if(e && e.name === 'AbortError') return;
-    ES.aiGaveUp = EH.reelIdNow();   // nothing more comes from Shubix for this Reel: it is final as the phone made it
     need.forEach(s => framesMade.delete(s));
+    if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // never the phone's own edit instead
+    ES.aiGaveUp = EH.reelIdNow();
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
     EH.chatFail('Shubix could not look at your clips right now. Try again in a moment.');
     EH.aiLog('Shubix AI could not look at your clips this time: your Reel uses the phone’s own edit.');
@@ -153,32 +154,23 @@ async function paceRun(key){
     if(!ES.dirBusy && /…$/.test(EH.aiStatText())) EH.aiStat('Your Reel keeps the song\'s own pace.');
   }finally{ ES.paceBusy = false; tm.done(); }
 }
+/* Shubix AI could not do this Reel after a minute of asking (the server down): no Reel from the phone's own edit. Make Reel
+ * says so (nativeEngine "ai" fails with TEAM_MSG); the server gives back any credits taken. */
+const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
+function aiDown(){ if(!ES.aiOn) return; ES.aiDown = true; EH.aiStat(TEAM_MSG); EH.chatFail(TEAM_MSG); EH.aiLog('Shubix AI was not available. ' + TEAM_MSG); }
 async function directorRun(key){
   ES.dirBusy = true; EH.aiStat('Shubix is choosing every shot, transition and effect…');
-  // 75 s (a minute of asking again when the server is down, and more): the phone's own edit is shown and the person can go on; the request is NOT dropped (the plan is paid for): when it
-  // comes later it is offered ("Use it"). 4 min: given up (the server's AI gives up before that and the credits come back).
+  // the loader stays until Shubix answers (a down server is asked again for a minute: apiFetch); 4 min: given up (the
+  // server's AI gives up before that and the credits come back). Never the phone's own edit instead: aiDown.
   const tm = timeoutSignal(240000);
   let late = false;
-  const soft = setTimeout(() => { late = true; ES.dirBusy = false; ES.dirFailedKey = key;
-    EH.aiStat('Shubix is taking longer than usual. Your Reel uses the phone\'s own smart edit for now; Shubix\'s plan comes as soon as it is ready.'); }, 75000);
+  const soft = setTimeout(() => EH.aiStat('Shubix is still working on your Reel…'), 75000);   // no phone's edit meanwhile: the loader stays
   try{
     await hearSong();
     const cands = EH.directorCandidates(); ES.dirCands = cands;
     const { req, ctx } = EH.dirRequest(cands), sig = EH.planSig(), mix = ES.mixNo, st = EH.mixStore();
-    // the server down or busy for a moment (no answer, 408, 429, 5xx): asked again, the loader on, for up to a minute;
-    // a real "no" (no credits, not allowed, a bad request) is not asked again. The same Reel is charged once (chargeOnce).
-    const t0 = Date.now(); let r = null, res = {}, tries = 0;
-    for(;;){
-      try{ r = await EH.apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal }); res = await r.json().catch(()=>({}));
-        if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) break; }
-      catch(e){ if(e && e.name === 'AbortError') throw e; r = null; }
-      if(Date.now() - t0 > 60000 || tm.signal.aborted) break;
-      tries++; EH.aiStat('Shubix’s server is not answering yet. Trying again… (' + tries + ')');
-      await new Promise(ok => setTimeout(ok, Math.min(10000, 2000*tries)));
-      if(tm.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
-      EH.aiStat('Shubix is choosing every shot, transition and effect…');
-    }
-    if(!r) throw new Error('Shubix’s server could not be reached.');
+    const r = await EH.apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });   // (asked again for a minute: nativeEngine apiFetch)
+    const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
@@ -201,13 +193,13 @@ async function directorRun(key){
   }catch(e){
     ES.dirFailedKey = key;
     const back = EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ EH.aiStat('Shubix could not plan this Reel. It keeps the phone\'s own smart edit' + back); }
+    if(late){ aiDown(); }
     else {
       EH.chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) EH.aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
-    if(late || !(e && e.name==='AbortError') || tm.timedOut()) EH.aiLog('Shubix AI could not plan this Reel: it uses the phone’s own edit' + back);
+    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown();
   }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,

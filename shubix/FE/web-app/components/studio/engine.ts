@@ -2010,6 +2010,7 @@ function aiNeed(on, low){
   $('aiaskgo').textContent = low ? 'Top up' : 'Make it with Shubix AI'; $('aiaskgo').dataset.low = low ? '1' : '';
 }
 $('aiaskgo').addEventListener('click', async () => {
+  if($('aiaskgo').dataset.down){ delete $('aiaskgo').dataset.down; aiDownAt = ''; root.classList.remove('aineed'); aiGaveUp = ''; dirFailedKey = ''; paceFailedKey = ''; aiRun(); return; }   // Try again (aiDown)
   if($('aiaskgo').dataset.change){ void makeChangedReel(); return; }
   if($('aiaskgo').dataset.low){ void toPricing('#topup'); return; }
   if(await aiGate(true)) aiRun();
@@ -2196,7 +2197,7 @@ async function aiRun(){
     aiStat('Shubix is choosing the best moments of your clips…');
     for(let k=0; k<jobs.length; k+=12){
       const part = jobs.slice(k, k+12);
-      const r = await fetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
+      const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
@@ -2214,9 +2215,9 @@ async function aiRun(){
   }catch(e){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
-    aiGaveUp = reelIdNow();   // nothing more comes from Shubix for this Reel: it is final as the phone made it
     need.forEach(s => { delete s.aiFramesMade; });
-    aiLog('Shubix AI could not look at your clips this time: your Reel uses the phone\'s own edit.');
+    if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
+    aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
   }
 }
@@ -2484,7 +2485,7 @@ async function chatPatch(text, n, id){
     const { req } = dirRequest(cands), key = dirKey(), len = i => edit[i].end - edit[i].start;
     req.patch = { ask: text, current: edit.map((e, i) => ({ i, clip: 'c' + (e.src + 1), at: +e.in.toFixed(2), transition: e.tr || 'hard', effect: e.efx || 'none', speed: speedKey(e.sp) })) };
     req.chat = { n, id, text };
-    const r = await fetch('/api/studio/direct', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req), signal: tm.signal });
+    const r = await apiFetch('/api/studio/direct', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not change it (' + r.status + ').'));
     chatSync(res); if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
@@ -2893,7 +2894,7 @@ async function variantsRun(st){
   let n = 0;
   try{
     const cands = directorCandidates(), { req, ctx } = dirRequest(cands), sig = planSig();
-    const r = await fetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...req, variants: VARIANTS }), signal: tm.signal });
+    const r = await apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...req, variants: VARIANTS }), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not make the mixes (' + r.status + ').'));
     let k = 1;
@@ -2908,6 +2909,32 @@ async function variantsRun(st){
 }
 const dirCache = new Map();
 // a request that gives up after ms (the phone's own edit is already on screen, so nobody waits for a slow AI)
+/* Every call to Shubix's server: when it is down or busy (no answer, 408, 429, 5xx) it is asked again, the loader on,
+ * for up to a minute (2 s, 4 s... up to 10 s apart); then the call fails and the person is told. A real "no" (no credits,
+ * not allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
+const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
+async function apiFetch(url, opts = {}){
+  const t0 = Date.now(); let tries = 0;
+  for(;;){
+    let r = null;
+    try{ r = await fetch(url, opts); if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r; }
+    catch(e){ if(e && e.name === 'AbortError') throw e; }
+    if(Date.now() - t0 > 60000){ if(r) return r; throw new Error(TEAM_MSG); }
+    tries++; aiStat('Shubix’s server is not answering yet. Trying again… (' + tries + ')');
+    await new Promise(ok => setTimeout(ok, Math.min(10000, 2000*tries)));
+    if(opts.signal && opts.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
+  }
+}
+// Shubix AI could not do this Reel after that minute: the Reel waits (not shown, played or exported), a popup says so,
+// and its button asks Shubix again. The server gives back any credits taken for it.
+let aiDownAt = '';
+function aiDown(){
+  if(!aiOn) return;
+  const id = reelIdNow(), go = $('aiaskgo'); aiStat(TEAM_MSG); chatFail(TEAM_MSG);
+  root.classList.add('aineed'); go.dataset.down = '1'; go.dataset.low = ''; delete go.dataset.change;
+  $('aiaskt').textContent = 'Shubix AI is not available right now'; $('aiaskp').textContent = TEAM_MSG; go.textContent = 'Try again';
+  if(aiDownAt !== id){ aiDownAt = id; aiLog('Shubix AI was not available. ' + TEAM_MSG); void askCredits({ title: 'Shubix AI is not available right now', text: TEAM_MSG, bal: null, ok: 'OK' }); }
+}
 function timeoutSignal(ms){
   const c = new AbortController(); let late = false;
   const t = setTimeout(()=>{ late = true; c.abort(); }, ms), stop = () => c.abort();
@@ -3001,7 +3028,7 @@ async function hearSong(){
   const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return;
   songHeard = key; songFeel = null;
   const tm = timeoutSignal(20000);
-  try{ const r = await fetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
+  try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); songFeel = await r.json(); }
   catch(e){ songHeard = ''; console.warn('The song was not heard:', e); }
   finally{ tm.done(); }
@@ -3018,7 +3045,7 @@ async function paceRun(key){
     const req = { mode, reelId: reelIdNow(), ...(tplKind ? { reelKind: tplKind } : {}), wish: wish.slice(-800), duration: +(whole ? song.buf.duration : buf.duration).toFixed(2), bpm: +(60/(whole ? song.r.period : period)).toFixed(1), clips: sources.filter(s=>!s.removed).length,
       footage: +sources.reduce((a,s)=>a+(s.removed?0:s.dur||0),0).toFixed(1), kind: root.classList.contains('photomode') ? 'photo' : 'music', sections: secs, reference: refContext(), ...(songFeel ? { song: songFeel } : {}), about: sources.map(s=>!s.removed && s.ai && s.ai.about).filter(Boolean).join('; ').slice(0, 400),
       ...(whole ? { reel: +buf.duration.toFixed(2) } : {}) };
-    const r = await fetch('/api/studio/pace', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
+    const r = await apiFetch('/api/studio/pace', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not choose the pace (' + r.status + ').'));
     tasks.lock();
@@ -3043,30 +3070,17 @@ async function paceRun(key){
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
-  // 75 s (a minute of asking again when the server is down, and more): the phone's own edit is shown and the person can go on; the request is NOT dropped (the plan is paid for): when it
-  // comes later it is offered ("Use it"). 4 min: given up (the server's AI gives up before that and the credits come back).
+  // the loader stays until Shubix answers (a down server is asked again for a minute: apiFetch); 4 min: given up (the
+  // server's AI gives up before that and the credits come back). Never the phone's own edit instead: aiDown.
   const tm = timeoutSignal(240000);
   let late = false;
-  const soft = setTimeout(() => { late = true; dirBusy = false; dirFailedKey = key;
-    aiStat('Shubix is taking longer than usual. Your Reel uses the phone\'s own smart edit for now; Shubix\'s plan comes as soon as it is ready.'); }, 75000);
+  const soft = setTimeout(() => aiStat('Shubix is still working on your Reel…'), 75000);   // no phone's edit meanwhile: the loader stays
   try{
     await hearSong();
     const cands = directorCandidates(); dirCands = cands;
     const { req, ctx } = dirRequest(cands), sig = planSig(), mix = mixNo, st = mixStore();
-    // the server down or busy for a moment (no answer, 408, 429, 5xx): asked again, the loader on, for up to a minute;
-    // a real "no" (no credits, not allowed, a bad request) is not asked again. The same Reel is charged once (chargeOnce).
-    const t0 = Date.now(); let r = null, res = {}, tries = 0;
-    for(;;){
-      try{ r = await fetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal }); res = await r.json().catch(()=>({}));
-        if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) break; }
-      catch(e){ if(e && e.name === 'AbortError') throw e; r = null; }
-      if(Date.now() - t0 > 60000 || tm.signal.aborted) break;
-      tries++; aiStat('Shubix’s server is not answering yet. Trying again… (' + tries + ')');
-      await new Promise(ok => setTimeout(ok, Math.min(10000, 2000*tries)));
-      if(tm.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
-      aiStat('Shubix is choosing every shot, transition and effect…');
-    }
-    if(!r) throw new Error('Shubix’s server could not be reached.');
+    const r = await apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
+    const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
@@ -3089,12 +3103,12 @@ async function directorRun(key){
   }catch(e){
     dirFailedKey = key;
     const back = aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiStat('Shubix could not plan this Reel. It keeps the phone\'s own smart edit' + back); }
+    if(late){ aiDown(); }
     else {
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
-      if(!(e && e.name==='AbortError') || tm.timedOut()) aiLog('Shubix AI could not plan this Reel: it uses the phone\'s own edit' + back);
+      if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown();
     }
   }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
 }
@@ -4346,7 +4360,7 @@ async function translateSoon(){
   if(!need.length){ redraw(); return; }
   trBusy = true; const to = trTo; capStat('Translating the captions…');
   try{
-    const r = await fetch('/api/studio/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, lines: need.map((text, i) => ({ i, text: text.slice(0, 160) })) }), signal: ac.signal });
+    const r = await apiFetch('/api/studio/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, lines: need.map((text, i) => ({ i, text: text.slice(0, 160) })) }), signal: ac.signal });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Translation failed (' + r.status + ').'));
     for(const l of res.lines || []) if(need[l.i] !== undefined) trCache.set(to + '|' + need[l.i], l.text);
@@ -4914,7 +4928,7 @@ async function loadCaptions(){
   capStat('Listening to the words of the song…');
   try{
     const wav = await songWav(M, sr, from);
-    const r = await fetch('/api/studio/transcribe?lang=' + encodeURIComponent(lang), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: wav, signal: ac.signal });
+    const r = await apiFetch('/api/studio/transcribe?lang=' + encodeURIComponent(lang), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: wav, signal: ac.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Captions failed (' + r.status + ').'));
     if(token !== musicToken) return;
@@ -6760,7 +6774,7 @@ async function refLookRun(file, R){
       let q = 0.75, d = c.toDataURL('image/jpeg', q); while(d.length > 150000 && q > 0.35){ q -= 0.15; d = c.toDataURL('image/jpeg', q); }   // under the server's 120 KB
       frames.push({ t, image: d.slice(d.indexOf(',') + 1) }); } } finally { rd.close(); }
     if(frames.length < 2) throw new Error('frames not readable');
-    const r = await fetch('/api/studio/ref-look', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal, body: JSON.stringify({ name: R.name.slice(0, 200), dur: R.dur, frames }) });
+    const r = await apiFetch('/api/studio/ref-look', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal, body: JSON.stringify({ name: R.name.slice(0, 200), dur: R.dur, frames }) });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
     if(refProfile !== R) return;   // another Reel was picked meanwhile

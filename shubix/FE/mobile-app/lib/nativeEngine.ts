@@ -85,9 +85,21 @@ export function createNativeEngine(io: NativeIo) {
   }
   function getCtx() { return { createBuffer: (count: number, n: number, sr: number) => soundOf(Array.from({ length: count }, () => new Float32Array(n)), sr) }; }
 
+  /** a call to Shubix's server; when it is down or busy (no answer, 408, 429, 5xx) it is asked again for up to a minute
+   * (2 s, 4 s... up to 10 s apart), the loader on; then it fails and the person is told. A real "no" is answered at once. */
   async function apiFetch(path: string, o: { method?: string; headers?: Record<string, string>; body?: unknown; signal?: unknown } = {}) {
-    const token = await io.token?.();
-    return io.fetch(io.base + path, { ...o, headers: { ...o.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } } as never);
+    const t0 = Date.now(), stopped = () => !!(o.signal as { aborted?: boolean } | undefined)?.aborted;
+    for (let tries = 1; ; tries++) {
+      let r: Response | null = null;
+      try {
+        const token = await io.token?.();
+        r = await io.fetch(io.base + path, { ...o, headers: { ...o.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } } as never) as Response;
+        if (r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r;
+      } catch (e) { if ((e as { name?: string })?.name === "AbortError") throw e; }
+      if (Date.now() - t0 > 60_000) { if (r) return r; throw new Error("Our team is working on it. Please try again in a little while. No credits were used."); }
+      await new Promise((ok) => setTimeout(ok, Math.min(10_000, 2000 * tries)));
+      if (stopped()) throw Object.assign(new Error("Stopped"), { name: "AbortError" });
+    }
   }
   /** the frames Shubix AI looks at, as JPEGs from the phone's own decoder */
   async function aiFrames(src: { path: string; w: number; h: number }) {
@@ -261,7 +273,10 @@ export function createNativeEngine(io: NativeIo) {
       const low = !!cost && balance !== null && balance < cost;
       if (low && host.ES.planNow !== "free") return { went: false };   // a plan's Reel is made by Shubix AI only: it waits for credits
       if (low) host.ES.lowAsked = id; else host.ES.aiReel = id;
+      host.ES.aiDown = false;
       const went = await host.runAi();
+      // Shubix AI could not be reached for a minute: no Reel from the phone's own edit; Make Reel says so (a popup)
+      if (host.ES.aiDown) throw new Error("Our team is working on it. Please try again in a little while. No credits were used.");
       return { went: went && stops === g };
     },
     newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
