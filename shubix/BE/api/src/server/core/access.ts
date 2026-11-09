@@ -1,5 +1,5 @@
 import type { ObjectId } from "mongodb";
-import { ACCESS_PAGES, DEFAULT_ACCESS, STUDIO_ASK, type Access } from "@shubix/core/lib/access";
+import { ACCESS_PAGES, DEFAULT_ACCESS, type Access } from "@shubix/core/lib/access";
 import { settings } from "./config";
 import { db } from "./db";
 import { ValidationFailed } from "./errors";
@@ -16,7 +16,6 @@ export async function getAccess(): Promise<Access & { googleReady: boolean }> {
     const saved = ((await (await db()).collection("app_settings").findOne({ _id: ID })) ?? {}) as Partial<Access>;
     cache = { at: Date.now(), value: {
       open: Array.isArray(saved.open) ? saved.open.filter((p) => ACCESS_PAGES.some((x) => x.path === p)) : DEFAULT_ACCESS.open,
-      studioAsk: STUDIO_ASK.some((x) => x.key === saved.studioAsk) ? saved.studioAsk! : DEFAULT_ACCESS.studioAsk,
       google: typeof saved.google === "boolean" ? saved.google : DEFAULT_ACCESS.google,
     } };
   }
@@ -25,8 +24,7 @@ export async function getAccess(): Promise<Access & { googleReady: boolean }> {
 
 export async function setAccess(patch: Partial<Access>) {
   if (patch.open && !patch.open.every((p) => ACCESS_PAGES.some((x) => x.path === p))) throw new ValidationFailed("Unknown page in the sign-in rules.", { code: "INVALID_ACCESS" });
-  if (patch.studioAsk && !STUDIO_ASK.some((x) => x.key === patch.studioAsk)) throw new ValidationFailed("Unknown moment to ask for an account.", { code: "INVALID_ACCESS" });
-  const clean = { ...(patch.open ? { open: [...new Set(patch.open)] } : {}), ...(patch.studioAsk ? { studioAsk: patch.studioAsk } : {}), ...(typeof patch.google === "boolean" ? { google: patch.google } : {}) };
+  const clean = { ...(patch.open ? { open: [...new Set(patch.open)] } : {}), ...(typeof patch.google === "boolean" ? { google: patch.google } : {}) };
   await (await db()).collection("app_settings").updateOne({ _id: ID }, { $set: { ...clean, updatedAt: new Date() } }, { upsert: true });
   cache = null;
   return getAccess();

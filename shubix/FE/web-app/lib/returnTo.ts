@@ -1,13 +1,13 @@
-import { DEFAULT_ACCESS, safeNext, type StudioAsk } from "@shubix/core/lib/access";
+import { safeNext } from "@shubix/core/lib/access";
 
-/** The studio, at this moment (Generate or Export): nobody is signed in and the administrator wants an account now.
- * Unsure (offline): no, the studio goes on and the server still asks when it must. */
-export async function needsSignIn(moment: StudioAsk): Promise<boolean> {
+/** Generate Reel needs an account, free or paid. Nobody is signed in, or it cannot be checked (offline, the server
+ * asleep or down): sign in first. Only a studio with accounts switched off (a single-person install) goes on. */
+export async function needsSignIn(): Promise<boolean> {
   try {
-    const read = (p: string) => fetch(p, { credentials: "same-origin", headers: { Accept: "application/json" } }).then((r) => r.json());
-    const [me, a] = await Promise.all([read("/api/auth/me"), read("/api/access").catch(() => DEFAULT_ACCESS)]);
-    return !!me?.authEnabled && !me.user && (a?.studioAsk ?? DEFAULT_ACCESS.studioAsk) === moment;
-  } catch { return false; }
+    const r = await fetch("/api/auth/me", { credentials: "same-origin", headers: { Accept: "application/json" } });
+    const me = r.ok ? ((await r.json()) as { authEnabled?: boolean; user?: unknown }) : null;
+    return !me || (me.authEnabled !== false && !me.user);
+  } catch { return true; }
 }
 
 /** The page to return to after signing in (the studio with its Reel kept, a page that needed an account). It waits in
