@@ -649,6 +649,11 @@ let beatsBusy = false;
 // beats are good, and the person must be able to make the Reel at all
 const AI_BEATS_OFF = 'brs-ai-beats-off';
 if(IOS && lifeBefore && lifeBefore.stage === 'checking beats' && Date.now() - lifeBefore.at < 10*60e3) try{ localStorage.setItem(AI_BEATS_OFF, String(Date.now())); }catch(e){}
+// the same for the 4K / HDR clips played as they are (copyLater): after any reload of the studio on this iPhone, their copies
+// are made when they are added again, for a week (less memory, as before)
+const COPY_EARLY = 'brs-copy-early';
+if(IOS && lifeBefore && Date.now() - lifeBefore.at < 10*60e3 && location.pathname !== '/engine') try{ localStorage.setItem(COPY_EARLY, String(Date.now())); }catch(e){}
+function copyEarly(){ try{ return Date.now() - (+localStorage.getItem(COPY_EARLY) || 0) < 7*864e5; }catch(e){ return true; } }
 function aiBeatsOff(){ try{ return Date.now() - (+localStorage.getItem(AI_BEATS_OFF) || 0) < 7*864e5; }catch(e){ return false; } }
 async function checkBeatsWithAi(token){
   if(!aiBeats || !song) return;
@@ -1326,7 +1331,7 @@ async function compressHighResolutionPreview(src, dd){
   if(heavy){
     // an iPhone plays and reads its own 4K / HDR clip itself (Safari decodes it): its edit copy is made at export instead
     // (runExport), as the Android app works, so choosing the clips is not a long wait for copies
-    if(IOS && probe && probe.decodes){ src.copyLater = plan; src.proxyStatus = 'Copy made at export'; updateClipHoverInfo(src); return; }
+    if(IOS && probe && probe.decodes && !copyEarly()){ src.copyLater = plan; src.proxyStatus = 'Copy made at export'; updateClipHoverInfo(src); return; }
     if(!(await makeEditCopy(src, dd, src.facts, plan, true)) && !src.removed) editCopyFailNote(src, src.facts);
     return;
   }
@@ -3949,13 +3954,16 @@ const playerLoaded = v => !!v.getAttribute('src');
 const PLAYERS_MAX = IOS ? 4 : 8, PLAYER_KEEP_MS = 4000;
 function playersAround(i){
   const c = playing || starting ? curIdx : i, keep = new Set(), now = Date.now();
-  for(let k = Math.min(c, i) - 1; k <= Math.max(c, i) + 2; k++) if(edit[k]) keep.add(edit[k].el);
+  // an iPhone playing original 4K / HDR clips (copyLater): only this shot and the next one hold a video, and nothing is kept
+  // longer (each such player holds 100-200 MB there)
+  const tight = IOS && sources.some(s => s.copyLater && !s.edFile), max = tight ? 2 : PLAYERS_MAX, keepMs = tight ? 0 : PLAYER_KEEP_MS;
+  for(let k = Math.min(c, i) - (tight ? 0 : 1); k <= Math.max(c, i) + (tight ? 1 : 2); k++) if(edit[k]) keep.add(edit[k].el);
   const drop = v => { v.pause(); v.removeAttribute('src'); v.load(); };
   const loaded = [];
   for(const s of sources) for(const v of s.els || []) if(playerLoaded(v)){
-    if(!keep.has(v) && now - (v._used || 0) > PLAYER_KEEP_MS) drop(v); else loaded.push(v); }
+    if(!keep.has(v) && now - (v._used || 0) > keepMs) drop(v); else loaded.push(v); }
   const v = edit[i].el; v._used = now; if(!playerLoaded(v) && v._url){ v.src = v._url; loaded.push(v); }
-  loaded.filter(x => !keep.has(x)).sort((a, b) => (a._used || 0) - (b._used || 0)).slice(0, Math.max(0, loaded.length - PLAYERS_MAX)).forEach(drop);
+  loaded.filter(x => x !== v).sort((a, b) => (keep.has(a) ? 1 : 0) - (keep.has(b) ? 1 : 0) || (a._used || 0) - (b._used || 0)).slice(0, Math.max(0, loaded.length - max)).forEach(drop);   // (the shot itself is never let go)
 }
 // quick: Play is waiting. Then the picture gets at most a moment: while clips are being read the phone's video decoder is
 // busy (an iPhone may not answer at all), and the song must start anyway; the shot catches up while it plays.
