@@ -135,7 +135,7 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs: number = 
   const method = (init?.method ?? "GET").toUpperCase();
   for (;;) {
     try { return await (method === "GET" ? clickBusy : tracked)(thrice(() => send<T>(path, init, timeoutMs), init?.signal, method !== "GET")); } // actions light up the activity bar
-    catch (e) { if (!(await askRetry(e, init))) throw e; }   // the server could not be reached: Retry asks again, Close gives the error
+    catch (e) { if (!(await askRetry(e, init, path))) throw e; }   // the server could not be reached: Retry asks again, Close gives the error
   }
 }
 /* Shubix's server could not be reached or failed (no answer, a timeout, 5xx), after the usual retries: a popup in the app's
@@ -144,8 +144,9 @@ async function request<T>(path: string, init?: RequestInit, timeoutMs: number = 
  * shows it where it belongs. */
 const SERVER_TROUBLE = new Set(["NETWORK_ERROR", "SERVER_DOWN", "SERVER_TIMEOUT"]);
 let asking: Promise<boolean> | null = null;
-async function askRetry(e: unknown, init?: RequestInit): Promise<boolean> {
+async function askRetry(e: unknown, init?: RequestInit, path = ""): Promise<boolean> {
   if (!(e instanceof ApiError) || !SERVER_TROUBLE.has(e.code) || init?.signal?.aborted || typeof document === "undefined") return false;
+  void import("@/lib/useErrorReport").then((m) => m.reportError("api", `${e.code} ${e.status} ${(init?.method ?? "GET").toUpperCase()} ${path} after 3 tries`)).catch(() => {});
   asking ??= import("@/components/molecules/ConfirmDialog").then(({ confirmAction }) => confirmAction({
     title: "Shubix is not answering right now",
     body: "Our team is working on it. Check your internet, then press Retry. Nothing you made here is lost.",

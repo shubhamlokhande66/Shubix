@@ -8,13 +8,17 @@ type Ctx<P> = { params: Promise<P> };
 /** A route handler with the app's error model: an AppError becomes its JSON error, anything else a 500. */
 export function route<P = Record<string, string>>(fn: (req: Request, params: P) => Promise<Response | unknown>) {
   return async (req: Request, ctx: Ctx<P>): Promise<Response> => {
+    let uid: string | null = null;
     try {
-      const uid = await resolveUser(req); // accounts on: the signed-in user for this request and the jobs it starts
+      uid = await resolveUser(req); // accounts on: the signed-in user for this request and the jobs it starts
       const out = await withUser(uid, async () => fn(req, await ctx.params));
       if (out instanceof Response) return out;
       return out === undefined ? new Response(null, { status: 204 }) : Response.json(out);
     } catch (e) {
-      return errorResponse(e);
+      const res = errorResponse(e);
+      // seen in Admin → Errors (never in the way of the answer)
+      void import("../clientErrors").then((m) => m.recordServerError(req, res.status, e, uid)).catch(() => {});
+      return res;
     }
   };
 }

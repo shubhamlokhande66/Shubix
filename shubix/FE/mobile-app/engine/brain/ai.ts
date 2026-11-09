@@ -71,7 +71,7 @@ async function aiRun(){
     ES.aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => framesMade.delete(s));
-    if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // never the phone's own edit instead
+    if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(e, 'looking at the clips'); return; }   // never the phone's own edit instead
     ES.aiGaveUp = EH.reelIdNow();
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
     EH.chatFail('Shubix could not look at your clips right now. Try again in a moment.');
@@ -157,7 +157,7 @@ async function paceRun(key){
 /* Shubix AI could not do this Reel after a minute of asking (the server down): no Reel from the phone's own edit. Make Reel
  * says so (nativeEngine "ai" fails with TEAM_MSG); the server gives back any credits taken. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
-function aiDown(){ if(!ES.aiOn) return; ES.aiDown = true; ES.aiGaveUp = EH.reelIdNow();   // (nothing is waited for any more)
+function aiDown(e, step){ if(!ES.aiOn) return; ES.aiDown = true; ES.aiDownWhy = (step || '?') + ': ' + String(e && e.message || e || '?').slice(0, 200); ES.aiGaveUp = EH.reelIdNow();   // (nothing is waited for any more)
   EH.aiStat(TEAM_MSG); EH.chatFail(TEAM_MSG); EH.aiLog('Shubix AI was not available. ' + TEAM_MSG); }
 async function directorRun(key){
   ES.dirBusy = true; EH.aiStat('Shubix is choosing every shot, transition and effect…');
@@ -194,13 +194,13 @@ async function directorRun(key){
   }catch(e){
     ES.dirFailedKey = key;
     const back = EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(); }
+    if(late){ aiDown(e, 'the plan (late)'); }
     else {
       EH.chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) EH.aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
-    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown();
+    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown(tm.timedOut() ? 'timed out after 4 min' : e, 'the plan');
   }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,

@@ -2224,7 +2224,7 @@ async function aiRun(){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => { delete s.aiFramesMade; });
-    if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
+    if(aiOn){ console.warn('AI picks failed:', e); aiDown(e, 'looking at the clips'); return; }   // no Reel from the phone's own edit (aiDown)
     aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
   }
@@ -2921,12 +2921,17 @@ const dirCache = new Map();
  * 1 s then 2 s apart; after the third it fails and the person gets the popup (Retry / Close). A real "no" (no credits, not
  * allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
+const report = (kind, msg) => { try{ window.__shubixReport && window.__shubixReport(kind, String(msg).slice(0, 380)); }catch(e){} };   // Admin → Errors
+const device = () => (IOS ? 'iPhone' : /Android/i.test(navigator.userAgent) ? 'Android' : 'computer') + ' · ' + sources.length + ' clips';
+let lastApiFail = '';   // why the last call failed (for Shubix AI's report)
 async function apiFetch(url, opts = {}){
+  const t0 = Date.now(), path = String(url).split('?')[0];
   for(let n = 1; ; n++){
     let r = null;
     try{ r = await fetch(url, opts); if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r; }
     catch(e){ if(e && e.name === 'AbortError') throw e; }
-    if(n >= 3){ if(r) return r; throw new Error(TEAM_MSG); }
+    if(n >= 3){ lastApiFail = (r ? r.status : 'no answer') + ' ' + path; report('api', lastApiFail + ' after 3 tries, ' + Math.round((Date.now() - t0)/1000) + ' s · ' + device());
+      if(r) return r; throw new Error(TEAM_MSG); }
     await new Promise(ok => setTimeout(ok, 1000*n));
     if(opts.signal && opts.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
   }
@@ -2934,8 +2939,9 @@ async function apiFetch(url, opts = {}){
 // Shubix AI could not do this Reel after that minute: the Reel waits (not shown, played or exported), a popup says so,
 // and its button asks Shubix again. The server gives back any credits taken for it.
 let aiDownAt = '';
-function aiDown(){
+function aiDown(e, step){
   if(!aiOn) return;
+  report('ai', 'Shubix AI not available at ' + (step || '?') + ': ' + String(e && e.message || e || lastApiFail || '?').slice(0, 200) + ' · ' + device());
   const id = reelIdNow(), go = $('aiaskgo'); aiGaveUp = id; aiStat(TEAM_MSG); chatFail(TEAM_MSG);   // (nothing is waited for any more)
   root.classList.add('aineed'); go.dataset.down = '1'; go.dataset.low = ''; delete go.dataset.change;
   $('aiaskt').textContent = 'Shubix AI is not available right now'; $('aiaskp').textContent = TEAM_MSG; go.textContent = 'Try again';
@@ -3115,12 +3121,12 @@ async function directorRun(key){
   }catch(e){
     dirFailedKey = key;
     const back = aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(); }
+    if(late){ aiDown(e, 'the plan (late)'); }
     else {
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
-      if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown();
+      if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown(tm.timedOut() ? 'timed out after 4 min' : e, 'the plan');
     }
   }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
 }
