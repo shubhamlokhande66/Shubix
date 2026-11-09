@@ -22,11 +22,11 @@ describe("api client", () => {
     expect(errorMessage(err)).toBe("Upload a music file first.");
   });
 
-  it("handles non-JSON error responses", async () => {
+  it("says a technical issue when the hosting answers instead of the server (non-JSON 5xx)", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>bad gateway</html>", { status: 502 })));
     const err = await api.voices().catch((e) => e);
-    expect(err.code).toBe("HTTP_ERROR");
-    expect(err.message).toContain("502");
+    expect(err.code).toBe("SERVER_DOWN");
+    expect(err.message).toMatch(/Technical issue: our team is looking into it/);
   });
 
   it("reports an unreachable server clearly (after retrying the read)", async () => {
@@ -40,7 +40,7 @@ describe("api client", () => {
     const err = await pending;
     vi.useRealTimers();
     expect(err.code).toBe("NETWORK_ERROR");
-    expect(err.message).toMatch(/backend/i);
+    expect(err.message).toMatch(/Technical issue: our team is looking into it/);
     expect(fetch).toHaveBeenCalledTimes(4); // the first try and 3 retries
   });
 

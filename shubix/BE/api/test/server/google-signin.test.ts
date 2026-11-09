@@ -93,14 +93,13 @@ describe("the account", () => {
 
 describe("the sign-in rules", () => {
   it("open the administrator's pages and their sub-pages; legal pages always; the person's own pages never", async () => {
-    const a = await X.setAccess({ open: ["/", "/guides", "/create/music"], studioAsk: "export" });
-    expect(a).toMatchObject({ studioAsk: "export", googleReady: true });
+    const a = await X.setAccess({ open: ["/", "/guides", "/create/music"] });
+    expect(a).toMatchObject({ google: true, googleReady: true });
     for (const p of ["/", "/guides/beat-synced-reel", "/create/music", "/terms"]) expect(L.isOpen(p, a)).toBe(true);
     for (const p of ["/reels", "/account", "/create/photo", "/pricing", "/guidesx"]) expect(L.isOpen(p, a)).toBe(false);
   });
-  it("keep only known pages and moments", async () => {
+  it("keep only known pages", async () => {
     await expect(X.setAccess({ open: ["/admin"] })).rejects.toThrow(/Unknown page/);
-    await expect(X.setAccess({ studioAsk: "never" as never })).rejects.toThrow(/Unknown moment/);
     expect((await X.getAccess()).open).toEqual(L.DEFAULT_ACCESS.open);
   });
   it("return only to a page of this site", () => {

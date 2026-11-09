@@ -28,7 +28,6 @@ let readyToldGen = '', bgSeq = 0; if(typeof document !== 'undefined') document.a
 const decFile = s => s.edFile || s.file;
 import { parseDirectorVisualIntent } from './visualIntent';
 import { bootPart } from '../../lib/boot';
-import { needsSignIn, signInThen } from '../../lib/returnTo';
 
 export function initStudio(root, deps) {
   const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, loadRnnoise = null, cloud = null, tts = null } = deps;
@@ -6155,11 +6154,7 @@ $('xgo').addEventListener('click', async () => { const L = lockedUsed(); if(L.le
   wmOff = wmPaid && xq.nowm; sheetOpen(false); runExport(!!cloudInfo && cloudInfo.used < cloudInfo.limit && xq.my); }, SIG);
 $('xgocloud').addEventListener('click', async () => { const L = lockedUsed(); if(L.length){ if(!(await planGate(L))) return; renderEDL(true); renderOvList(); }
   sheetOpen(false); runExport(true); }, SIG);
-$('export').onclick = async () => { if(recording || exportBusy) return;
-  // nobody signed in and the administrator asks for an account at export: the Reel is kept on this device, the sign-in
-  // page opens, and it comes back to this Reel in the editor
-  if(!IN_APP && await needsSignIn('export')){ const id = await saveNow(); signInThen(id ? '/editor?p=' + encodeURIComponent(id) : location.pathname); return; }
-  if(root.classList.contains('aineed') && !$('aiaskgo').dataset.change){ $('aiaskgo').click(); return; } sheetOpen(true); };
+$('export').onclick = () => { if(recording || exportBusy) return; if(root.classList.contains('aineed') && !$('aiaskgo').dataset.change){ $('aiaskgo').click(); return; } sheetOpen(true); };
 
 async function saveToMyReels(blob){
   if(!cloud) return;
