@@ -10,3 +10,10 @@ button, [role=button], a[href], summary, label[for] { cursor: pointer; }
 button:disabled, button[aria-disabled=true], [role=button][aria-disabled=true], a[aria-disabled=true] { cursor: not-allowed !important; pointer-events: auto !important; }
 /* a click on what is inside a button that is off must not reach the page's own click handlers (browsers send it past the button) */
 button:disabled *, button[aria-disabled=true] *, [role=button][aria-disabled=true] *, a[aria-disabled=true] * { pointer-events: none !important; }
+
+/* A button whose click is running a request (lib/activity.ts sets aria-busy): no second click, a spinner in it. */
+:is(button, [role="button"], a.btn)[aria-busy="true"] { pointer-events: none; cursor: progress; opacity: .85; }
+/* (one spinner only: not on a button that shows its own, the Button atom's `loading` or a spinner inside, nor the studio's steps) */
+:is(button, [role="button"], a.btn)[aria-busy="true"]:not([data-loading], .fgen, .fnext, :has(.animate-spin))::after { content: ""; display: inline-block; width: 14px; height: 14px; margin-inline-start: 8px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: busyspin .8s linear infinite; }
+@keyframes busyspin { to { transform: rotate(360deg); } }
+

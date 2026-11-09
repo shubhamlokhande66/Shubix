@@ -361,4 +361,12 @@ describe("Shubix AI as the editor: texts and other tools", () => {
     const p = prompt(req(2));
     for (const w of ["TEXTS", "cutout", "OTHER TOOLS", '"do":"layer"', '"do":"captions"', '"actions"']) expect(p).toContain(w);
   });
+  it("keeps Shubix stickers (a known shape, no words needed) and drops unknown ones", () => {
+    const base = { start: 0, end: 2, x: 0.7, y: 0.5, size: 1, style: "bold", color: "#FF0000", anim: "pop", loop: "pulse", out: "none", font: "", behind: false, track: false, emoji: false, keys: [] };
+    const out = cleanTexts([{ ...base, text: "", stk: "arrow" }, { ...base, text: "", stk: "nope" }, { ...base, text: "", stk: "constructor" }, { ...base, text: "", stk: "__proto__" }, { ...base, text: "Hi", stk: "" }]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ stk: "arrow", emoji: true, text: "Arrow", color: "#FF0000", loop: "pulse" });
+    expect(out[1]).not.toHaveProperty("stk");
+    expect(prompt(req(2))).toContain('"stk"');
+  });
 });

@@ -154,9 +154,10 @@ export function TaskHost({ cancel, cancelReel, cantCancel, hide, words = (s) => 
           {g && lock ? (
             <Button full variant="secondary" disabled icon="back" title={cancel} onPress={() => {}} />
           ) : g ? (
-            <View className="flex-row gap-2">
-              <Button className="flex-1" variant="secondary" icon="back" title={cancel} onPress={g.onCancel} />
-              <Button className="flex-1" variant="destroy" title={cancelReel} onPress={g.onCancelReel} />
+            <View className="items-center gap-1">
+              {/* Stop: pauses here, nothing is lost (Make Reel goes on later); Discard Reel, small and red: asks once, removes it */}
+              <Button full variant="secondary" icon="back" title={cancel} onPress={g.onCancel} />
+              <Button size="sm" variant="danger" className="self-center" title={cancelReel} onPress={g.onCancelReel} />
             </View>
           ) : late ? <Button full variant="secondary" title={hide} onPress={() => setHidden(all.map((t) => t.id))} /> : null}
         </View>

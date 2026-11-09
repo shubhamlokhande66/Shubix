@@ -10,22 +10,37 @@ export type ClientOptions = {
   getToken?: () => Promise<string | null> | string | null;
   setToken?: (token: string | null) => Promise<void> | void;
   mobile?: boolean;
+  /** the server could not be reached or failed (no answer, 408, 429, 5xx): true asks again (the app's Retry popup) */
+  onServerTrouble?: (e: ApiError) => Promise<boolean>;
+  /** a call starts: what it returns is called when the call ends (the pressed button's spinner) */
+  onStart?: () => (() => void) | null;
 };
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Please try again.");
 
 export function createApiClient(o: ClientOptions) {
   const base = o.baseUrl.replace(/\/$/, "");
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(path: string, init: RequestInit = {}, tries = 1): Promise<T> {
+    if (tries > 1) return call<T>(path, init, tries);
+    const end = o.onStart?.() ?? null;
+    try { return await call<T>(path, init, tries); } finally { end?.(); }
+  }
+  async function call<T>(path: string, init: RequestInit, tries: number): Promise<T> {
     const headers = new Headers(init.headers);
     if (typeof init.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (o.mobile) headers.set("X-Client", "mobile");
     const token = await o.getToken?.();
     if (token) headers.set("Authorization", `Bearer ${token}`);
     let r: Response;
+    // the server could not answer: tried 3 times by itself (1 s, 2 s apart), then the app's Retry / Close popup
+    const again = async (e: ApiError): Promise<T> => {
+      if (init.signal?.aborted) throw e;
+      if (tries < 3) { await new Promise((ok) => setTimeout(ok, 1000 * tries)); return request<T>(path, init, tries + 1); }
+      if (o.onServerTrouble && (await o.onServerTrouble(e))) return request<T>(path, init); throw e; };
     try { r = await fetch(base + path, { ...init, headers, credentials: "include" }); }
-    catch { throw new ApiError("Cannot reach the server. Check your connection.", 0, "NETWORK"); }
+    catch { return again(new ApiError("Cannot reach the server. Check your connection.", 0, "NETWORK")); }
     const data = r.status === 204 ? null : await r.json().catch(() => null);
-    if (!r.ok) { const e = (data as ApiErrorBody | null)?.error; throw new ApiError(e?.message ?? `Request failed (${r.status})`, r.status, e?.code ?? "HTTP_" + r.status, e?.details); }
+    if (!r.ok) { const e = (data as ApiErrorBody | null)?.error, err = new ApiError(e?.message ?? `Request failed (${r.status})`, r.status, e?.code ?? "HTTP_" + r.status, e?.details);
+      if (r.status === 408 || r.status === 429 || r.status >= 500) return again(err); throw err; }
     return data as T;
   }
   const post = <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });

@@ -3,6 +3,7 @@
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed } from './pure';
 import { TR_DUR } from '@mobile/core/lib/shaders';
+import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
 
 export function createEditBrain(ES, EH){
@@ -1020,6 +1021,7 @@ function fingerprintOf(R){
 function voPcm(){ if(!ES.vo) return null; if(ES.au.vfx === 'none') return ES.vo.pcm;
   const k = ES.vo.key + '|' + ES.au.vfx + '|' + ES.denoiseOn; if(!EH.fxCache.has(k)){ EH.fxCache.clear(); EH.fxCache.set(k, voiceFx(ES.vo.pcm, ES.vo.sr, ES.au.vfx)); } return EH.fxCache.get(k); }
 function sfxSynth(kind, sr){
+  const rec = sfxRecorded(kind, sr); if(rec) return rec;   // the recorded ones (CC0, core/lib/sfx-recorded)
   const key = kind + sr; if(EH.sfxCache.has(key)) return EH.sfxCache.get(key);
   const len = { whoosh: 0.42, pop: 0.09, boom: 0.9, click: 0.09, riser: 1.2, ding: 0.7, swish: 0.22, impact: 0.6, glitch: 0.35, laser: 0.3, heartbeat: 0.8, tick: 0.03, chime: 1.4, drop: 1.4, rewind: 0.7, notify: 0.45 }[kind] || 0.3, n = Math.round(len*sr), y = new Float32Array(n);
   let seed = 7; const rnd = () => { seed = (seed*16807) % 2147483647; return seed/2147483647*2 - 1; };

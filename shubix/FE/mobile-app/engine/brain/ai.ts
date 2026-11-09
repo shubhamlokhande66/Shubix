@@ -5,6 +5,7 @@
 import { songSample, toSlots } from './pure';
 import { sectionsOf } from '../components/studio/soundmap';
 import { TEXT_TEMPLATES } from '@mobile/core/lib/text-templates';
+import { STICKERS } from '@mobile/core/lib/stickers';
 
 export function createAiBrain(ES, EH){
 const framesMade = new WeakMap();   // a clip's frames are made once (Cancel, then Proceed: not again)
@@ -69,8 +70,9 @@ async function aiRun(){
   }catch(e){
     ES.aiBusy = false;
     if(e && e.name === 'AbortError') return;
-    ES.aiGaveUp = EH.reelIdNow();   // nothing more comes from Shubix for this Reel: it is final as the phone made it
     need.forEach(s => framesMade.delete(s));
+    if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // never the phone's own edit instead
+    ES.aiGaveUp = EH.reelIdNow();
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
     EH.chatFail('Shubix could not look at your clips right now. Try again in a moment.');
     EH.aiLog('Shubix AI could not look at your clips this time: your Reel uses the phone’s own edit.');
@@ -152,19 +154,23 @@ async function paceRun(key){
     if(!ES.dirBusy && /…$/.test(EH.aiStatText())) EH.aiStat('Your Reel keeps the song\'s own pace.');
   }finally{ ES.paceBusy = false; tm.done(); }
 }
+/* Shubix AI could not do this Reel after a minute of asking (the server down): no Reel from the phone's own edit. Make Reel
+ * says so (nativeEngine "ai" fails with TEAM_MSG); the server gives back any credits taken. */
+const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
+function aiDown(){ if(!ES.aiOn) return; ES.aiDown = true; ES.aiGaveUp = EH.reelIdNow();   // (nothing is waited for any more)
+  EH.aiStat(TEAM_MSG); EH.chatFail(TEAM_MSG); EH.aiLog('Shubix AI was not available. ' + TEAM_MSG); }
 async function directorRun(key){
   ES.dirBusy = true; EH.aiStat('Shubix is choosing every shot, transition and effect…');
-  // 45 s: the phone's own edit is shown and the person can go on; the request is NOT dropped (the plan is paid for): when it
-  // comes later it is offered ("Use it"). 4 min: given up (the server's AI gives up before that and the credits come back).
+  // the loader stays until Shubix answers (a down server is asked again for a minute: apiFetch); 4 min: given up (the
+  // server's AI gives up before that and the credits come back). Never the phone's own edit instead: aiDown.
   const tm = timeoutSignal(240000);
   let late = false;
-  const soft = setTimeout(() => { late = true; ES.dirBusy = false; ES.dirFailedKey = key;
-    EH.aiStat('Shubix is taking longer than usual. Your Reel uses the phone\'s own smart edit for now; Shubix\'s plan comes as soon as it is ready.'); }, 45000);
+  const soft = setTimeout(() => EH.aiStat('Shubix is still working on your Reel…'), 75000);   // no phone's edit meanwhile: the loader stays
   try{
     await hearSong();
     const cands = EH.directorCandidates(); ES.dirCands = cands;
     const { req, ctx } = EH.dirRequest(cands), sig = EH.planSig(), mix = ES.mixNo, st = EH.mixStore();
-    const r = await EH.apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
+    const r = await EH.apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });   // (asked again for a minute: nativeEngine apiFetch)
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
     const slots = toSlots(res.slots, cands);
@@ -188,13 +194,13 @@ async function directorRun(key){
   }catch(e){
     ES.dirFailedKey = key;
     const back = EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ EH.aiStat('Shubix could not plan this Reel. It keeps the phone\'s own smart edit' + back); }
+    if(late){ aiDown(); }
     else {
       EH.chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) EH.aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
-    if(late || !(e && e.name==='AbortError') || tm.timedOut()) EH.aiLog('Shubix AI could not plan this Reel: it uses the phone’s own edit' + back);
+    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown();
   }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,
@@ -202,7 +208,7 @@ async function directorRun(key){
 function aiTexts(list){
   if(!Array.isArray(list) || !list.length) return 0;
   const D = EH.reelLen();
-  ES.overlays = ES.overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ES.ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji, style: x.style, color: x.color, anim: x.anim,
+  ES.overlays = ES.overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ES.ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji || !!STICKERS[x.stk], ...(STICKERS[x.stk] ? { stk: x.stk } : {}), style: x.style, color: x.color, anim: x.anim,
     loop: x.loop === 'none' ? undefined : x.loop, out: x.out === 'none' ? undefined : x.out, font: x.font || undefined, behind: !!x.behind, track: !!x.track, x: x.x, y: x.y, size: x.size, all: false, ...(Number.isFinite(x.focus) ? { focus: x.focus } : {}),
     t0: Math.max(0, Math.min(D - 0.1, x.start)), t1: Math.max(0.1, Math.min(D, x.end)), uk: (x.keys || []).map(k => ({ t: k.at, x: k.x, y: k.y, s: k.s, r: k.r, o: k.o, ez: k.ez })) })));
   ES.overlays.filter(o => o.font).forEach(o => EH.loadFont(o.font).then(EH.redraw));

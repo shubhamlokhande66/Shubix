@@ -137,7 +137,7 @@ export const LENGTHS = [0, 15, 30, 60];
 
 /** Adjust Music (the website's waves): the song in a row, its bars, the part the Reel uses as a box (Shubix places it
  * on the best part; drag it anywhere, a tap plays it from there), a line where the song is, and the Reel's length. */
-export function FlowAdjust({ song, music, length, start, onLength, onStart }: { song: Song; music?: SongAnalysis | null; length: number; start: number; onLength: (n: number) => void; onStart: (t: number) => void }) {
+export function FlowAdjust({ song, music, length, start, onLength, onStart, locked = false }: { song: Song; music?: SongAnalysis | null; length: number; start: number; onLength: (n: number) => void; onStart: (t: number) => void; locked?: boolean }) {
   const words = useStudioText(), look = useColors(), player = useAudioPlayer(song.uri), status = useAudioPlayerStatus(player);
   const duration = music?.duration || song.duration || status.duration || 0, len = length && duration ? Math.min(length, duration) : duration;
   const [drag, setDrag] = useState<number | null>(null), from = drag ?? start, box = useRef({ width: 1, grab: 0, moved: false, x0: 0 });
@@ -187,7 +187,9 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart }: { 
       </View>
       <View className="gap-2.5">
         <Label>{words("Reel length")}</Label>
-        <View className="flex-row flex-wrap gap-2">
+        {/* "Make the Reel as long as my clips": the clips decide, these are off */}
+        {locked && <Text className="-mt-1 text-[12px] text-muted">{words("Set by your clips (Make the Reel as long as my clips)")}</Text>}
+        <View className={`flex-row flex-wrap gap-2 ${locked ? "opacity-40" : ""}`} pointerEvents={locked ? "none" : "auto"}>
           {[...LENGTHS, -1].map((n) => {
             const on = n === -1 ? custom : !custom && length === n; // -1: Custom
             return (

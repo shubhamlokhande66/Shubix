@@ -2,7 +2,7 @@
  * What Fast Studio is doing right now, in a popup at the centre of the screen; the page behind it is frozen until the work
  * is over: one card per process (adding the song, checking the beats, reading the clips, AI, captions, export, saving to
  * My Reels) with a small live animation for its kind instead of a spinner, the step in plain words, a progress bar and the
- * time left. A failure becomes a message with OK (Toaster). In the Create flow its Cancel and Cancel Reel stop the work
+ * time left. A failure becomes a message with OK (Toaster). In the Create flow its Stop and Discard Reel stop the work
  * (setGuard); once the AI has answered they are off (lock); elsewhere the popup can be hidden after a while. On a phone the
  * export has its own screen (flow.ts). Styled with Tailwind (animations: app/globals.css @theme).
  * Each change is also told to the page as a "studio-task" event on the host ({ id, kind, state, p, title }), so the
@@ -112,8 +112,9 @@ export function createTasks(host: HTMLElement) {
     if (notes.length) void stayAwake(true);
     if (!notes.length) stopNotes(); else if (!noteTimer) noteTimer = setInterval(() => { why.textContent = notes[++note % notes.length]; }, 3500);
     acts.textContent = "";
-    if (guard && locked) button(Button.secondary, tx("Cancel"), () => {}, true);
-    else if (guard) { const g = guard; button(Button.secondary, tx("Cancel"), g.onCancel); button(Button.danger, tx("Cancel Reel"), g.onCancelReel); }
+    // Stop: pauses here, nothing is lost (Make Reel goes on later); Discard Reel, quiet and red: asks once, removes it
+    if (guard && locked) button(Button.secondary, tx("Stop"), () => {}, true);
+    else if (guard) { const g = guard; button(Button.secondary, tx("Stop"), g.onCancel); button(Button.danger, tx("Discard Reel"), g.onCancelReel); }
     else if (hideOk) button(Button.secondary, tx("Hide"), () => { cards.forEach((_, id) => hiddenIds.add(id)); refresh(); });
   }
   const emit = (e: TaskEvent) => host.dispatchEvent(new CustomEvent<TaskEvent>("studio-task", { detail: e }));

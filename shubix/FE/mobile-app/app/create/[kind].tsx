@@ -46,7 +46,7 @@ function CreateFlowScreen() {
   // what a job finishing behind the screen has changed, for Make Reel, which waited for it
   const now = useRef({ music, start, length }); now.current = { music, start, length };
   const [price, setPrice] = useState<{ on: boolean; cost: number; balance: number | null } | null>(null);
-  const keptBy = useRef(new Map<string, { clip: ProjectClip; name: string }>()), copied = useRef(0), lengthLater = useRef(0), badTold = useRef(0);
+  const keptBy = useRef(new Map<string, { clip: ProjectClip; name: string }>()), copied = useRef(0), lengthLater = useRef(0), badTold = useRef(0), longOk = useRef("");
   const lengthChosen = useRef(false), onScreen = useRef(true), DRAFT = `create-draft-${kind}`;
   useEffect(() => { void recentSongs().then(setRecent); }, []);
 
@@ -63,9 +63,9 @@ function CreateFlowScreen() {
     if (stage.current === "clips") askAgain.current = true;
     if (stage.current === "ai") setStep("clips");
   };
-  // Cancel Reel: nothing of it stays, back to Home
+  // Discard Reel: nothing of it stays, back to Home
   async function cancelReel() {
-    if (!(await confirmAction({ title: words("Cancel this Reel?"), body: words("Your song, clips and progress for this Reel will be removed."), ok: words("Cancel Reel"), cancel: words("Keep working"), danger: true }))) return;
+    if (!(await confirmAction({ title: words("Discard this Reel?"), body: words("Your song, clips and progress for this Reel will be removed."), ok: words("Discard Reel"), cancel: words("Keep working"), danger: true }))) return;
     stop(); forgetKeptFiles(draft.current); void AsyncStorage.removeItem(DRAFT); router.replace("/");
   }
   const act = useRef({ cancelWork, cancelReel }); act.current = { cancelWork, cancelReel };
@@ -77,7 +77,7 @@ function CreateFlowScreen() {
   useEffect(() => { if (Platform.OS === "web") return; const h = BackHandler.addEventListener("hardwareBackPress", () => { back(); return true; }); return () => h.remove(); }); // Android back: the screen before
   // Next while its work was cancelled: the work again, or not; true on Proceed
   const notDone = async (body: string) => {
-    const v = await askAction({ title: words("Analysis not done"), body, ok: words("Proceed"), cancel: words("Cancel"), extra: words("Cancel Reel") });
+    const v = await askAction({ title: words("Analysis not done"), body, ok: words("Continue"), cancel: words("Not now"), extra: words("Discard Reel") });
     if (v === 2) void cancelReel();
     return v === 0;
   };
@@ -196,6 +196,25 @@ function CreateFlowScreen() {
     await new Promise((ok) => setTimeout(ok, 0));
     return "go";
   }
+  /* "Make the Reel as long as my clips" (on): the clips decide the length. Good video shorter than the song: the Reel is that
+   * long (the song's best part); as long or longer: the whole song; much longer: the person chooses (a longer song, fewer
+   * clips, or Shubix picks the best). Less than 5 s: more clips. */
+  async function fitLength(have: number): Promise<"stop" | "go"> {
+    const secs = Math.floor(have), full = now.current.music?.duration || song?.duration || 0;
+    if (secs < 5 || !full) return tooShort(have, length || full);
+    const key = `${secs}:${Math.round(full)}`;
+    if (secs > full * 1.1 && longOk.current !== key) {
+      const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")} min` : `${Math.round(s)} s`);
+      const v = await askAction({ title: words("Your clips are longer than your song"), body: words("Your song is {s} and your clips have {c} of good video. No credits were used.", { s: fmt(full), c: fmt(secs) }),
+        ok: words("Shubix picks the best {s}", { s: fmt(full) }), cancel: words("Add a longer song"), extra: words("I'll remove some clips") });
+      if (v === 1) { go("choose"); return "stop"; }
+      if (v !== 0) return "stop";
+      longOk.current = key;
+    }
+    const target = secs < full * 0.95 ? secs : 0;   // 0: the whole song
+    if (target !== length) { lengthChosen.current = true; if (now.current.music) await lengthTo(target); else { setLength(target); lengthLater.current = target || -1; } await new Promise((ok) => setTimeout(ok, 0)); }
+    return "go";
+  }
   async function make() {
     // the one popup from here on, and the screen stays on
     tasks.quiet(false); keepAwake(true, words("Shubix is making your Reel"));
@@ -210,12 +229,7 @@ function CreateFlowScreen() {
     if (again) {
       draft.current = `draft-${Date.now()}`; kept.current = { uris: [], clips: [] }; keptBy.current = new Map(); copied.current = 0; read.current = null;
     }
-    // a plan without Shubix AI is asked first, without waiting for the clips
-    if (engineOn && song && !(await engine.aiOn().catch(() => true))) {
-      const v = await askAction({ title: words("Make it perfect with Shubix AI"), body: words("Continue free with your phone's own edit, or add more credits for Shubix AI."), ok: words("Add more credits"), cancel: words("Free") });
-      if (v === 0) router.push("/credits");
-      if (v !== 1) return;
-    }
+    // (a plan without Shubix AI: no offer in between, Make Reel makes the Reel in one popup; the plans are on the screen)
     // too few credits: said at once, before any waiting; without a plan the Reel can still be made by the phone's own edit, on a plan it waits for credits
     const p = engineOn && song ? await engine.aiPrice().catch(() => null) : null;
     if (p?.on && p.cost && p.balance !== null && p.balance < p.cost) {
@@ -226,7 +240,7 @@ function CreateFlowScreen() {
     // too few clips can be said now: their lengths are known (photos fit any length)
     if (engineOn && song && media.every((m) => m.type !== "image" && m.duration)) {
       const have = media.reduce((t, m) => t + (m.duration ?? 0) / 1000, 0), need = length || now.current.music?.duration || song.duration || 0;
-      if (need && have < need * 0.95 && (await tooShort(have, need)) === "stop") return;
+      if (settings.fit === false && need && have < need * 0.95 && (await tooShort(have, need)) === "stop") return;   // (on: after the reading, fitLength)
     }
     // what is still being read behind the screen: the popup shows it now
     await queue.current; await new Promise((ok) => setTimeout(ok, 0));
@@ -240,7 +254,7 @@ function CreateFlowScreen() {
       if (!(await readClips(media))) return;
     }
     // what the reading found, before Shubix AI and before any credits: a clip left out, too little good video
-    if (lengthLater.current) { const n = lengthLater.current; lengthLater.current = 0; await lengthTo(n); await new Promise((ok) => setTimeout(ok, 0)); }
+    if (lengthLater.current) { const n = lengthLater.current; lengthLater.current = 0; await lengthTo(n === -1 ? 0 : n); await new Promise((ok) => setTimeout(ok, 0)); }
     const bad = media.filter((m) => clipBad.current[m.uri] === "bad").length;
     if (bad && badTold.current !== bad) {
       const v = await askAction({ title: words(bad > 1 ? "{n} clips could not be read" : "{n} clip could not be read", { n: bad }), body: words("They are left out of your Reel. No credits were used."), ok: words("Continue without them"), cancel: words("Go back") });
@@ -249,7 +263,8 @@ function CreateFlowScreen() {
     }
     if (engineOn && song) {
       const f = await engine.footage().catch(() => null);
-      if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need)) === "stop") return;
+      if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have)) === "stop") return; }
+      else if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need)) === "stop") return;
     }
     const id = draft.current, { sources } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
     let clips = read.current!.clips, studio = false;
@@ -274,7 +289,11 @@ function CreateFlowScreen() {
       await queryClient.invalidateQueries({ queryKey: ["drafts"] }); making.current = false; tasks.clear("flow"); tasks.unlock();
       notifyAway(words("Your Reel is ready"), words("Open Shubix to see it"), "/");
       setStep("clips"); router.push({ pathname: "/editor", params: { id } }); // back from the editor: the clips again
-    } catch (e) { const gone = !making.current; making.current = false; tasks.clear("flow"); tasks.unlock(); if (!gone) tell(errorMessage(e), "danger"); setStep("clips"); }
+    } catch (e) {
+      const gone = !making.current; making.current = false; tasks.clear("flow"); tasks.unlock(); setStep("clips");
+      // a popup with Retry (Make Reel again, from where it is) and Close (the clips, nothing lost)
+      if (!gone && (await askAction({ title: words("Your Reel could not be made"), body: errorMessage(e), ok: words("Retry"), cancel: words("Close") })) === 0) void make();
+    }
   }
 
   // Shubix AI's price and the balance, on the screen before Make Reel (pressing it is the answer)
@@ -325,12 +344,12 @@ function CreateFlowScreen() {
   const title = { intro: "", choose: kind === "copy" ? words("Music") : words("Add your song"), adjust: words("Adjust Music"), clips: words(photos ? "Add Your Photos" : "Add Your Clips"), analyse: "" }[step];
   return (
     <View className="flex-1 bg-background">
-      <FlowHead title={title} at={{ intro: 1, choose: 1, adjust: 1, clips: 2, analyse: 3 }[step]} onBack={back} onSkip={step === "intro" ? () => go(order[1]) : undefined} />
+      <FlowHead title={title} at={{ intro: 1, choose: 1, adjust: 1, clips: 2, analyse: 3 }[step]} onBack={back} />
       <ScrollView className="flex-1" contentContainerClassName="px-4 pb-6 pt-2" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
         {step !== "intro" && step !== "analyse" && <View className="mb-4"><AskShubix onAsk={(t) => { setWish((w) => `${w} · ${t}`.replace(/^ · /, "").slice(-800)); return words("Got it! I'll edit your Reel this way as soon as it is made."); }} /></View>}
         {step === "intro" && <FlowIntro kind={kind} />}
         {step === "choose" && <FlowChoose kind={kind} song={song} recent={recent} busy={reading} onPick={() => void choose(() => pickSong())} onPickReel={() => void choose(() => pickSong("video"))} onRecent={(s) => void pickRecent(s)} onForget={(uri) => { setRecent((r) => r.filter((s) => s.uri !== uri)); if (song?.uri === uri) setSong(null); }} />}
-        {step === "adjust" && song && <FlowAdjust song={song} music={music} length={length} start={start} onLength={(n) => void lengthTo(n)} onStart={(t) => void partFrom(t)} />}
+        {step === "adjust" && song && <FlowAdjust song={song} music={music} length={length} start={start} onLength={(n) => void lengthTo(n)} onStart={(t) => void partFrom(t)} locked={settings.fit !== false && kind !== "talking"} />}
         {step === "clips" && song && needSong && <View className="mb-3"><Button variant="secondary" icon="music" title={words("Adjust music")} onPress={() => go("adjust")} /></View>}
         {step === "clips" && <FlowClips kind={kind} photos={photos} onTab={(p) => { setPhotos(p); setMedia([]); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
       </ScrollView>

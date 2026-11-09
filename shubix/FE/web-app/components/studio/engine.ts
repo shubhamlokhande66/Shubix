@@ -13,6 +13,8 @@ import { createTasks } from './tasks';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
+import { STICKERS } from '@shubix/core/lib/stickers';
+import { SFX_REC, sfxRecorded } from '@shubix/core/lib/sfx-recorded';
 import { MAIN_VERT, MAIN_FRAG, PASS_VERT, GRADE_FRAG, PIC_FRAG, PIC_FX, TR_DUR } from '@shubix/core/lib/shaders';
 import { needMap, planRank, PLAN_NAME, DEFAULT_LOCKS } from '@shubix/core/lib/plan-locks';
 import { DEFAULT_TEMPLATES, liveTemplates, edgeAt } from '@shubix/core/lib/studio-templates';
@@ -1135,13 +1137,18 @@ function setClipStatus(src, status, detail){
 /* ---- on the Create page each clip plays itself in its card (muted, looping), once the work is over. Only the cards on the
  * screen, and only a few at once: each playing video holds a decoder and its frames, and many would run a phone out of memory
  * (the rest show their picture until they are scrolled to). A heavy clip with no light copy keeps its picture on phones. ---- */
+let cardsFreeAt = 0;
 const CARD_PLAYERS = IOS ? 2 : matchMedia('(max-width:1023px)').matches ? 4 : 8, cardsOnScreen = new Set(), cardsPlaying = new Set();
 const cardSight = new IntersectionObserver(list => { list.forEach(e => { if(e.isIntersecting) cardsOnScreen.add(e.target); else cardsOnScreen.delete(e.target); }); cardsPlay(); }, { threshold: 0.25 });
 function cardStop(card){ const v = card.querySelector('.cv'); cardsPlaying.delete(card); if(v){ v.classList.remove('on'); v.pause(); v.removeAttribute('src'); v.load(); } }
 function cardsPlay(){
   const free = root.classList.contains('fopen') && !document.hidden && !pending && !aiBusy && !paceBusy && !dirBusy && !recording && !playing && !exportBusy && $('cconf').hidden && root.querySelector('[data-tasks]')?.hidden !== false;
   const light = s => !matchMedia('(max-width:1023px)').matches || s.previewProxy || (s.w || 0) * (s.h || 0) <= 2400000;
-  const want = free ? [...$('clips').children].filter(c => cardsOnScreen.has(c) && c.__src && !c.__src.removed && sources.includes(c.__src) && light(c.__src)).slice(0, CARD_PLAYERS) : [];
+  // free for 2 s in a row before a card starts again: while a Reel is made the flags flip all the time, and each restart set the
+  // video's src again (a new request for its blob every 700 ms, without end)
+  if(!free) cardsFreeAt = 0; else if(!cardsFreeAt) cardsFreeAt = Date.now();
+  const settled = free && Date.now() - cardsFreeAt >= 2000;
+  const want = settled ? [...$('clips').children].filter(c => cardsOnScreen.has(c) && c.__src && !c.__src.removed && sources.includes(c.__src) && light(c.__src)).slice(0, CARD_PLAYERS) : [];
   [...cardsPlaying].forEach(c => { if(!want.includes(c)) cardStop(c); });
   want.forEach(c => { if(cardsPlaying.has(c)) return; cardsPlaying.add(c); const v = c.querySelector('.cv'); v.muted = true; v.src = c.__src.url; v.onplaying = () => v.classList.add('on'); v.play().catch(() => {}); });
 }
@@ -2008,6 +2015,7 @@ function aiNeed(on, low){
   $('aiaskgo').textContent = low ? 'Top up' : 'Make it with Shubix AI'; $('aiaskgo').dataset.low = low ? '1' : '';
 }
 $('aiaskgo').addEventListener('click', async () => {
+  if($('aiaskgo').dataset.down){ aiRetry(); return; }   // Try again (aiDown)
   if($('aiaskgo').dataset.change){ void makeChangedReel(); return; }
   if($('aiaskgo').dataset.low){ void toPricing('#topup'); return; }
   if(await aiGate(true)) aiRun();
@@ -2071,9 +2079,9 @@ function cancelNow(){
   }
   root.dispatchEvent(new Event('studio-cancelled'));
 }
-// Cancel Reel: nothing of it stays, back to Home
+// Discard Reel: nothing of it stays, back to Home
 async function cancelReel(){
-  const v = await askCredits({ title: 'Cancel this Reel?', text: 'Your song, clips and progress for this Reel will be removed.', bal: null, ok: 'Cancel Reel', no: 'Keep working' });
+  const v = await askCredits({ title: 'Discard this Reel?', text: 'Your song, clips and progress for this Reel will be removed.', bal: null, ok: 'Discard Reel', no: 'Keep working' });
   if(v !== true) return;
   aiStopper.abort();
   try{ life({ wip: null }); if(proj) await idb('meta', 'readwrite', s => s.delete(proj.id)); sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){}
@@ -2087,12 +2095,13 @@ function resumeSong(){
   void loadMusic(lastSong, song && song.file === lastSong && song.r ? { r: song.r } : null);
 }
 // Next after a Cancel: the work again (true: Next waits for it), or not
+// '' nothing was stopped; 'go' Continue (reading again: Generate goes on by itself when it is done); 'stay' Not now / ✕ / Discard
 async function askNotDone(){
-  if(!songCancelled && !clipsStopped) return false;
-  const v = await askCredits({ title: 'Analysis not done', text: songCancelled ? "Your song's beat check did not finish." : "Your clips' analysis did not finish.", bal: null, ok: 'Proceed', no: 'Cancel', extra: 'Cancel Reel' });
+  if(!songCancelled && !clipsStopped) return '';
+  const v = await askCredits({ title: 'Analysis not done', text: songCancelled ? "Your song's beat check did not finish." : "Your clips' analysis did not finish.", bal: null, ok: 'Continue', no: 'Not now', extra: 'Discard Reel' });
   if(v === 'extra') void cancelReel();
-  else if(v === true){ if(songCancelled) resumeSong(); if(clipsStopped) queueClips(unreadClips()); }
-  return true;
+  else if(v === true){ if(songCancelled) resumeSong(); if(clipsStopped) queueClips(unreadClips()); return 'go'; }
+  return 'stay';
 }
 async function upsell(){
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
@@ -2103,6 +2112,8 @@ async function upsell(){
     if(go){ aiRun(); return 'skip'; }   // Use: the AI starts on this Reel
     return 'close';                      // ✕: back, nothing generated
   }
+  // Make Reel runs in one popup: no Shubix AI offer in between (the plans are shown on the screen), the basic Reel is made
+  if(location.pathname.startsWith('/create')) return 'skip';
   const id = reelIdNow(); if(upsold === id || IN_APP) return 'skip';   // never an upgrade offer in the app
   const cost = aiCostOf('reel');
   const v = await askCredits({ upsell: true, title: 'Make it perfect with Shubix AI', text: 'Your Reel is ready. With the Editor or Pro plan, Shubix AI edits it like a pro' + (cost ? ' (' + creditWord(cost) + ' per Reel)' : '') + ':' + (aiInfo && aiInfo.creditsOpen ? ' Or invite friends on Invite & earn: your credits pay for AI Reels on Free too.' : ''),
@@ -2194,7 +2205,7 @@ async function aiRun(){
     aiStat('Shubix is choosing the best moments of your clips…');
     for(let k=0; k<jobs.length; k+=12){
       const part = jobs.slice(k, k+12);
-      const r = await fetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
+      const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
@@ -2212,9 +2223,9 @@ async function aiRun(){
   }catch(e){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
-    aiGaveUp = reelIdNow();   // nothing more comes from Shubix for this Reel: it is final as the phone made it
     need.forEach(s => { delete s.aiFramesMade; });
-    aiLog('Shubix AI could not look at your clips this time: your Reel uses the phone\'s own edit.');
+    if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
+    aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
   }
 }
@@ -2482,7 +2493,7 @@ async function chatPatch(text, n, id){
     const { req } = dirRequest(cands), key = dirKey(), len = i => edit[i].end - edit[i].start;
     req.patch = { ask: text, current: edit.map((e, i) => ({ i, clip: 'c' + (e.src + 1), at: +e.in.toFixed(2), transition: e.tr || 'hard', effect: e.efx || 'none', speed: speedKey(e.sp) })) };
     req.chat = { n, id, text };
-    const r = await fetch('/api/studio/direct', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req), signal: tm.signal });
+    const r = await apiFetch('/api/studio/direct', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not change it (' + r.status + ').'));
     chatSync(res); if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
@@ -2891,7 +2902,7 @@ async function variantsRun(st){
   let n = 0;
   try{
     const cands = directorCandidates(), { req, ctx } = dirRequest(cands), sig = planSig();
-    const r = await fetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...req, variants: VARIANTS }), signal: tm.signal });
+    const r = await apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...req, variants: VARIANTS }), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not make the mixes (' + r.status + ').'));
     let k = 1;
@@ -2906,6 +2917,36 @@ async function variantsRun(st){
 }
 const dirCache = new Map();
 // a request that gives up after ms (the phone's own edit is already on screen, so nobody waits for a slow AI)
+/* Every call to Shubix's server is tried 3 times by itself when the server could not answer (no answer, 408, 429, 5xx),
+ * 1 s then 2 s apart; after the third it fails and the person gets the popup (Retry / Close). A real "no" (no credits, not
+ * allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
+const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
+async function apiFetch(url, opts = {}){
+  for(let n = 1; ; n++){
+    let r = null;
+    try{ r = await fetch(url, opts); if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r; }
+    catch(e){ if(e && e.name === 'AbortError') throw e; }
+    if(n >= 3){ if(r) return r; throw new Error(TEAM_MSG); }
+    await new Promise(ok => setTimeout(ok, 1000*n));
+    if(opts.signal && opts.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
+  }
+}
+// Shubix AI could not do this Reel after that minute: the Reel waits (not shown, played or exported), a popup says so,
+// and its button asks Shubix again. The server gives back any credits taken for it.
+let aiDownAt = '';
+function aiDown(){
+  if(!aiOn) return;
+  const id = reelIdNow(), go = $('aiaskgo'); aiGaveUp = id; aiStat(TEAM_MSG); chatFail(TEAM_MSG);   // (nothing is waited for any more)
+  root.classList.add('aineed'); go.dataset.down = '1'; go.dataset.low = ''; delete go.dataset.change;
+  $('aiaskt').textContent = 'Shubix AI is not available right now'; $('aiaskp').textContent = TEAM_MSG; go.textContent = 'Try again';
+  root.dispatchEvent(new Event('studio-ai-down'));   // the steps stop waiting: the loader closes, Make Reel is on again
+  if(aiDownAt !== id){ aiDownAt = id; aiLog('Shubix AI was not available. ' + TEAM_MSG); void askCredits({ title: 'Shubix AI is not available right now', text: TEAM_MSG, bal: null, ok: 'Retry', no: 'Close' }).then(v => { if(v === true) aiRetry(); }); }
+}
+// Try again, or Make Reel pressed again after aiDown: Shubix AI is asked again for this Reel (true when it was down)
+function aiRetry(){
+  const go = $('aiaskgo'); if(!go.dataset.down) return false;
+  delete go.dataset.down; aiDownAt = ''; root.classList.remove('aineed'); aiGaveUp = ''; dirFailedKey = ''; paceFailedKey = ''; aiRun(); return true;
+}
 function timeoutSignal(ms){
   const c = new AbortController(); let late = false;
   const t = setTimeout(()=>{ late = true; c.abort(); }, ms), stop = () => c.abort();
@@ -2999,7 +3040,7 @@ async function hearSong(){
   const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return;
   songHeard = key; songFeel = null;
   const tm = timeoutSignal(20000);
-  try{ const r = await fetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
+  try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); songFeel = await r.json(); }
   catch(e){ songHeard = ''; console.warn('The song was not heard:', e); }
   finally{ tm.done(); }
@@ -3016,7 +3057,7 @@ async function paceRun(key){
     const req = { mode, reelId: reelIdNow(), ...(tplKind ? { reelKind: tplKind } : {}), wish: wish.slice(-800), duration: +(whole ? song.buf.duration : buf.duration).toFixed(2), bpm: +(60/(whole ? song.r.period : period)).toFixed(1), clips: sources.filter(s=>!s.removed).length,
       footage: +sources.reduce((a,s)=>a+(s.removed?0:s.dur||0),0).toFixed(1), kind: root.classList.contains('photomode') ? 'photo' : 'music', sections: secs, reference: refContext(), ...(songFeel ? { song: songFeel } : {}), about: sources.map(s=>!s.removed && s.ai && s.ai.about).filter(Boolean).join('; ').slice(0, 400),
       ...(whole ? { reel: +buf.duration.toFixed(2) } : {}) };
-    const r = await fetch('/api/studio/pace', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
+    const r = await apiFetch('/api/studio/pace', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not choose the pace (' + r.status + ').'));
     tasks.lock();
@@ -3041,17 +3082,16 @@ async function paceRun(key){
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
-  // 45 s: the phone's own edit is shown and the person can go on; the request is NOT dropped (the plan is paid for): when it
-  // comes later it is offered ("Use it"). 4 min: given up (the server's AI gives up before that and the credits come back).
+  // the loader stays until Shubix answers (a down server is asked again for a minute: apiFetch); 4 min: given up (the
+  // server's AI gives up before that and the credits come back). Never the phone's own edit instead: aiDown.
   const tm = timeoutSignal(240000);
   let late = false;
-  const soft = setTimeout(() => { late = true; dirBusy = false; dirFailedKey = key;
-    aiStat('Shubix is taking longer than usual. Your Reel uses the phone\'s own smart edit for now; Shubix\'s plan comes as soon as it is ready.'); }, 45000);
+  const soft = setTimeout(() => aiStat('Shubix is still working on your Reel…'), 75000);   // no phone's edit meanwhile: the loader stays
   try{
     await hearSong();
     const cands = directorCandidates(); dirCands = cands;
     const { req, ctx } = dirRequest(cands), sig = planSig(), mix = mixNo, st = mixStore();
-    const r = await fetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
+    const r = await apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
     const slots = toSlots(res.slots, cands);
@@ -3075,12 +3115,12 @@ async function directorRun(key){
   }catch(e){
     dirFailedKey = key;
     const back = aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiStat('Shubix could not plan this Reel. It keeps the phone\'s own smart edit' + back); }
+    if(late){ aiDown(); }
     else {
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
-      if(!(e && e.name==='AbortError') || tm.timedOut()) aiLog('Shubix AI could not plan this Reel: it uses the phone\'s own edit' + back);
+      if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown();
     }
   }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
 }
@@ -3197,18 +3237,38 @@ let footTimer = 0;
 const fitOn = () => $('fitclips').checked;
 function footCheckSoon(){ if(kind === 'talk') return;   // in Create and in the editor (clips added or removed there)
   clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
+/* "Make the Reel as long as my clips" ticked: the length buttons are off (the clips decide). Good video shorter than the song:
+ * the Reel is that long (the song's best part of it); as long as the song or longer: the whole song (Make Reel asks what to
+ * do when the clips are much longer: askShort). Unticked: the length is the person's, as before. */
+const songLen = () => song && song.buf ? song.buf.duration : 0;
+const goodHave = () => Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
+function lenLock(){
+  const on = fitOn() && kind !== 'talk';
+  [...$('slen').children].forEach(b => { b.disabled = on; }); $('slenc').disabled = on;
+  $('slen').title = on ? 'Set by your clips (Make the Reel as long as my clips)' : '';
+}
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
-  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
-  const short = have < need * 0.95;
-  if(short && fitOn() && have >= 5){ $('fitnote').hidden = true; setLen(have); return; }
+  const have = goodHave(), full = songLen();
+  if(fitOn() && full){
+    if(have >= 5){ const target = have < full * 0.95 ? have : 0;   // 0: the whole song
+      if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len) setLen(target); }
+    $('fitnote').hidden = false;
+    $('fitnote').textContent = have < 5 ? 'Add more clips: your clips have ' + fmtS(have) + ' of good video.'
+      : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
+      : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
+      : 'Your Reel: the whole song (' + fmtS(full) + ').';
+    return;
+  }
+  const need = buf.duration, short = have < need * 0.95;
   $('fitnote').hidden = !short;
   if(short) $('fitnote').textContent = 'Your clips have ' + fmtS(have) + ' of good video and the Reel is ' + fmtS(need) + ': tick the box above, shorten the music or add clips.';
 }
-$('fitclips').addEventListener('change', () => footCheckSoon(), SIG);
+$('fitclips').addEventListener('change', () => { lenLock(); footCheckSoon(); }, SIG);
+lenLock();
 /* Generate, before Shubix AI and before any credits: a clip that could not be read, too little good video. 'go', 'stop', or
  * 'again' (the Reel is now as long as the clips: Generate goes on once it is made). */
-let badTold = 0;
+let badTold = 0, longOk = '';   // longOk: 'Shubix picks the best' was chosen for these clips and this song
 async function askShort(){
   const bad = [...$('clips').children].filter(c => c.dataset.bad).length;
   if(bad && badTold !== bad){
@@ -3217,9 +3277,22 @@ async function askShort(){
     badTold = bad;
   }
   if(!buf || !sources.length || kind === 'talk') return 'go';
-  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));
+  const need = buf.duration, have = goodHave(), full = songLen();
+  if(fitOn() && full && have >= 5){
+    // much more good video than song: what to do is the person's (a longer song, fewer clips, or Shubix picks the best)
+    const key = have + ':' + Math.round(full);
+    if(have > full * 1.1 && longOk !== key){
+      const v = await askCredits({ title: 'Your clips are longer than your song', text: 'Your song is ' + fmtS(full) + ' and your clips have ' + fmtS(have) + ' of good video. No credits were used.',
+        bal: null, ok: 'Shubix picks the best ' + fmtS(full), no: 'Add a longer song', extra: 'I’ll remove some clips' });
+      if(v === false){ root.dispatchEvent(new CustomEvent('studio-goto', { detail: 'music' })); return 'stop'; }
+      if(v !== true) return 'stop';
+      longOk = key;
+    }
+    const target = have < full * 0.95 ? have : 0;
+    if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len){ setLen(target); return 'again'; }   // as long as the clips: no question
+    return 'go';
+  }
   if(have >= need * 0.95) return 'go';
-  if(fitOn() && have >= 5){ setLen(have); return 'again'; }   // as long as the clips: no question
   const v = await askCredits({ title: 'Not enough clips', text: 'Your clips have ' + fmtS(have) + ' of good video. Your Reel is ' + fmtS(need) + '. No credits were used.', ok: 'Add clips', ...(have >= 5 ? { no: 'Make a ' + fmtS(have) + ' Reel' } : {}) });
   if(v === true){ $('vfile').click(); return 'stop'; }
   if(v === false){ setLen(Math.max(5, have)); return 'again'; }
@@ -3854,11 +3927,19 @@ function segAt(t){ let lo=0,hi=edit.length-1,r=0; while(lo<=hi){ const m=(lo+hi)
  * The nearby window preserves transition look-ahead while avoiding N-clips × 3 active decoders. */
 function lazyPlayer(url){ const v = makeVideo(''); v._url = url; return v; }
 const playerLoaded = v => !!v.getAttribute('src');
+// A player used in the last 4 s keeps its video: the Reel being made asks for shots all over it in a moment, and letting go
+// and loading again each time sent a new request for the clip's blob, without end. At most PLAYERS_MAX stay loaded (the
+// iPhone's memory): past that the one used longest ago lets go.
+const PLAYERS_MAX = IOS ? 4 : 8, PLAYER_KEEP_MS = 4000;
 function playersAround(i){
-  const c = playing || starting ? curIdx : i, keep = new Set();
+  const c = playing || starting ? curIdx : i, keep = new Set(), now = Date.now();
   for(let k = Math.min(c, i) - 1; k <= Math.max(c, i) + 2; k++) if(edit[k]) keep.add(edit[k].el);
-  for(const s of sources) for(const v of s.els || []) if(!keep.has(v) && playerLoaded(v)){ v.pause(); v.removeAttribute('src'); v.load(); }
-  const v = edit[i].el; if(!playerLoaded(v) && v._url) v.src = v._url;
+  const drop = v => { v.pause(); v.removeAttribute('src'); v.load(); };
+  const loaded = [];
+  for(const s of sources) for(const v of s.els || []) if(playerLoaded(v)){
+    if(!keep.has(v) && now - (v._used || 0) > PLAYER_KEEP_MS) drop(v); else loaded.push(v); }
+  const v = edit[i].el; v._used = now; if(!playerLoaded(v) && v._url){ v.src = v._url; loaded.push(v); }
+  loaded.filter(x => !keep.has(x)).sort((a, b) => (a._used || 0) - (b._used || 0)).slice(0, Math.max(0, loaded.length - PLAYERS_MAX)).forEach(drop);
 }
 // quick: Play is waiting. Then the picture gets at most a moment: while clips are being read the phone's video decoder is
 // busy (an iPhone may not answer at all), and the song must start anyway; the shot catches up while it plays.
@@ -4332,7 +4413,7 @@ async function translateSoon(){
   if(!need.length){ redraw(); return; }
   trBusy = true; const to = trTo; capStat('Translating the captions…');
   try{
-    const r = await fetch('/api/studio/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, lines: need.map((text, i) => ({ i, text: text.slice(0, 160) })) }), signal: ac.signal });
+    const r = await apiFetch('/api/studio/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to, lines: need.map((text, i) => ({ i, text: text.slice(0, 160) })) }), signal: ac.signal });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Translation failed (' + r.status + ').'));
     for(const l of res.lines || []) if(need[l.i] !== undefined) trCache.set(to + '|' + need[l.i], l.text);
@@ -4379,6 +4460,8 @@ const ovFont = (ov, fs, weight) => { const f = OV_FONTS[ov.font]; if(!f || !f[1]
 const OV_ANIMS = { pop: 'Pop', fade: 'Fade', slide: 'Slide up', type: 'Typewriter', zoom: 'Zoom in', drop: 'Drop in', blur: 'Blur in', spin: 'Spin in', flicker: 'Flicker', glitch: 'Glitch', none: 'None' };
 const OV_OUTS = { none: 'None', fade: 'Fade out', pop: 'Pop out', slide: 'Slide down', zoom: 'Zoom out', blur: 'Blur out', spin: 'Spin out' };   // how it leaves (its last 0.3 s)
 const OV_LOOPS = { none: 'Still', bounce: 'Bounce', spin: 'Spin', wiggle: 'Wiggle', pulse: 'Pulse', float: 'Float', swing: 'Swing', shake: 'Shake' };   // keeps moving while it shows
+// Shubix's own stickers (core/lib/stickers): drawn from their paths, kept once each
+const stkPaths = new Map(), stkPath = k => { if(!stkPaths.has(k)) stkPaths.set(k, new Path2D(STICKERS[k].d)); return stkPaths.get(k); };
 const OV_EMOJI = ['🔥','😂','😍','👇','👉','✅','❌','⭐','💯','🎉','❤️','👀','🙏','🪔','🌺','🎵','📍','💰','⚡','😱'];
 const OV_PRESETS = {
   price:   { text: '₹999 only', style: 'tag', color: '#FFD54A', y: 0.62, size: 1 },
@@ -4409,7 +4492,8 @@ function setOverlaysFromNative(list){
 function addOverlay(o){
   const L = reelLen(), now = Math.max(0, Math.min(L - 0.5, (playing ? curTime() : pos) || 0));
   const t0 = o.all ? 0 : o.end ? Math.max(0, L - 3) : now, t1 = o.all ? L : o.end ? L : Math.min(L, t0 + 3);
-  const ov = { id: ++ovSeq, text: o.text || '', emoji: !!o.emoji, style: o.style || 'bold', color: o.color || '#FFFFFF', anim: o.anim || (o.emoji ? 'pop' : 'pop'),
+  const sk = STICKERS[o.stk];
+  const ov = { id: ++ovSeq, text: o.text || (sk ? sk.name : ''), emoji: !!o.emoji || !!sk, ...(sk ? { stk: o.stk } : {}), style: o.style || 'bold', color: o.color || (sk ? sk.color : '#FFFFFF'), anim: o.anim || (o.emoji ? 'pop' : 'pop'),
     t0, t1, x: o.x ?? 0.5, y: o.y ?? 0.4, size: o.size || 1, all: !!o.all };
   overlays.push(ov); ovSel = overlays.length - 1; renderOvList(); redraw();
   return ov;
@@ -4428,7 +4512,7 @@ function addTemplate(key, words, at, len, ai){
 function aiTexts(list){
   if(!Array.isArray(list) || !list.length) return 0;
   const D = reelLen();
-  overlays = overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji, style: x.style, color: x.color, anim: x.anim,
+  overlays = overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji || !!STICKERS[x.stk], ...(STICKERS[x.stk] ? { stk: x.stk } : {}), style: x.style, color: x.color, anim: x.anim,
     loop: x.loop === 'none' ? undefined : x.loop, out: x.out === 'none' ? undefined : x.out, font: x.font || undefined, behind: !!x.behind, track: !!x.track, x: x.x, y: x.y, size: x.size, all: false, ...(Number.isFinite(x.focus) ? { focus: x.focus } : {}),
     t0: Math.max(0, Math.min(D - 0.1, x.start)), t1: Math.max(0.1, Math.min(D, x.end)), uk: (x.keys || []).map(k => ({ t: k.at, x: k.x, y: k.y, s: k.s, r: k.r, o: k.o, ez: k.ez })) })));
   overlays.filter(o => o.font).forEach(o => loadFont(o.font).then(redraw));
@@ -4524,7 +4608,8 @@ function drawOverlay(g, ov, t){
   g.font = ov.emoji ? `${fs}px "Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji",sans-serif` : ovFont(ov, fs, ov.style === 'clean' ? 600 : 800);
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
   const lines = ov.emoji ? [txt] : wrapLines(g, txt, W*0.82), lh = fs*1.18;
-  const tw = Math.max(...lines.map(l => g.measureText(l).width), fs*0.6), th = lh*lines.length;
+  const stk = ov.emoji && STICKERS[ov.stk] ? ov.stk : '';
+  const tw = stk ? fs*1.1 : Math.max(...lines.map(l => g.measureText(l).width), fs*0.6), th = stk ? fs*1.1 : lh*lines.length;
   // the place: inside the safe area (top 220 and bottom 450 of 1920 are Instagram's)
   const top = H*(220/1920) + th/2 + fs*0.3, bot = H*(1 - 450/1920) - th/2 - fs*0.3;
   let cx = Math.max(tw/2 + W*0.05, Math.min(W - tw/2 - W*0.05, ov.x*W)), cy = Math.max(top, Math.min(bot, ov.y*H)) + dy;
@@ -4539,7 +4624,11 @@ function drawOverlay(g, ov, t){
   g.translate(cx + lx + fx, cy + ly); if((u && u.r) || lr || turn) g.rotate(((u && u.r) || 0)*Math.PI/180 + (lr + turn)*Math.PI/180); g.scale(sc, sc); if(fx) g.translate(-fx, 0);
   if(glitchPx){ g.save(); g.globalAlpha *= 0.6; g.fillStyle = '#ff2a6d'; lines.forEach((l, k) => g.fillText(l, glitchPx, (k - (lines.length-1)/2)*lh)); g.fillStyle = '#05d9e8'; lines.forEach((l, k) => g.fillText(l, -glitchPx, (k - (lines.length-1)/2)*lh)); g.restore(); }
   const dark = c => { const n = parseInt(c.slice(1), 16); return ((n>>16)*0.299 + ((n>>8)&255)*0.587 + (n&255)*0.114) < 140; };
-  if(!ov.emoji && (ov.style === 'box' || ov.style === 'tag')){
+  if(stk){   // a Shubix sticker: its shape in its colour, with a sticker's white border (dark on a white sticker) and a soft shadow
+    const k = fs*1.1/100, P = stkPath(stk); g.scale(k, k); g.translate(-50, -50);
+    g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = fs*0.12; g.lineJoin = 'round'; g.lineWidth = 9; g.strokeStyle = ov.color.toUpperCase() === '#FFFFFF' ? '#111111' : '#FFFFFF';
+    g.stroke(P); g.shadowBlur = 0; g.fillStyle = ov.color; g.fill(P, 'evenodd');
+  } else if(!ov.emoji && (ov.style === 'box' || ov.style === 'tag')){
     const tag = ov.style === 'tag', pw = tw + fs*(tag ? 1.05 : 0.6), ph = th + fs*0.36, r = tag ? fs*0.5 : fs*0.2;
     g.fillStyle = ov.color; g.beginPath(); g.roundRect ? g.roundRect(-pw/2, -ph/2, pw, ph, r) : g.rect(-pw/2, -ph/2, pw, ph); g.fill();
     if(tag){ g.fillStyle = dark(ov.color) ? '#fff' : '#111'; g.beginPath(); g.arc(-pw/2 + fs*0.36, 0, fs*0.1, 0, Math.PI*2); g.fill(); g.translate(fs*0.24, 0); }   // the tag's hole, left of the text
@@ -4659,6 +4748,9 @@ $('ovsticker').addEventListener('click', () => { $('emojis').hidden = !$('emojis
 $('ovshapes').addEventListener('click', e => { const b = e.target.closest('[data-shape]'); if(b) addOverlay({ text: b.dataset.shape + '︎', style: 'clean', size: 2.2 }); }, SIG);
 OV_EMOJI.forEach(em => { const b = document.createElement('button'); b.textContent = em; b.className = 'em'; b.setAttribute('aria-label', 'Sticker ' + em);
   b.addEventListener('click', () => { addOverlay({ text: em, emoji: true, y: 0.5, x: 0.72, size: 1 }); $('emojis').hidden = true; }); $('emojis').appendChild(b); });
+Object.entries(STICKERS).forEach(([k, s]) => { const b = document.createElement('button'); b.className = 'em'; b.setAttribute('aria-label', 'Sticker ' + s.name); b.title = s.name;
+  b.innerHTML = `<svg viewBox="-6 -6 112 112" width="26" height="26" aria-hidden="true"><path d="${s.d}" fill="${s.color}" fill-rule="evenodd" stroke="${s.color === '#FFFFFF' ? '#111' : '#fff'}" stroke-width="8" paint-order="stroke"/></svg>`;
+  b.addEventListener('click', () => { addOverlay({ stk: k, y: 0.5, x: 0.72, size: 1 }); $('emojis').hidden = true; }); $('emojis').appendChild(b); });
 $('ovtpl').addEventListener('change', e => { const k = e.target.value; e.target.value = ''; if(k) addTemplate(k); }, SIG);
 $('ovpreset').addEventListener('change', e => { const p = OV_PRESETS[e.target.value]; e.target.value = ''; if(p) addOverlay(p); }, SIG);
 // drag on the preview: the item under the finger moves with it (a tap selects it)
@@ -4889,7 +4981,7 @@ async function loadCaptions(){
   capStat('Listening to the words of the song…');
   try{
     const wav = await songWav(M, sr, from);
-    const r = await fetch('/api/studio/transcribe?lang=' + encodeURIComponent(lang), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: wav, signal: ac.signal });
+    const r = await apiFetch('/api/studio/transcribe?lang=' + encodeURIComponent(lang), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: wav, signal: ac.signal });
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Captions failed (' + r.status + ').'));
     if(token !== musicToken) return;
@@ -6735,7 +6827,7 @@ async function refLookRun(file, R){
       let q = 0.75, d = c.toDataURL('image/jpeg', q); while(d.length > 150000 && q > 0.35){ q -= 0.15; d = c.toDataURL('image/jpeg', q); }   // under the server's 120 KB
       frames.push({ t, image: d.slice(d.indexOf(',') + 1) }); } } finally { rd.close(); }
     if(frames.length < 2) throw new Error('frames not readable');
-    const r = await fetch('/api/studio/ref-look', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal, body: JSON.stringify({ name: R.name.slice(0, 200), dur: R.dur, frames }) });
+    const r = await apiFetch('/api/studio/ref-look', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal, body: JSON.stringify({ name: R.name.slice(0, 200), dur: R.dur, frames }) });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
     if(refProfile !== R) return;   // another Reel was picked meanwhile
@@ -7031,8 +7123,10 @@ async function ensureMix(){
  * click on a photo snap or a freeze, a pop when a text or sticker pops in); the creator adds more at the playhead. ---- */
 let sfxList = [], sfxSeq = 0;
 const SFX_NAMES = { whoosh: 'Whoosh', pop: 'Pop', boom: 'Boom', click: 'Camera click', riser: 'Riser', ding: 'Ding', swish: 'Swish', impact: 'Impact', glitch: 'Glitch', laser: 'Laser', heartbeat: 'Heartbeat', tick: 'Tick', chime: 'Chime', drop: 'Bass drop', rewind: 'Rewind', notify: 'Notification' };
+Object.entries(SFX_REC).forEach(([k, v]) => { SFX_NAMES[k] = v.name; });   // and the recorded ones (CC0, core/lib/sfx-recorded)
 const sfxCache = new Map();
 function sfxSynth(kind, sr){
+  const rec = sfxRecorded(kind, sr); if(rec) return rec;
   const key = kind + sr; if(sfxCache.has(key)) return sfxCache.get(key);
   const len = { whoosh: 0.42, pop: 0.09, boom: 0.9, click: 0.09, riser: 1.2, ding: 0.7, swish: 0.22, impact: 0.6, glitch: 0.35, laser: 0.3, heartbeat: 0.8, tick: 0.03, chime: 1.4, drop: 1.4, rewind: 0.7, notify: 0.45 }[kind] || 0.3, n = Math.round(len*sr), y = new Float32Array(n);
   let seed = 7; const rnd = () => { seed = (seed*16807) % 2147483647; return seed/2147483647*2 - 1; };
@@ -7502,7 +7596,7 @@ setInterval(() => {
 }, 3000);
 // leaving or reloading while Shubix is still working, or before the last change is kept: the browser asks first
 window.addEventListener('beforeunload', e => {
-  if(leavingOk) return;   // the person chose to leave (Keep old Reel, Cancel Reel): nothing to warn about
+  if(leavingOk) return;   // the person chose to leave (Keep old Reel, Discard Reel): nothing to warn about
   if(pending || exporting || recording){ e.preventDefault(); e.returnValue = ''; return; }
   if((song || sources.length) && !restoring){ try{ const sig = JSON.stringify(stateOf()); if(sig !== lastSig){ e.preventDefault(); e.returnValue = ''; } }catch(err){} }
 });
@@ -7511,7 +7605,11 @@ async function resumeOffer(){
   let id = ''; try{ id = sessionStorage.getItem('brs-resume:' + location.pathname) || ''; }catch(e){}
   if(!id || new URLSearchParams(location.search).get('p')) return;
   const p = await idb('meta', 'readonly', st => st.get(id)).catch(() => null); if(!p) return;
-  const v = await askCredits({ title: 'Your Reel "' + p.name + '" was saved on this phone.', text: '', bal: null, ok: 'Continue', no: 'Start new' });
+  // what is waiting, in plain words: its name, its clips and length, when it was saved
+  const n = (p.state && Array.isArray(p.state.clips)) ? p.state.clips.length : 0, mins = Math.max(0, Math.round((Date.now() - (p.updated || Date.now()))/60000));
+  const ago = mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : mins < 1440 ? Math.round(mins/60) + ' h ago' : new Date(p.updated).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  const v = await askCredits({ title: 'Pick up where you left off?', text: '“' + (p.name || 'Your Reel') + '” is saved on this device with its song, clips and edits.',
+    list: [n ? n + (n === 1 ? ' clip' : ' clips') + (p.dur ? ' · ' + fmt(p.dur).replace(/\.\d+$/, '') : '') : '', 'Saved ' + ago].filter(Boolean), bal: null, ok: 'Continue editing', no: 'Start a new Reel' });
   if(v === true) location.assign('/editor?p=' + encodeURIComponent(id));
   else try{ sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){}
 }
@@ -7655,7 +7753,7 @@ listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
 root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
-  snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
+  snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
   get work(){ return { song: !!song || kind === 'talk', songReady: kind === 'talk' || !!(song && buf && song.r), beats: beatsBusy, pending, clips: sources.length, shots: edit.length, ai: aiBusy, dir: dirBusy, pace: paceBusy,
     // Shubix AI is on for this Reel and its plan has not come yet (nor failed): the Reel is not final (the phone app waits)
     aiWait: !!(aiOn && !planIsFinal() && !aiHeldBack() && aiReelOk() && aiGaveUp !== reelIdNow() && edit.length && !(director && director.key === dirKey() && !director.interim) && dirFailedKey !== dirKey()), speech: speechBusy, exporting: exportBusy, exportP }; }, shotExtract: () => edit.length && extractAudio(edit[segAt(pos)].src), get au(){ return au; }, setAudioMix: async patch => { auSet(patch); clipMixKey = ''; await ensureMix(); return au; }, remix: remixNow, ensureMix, get canUndo(){ return hist.u.length > 0; }, get layers(){ return layers; }, get lmedia(){ return lmedia; }, layerAdd, layerSelect: lySelect, layerSet: lySet, layerDelete: lyDelete, get ttsVoices(){ return tts ? tts.voices : []; }, addTts: addTtsAtPlayhead, clearTts, setCaptions, setCaptionStyle, get canRedo(){ return hist.r.length > 0; },

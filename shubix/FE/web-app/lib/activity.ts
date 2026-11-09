@@ -43,6 +43,13 @@ export function activityCount() {
   return count;
 }
 
+/** a read started by a click: the button that was clicked is busy (spinner, no second click) while it runs; the
+ * activity bar is for actions only (reads also happen in the background) */
+export async function clickBusy<T>(work: Promise<T>): Promise<T> {
+  const button = claimButton();
+  try { return await work; } finally { releaseButton(button); }
+}
+
 export async function tracked<T>(work: Promise<T>): Promise<T> {
   count += 1;
   const button = claimButton();

@@ -139,7 +139,6 @@ export const STUDIO_HTML = `
     <ol class="flex items-start max-lg:col-span-3 max-lg:row-start-2 max-lg:w-full max-lg:max-w-[190px] max-lg:min-w-0 max-lg:items-center max-lg:justify-self-center max-lg:peer-empty:col-span-1 max-lg:peer-empty:col-start-2 max-lg:peer-empty:row-start-1" id="fsteps" aria-label="Steps">
       <li class="${stepItem}" data-f="1"><i class="${stepDot}">1</i><span class="max-lg:hidden">Music</span></li><li class="${stepItem}" data-f="2"><i class="${stepDot}">2</i><span class="max-lg:hidden">Clips</span></li><li class="${stepItem}" data-f="3"><i class="${stepDot}">3</i><span class="max-lg:hidden">Shubix Edit</span></li><li class="${stepItem}" data-f="4"><i class="${stepDot}">4</i><span class="max-lg:hidden">Preview &amp; Export</span></li>
     </ol>
-    <button type="button" class="${Button.ghost} hidden max-lg:col-start-3 max-lg:row-start-1 max-lg:in-[.fopen[data-fstep=intro]]:inline-flex" id="fskip">Skip</button>
   </div>
   <form class="askbar" id="askbar" aria-labelledby="askbarh">
     <button type="button" class="askbarhd" id="asktoggle" aria-expanded="false" aria-controls="askbody">
@@ -299,7 +298,7 @@ export const STUDIO_HTML = `
     </div>
     <span class="fslot" id="fsndslot"></span>
     <p class="m-0 text-center text-[12.5px] font-semibold text-muted lg:hidden" id="fcredit2" hidden></p>
-    <button type="button" class="${phoneBottomButton} fnext hidden max-lg:in-[.fopen]:inline-flex" data-fnext="1" id="fclipsnext" disabled><span id="fclipsnt">Next</span> ${IC.arrow}</button>
+    <button type="button" class="${phoneBottomButton} fnext hidden max-lg:in-[.fopen]:inline-flex" data-fnext="1" id="fclipsnext" disabled><span class="fspin hidden size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span><span id="fclipsnt">Next</span> ${IC.arrow}</button>
     </div>
   </section>
 
@@ -316,7 +315,7 @@ export const STUDIO_HTML = `
     <div class="fprevh"><b>Reel Preview</b><span class="fslot" id="faspslot"></span></div>
     <div class="fprevbox" id="fprevbox"><span class="fplay">${IC.play}</span><small id="fprevnote">Your Reel appears here</small></div>
     <p class="m-0 text-center text-[12.5px] font-semibold text-muted" id="fcredit" hidden></p>
-    <button type="button" class="${Button.primaryLarge} fgen" id="fgen" disabled>${IC.spark}<span id="fgent">Generate Reel</span>${IC.arrow}</button>
+    <button type="button" class="${Button.primaryLarge} fgen" id="fgen" disabled><span class="fspin hidden size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>${IC.spark}<span id="fgent">Generate Reel</span>${IC.arrow}</button>
     <ul class="fperks">
       <li><span class="fperkic">${IC.spark}</span><span><b>Shubix edits it for you</b><small>Finds the best moments and cuts them on the beat</small></span></li>
       <li><span class="fperkic">${IC.lock}</span><span><b>Private by design</b><small>Made on this device. Your videos are never uploaded.</small></span></li>
