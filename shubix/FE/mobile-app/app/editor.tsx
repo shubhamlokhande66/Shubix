@@ -18,6 +18,8 @@ import { isNativeEffectSupported, isNativeTransitionSupported, previewSpec, vide
 import { ShubixPreviewView, type PreviewRef } from "../modules/shubix-video";
 import { type AiPlan, engine, textsOf } from "../lib/engine";
 import { TEXT_TEMPLATES } from "@mobile/core/lib/text-templates";
+import { STICKERS as SHAPES } from "@mobile/core/lib/stickers";
+import Svg, { Path } from "react-native-svg";
 import { Choices, DOCK, Preview, SHOT_TOOLS, StudioBar, Timeline, ToolRow, ToolSheet, Transport } from "../components/organisms/EditorParts";
 
 type Overlay = ReelProject["overlays"][number];
@@ -423,12 +425,12 @@ export default function EditorScreen() {
   // the text being edited (the Text panel): its settings change as on the website's text editor
   const [txSel, setTxSel] = useState(""), txt = p?.overlays.find((o) => o.id === txSel);
   const setTx = (patch: Partial<Overlay>) => p && txt && change({ overlays: p.overlays.map((o) => (o.id === txt.id ? { ...o, ...patch } : o)) });
-  const addText = (text: string) => {
+  const addText = (text: string, extra: Partial<Overlay> = {}) => {
     if (!text.trim() || !p) return;
     if (now >= total - 0.05) return tell(words("Move the playhead before the end of the Reel to add text."), "info");
     const start = Math.max(0, now), end = Math.min(total, start + 3);
     if (end - start < 0.1) return tell(words("There is not enough time left in this Reel for a text overlay."), "info");
-    change({ overlays: [...p.overlays, { id: `t-${Date.now()}`, text: text.trim(), start, end, color: "#FFFFFF", size: 36 } as Overlay] });
+    change({ overlays: [...p.overlays, { id: `t-${Date.now()}`, text: text.trim(), start, end, color: "#FFFFFF", size: 36, ...extra } as Overlay] });
     setDraft("");
   };
 
@@ -482,7 +484,15 @@ export default function EditorScreen() {
     if (!tool || !p) return null;
     switch (tool.key) {
       case "media": return <View className="gap-2"><Button full icon="plus" title={words("Add clips")} onPress={() => void addClips()} /><Button full variant="secondary" icon="refresh" title={words("Replace this shot")} onPress={() => void addClips(true)} /><Button full variant="danger" icon="trash" title={words("Delete this shot")} onPress={() => void removeShot()} /></View>;
-      case "stickers": return <Choices items={STICKERS} onPick={addText} />;
+      case "stickers": return (
+        <View className="gap-3">
+          {/* Shubix's own stickers (the same shapes as the website and the export), then emoji and signs */}
+          <View className="flex-row flex-wrap gap-2">{Object.entries(SHAPES).map(([k, s]) => (
+            <Pressable key={k} onPress={() => addText(s.name, { emoji: true, stk: k, color: s.color })} accessibilityLabel={words(s.name)} className="h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface-2 active:opacity-80">
+              <Svg viewBox="-6 -6 112 112" width={30} height={30}><Path d={s.d} fill={s.color} fillRule="evenodd" stroke={s.color === "#FFFFFF" ? "#111" : "#fff"} strokeWidth={8} /></Svg>
+            </Pressable>))}</View>
+          <Choices items={STICKERS} onPick={(t) => addText(t)} />
+        </View>);
       case "look": return (
         <View className="gap-3">
           <Pressable onPress={() => void choose("touch", !touch, "aitouch")} accessibilityRole="checkbox" accessibilityState={{ checked: touch }} className="flex-row gap-2.5">

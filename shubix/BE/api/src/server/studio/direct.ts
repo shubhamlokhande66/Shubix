@@ -5,6 +5,7 @@ import { getProvider, type ManagedProvider } from "../ai";
 import { clean, Text } from "../ai/text";
 import { AIResponseError } from "../ai/types";
 import { TEXT_TEMPLATES } from "@shubix/core/lib/text-templates";
+import { STICKERS } from "@shubix/core/lib/stickers";
 
 /** Fast Studio's AI director: the brain of the edit, the way an editor's judgment is.
  *
@@ -142,7 +143,7 @@ const SlotAnswer = z.object({
 });
 /** a text the AI puts on the Reel, as an editor does in the timeline: its words, when (seconds of the Reel), where, its look,
  * entrance, loop and keyframes (at = seconds from its start; s scale, x/y offset as fractions of the frame, r turn, o opacity) */
-const TextAnswer = z.object({ text: z.string(), start: z.coerce.number().default(0), end: z.coerce.number().default(3), x: z.coerce.number().default(0.5), y: z.coerce.number().default(0.4),
+const TextAnswer = z.object({ text: z.string().default(""), stk: z.string().default(""), start: z.coerce.number().default(0), end: z.coerce.number().default(3), x: z.coerce.number().default(0.5), y: z.coerce.number().default(0.4),
   size: z.coerce.number().default(1), style: z.preprocess(lower, z.string()).default("bold"), color: z.string().default("#FFFFFF"), anim: z.preprocess(lower, z.string()).default("pop"),
   loop: z.preprocess(lower, z.string()).default("none"), out: z.preprocess(lower, z.string()).default("none"), font: z.string().default(""), behind: z.boolean().default(false), track: z.boolean().default(false), emoji: z.boolean().default(false), focus: z.coerce.number().optional(),
   keys: z.array(z.object({ at: z.coerce.number(), s: z.coerce.number().default(1), x: z.coerce.number().default(0), y: z.coerce.number().default(0), r: z.coerce.number().default(0), o: z.coerce.number().default(1), ez: z.preprocess(lower, z.string()).default("inOut") })).default([]) });
@@ -153,11 +154,11 @@ const pick = (list: readonly string[], v: string, or: string) => list.find((x) =
 const num = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo));
 /** the AI's texts, each made safe to draw (a known style, entrance and loop; numbers in range; at most 20 texts and 16 keys each) */
 export function cleanTexts(raw: z.infer<typeof TextAnswer>[] | undefined) {
-  return (raw ?? []).filter((t) => t.text.trim()).slice(0, 20).map((t) => {
-    const start = num(t.start, 0, 600), end = num(t.end, start + 0.2, 600);
-    return { text: t.text.trim().slice(0, 120), start, end, x: num(t.x, 0, 1), y: num(t.y, 0, 1), size: num(t.size, 0.3, 3), color: /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : "#FFFFFF",
+  return (raw ?? []).filter((t) => t.text.trim() || STICKERS[t.stk]).slice(0, 20).map((t) => {
+    const start = num(t.start, 0, 600), end = num(t.end, start + 0.2, 600), sk = STICKERS[t.stk];
+    return { text: (t.text.trim() || sk!.name).slice(0, 120), ...(sk ? { stk: t.stk } : {}), start, end, x: num(t.x, 0, 1), y: num(t.y, 0, 1), size: num(t.size, 0.3, 3), color: /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : "#FFFFFF",
       style: pick(TEXT_STYLES, t.style, "bold"), anim: pick(TEXT_ANIMS, t.anim, "pop"), loop: pick(TEXT_LOOPS, t.loop, "none"), out: pick(TEXT_OUTS, t.out, "none"),
-      font: t.font.slice(0, 24), behind: t.behind, track: t.track, emoji: t.emoji, ...(t.focus !== undefined ? { focus: num(t.focus, 0, 1) } : {}),
+      font: t.font.slice(0, 24), behind: t.behind, track: t.track, emoji: t.emoji || !!sk, ...(t.focus !== undefined ? { focus: num(t.focus, 0, 1) } : {}),
       keys: t.keys.slice(0, LIMITS.keys).map((k) => ({ at: num(k.at, 0, end - start), s: num(k.s, 0.05, 60), x: num(k.x, -2, 2), y: num(k.y, -2, 2), r: num(k.r, -720, 720), o: num(k.o, 0, 1), ez: pick(EASES, k.ez, "inOut") })).sort((a, b) => a.at - b.at) };
   });
 }
@@ -245,8 +246,8 @@ Where the reference and the general rules disagree, the reference wins.`;
 
 /** the text tool, as an editor uses it in the timeline: the AI adds texts when the creator asks for words, a title, a
  * text effect or a text transition (any language), and may add them itself where they make the Reel better */
-const TEXT_GUIDE = `TEXTS (optional, "texts" in the JSON): words on the Reel, made like an editor makes them in the timeline. Each: {"text", "start" and "end" (seconds of the Reel), "x" and "y" (0-1, the centre), "size" (1 = normal, up to 3), "style", "color" (#RRGGBB), "anim" (entrance), "loop" (keeps moving), "behind" (true: behind the person), "track" (true: follows the person), "emoji" (true: a sticker, the text is emoji), "focus" (0-1: where along the text it is sized and turned around, e.g. 0.64 = the O of WELCOME), "keys" (keyframes: at = seconds from the text's start, s = scale (1 normal, up to 60), x/y = offset as a fraction of the frame, r = turn in degrees, o = opacity 0-1, ez = easing)}.
-Styles: ${TEXT_STYLES.join(", ")} (cutout = a solid colour fills the frame and the video shows only inside the letters). Entrances: ${TEXT_ANIMS.join(", ")}. Exits ("out", its last 0.3 s): ${TEXT_OUTS.join(", ")}. Shapes are texts of one sign in the text's colour: ■ ● ▲ ★ ♥ ◆ ➜ ━ ○ □ (style clean; size them, keyframe them, use them as frames, arrows, highlights). Loops: none, bounce, spin, wiggle, pulse, float, swing, shake. Easings: ${EASES.join(", ")}.
+const TEXT_GUIDE = `TEXTS (optional, "texts" in the JSON): words on the Reel, made like an editor makes them in the timeline. Each: {"text", "start" and "end" (seconds of the Reel), "x" and "y" (0-1, the centre), "size" (1 = normal, up to 3), "style", "color" (#RRGGBB), "anim" (entrance), "loop" (keeps moving), "behind" (true: behind the person), "track" (true: follows the person), "emoji" (true: a sticker, the text is emoji), "stk" (one of Shubix's own stickers, drawn as a shape in "color"; "text" may be empty), "focus" (0-1: where along the text it is sized and turned around, e.g. 0.64 = the O of WELCOME), "keys" (keyframes: at = seconds from the text's start, s = scale (1 normal, up to 60), x/y = offset as a fraction of the frame, r = turn in degrees, o = opacity 0-1, ez = easing)}.
+Styles: ${TEXT_STYLES.join(", ")} (cutout = a solid colour fills the frame and the video shows only inside the letters). Entrances: ${TEXT_ANIMS.join(", ")}. Exits ("out", its last 0.3 s): ${TEXT_OUTS.join(", ")}. Shapes are texts of one sign in the text's colour: ■ ● ▲ ★ ♥ ◆ ➜ ━ ○ □ (style clean; size them, keyframe them, use them as frames, arrows, highlights). Stickers ("stk"): ${Object.entries(STICKERS).map(([k, s]) => k + ' (' + s.name + ')').join(", ")}. Use them as an editor does, without being asked, where they help the Reel: an arrow or curve pointing at the product or the person, a circle or underline on what matters, a burst or new badge behind a price, a tick or cross for do / don't, a heart or fire on the best moment, a location pin for a place, a bell or play near a follow line; one or two at a time, with an entrance and often a loop (pulse, bounce, wiggle), not covering faces. Loops: none, bounce, spin, wiggle, pulse, float, swing, shake. Easings: ${EASES.join(", ")}.
 Whatever the creator asks for with words, make it with these: e.g. "WELCOME, then the video through the O" = a cutout text WELCOME, "focus": 0.64 (the O), then keyframes that scale it up to about 40, so the frame flies through the O into the video, then end the text. Combine keyframes freely (zoom in, fly through, spin in, drop in, fade out).
 OTHER TOOLS (optional, "actions" in the JSON, run in order): you are the editor: whatever the creator asks for, do it with the tools: the cuts (transition, effect, speed, keys, move, clip look) and the texts above, and these: ${Object.values(ACTIONS).join("; ")}.`;
 

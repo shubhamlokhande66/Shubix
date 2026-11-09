@@ -5,6 +5,7 @@
 import { songSample, toSlots } from './pure';
 import { sectionsOf } from '../components/studio/soundmap';
 import { TEXT_TEMPLATES } from '@mobile/core/lib/text-templates';
+import { STICKERS } from '@mobile/core/lib/stickers';
 
 export function createAiBrain(ES, EH){
 const framesMade = new WeakMap();   // a clip's frames are made once (Cancel, then Proceed: not again)
@@ -202,7 +203,7 @@ async function directorRun(key){
 function aiTexts(list){
   if(!Array.isArray(list) || !list.length) return 0;
   const D = EH.reelLen();
-  ES.overlays = ES.overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ES.ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji, style: x.style, color: x.color, anim: x.anim,
+  ES.overlays = ES.overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ES.ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji || !!STICKERS[x.stk], ...(STICKERS[x.stk] ? { stk: x.stk } : {}), style: x.style, color: x.color, anim: x.anim,
     loop: x.loop === 'none' ? undefined : x.loop, out: x.out === 'none' ? undefined : x.out, font: x.font || undefined, behind: !!x.behind, track: !!x.track, x: x.x, y: x.y, size: x.size, all: false, ...(Number.isFinite(x.focus) ? { focus: x.focus } : {}),
     t0: Math.max(0, Math.min(D - 0.1, x.start)), t1: Math.max(0.1, Math.min(D, x.end)), uk: (x.keys || []).map(k => ({ t: k.at, x: k.x, y: k.y, s: k.s, r: k.r, o: k.o, ez: k.ez })) })));
   ES.overlays.filter(o => o.font).forEach(o => EH.loadFont(o.font).then(EH.redraw));

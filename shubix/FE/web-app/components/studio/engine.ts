@@ -13,6 +13,7 @@ import { createTasks } from './tasks';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
+import { STICKERS } from '@shubix/core/lib/stickers';
 import { MAIN_VERT, MAIN_FRAG, PASS_VERT, GRADE_FRAG, PIC_FRAG, PIC_FX, TR_DUR } from '@shubix/core/lib/shaders';
 import { needMap, planRank, PLAN_NAME, DEFAULT_LOCKS } from '@shubix/core/lib/plan-locks';
 import { DEFAULT_TEMPLATES, liveTemplates, edgeAt } from '@shubix/core/lib/studio-templates';
@@ -4379,6 +4380,8 @@ const ovFont = (ov, fs, weight) => { const f = OV_FONTS[ov.font]; if(!f || !f[1]
 const OV_ANIMS = { pop: 'Pop', fade: 'Fade', slide: 'Slide up', type: 'Typewriter', zoom: 'Zoom in', drop: 'Drop in', blur: 'Blur in', spin: 'Spin in', flicker: 'Flicker', glitch: 'Glitch', none: 'None' };
 const OV_OUTS = { none: 'None', fade: 'Fade out', pop: 'Pop out', slide: 'Slide down', zoom: 'Zoom out', blur: 'Blur out', spin: 'Spin out' };   // how it leaves (its last 0.3 s)
 const OV_LOOPS = { none: 'Still', bounce: 'Bounce', spin: 'Spin', wiggle: 'Wiggle', pulse: 'Pulse', float: 'Float', swing: 'Swing', shake: 'Shake' };   // keeps moving while it shows
+// Shubix's own stickers (core/lib/stickers): drawn from their paths, kept once each
+const stkPaths = new Map(), stkPath = k => { if(!stkPaths.has(k)) stkPaths.set(k, new Path2D(STICKERS[k].d)); return stkPaths.get(k); };
 const OV_EMOJI = ['🔥','😂','😍','👇','👉','✅','❌','⭐','💯','🎉','❤️','👀','🙏','🪔','🌺','🎵','📍','💰','⚡','😱'];
 const OV_PRESETS = {
   price:   { text: '₹999 only', style: 'tag', color: '#FFD54A', y: 0.62, size: 1 },
@@ -4409,7 +4412,8 @@ function setOverlaysFromNative(list){
 function addOverlay(o){
   const L = reelLen(), now = Math.max(0, Math.min(L - 0.5, (playing ? curTime() : pos) || 0));
   const t0 = o.all ? 0 : o.end ? Math.max(0, L - 3) : now, t1 = o.all ? L : o.end ? L : Math.min(L, t0 + 3);
-  const ov = { id: ++ovSeq, text: o.text || '', emoji: !!o.emoji, style: o.style || 'bold', color: o.color || '#FFFFFF', anim: o.anim || (o.emoji ? 'pop' : 'pop'),
+  const sk = STICKERS[o.stk];
+  const ov = { id: ++ovSeq, text: o.text || (sk ? sk.name : ''), emoji: !!o.emoji || !!sk, ...(sk ? { stk: o.stk } : {}), style: o.style || 'bold', color: o.color || (sk ? sk.color : '#FFFFFF'), anim: o.anim || (o.emoji ? 'pop' : 'pop'),
     t0, t1, x: o.x ?? 0.5, y: o.y ?? 0.4, size: o.size || 1, all: !!o.all };
   overlays.push(ov); ovSel = overlays.length - 1; renderOvList(); redraw();
   return ov;
@@ -4428,7 +4432,7 @@ function addTemplate(key, words, at, len, ai){
 function aiTexts(list){
   if(!Array.isArray(list) || !list.length) return 0;
   const D = reelLen();
-  overlays = overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji, style: x.style, color: x.color, anim: x.anim,
+  overlays = overlays.filter(o => o.aiIntent !== 'ai').concat(list.map(x => ({ id: ++ovSeq, aiIntent: 'ai', text: x.text, emoji: !!x.emoji || !!STICKERS[x.stk], ...(STICKERS[x.stk] ? { stk: x.stk } : {}), style: x.style, color: x.color, anim: x.anim,
     loop: x.loop === 'none' ? undefined : x.loop, out: x.out === 'none' ? undefined : x.out, font: x.font || undefined, behind: !!x.behind, track: !!x.track, x: x.x, y: x.y, size: x.size, all: false, ...(Number.isFinite(x.focus) ? { focus: x.focus } : {}),
     t0: Math.max(0, Math.min(D - 0.1, x.start)), t1: Math.max(0.1, Math.min(D, x.end)), uk: (x.keys || []).map(k => ({ t: k.at, x: k.x, y: k.y, s: k.s, r: k.r, o: k.o, ez: k.ez })) })));
   overlays.filter(o => o.font).forEach(o => loadFont(o.font).then(redraw));
@@ -4524,7 +4528,8 @@ function drawOverlay(g, ov, t){
   g.font = ov.emoji ? `${fs}px "Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji",sans-serif` : ovFont(ov, fs, ov.style === 'clean' ? 600 : 800);
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
   const lines = ov.emoji ? [txt] : wrapLines(g, txt, W*0.82), lh = fs*1.18;
-  const tw = Math.max(...lines.map(l => g.measureText(l).width), fs*0.6), th = lh*lines.length;
+  const stk = ov.emoji && STICKERS[ov.stk] ? ov.stk : '';
+  const tw = stk ? fs*1.1 : Math.max(...lines.map(l => g.measureText(l).width), fs*0.6), th = stk ? fs*1.1 : lh*lines.length;
   // the place: inside the safe area (top 220 and bottom 450 of 1920 are Instagram's)
   const top = H*(220/1920) + th/2 + fs*0.3, bot = H*(1 - 450/1920) - th/2 - fs*0.3;
   let cx = Math.max(tw/2 + W*0.05, Math.min(W - tw/2 - W*0.05, ov.x*W)), cy = Math.max(top, Math.min(bot, ov.y*H)) + dy;
@@ -4539,7 +4544,11 @@ function drawOverlay(g, ov, t){
   g.translate(cx + lx + fx, cy + ly); if((u && u.r) || lr || turn) g.rotate(((u && u.r) || 0)*Math.PI/180 + (lr + turn)*Math.PI/180); g.scale(sc, sc); if(fx) g.translate(-fx, 0);
   if(glitchPx){ g.save(); g.globalAlpha *= 0.6; g.fillStyle = '#ff2a6d'; lines.forEach((l, k) => g.fillText(l, glitchPx, (k - (lines.length-1)/2)*lh)); g.fillStyle = '#05d9e8'; lines.forEach((l, k) => g.fillText(l, -glitchPx, (k - (lines.length-1)/2)*lh)); g.restore(); }
   const dark = c => { const n = parseInt(c.slice(1), 16); return ((n>>16)*0.299 + ((n>>8)&255)*0.587 + (n&255)*0.114) < 140; };
-  if(!ov.emoji && (ov.style === 'box' || ov.style === 'tag')){
+  if(stk){   // a Shubix sticker: its shape in its colour, with a sticker's white border (dark on a white sticker) and a soft shadow
+    const k = fs*1.1/100, P = stkPath(stk); g.scale(k, k); g.translate(-50, -50);
+    g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = fs*0.12; g.lineJoin = 'round'; g.lineWidth = 9; g.strokeStyle = ov.color.toUpperCase() === '#FFFFFF' ? '#111111' : '#FFFFFF';
+    g.stroke(P); g.shadowBlur = 0; g.fillStyle = ov.color; g.fill(P, 'evenodd');
+  } else if(!ov.emoji && (ov.style === 'box' || ov.style === 'tag')){
     const tag = ov.style === 'tag', pw = tw + fs*(tag ? 1.05 : 0.6), ph = th + fs*0.36, r = tag ? fs*0.5 : fs*0.2;
     g.fillStyle = ov.color; g.beginPath(); g.roundRect ? g.roundRect(-pw/2, -ph/2, pw, ph, r) : g.rect(-pw/2, -ph/2, pw, ph); g.fill();
     if(tag){ g.fillStyle = dark(ov.color) ? '#fff' : '#111'; g.beginPath(); g.arc(-pw/2 + fs*0.36, 0, fs*0.1, 0, Math.PI*2); g.fill(); g.translate(fs*0.24, 0); }   // the tag's hole, left of the text
@@ -4659,6 +4668,9 @@ $('ovsticker').addEventListener('click', () => { $('emojis').hidden = !$('emojis
 $('ovshapes').addEventListener('click', e => { const b = e.target.closest('[data-shape]'); if(b) addOverlay({ text: b.dataset.shape + '︎', style: 'clean', size: 2.2 }); }, SIG);
 OV_EMOJI.forEach(em => { const b = document.createElement('button'); b.textContent = em; b.className = 'em'; b.setAttribute('aria-label', 'Sticker ' + em);
   b.addEventListener('click', () => { addOverlay({ text: em, emoji: true, y: 0.5, x: 0.72, size: 1 }); $('emojis').hidden = true; }); $('emojis').appendChild(b); });
+Object.entries(STICKERS).forEach(([k, s]) => { const b = document.createElement('button'); b.className = 'em'; b.setAttribute('aria-label', 'Sticker ' + s.name); b.title = s.name;
+  b.innerHTML = `<svg viewBox="-6 -6 112 112" width="26" height="26" aria-hidden="true"><path d="${s.d}" fill="${s.color}" fill-rule="evenodd" stroke="${s.color === '#FFFFFF' ? '#111' : '#fff'}" stroke-width="8" paint-order="stroke"/></svg>`;
+  b.addEventListener('click', () => { addOverlay({ stk: k, y: 0.5, x: 0.72, size: 1 }); $('emojis').hidden = true; }); $('emojis').appendChild(b); });
 $('ovtpl').addEventListener('change', e => { const k = e.target.value; e.target.value = ''; if(k) addTemplate(k); }, SIG);
 $('ovpreset').addEventListener('change', e => { const p = OV_PRESETS[e.target.value]; e.target.value = ''; if(p) addOverlay(p); }, SIG);
 // drag on the preview: the item under the finger moves with it (a tap selects it)

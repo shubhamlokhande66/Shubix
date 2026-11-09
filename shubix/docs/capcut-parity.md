@@ -131,5 +131,8 @@ These features are not built, because each one needs a paid service or a licence
 
 ## Still to do (free to build)
 
+- Done 2026-11-09: 24 Shubix stickers (core/lib/stickers.ts, vector shapes; website + phone + Shubix AI "stk", placed by the AI without being asked)
+- Next (decided 2026-11-09): CC0 recorded sound effects; on-device background removal (MediaPipe, Apache-2.0)
+
 - Live preview on the phone with the studio's full look while it plays
 - On the phone: drag keyframe positions; per-band HSL sliders
