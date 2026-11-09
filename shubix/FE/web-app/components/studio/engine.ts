@@ -3237,18 +3237,38 @@ let footTimer = 0;
 const fitOn = () => $('fitclips').checked;
 function footCheckSoon(){ if(kind === 'talk') return;   // in Create and in the editor (clips added or removed there)
   clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
+/* "Make the Reel as long as my clips" ticked: the length buttons are off (the clips decide). Good video shorter than the song:
+ * the Reel is that long (the song's best part of it); as long as the song or longer: the whole song (Make Reel asks what to
+ * do when the clips are much longer: askShort). Unticked: the length is the person's, as before. */
+const songLen = () => song && song.buf ? song.buf.duration : 0;
+const goodHave = () => Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
+function lenLock(){
+  const on = fitOn() && kind !== 'talk';
+  [...$('slen').children].forEach(b => { b.disabled = on; }); $('slenc').disabled = on;
+  $('slen').title = on ? 'Set by your clips (Make the Reel as long as my clips)' : '';
+}
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
-  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
-  const short = have < need * 0.95;
-  if(short && fitOn() && have >= 5){ $('fitnote').hidden = true; setLen(have); return; }
+  const have = goodHave(), full = songLen();
+  if(fitOn() && full){
+    if(have >= 5){ const target = have < full * 0.95 ? have : 0;   // 0: the whole song
+      if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len) setLen(target); }
+    $('fitnote').hidden = false;
+    $('fitnote').textContent = have < 5 ? 'Add more clips: your clips have ' + fmtS(have) + ' of good video.'
+      : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
+      : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
+      : 'Your Reel: the whole song (' + fmtS(full) + ').';
+    return;
+  }
+  const need = buf.duration, short = have < need * 0.95;
   $('fitnote').hidden = !short;
   if(short) $('fitnote').textContent = 'Your clips have ' + fmtS(have) + ' of good video and the Reel is ' + fmtS(need) + ': tick the box above, shorten the music or add clips.';
 }
-$('fitclips').addEventListener('change', () => footCheckSoon(), SIG);
+$('fitclips').addEventListener('change', () => { lenLock(); footCheckSoon(); }, SIG);
+lenLock();
 /* Generate, before Shubix AI and before any credits: a clip that could not be read, too little good video. 'go', 'stop', or
  * 'again' (the Reel is now as long as the clips: Generate goes on once it is made). */
-let badTold = 0;
+let badTold = 0, longOk = '';   // longOk: 'Shubix picks the best' was chosen for these clips and this song
 async function askShort(){
   const bad = [...$('clips').children].filter(c => c.dataset.bad).length;
   if(bad && badTold !== bad){
@@ -3257,9 +3277,22 @@ async function askShort(){
     badTold = bad;
   }
   if(!buf || !sources.length || kind === 'talk') return 'go';
-  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));
+  const need = buf.duration, have = goodHave(), full = songLen();
+  if(fitOn() && full && have >= 5){
+    // much more good video than song: what to do is the person's (a longer song, fewer clips, or Shubix picks the best)
+    const key = have + ':' + Math.round(full);
+    if(have > full * 1.1 && longOk !== key){
+      const v = await askCredits({ title: 'Your clips are longer than your song', text: 'Your song is ' + fmtS(full) + ' and your clips have ' + fmtS(have) + ' of good video. No credits were used.',
+        bal: null, ok: 'Shubix picks the best ' + fmtS(full), no: 'Add a longer song', extra: 'I’ll remove some clips' });
+      if(v === false){ root.dispatchEvent(new CustomEvent('studio-goto', { detail: 'music' })); return 'stop'; }
+      if(v !== true) return 'stop';
+      longOk = key;
+    }
+    const target = have < full * 0.95 ? have : 0;
+    if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len){ setLen(target); return 'again'; }   // as long as the clips: no question
+    return 'go';
+  }
   if(have >= need * 0.95) return 'go';
-  if(fitOn() && have >= 5){ setLen(have); return 'again'; }   // as long as the clips: no question
   const v = await askCredits({ title: 'Not enough clips', text: 'Your clips have ' + fmtS(have) + ' of good video. Your Reel is ' + fmtS(need) + '. No credits were used.', ok: 'Add clips', ...(have >= 5 ? { no: 'Make a ' + fmtS(have) + ' Reel' } : {}) });
   if(v === true){ $('vfile').click(); return 'stop'; }
   if(v === false){ setLen(Math.max(5, have)); return 'again'; }
