@@ -3474,6 +3474,20 @@ function makeEditNow(){
     for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
     }
+    // a shot no slower than 0.4x can fill (a 2.5 s clip under a 9 s shot stood still for 3 s, its camera move still
+    // drifting over the stopped picture): its cut moves, its time goes to the clips beside it that have footage to
+    // spare, on a beat where one is near
+    const cap = i => Math.max(0.3, (sources[seq[i]].dur - TAIL)/0.4), len = i => plan[i].end - plan[i].start;
+    const move = (i, d) => {   // the cut between shot i and i+1 moves by d (earlier when d < 0)
+      let t = plan[i].end + d; const b = beats.reduce((x, y) => Math.abs(y - t) < Math.abs(x - t) ? y : x, Infinity);
+      if(Math.abs(b - t) < 0.3 && b - plan[i].start <= cap(i) + 1e-6 && plan[i+1].end - b <= cap(i+1) + 1e-6 && b - plan[i].start >= 0.4 && plan[i+1].end - b >= 0.4) t = b;
+      plan[i].end = t; plan[i+1] = { ...plan[i+1], start: t };
+    };
+    for(let pass = 0; pass < 4; pass++) for(let i = 0; i < plan.length; i++){
+      let over = len(i) - cap(i); if(over <= 0.02) continue;
+      if(i + 1 < plan.length){ const d = Math.min(over, cap(i+1) - len(i+1)); if(d > 0.02){ move(i, -d); over = len(i) - cap(i); } }
+      if(over > 0.02 && i > 0){ const d = Math.min(over, cap(i-1) - len(i-1)); if(d > 0.02) move(i-1, d); }
+    }
   }
   const order = plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[plan[a].type]) - (b===0?-1:pr[plan[b].type]) || a-b; });
   const res = new Array(plan.length); dupCount = 0;
