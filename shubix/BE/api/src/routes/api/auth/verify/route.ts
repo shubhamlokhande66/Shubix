@@ -8,5 +8,5 @@ import { limits } from "../../../../server/core/rateLimit";
 export const POST = route(async (req) => {
   const p = await body(req, z.union([z.object({ code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code.") }), z.object({ token: z.string().min(20).max(200) })]));
   limits.reset(req); // guessing codes: a few tries per IP, and CODE_TRIES per code
-  return "code" in p ? verifyCode(p.code) : verifyEmail(p.token);
+  return "code" in p ? verifyCode(p.code, req) : verifyEmail(p.token);
 });

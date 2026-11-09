@@ -77,7 +77,7 @@ async function accountFacts(userId: string) {
 /** The affiliate-only session (the partner dashboard, /affiliate, signed in by an emailed code): its own cookie, so it
  * opens the partner dashboard and nothing else of the studio (the /api/partner routes read it, resolveUser never does). */
 export const PARTNER_COOKIE = "partner_session";
-function cookieOf(req: Request, name: string): string | null {
+export function cookieOf(req: Request, name: string): string | null {
   for (const part of (req.headers.get("cookie") ?? "").split(";")) {
     const i = part.indexOf("=");
     if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();

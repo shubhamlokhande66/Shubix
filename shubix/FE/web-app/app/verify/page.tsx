@@ -49,11 +49,13 @@ function ByCode({ justSent }: { justSent: boolean }) {
   const [code, setCode] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null), [note, setNote] = useState<string | null>(null);
   const wait = useCountdown(justSent ? 60 : 0);
-  const user = me.data?.user, codeWait = user?.codeWait, startWait = wait.start;
+  // a new sign-up (no account until its code) or an account whose email is not proved yet
+  const user = me.data?.user, pending = me.data?.pending, codeWait = user?.codeWait ?? pending?.codeWait, startWait = wait.start;
   useEffect(() => { if (codeWait) startWait(codeWait); }, [codeWait]); // eslint-disable-line react-hooks/exhaustive-deps -- how long the server still wants, on any way here
   if (me.isLoading) return <Spinner />;
-  if (!user) return <p className="m-0 text-[13px]">{text("auth.signInToVerify")} <Link href="/login" className="font-bold text-accent">{text("auth.signIn")}</Link></p>;
-  if (done || user.emailVerified !== false) return <Done email={done ?? user.email} />;
+  if (!user && !pending) return <p className="m-0 text-[13px]">{text("auth.signInToVerify")} <Link href="/login" className="font-bold text-accent">{text("auth.signIn")}</Link></p>;
+  if (done || (user && user.emailVerified !== false)) return <Done email={done ?? user!.email} />;
+  const email = user?.email ?? pending!.email;
 
   const verify = async (c = code) => {
     if (c.length !== 6 || busy) return;
@@ -69,7 +71,7 @@ function ByCode({ justSent }: { justSent: boolean }) {
   };
   return (
     <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void verify(); }}><fieldset disabled={busy} className="contents">
-      <p className="m-0 text-[13px] text-muted">{text("auth.codeSentTo", { email: maskEmail(user.email) })}</p>
+      <p className="m-0 text-[13px] text-muted">{text("auth.codeSentTo", { email: maskEmail(email) })}</p>
       <OtpInput label={text("auth.codeLabel")} value={code} onChange={(v) => { setCode(v); setError(null); }} onComplete={(v) => void verify(v)} invalid={!!error} disabled={busy} />
       {error && <ErrorBanner message={error} />}
       {note && !error && <p className="m-0 text-[12.5px] font-semibold text-success">{note}</p>}
