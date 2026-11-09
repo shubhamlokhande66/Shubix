@@ -104,8 +104,13 @@ async function parseError(res: Response): Promise<ApiError> {
   } catch {
     /* fall through */
   }
+  // not our server's answer: the hosting in front of it could not reach it (asleep, restarting or down)
+  if (res.status >= 500) return new ApiError(res.status, { code: "SERVER_DOWN", message: TECH_ISSUE });
   return new ApiError(res.status, { code: "HTTP_ERROR", message: `Request failed (${res.status}).` });
 }
+
+/** What people read when the server cannot be reached or does not answer: not a technical message. */
+export const TECH_ISSUE = "Technical issue: our team is looking into it. Please try again in a moment.";
 
 /** No request may hang forever: without an answer in time it fails with a clear message (the server may be down). */
 const DEFAULT_TIMEOUT_MS = 45_000;
@@ -113,6 +118,21 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 /** A read that timed out or lost the connection is asked again this many times (a busy server usually answers the next one). */
 const GET_RETRIES = 3;
 const RETRYABLE = new Set(["SERVER_TIMEOUT", "NETWORK_ERROR"]);
+
+/** Signing in waits for a sleeping server (it wakes in about 15 s): the request is sent again while the server could not
+ * be reached at all (it never got it), for up to a minute; then the technical-issue message. */
+export const SIGN_IN_WAIT_MS = 60_000;
+export async function patiently<T>(send: (timeoutMs: number) => Promise<T>, total = SIGN_IN_WAIT_MS): Promise<T> {
+  const end = Date.now() + total;
+  for (;;) {
+    try { return await send(Math.max(5_000, end - Date.now())); }
+    catch (e) {
+      const unreached = e instanceof ApiError && (e.code === "NETWORK_ERROR" || e.code === "SERVER_DOWN");
+      if (!unreached || Date.now() + 3_000 > end) throw e;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
@@ -149,12 +169,12 @@ async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: n
     if (ctrl.signal.aborted) {
       throw new ApiError(0, {
         code: "SERVER_TIMEOUT",
-        message: `The server did not answer within ${Math.round(timeoutMs / 1000)} seconds. It may be busy or restarting: wait a moment and try again.`,
+        message: TECH_ISSUE,
       });
     }
     throw new ApiError(0, {
       code: "NETWORK_ERROR",
-      message: "Cannot reach the server. Is the backend running?",
+      message: TECH_ISSUE,
     });
   }
   clearTimeout(timer);
@@ -179,7 +199,7 @@ function upload<T>(path: string, form: FormData, onProgress?: (fraction: number)
     xhr.withCredentials = true; // the session cookie (accounts on)
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
     xhr.onerror = () =>
-      reject(new ApiError(0, { code: "NETWORK_ERROR", message: "Cannot reach the server. Is the backend running?" }));
+      reject(new ApiError(0, { code: "NETWORK_ERROR", message: TECH_ISSUE }));
     xhr.onload = () => {
       let body: unknown = null;
       try {
@@ -207,12 +227,12 @@ export type AdsConfig = { enabled: boolean; client: string; slot: string; places
 export const api = {
   health: () => request<Health>("/api/health"),
   me: () => viaBoot("me", () => request<{ authEnabled: boolean; user: { id: string; email: string; emailVerified?: boolean; iosApp?: boolean; codeWait?: number } | null; pending?: { email: string; codeWait: number } }>("/api/auth/me")),
-  login: (email: string, password: string) =>
-    request<{ user: { id: string; email: string; emailVerified?: boolean }; adminCode?: boolean }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  register: (email: string, password: string, ref?: string) =>
-    request<{ user: { id: string; email: string; emailVerified?: boolean } }>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, ...(ref ? { ref } : {}) }) }),
+  login: (email: string, password: string) => patiently((ms) =>
+    request<{ user: { id: string; email: string; emailVerified?: boolean }; adminCode?: boolean }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, ms)),
+  register: (email: string, password: string, ref?: string) => patiently((ms) =>
+    request<{ user: { id: string; email: string; emailVerified?: boolean } }>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, ...(ref ? { ref } : {}) }) }, ms)),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
-  verifyCode: (code: string) => request<{ ok: boolean; email: string }>("/api/auth/verify", { method: "POST", body: JSON.stringify({ code }) }),
+  verifyCode: (code: string) => patiently((ms) => request<{ ok: boolean; email: string }>("/api/auth/verify", { method: "POST", body: JSON.stringify({ code }) }, ms)),
   resetWithCode: (email: string, code: string, password: string) =>
     request<{ user: { id: string; email: string } }>("/api/auth/reset", { method: "POST", body: JSON.stringify({ email, code, password }) }),
   verifyEmail: (token: string) => request<{ ok: boolean; email: string }>("/api/auth/verify", { method: "POST", body: JSON.stringify({ token }) }),
@@ -358,7 +378,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     }).catch(() => {
-      throw new ApiError(0, { code: "NETWORK_ERROR", message: "Cannot reach the server. Is the backend running?" });
+      throw new ApiError(0, { code: "NETWORK_ERROR", message: TECH_ISSUE });
     });
     if (!res.ok) throw await parseError(res);
     return res.blob();

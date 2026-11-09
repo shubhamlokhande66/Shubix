@@ -50,7 +50,7 @@ export function SettingsTab() {
     },
     {
       id: "access", icon: "user", title: "Sign-in rules",
-      line: `Open without an account: ${ACCESS_PAGES.filter((p) => access.open.includes(p.path)).map((p) => p.label).join(", ") || "none"} · the studio asks on ${access.studioAsk}${access.google && access.googleReady ? " · Google on" : ""}`,
+      line: `Open without an account: ${ACCESS_PAGES.filter((p) => access.open.includes(p.path)).map((p) => p.label).join(", ") || "none"} · Generate needs an account${access.google && access.googleReady ? " · Google on" : ""}`,
       badge: { text: `${access.open.length} open`, tone: "brand" }, body: <AccessSettings />,
     },
     {
