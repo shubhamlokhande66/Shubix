@@ -299,7 +299,9 @@ function naturalFootage(){
     const F = src.faces || []; if(F.length && F.filter(x => x.n).length/F.length >= 0.3) faces++;
   }
   if(!n || act/n >= 0.4) return false;
-  return life > 0 || faces/n >= 0.3 || period >= 0.45;   // people or places, or a calm song (under ~133 BPM)
+  // family, festival, travel or home clips (the AI's tags), or people on a slow song (100 BPM or less); a beat song
+  // (pop, EDM, Bollywood dance: 100-140 BPM) with people keeps the beat edit
+  return life > 0 || (faces/n >= 0.3 && period >= 0.6) || period >= 0.66;
 }
 function adaptPlan0(){
   if(mode==='copy' && refProfile) return copyPlan();
