@@ -3,7 +3,7 @@
  * /api/boot request instead of seven. Every later read (a refresh, an invalidation, the next page) goes to its own route
  * as before, and a part boot did not bring (or a failed boot) is asked from its route too: nothing behaves differently. */
 
-export type BootKey = "me" | "credits" | "admin" | "features" | "texts" | "planLocks" | "site" | "offer" | "help" | "plans" | "content" | "ads" | "notifications";
+export type BootKey = "me" | "credits" | "admin" | "features" | "texts" | "planLocks" | "site" | "offer" | "help" | "plans" | "content" | "ads" | "notifications" | "access";
 
 let boot: Promise<Partial<Record<BootKey, unknown>>> | null = null;
 const used = new Set<BootKey>();

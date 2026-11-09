@@ -14,6 +14,7 @@
 
 import type { TaskEvent } from "./tasks";
 import { tx } from "./i18n";
+import { needsSignIn, signInThen } from "../../lib/returnTo";
 
 type Kind = "music" | "talk" | "photo" | "copy";
 type Step = "intro" | "choose" | "adjust" | "clips" | "analyse";
@@ -52,6 +53,10 @@ export function initFlow(root: HTMLElement): () => void {
   const lines = new Map<string, "now" | "ok">();
   const working = new Set<string>(); // the WAIT tasks running right now
   let wantGen = false, aiLater = false; // Generate pressed: the popup shows what is left, and it goes on by itself
+  // back from signing in (?go=1): Generate is pressed by itself once the saved Reel is read again; signInOk: the account
+  // check before Generate is done
+  let autoGo = q.get("go") === "1", signInOk = false;
+  if (autoGo) { const u = new URL(location.href); u.searchParams.delete("go"); history.replaceState(history.state, "", u); }
   let lengthTouched = false;
   const phone = () => window.matchMedia("(max-width: 1023px)").matches;
   // how many screens of this flow the browser has before this one (0: the page as it was opened)
@@ -332,6 +337,7 @@ export function initFlow(root: HTMLElement): () => void {
       if (stopped().song || stopped().clips || !!stop || (!reading && !songComing && !goes)) wantGen = false;
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
+    if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     // no popup until Generate: the work goes on behind the page
     const quiet = !revealed && !aiGo && !wantGen && !inEngine ? "1" : "";
     if ((root.dataset.fquiet ?? "") !== quiet) { root.dataset.fquiet = quiet; root.dispatchEvent(new Event("studio-quiet")); }
@@ -408,6 +414,15 @@ export function initFlow(root: HTMLElement): () => void {
     if (t.closest("#fadjust")) { go("adjust"); return; }
     if (t.closest("#slen") && e.isTrusted) lengthTouched = true;
     if (t.closest("#fgen")) {
+      // nobody signed in and the administrator asks for an account here: the Reel is saved on this device, the sign-in
+      // page opens, and the studio comes back to this Reel and generates it (?go=1)
+      if (!signInOk) {
+        void (async () => {
+          if (await needsSignIn("generate")) { const id = await live()?.saveNow?.(); return signInThen(id ? `${location.pathname}?p=${id}&step=clips&go=1` : location.pathname); }
+          signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click();
+        })();
+        return;
+      }
       // too few credits: said at once, before any waiting (Top up, or a free edit)
       if (live()?.aiPrice?.().low) { void live()!.askLow!().then(() => { if (live()?.aiPrice?.().low) return; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }); return; }   // (Free edit goes on; Top up and closing it do not)
       // still being read: the one popup shows it now, and this goes on by itself when it is done

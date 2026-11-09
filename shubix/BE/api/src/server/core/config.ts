@@ -131,6 +131,9 @@ export const settings = {
   youtubeClientSecret: env("YOUTUBE_CLIENT_SECRET", ""),
   youtubeRefreshToken: env("YOUTUBE_REFRESH_TOKEN", ""),
   publicBaseUrl: env("PUBLIC_BASE_URL", ""),
+  // "Continue with Google" (Google Cloud → APIs & Services → Credentials → OAuth client, Web); both are secrets
+  googleClientId: env("GOOGLE_CLIENT_ID", ""),
+  googleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),
   geminiTextModel: env("GEMINI_TEXT_MODEL", ""),
   geminiVisionModel: env("GEMINI_VISION_MODEL", ""),
   anthropicApiKey: env("ANTHROPIC_API_KEY", ""),

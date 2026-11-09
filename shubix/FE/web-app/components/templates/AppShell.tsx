@@ -38,13 +38,14 @@ import { InstallBanner } from "@/components/molecules/InstallBanner";
 import { captureRef } from "@/lib/marketing";
 import { OfferStrip } from "@/components/molecules/OfferStrip";
 import { TOP_SLOT, useCustomTitle } from "@/components/templates/TopBar";
-import { useAdmin, useCredits, useFeatures, useLockCheck, useMe, useText } from "@/hooks/useApi";
+import { useAccess, useAdmin, useCredits, useFeatures, useLockCheck, useMe, useText } from "@/hooks/useApi";
 import { lockTag, PAGE_LOCK } from "@shubix/core/lib/plan-locks";
 import { usePresence } from "@/lib/usePresence";
 import { isHidden, pauseAllMedia } from "@/lib/background";
 import { useErrorReport } from "@/lib/useErrorReport";
 import { FEATURE_LIST, linkOn, pageFeature } from "@shubix/core/lib/features-list";
-import { AUTH_PAGES, GROUPS, TABS, isActive, isPublic, isStudio, pageMeta, showTabs } from "@shubix/core/lib/nav";
+import { AUTH_PAGES, GROUPS, TABS, isActive, isStudio, pageMeta, showTabs } from "@shubix/core/lib/nav";
+import { isOpen } from "@shubix/core/lib/access";
 
 export { GROUPS, isActive };
 
@@ -217,6 +218,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
+  const access = useAccess();
   const text = useText();
   const [drawer, setDrawer] = useState(false);
   // an administrator who chose "Continue without admin powers" is not asked again in this tab
@@ -272,10 +274,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authPage = AUTH_PAGES.includes(pathname); // sign in, forgot / reset password: shown on their own
   const partnerPage = pathname === PARTNER_PAGE;
   const enginePage = pathname === "/engine"; // the phone app's hidden engine (app/engine): the studio alone, the phone signs its requests
-  const publicPage = partnerPage || enginePage || isPublic(pathname); // open to everyone, also before signing in
+  const publicPage = partnerPage || enginePage || isOpen(pathname, access); // open to everyone, also before signing in
   const signedOut = !!me.data?.authEnabled && !me.data.user;
   useEffect(() => {
-    if (signedOut && !authPage && !publicPage) router.replace("/login"); // accounts on and nobody signed in: the sign-in page
+    if (signedOut && !authPage && !publicPage) router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); // accounts on and nobody signed in: the sign-in page, then back here
   }, [signedOut, authPage, publicPage, router]);
   // the email's code not entered yet: nothing opens but the code screen (the server refuses the rest too)
   const needsCode = me.data?.user?.emailVerified === false && !authPage && !publicPage;
