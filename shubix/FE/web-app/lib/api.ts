@@ -226,7 +226,7 @@ export type AdPlace = "home" | "homeEnd" | "reels" | "rewards" | "account";
 export type AdsConfig = { enabled: boolean; client: string; slot: string; places: Record<AdPlace, boolean>; admob: { android: string; ios: string; interstitial: string; rewarded: string; rewardCredits: number; rewardDaily: number } };
 export const api = {
   health: () => request<Health>("/api/health"),
-  me: () => viaBoot("me", () => request<{ authEnabled: boolean; user: { id: string; email: string; emailVerified?: boolean; iosApp?: boolean; codeWait?: number } | null }>("/api/auth/me")),
+  me: () => viaBoot("me", () => request<{ authEnabled: boolean; user: { id: string; email: string; emailVerified?: boolean; iosApp?: boolean; codeWait?: number } | null; pending?: { email: string; codeWait: number } }>("/api/auth/me")),
   login: (email: string, password: string) => patiently((ms) =>
     request<{ user: { id: string; email: string; emailVerified?: boolean }; adminCode?: boolean }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, ms)),
   register: (email: string, password: string, ref?: string) => patiently((ms) =>
