@@ -52,7 +52,7 @@ export function initFlow(root: HTMLElement): () => void {
   let refFile: File | null = null, refName = "", autoSong = false;
   const lines = new Map<string, "now" | "ok">();
   const working = new Set<string>(); // the WAIT tasks running right now
-  let wantGen = false, aiLater = false; // Generate pressed: the popup shows what is left, and it goes on by itself
+  let checking = false, wantGen = false, aiLater = false; // Generate pressed: the popup shows what is left, and it goes on by itself
   // back from signing in (?go=1): Generate is pressed by itself once the saved Reel is read again; signInOk: the account
   // check before Generate is done
   let autoGo = q.get("go") === "1", signInOk = false;
@@ -64,6 +64,9 @@ export function initFlow(root: HTMLElement): () => void {
   // the phone app's hidden studio (/engine) keeps its own address: a reload there (the phone restarting the page) must
   // open the engine again, never the Create flow or the editor (the app would stop working)
   const inEngine = location.pathname === "/engine";
+  // whether someone is signed in, asked as the page opens (the server may need 20-30 s to wake): Generate is then at once.
+  // (checking, above: Generate pressed while it is still being asked; its button shows a spinner, never a silent wait)
+  if (!inEngine) void needsSignIn().then((need) => { if (!need) signInOk = true; }).catch(() => {});
   const setAddress = (url: string) => { if (!inEngine) history.replaceState(history.state, "", url); };
   // a tool open on the phones' Reel (Edit Options) is a screen of its own too: Back closes it
   let toolMarked = "";
@@ -302,10 +305,10 @@ export function initFlow(root: HTMLElement): () => void {
     const reading = !stopped().clips && (working.has("clips") || (!!$("qinfo").textContent && !clipsOk()));
     // on as soon as the clips are chosen: what is still being read is shown in the popup after the press
     const goes = (clipsOk() || reading) && (!!songOk() || songComing);
-    setFlag($<HTMLButtonElement>("fclipsnext"), "disabled", (!clipsOk() && !stopped().clips && !reading) || !!stop || wantGen);
+    setFlag($<HTMLButtonElement>("fclipsnext"), "disabled", (!clipsOk() && !stopped().clips && !reading) || !!stop || wantGen || checking);
     const missing = stopped().clips ? "" : !clipsOk() ? (reading ? "Reading your clips…" : has("photomode") ? "Add your photos to continue" : "Add your clips to continue")
       : !songOk() && !songComing ? "Add your song first" : "";
-    setText($("fclipsnt"), stop || (goes ? "Make Reel" : missing || "Make Reel"));
+    setText($("fclipsnt"), checking ? "Getting ready…" : stop || (goes ? "Make Reel" : missing || "Make Reel"));
     // Music (phones): Next only with a song ready (or "use my clips' own sound"), a spinner while it is read
     const songBusy = working.has("song") || working.has("refsong");   // (the beat check is waited for at the clips)
     for (const [b, t] of [["fchnext", "fchnt"], ["fadjnext", "fadjnt"]] as const) {
@@ -319,10 +322,10 @@ export function initFlow(root: HTMLElement): () => void {
     for (const id of ["fcredit", "fcredit2"]) { setText($(id), priced); setFlag($(id), "hidden", !priced || !goes); }
     const left = !price?.on || !price.cost || price.low ? "" : price.balance === null ? `Shubix AI: ${price.cost} credits` : `Shubix AI: ${price.cost} credits · ${Math.max(0, price.balance - price.cost)} left after`;
     if ((root.dataset.fcredit ?? "") !== left) root.dataset.fcredit = left;
-    setFlag($<HTMLButtonElement>("fgen"), "disabled", (!ready && !paused && !goes) || wantGen);
-    setAttr($("fclipsnext"), "aria-busy", String(wantGen));
-    setAttr($("fgen"), "aria-busy", String(wantGen));
-    setText($("fgent"), paused ? "Continue analysis" : wantGen ? "Making your Reel…" : ready || goes ? "Generate Reel" : stopped().song ? missing || "Generate Reel" : (!songOk() && !songComing && (kind !== "copy" || has("pickown")) ? "Add your song first" : missing || "Generate Reel"));
+    setFlag($<HTMLButtonElement>("fgen"), "disabled", (!ready && !paused && !goes) || wantGen || checking);
+    setAttr($("fclipsnext"), "aria-busy", String(wantGen || checking));
+    setAttr($("fgen"), "aria-busy", String(wantGen || checking));
+    setText($("fgent"), checking ? "Getting ready…" : paused ? "Continue analysis" : wantGen ? "Making your Reel…" : ready || goes ? "Generate Reel" : stopped().song ? missing || "Generate Reel" : (!songOk() && !songComing && (kind !== "copy" || has("pickown")) ? "Add your song first" : missing || "Generate Reel"));
     const aiDone = aiGo && made() && !aiWorking();
     setText($("freadyt"), aiDone ? "Your Reel is ready!" : aiGo ? "Shubix is editing your Reel…" : "Ready to create your Reel!");
     setText($("freadys"), aiDone ? "Opening your Reel…" : aiGo ? "Every clip, every beat: it takes a moment." : ready ? "Press Generate Reel to start Shubix." : copy && !refName && !songOk() ? "Pick the Reel to match, then add your clips."
@@ -419,7 +422,9 @@ export function initFlow(root: HTMLElement): () => void {
       if (!signInOk && !inEngine) {
         void (async () => {
           const go = () => { signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); };
-          if (await needsSignIn()) return signInBeside(go);   // in a new tab: this one keeps the Reel (no save and reload: an iPhone ran out of memory)
+          checking = true; apply();
+          const need = await needsSignIn().finally(() => { checking = false; apply(); });
+          if (need) return signInBeside(go);   // in a new tab: this one keeps the Reel (no save and reload: an iPhone ran out of memory)
           go();
         })();
         return;
