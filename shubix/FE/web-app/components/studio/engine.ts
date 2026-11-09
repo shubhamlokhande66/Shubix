@@ -719,6 +719,8 @@ async function clipReader(src, maxSide){
     const track = await input.getPrimaryVideoTrack();
     if(!track || !(await track.canDecode())){ try{ input.dispose(); }catch(e){} throw new Error('no WebCodecs decoder'); }
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
+    // the clip lasts as long as its picture: a phone clip's sound often runs on after the last frame, and a shot there freezes
+    const vEnd = await track.computeDuration().catch(() => 0) - first; if(vEnd > 0.3 && vEnd < src.dur - 0.04) src.dur = vEnd;
     const sink = new mb.CanvasSink(track, { width: Math.max(2, Math.round(src.w*sc/2)*2), height: Math.max(2, Math.round(src.h*sc/2)*2), fit: 'fill', poolSize: 2 });
     return { fast: true,
       async *frames(ts){ for await (const wc of sink.canvasesAtTimestamps(ts.map(t=>first + t))) yield wc ? wc.canvas : null; },
@@ -3437,10 +3439,15 @@ let seqOn = true; root.classList.add('seqon');   // In my order by default, as o
 function seqSlots(n){
   const S = sources, avg = S.reduce((a,s)=>a+s.dur,0)/S.length, w = S.map(s=>Math.min(2*avg, Math.max(0.5*avg, s.dur))), tot = w.reduce((a,b)=>a+b,0);
   const sum = c => c.reduce((a,b)=>a+b,0);
-  const cnt = w.map(x => Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot)));   // every clip once while there are shots enough
+  // how many shots each clip's footage fills: a short clip given more shows the same moment twice
+  const shot = plan.length ? plan.reduce((a,s)=>a+s.end-s.start,0)/plan.length : 1, room = S.map(s => Math.max(1, Math.floor((s.dur - TAIL)/Math.max(0.2, shot))));
+  const cnt = w.map((x, j) => Math.min(room[j], Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot))));   // every clip once while there are shots enough
   while(sum(cnt) > n){ const k = cnt.lastIndexOf(Math.max(...cnt)); cnt[k]--; }   // (fewer shots than clips: the last clips wait)
-  while(sum(cnt) < n){ let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b){ b = r; k = j; } }); cnt[k]++; }
-  return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
+  while(sum(cnt) < n){ const free = cnt.some((c,j) => c < room[j]); let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b && (!free || c < room[j])){ b = r; k = j; } }); cnt[k]++; }
+  // never the same clip on two cuts in a row: a clip's next shot waits for the next clip (the order stays near the person's)
+  const seq = cnt.flatMap((c, si) => Array(c).fill(si));
+  for(let i = 1; i < seq.length; i++) if(seq[i] === seq[i-1]){ const j = seq.findIndex((x, k) => k > i && x !== seq[i]); if(j > 0) seq.splice(i, 0, seq.splice(j, 1)[0]); }
+  return seq;   // shot i -> its clip
 }
 // In my order, the moments: each clip is walked forward only (a shot starts where the one before it in that clip ended, so
 // no moment is ever used twice, and a clip once left is never come back to); a normal shot takes its clip's best moment
