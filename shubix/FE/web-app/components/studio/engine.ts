@@ -7558,7 +7558,11 @@ async function resumeOffer(){
   let id = ''; try{ id = sessionStorage.getItem('brs-resume:' + location.pathname) || ''; }catch(e){}
   if(!id || new URLSearchParams(location.search).get('p')) return;
   const p = await idb('meta', 'readonly', st => st.get(id)).catch(() => null); if(!p) return;
-  const v = await askCredits({ title: 'Your Reel "' + p.name + '" was saved on this phone.', text: '', bal: null, ok: 'Continue', no: 'Start new' });
+  // what is waiting, in plain words: its name, its clips and length, when it was saved
+  const n = (p.state && Array.isArray(p.state.clips)) ? p.state.clips.length : 0, mins = Math.max(0, Math.round((Date.now() - (p.updated || Date.now()))/60000));
+  const ago = mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : mins < 1440 ? Math.round(mins/60) + ' h ago' : new Date(p.updated).toLocaleDateString([], { day: 'numeric', month: 'short' });
+  const v = await askCredits({ title: 'Pick up where you left off?', text: '“' + (p.name || 'Your Reel') + '” is saved on this device with its song, clips and edits.',
+    list: [n ? n + (n === 1 ? ' clip' : ' clips') + (p.dur ? ' · ' + fmt(p.dur).replace(/\.\d+$/, '') : '') : '', 'Saved ' + ago].filter(Boolean), bal: null, ok: 'Continue editing', no: 'Start a new Reel' });
   if(v === true) location.assign('/editor?p=' + encodeURIComponent(id));
   else try{ sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){}
 }
