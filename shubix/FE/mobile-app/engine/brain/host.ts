@@ -135,7 +135,7 @@ export function createHost(initial, io = {}){
   values.sec = sec; values.partBeats = values.partBeats ?? undefined;
 
   function applyAnalysis(r){
-    Object.assign(ES, { period: r.period, hopSec: r.hopSec, rmsF: r.rmsF, onFps: r.onFps, onOff: r.onOff, hitsRaw: r.hitsRaw, hitsStr: r.hitsStr, pfArr: r.pfArr, beats: r.beats, cuts: r.cuts, cutType: r.cutType, cutFx: r.cutFx, peaks: r.peaks, peakS: r.peakS });
+    Object.assign(ES, { period: r.period, hopSec: r.hopSec, rmsF: r.rmsF, onFps: r.onFps, onOff: r.onOff, hitsRaw: r.hitsRaw, hitsStr: r.hitsStr, pfArr: r.pfArr, beats: r.beats, cuts: r.cuts, cutType: r.cutType, cutFx: r.cutFx, peaks: r.peaks, peakS: r.peakS, downbeats: r.downbeats || [] });
     Object.assign(values, { phase: r.phase, onEnv: r.onEnv, barOff: r.barOff });
     ES.songPartsRel = r.parts || [];
     brain.buildPlan();
@@ -157,7 +157,7 @@ export function createHost(initial, io = {}){
       const a = Math.round(st*sr), n = Math.min(W.length - a, Math.round(L*sr)), fi = Math.round(0.006*sr), fo = Math.round(Math.min(0.35, L*0.05)*sr), channels = [];
       for(let c=0;c<W.numberOfChannels;c++){ const d = W.getChannelData(c).slice(a, a+n); for(let i=0;i<fi;i++) d[i] *= i/fi; for(let i=0;i<fo;i++) d[n-1-i] *= i/fo; channels.push(d); }
       const m = ES.song.mono.slice(a, a+n), given = (ES.song.r.beats || []).filter(t => t >= st - 0.01 && t < st + L - 0.02).map(t => Math.max(0, t - st));
-      r = await analyse(m, sr, given.length >= 4 ? { forceBeats: given, forceSource: ES.song.source } : {});
+      r = await analyse(m, sr, given.length >= 4 ? { forceBeats: given, forceSource: ES.song.source, forceDownbeats: (ES.song.r.downbeats || []).filter(t => t >= st - 0.01 && t < st + L - 0.02).map(t => Math.max(0, t - st)) } : {});
       const W2 = (ES.song.r.cuts || []).map((c,k) => ({ t: c - st, ty: ES.song.r.cutType[k], fx: ES.song.r.cutFx[k] })).filter(c => c.t > -0.15 && c.t < L + 0.15);
       const near = t => { let b = null, bd = 0.12; for(const c of W2){ const d = Math.abs(c.t - t); if(d < bd){ bd = d; b = c; } } return b; };
       r = { ...r, cuts: r.cuts.slice(), cutType: r.cutType.slice(), cutFx: r.cutFx.slice() };

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { ManagedProvider } from "../../src/server/ai";
-import { CHUNK, chunks, cleanActions, cleanMove, cleanTexts, direct, DirectIn, directPatch, directVariants, LIMITS, MAX_VARIANTS, pace, PaceIn, pacePrompt, parsePace, parsePlan, prompt, variantsPrompt } from "../../src/server/studio/direct";
+import { calmFloor, CHUNK, chunks, cleanActions, cleanMove, cleanTexts, direct, DirectIn, directPatch, directVariants, LIMITS, MAX_VARIANTS, pace, PaceIn, pacePrompt, parsePace, parsePlan, prompt, variantsPrompt } from "../../src/server/studio/direct";
 import { templateTexts } from "@shubix/core/lib/text-templates";
 import { shotCacheKey } from "../../src/server/studio/rankShots";
 
@@ -196,6 +196,16 @@ describe("pace", () => {
     // a cut on every hit and a flicker are the AI's own choices too (the car and sports Reels' beat edits)
     const w = parsePace(pin("auto"), { story: "", sections: [{ i: 0, every: "hits", why: "dense drums" }, { i: 1, every: "Flicker", why: "riser" }, { i: 2, every: "fast", why: "?" }] }).sections;
     expect(w.map((x) => x.every)).toEqual(["hits", "flicker"]);
+  });
+  it("never cuts a song with little beat on every beat or every hit", () => {
+    const feel = { mood: "festive", energy: "medium", genre: "", language: "", theme: "", feel: "" } as const;
+    const calm = (song: object) => PaceIn.parse({ mode: "auto", duration: 24, bpm: 120, footage: 60, clips: 6, song, sections: [sec(0), sec(1), sec(2)] });
+    const ans = { story: "", sections: [{ i: 0, every: 1, why: "" }, { i: 1, every: "hits", why: "" }, { i: 2, every: 8, why: "" }] };
+    expect(parsePace(calm({ ...feel, pulse: "none" }), ans).sections.map((x) => x.every)).toEqual([4, 4, 8]);
+    expect(parsePace(calm({ ...feel, pulse: "soft" }), ans).sections.map((x) => x.every)).toEqual([2, 2, 8]);
+    expect(parsePace(calm({ ...feel, pulse: "driving" }), ans).sections.map((x) => x.every)).toEqual([1, "hits", 8]);
+    expect(calmFloor({ ...feel, mood: "devotional", energy: "low" })).toBe(2);
+    expect(pacePrompt(PaceIn.parse({ mode: "auto", duration: 24, bpm: 120, footage: 8, clips: 1, sections: [sec(0)] }))).toContain("One clip only");
   });
   it("refuses an answer with no usable section, and asks the model once", async () => {
     expect(() => parsePace(pin(), { story: "", sections: [{ i: 7, every: 2, why: "" }] })).toThrow();

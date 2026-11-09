@@ -14,6 +14,7 @@ export function songAnalysis(monoIn, sampleRate, opts){
   let mono = null, period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, beatLvl = [];
   let onEnv = null, onFps = 0, onOff = 0, hitsRaw = [], cutFx = [], pfArr = null;
   let beats = [], beatsDP = [], cuts = [], cutType = [], peaks = [], peakS = [], beatSource = 'own', beatJudge = null;
+  let downbeats = [], barLen = 4, drive = 1;
 /* ---------- FFT ---------- */
 function makeFFT(n){
   const lev = Math.log2(n), rev = new Uint32Array(n), cos = new Float64Array(n/2), sin = new Float64Array(n/2);
@@ -270,7 +271,9 @@ function analyse(){
     };
     const jo = judge(own), jn = judge(opts.beats);
     beatJudge = { own: jo, ai: jn };
-    let pickAi = jn.score > jo.score;
+    // Beat This! was trained on thousands of hand-marked songs: it is kept unless its pulse is unsteady or ours lands
+    // clearly harder on the hits
+    let pickAi = jn.steady >= 0.6 ? jn.score >= 0.8*jo.score : jn.score > jo.score;
     // one counts twice as fast as the other: a slower grid always looks "stronger" (it only touches the big hits), so
     // decide on the in-between beats of the faster one instead: real hits there (a snare on 2 and 4) make it the beat
     const r = medIbi(own)/medIbi(opts.beats);
@@ -293,7 +296,34 @@ function analyse(){
   const e1=detrend(flux), e2=detrend(fLow), e3=detrend(fHi);
   const acc = new Float64Array(frames); for(let i=0;i<frames;i++) acc[i]=e1[i]+e2[i]+0.5*e3[i];
   onEnv = acc; onFps = fps; onOff = (N/2)/sr; detectHits();
+  findDownbeats(fKick, fLow, fps);
+  // how much of the song really has a beat (drums at the beat): a calm song (a bhajan, a slow Diwali song) is cut less
+  { let on = 0; for(const t of beatsDP) if(drumness(t) >= DRUM_MIN) on++; drive = beatsDP.length ? on/beatsDP.length : 0; }
   rebuild();
+}
+
+/* ---------- Bars: where each bar's first beat ("1") is, so cuts every 2, 4 or 8 beats follow the music's phrases ---------- */
+function findDownbeats(fKick, fLow, fps){
+  const bt = beatsDP, tol = 0.3*(period || 0.5), near = t => { let b = -1, bd = tol; bt.forEach((x,i)=>{ const d = Math.abs(x - t); if(d < bd){ bd = d; b = i; } }); return b; };
+  const given = (opts.forceDownbeats && opts.forceDownbeats.length >= 2 ? opts.forceDownbeats : opts.downbeats) || [];
+  if(bt.length < 8){ downbeats = []; return; }
+  // the neural tracker's bars (or the whole song's, for a part), each on our nearest beat
+  const idx = [...new Set(given.map(near).filter(i => i >= 0))].sort((a,b)=>a-b);
+  if(idx.length >= 2){
+    const gaps = idx.slice(1).map((v,k)=>v - idx[k]).filter(g => g >= 2 && g <= 7).sort((a,b)=>a-b);
+    barLen = gaps.length ? gaps[gaps.length>>1] : 4;
+    // a bar it missed (a quiet part) is carried on from the bars around it
+    const out = [];
+    for(let k=0;k<idx.length;k++){ out.push(idx[k]); const nx = k+1 < idx.length ? idx[k+1] : bt.length + barLen; for(let i=idx[k]+barLen; i < nx - 1 && i < bt.length; i+=barLen) out.push(i); }
+    for(let i=idx[0]-barLen; i>=0; i-=barLen) out.unshift(i);
+    downbeats = out.map(i => bt[i]); return;
+  }
+  // our own guess: 4 beats a bar, the "1" where the kick and the bass hit hardest
+  barLen = 4;
+  const at = (a, t) => { const f = Math.round((t - onOff)*fps); let m = 0; for(let j=f-2;j<=f+2;j++) if(j>=0 && j<a.length && a[j] > m) m = a[j]; return m; };
+  let best = 0, bs = -1;
+  for(let q=0;q<4;q++){ let s = 0, n = 0; for(let i=q;i<bt.length;i+=4){ s += at(fKick, bt[i]) + 0.5*at(fLow, bt[i]); n++; } if(n && s/n > bs){ bs = s/n; best = q; } }
+  downbeats = bt.filter((_, i) => i % 4 === best);
 }
 
 function detectHits(){
@@ -376,14 +406,17 @@ function rebuild(){
   ups.forEach(u=>{ if(drumness(u.t) >= DR-0.1) cands.push({t:u.t, sc: u.s/4 + (onGrid(u.t)?1:0)}); });
   cands.sort((a,b)=>a.t-b.t);
   // 4) walk through the song: clip length depends on intensity (4 / 2 / 1 beats)
-  const beatsFor = I => I<0.3 ? 4 : I<0.75 ? 2 : 1;   // short-video pacing: never longer than 4 beats
+  // a song with little beat (drive: the share of its beats with drums) never cuts on every beat, and its quiet parts hold a bar
+  const beatsFor = I => drive < 0.4 ? (I<0.5 ? 4 : 2) : I<0.3 ? 4 : I<0.75 ? 2 : 1;   // short-video pacing: never longer than 4 beats
+  // a shot of a bar or more ends on a bar's "1" when one is near
+  const barNear = (t, w) => { let b = null, bd = w; for(const d of downbeats){ const x = Math.abs(d - t); if(x < bd){ bd = x; b = d; } } return b; };
   const out = []; let fi = 0;
   let cur = ups.length ? Math.min(ups[0].t, forced.length?forced[0].t:Infinity) : first;
   out.push({t:cur, ty: forced.length && Math.abs(forced[0].t-cur)<0.01 ? forced[0].ty : 'cut'});
   while(fi<forced.length && forced[fi].t <= cur+0.01) fi++;
   while(cur < dur - 0.3){
     while(fi<forced.length && forced[fi].t - cur < 0.2) fi++;
-    const nb = beatsFor(intensity(cur)), target = cur + nb*p, w = Math.min(1, nb/2)*p;
+    const nb = beatsFor(intensity(cur)), w = Math.min(1, nb/2)*p, target = (nb >= 4 && barNear(cur + nb*p, w)) || cur + nb*p;
     if(fi<forced.length && forced[fi].t < target + w && forced[fi].t - cur >= 0.2){ cur = forced[fi].t; out.push({t:cur, ty:forced[fi].ty}); fi++; continue; }
     let best=null, bs=-1;
     for(const c of cands){ if(c.t < target-w || c.t > target+w || c.t-cur < 0.25) continue; const sc=c.sc*(1-0.35*Math.abs(c.t-target)/w); if(sc>bs){ bs=sc; best=c.t; } }
@@ -413,5 +446,5 @@ function rebuild(){
 
 
   analyse();
-  return { period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff, beatSource, beatJudge };
+  return { period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff, beatSource, beatJudge, downbeats, barLen, drive };
 }

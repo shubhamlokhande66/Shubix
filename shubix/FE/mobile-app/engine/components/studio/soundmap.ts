@@ -41,6 +41,8 @@ export interface CutMusic {
   toDrop?: number;
   /** the cut ends in a short silence (the gap before a drop) */
   gapEnd?: boolean;
+  /** the cut starts on a bar's first beat (the strongest place for a cut or a big effect) */
+  bar1?: boolean;
 }
 export interface Section {
   i: number; t: number; len: number; beats: number;
@@ -156,6 +158,8 @@ export interface CutContext {
   hits: number[]; hitStr: number[];
   /** the song's drops (seconds) and beats, for "beats until the drop" */
   drops: number[]; beats: number[];
+  /** each bar's first beat (seconds), when known */
+  downbeats?: number[];
 }
 
 /** The music of one cut [t0, t1], as the AI director reads it. */
@@ -187,6 +191,7 @@ export function describeCut(m: SoundMap, t0: number, t1: number, cx: CutContext)
   if (nd !== undefined) { const n = cx.beats.filter((b) => b >= t1 - 0.05 && b < nd - 0.05).length; if (n <= 8) out.toDrop = n; }
   // the gap before a drop: the end of the cut is much quieter than the cut
   if (t1 - t0 > 0.35 && meanOf(m, m.loud, t1 - 0.2, t1) < meanOf(m, m.loud, t0, t1 - 0.2) - 9) out.gapEnd = true;
+  if (cx.downbeats?.some((d) => Math.abs(d - t0) < 0.08)) out.bar1 = true;
   return out;
 }
 
@@ -235,15 +240,29 @@ export function sectionsOf(m: SoundMap, plan: Slot[], beats: number[], period: n
   });
 }
 
+/** Where a beat sits in its bar: pos 0 = the bar's "1", bar = which bar. null without at least two bars. */
+export function barCounter(beats: number[], downbeats: number[]) {
+  if (downbeats.length < 2 || beats.length < 2) return null;
+  const ib = beats.slice(1).map((t, i) => t - beats[i]).sort((x, y) => x - y), p = ib[ib.length >> 1] || 0.5;
+  const db = downbeats.slice(1).map((t, i) => Math.round((t - downbeats[i]) / p)).filter((n) => n >= 2 && n <= 7).sort((x, y) => x - y), len = db[db.length >> 1] || 4;
+  const mod = (a: number, n: number) => ((a % n) + n) % n;
+  return (t: number) => {
+    let k = 0; for (let i = 0; i < downbeats.length && downbeats[i] <= t + 0.05; i++) k = i;
+    const n = Math.round((t - downbeats[k]) / p);
+    return { pos: mod(n, len), bar: k + Math.floor(n / len) };
+  };
+}
+
 /** Beats per cut each style may use (Smooth stays calm, Fast stays quick, whatever the AI says). */
 export const PACE_OK: Record<string, number[]> = { auto: [1, 2, 4, 8], smooth: [2, 4, 8], fast: [1, 2] };
 
 /** The AI's pace back into cut times: inside each section a cut every `every` beats, on the real beats (one frame early,
  * like the music engine). Drops and breaks always stay cuts; the song's strong hits stay when the pace is quick
  * (1-2 beats). No shot runs longer than 4.5 s. */
-export function repace(plan: Slot[], secs: { t: number; len: number; every: number }[], beats: number[], dur: number, mode = "auto"): Slot[] {
+export function repace(plan: Slot[], secs: { t: number; len: number; every: number }[], beats: number[], dur: number, mode = "auto", downbeats: number[] = []): Slot[] {
   if (!plan.length || !secs.length || beats.length < 8) return plan.map((s) => ({ ...s }));
   const ok = PACE_OK[mode] || PACE_OK.auto, EARLY = 1 / 30, MIN = 0.25;
+  const bar = barCounter(beats, downbeats);
   const at = new Map<string, Slot>(); plan.forEach((s) => at.set(s.start.toFixed(3), s));
   const typeAt = (t: number) => plan.find((s) => Math.abs(s.start - t) < 0.02);
   const cuts: { t: number; type: Slot["type"]; fx?: string; keep: boolean }[] = [];
@@ -252,7 +271,10 @@ export function repace(plan: Slot[], secs: { t: number; len: number; every: numb
     const every = ok.reduce((b, x) => (Math.abs(x - sec.every) < Math.abs(b - sec.every) ? x : b), ok[0]);
     const a = sec.t, b = Math.min(dur, sec.t + sec.len);
     const bs = beats.filter((x) => x >= a - 0.05 && x < b - 0.05);
-    for (let k = every; k < bs.length; k += every) { const t = bs[k] - EARLY; if (t < b - MIN && t > a + MIN) cuts.push({ t, type: "cut", keep: false }); }
+    // every 2, 4 or 8 beats counted from the bar's "1" (a cut in the middle of a bar sounds off), else from the section's start
+    const b0 = bar ? bs.find((x) => bar(x).pos === 0) : undefined, first = bar && b0 !== undefined ? bar(b0).bar : 0;   // the section's first whole bar
+    const on = (x: number, k: number) => { if (!bar || every === 1) return k % every === 0; const p = bar(x); return every === 2 ? p.pos % 2 === 0 : p.pos === 0 && (every < 8 || Math.abs(p.bar - first) % 2 === 0); };
+    bs.forEach((x, k) => { const t = x - EARLY; if (k && on(x, k) && t < b - MIN && t > a + MIN) cuts.push({ t, type: "cut", keep: false }); });
     if (every <= 2) plan.forEach((s) => { if (s.type === "hit" && s.start > a + MIN && s.start < b - MIN) cuts.push({ t: s.start, type: "hit", fx: s.fx, keep: false }); });
   }
   cuts.sort((x, y) => x.t - y.t || Number(y.keep) - Number(x.keep));

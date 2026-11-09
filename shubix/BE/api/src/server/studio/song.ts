@@ -21,6 +21,8 @@ export const SongFeel = z.object({
   language: word(20),
   theme: word(100),
   feel: word(140),
+  /** how strong the beat is: none (no drums), soft, clear or driving (hard drums all through) */
+  pulse: z.enum(["none", "soft", "clear", "driving"]).optional(),
 });
 export type SongFeel = z.infer<typeof SongFeel>;
 
@@ -32,10 +34,11 @@ const ASK = `Listen to this part of a song and describe it for a video editor.
 - language: the language sung, or "instrumental".
 - theme: what the song is about, in at most 12 of your own words. Never quote the lyrics.
 - feel: at most 20 words on how a good edit should feel on this song.
-Return JSON: {"mood": "other", "energy": "medium", "genre": "", "language": "", "theme": "", "feel": ""}`;
+- pulse: how strong the beat is: none (no drums: a bhajan, a slow aarti, an alaap), soft (light percussion), clear (a steady beat) or driving (hard drums all through: party, phonk, a dhol drop).
+Return JSON: {"mood": "other", "energy": "medium", "genre": "", "language": "", "theme": "", "feel": "", "pulse": "clear"}`;
 
 /** The feel as the AI's edit prompts read it. */
-export const songText = (s: SongFeel) => `THE SONG, AS HEARD: mood ${s.mood}, energy ${s.energy}${s.genre ? `, genre ${clean(s.genre, 30)}` : ""}${s.language ? `, language ${clean(s.language, 20)}` : ""}.${s.theme ? ` About: "${clean(s.theme, 100)}".` : ""}${s.feel ? ` The edit should feel: "${clean(s.feel, 140)}".` : ""}\n`;
+export const songText = (s: SongFeel) => `THE SONG, AS HEARD: mood ${s.mood}, energy ${s.energy}${s.pulse ? `, beat ${s.pulse}` : ""}${s.genre ? `, genre ${clean(s.genre, 30)}` : ""}${s.language ? `, language ${clean(s.language, 20)}` : ""}.${s.theme ? ` About: "${clean(s.theme, 100)}".` : ""}${s.feel ? ` The edit should feel: "${clean(s.feel, 140)}".` : ""}\n`;
 
 const isWav = (b: Buffer) => b.length > 44 && b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WAVE";
 
@@ -45,7 +48,7 @@ let indexed = false;
 /** Heard once per sound and model; a store that is down never stands in the way of the Reel. The labels go after 30 days. */
 export async function hearSong(wav: Buffer, provider: ManagedProvider = getAudioProvider(TASK)): Promise<SongFeel> {
   if (wav.length > LIMITS.bytes || !isWav(wav)) throw new ValidationFailed("The song sample must be a short WAV.", { code: "SONG_SAMPLE" });
-  const key = crypto.createHash("sha256").update(provider.model).update(wav).digest("hex");
+  const key = crypto.createHash("sha256").update(provider.model).update("v2").update(wav).digest("hex");
   const store = await db().then((d) => d.collection<{ key: string; feel: SongFeel; at: Date }>("studio_song_feel")).catch(() => null);
   if (store && !indexed) { indexed = true; await store.createIndex({ at: 1 }, { expireAfterSeconds: KEEP_DAYS * 86400 }).catch(() => { indexed = false; }); }
   const had = await store?.findOne({ key }).catch(() => null);

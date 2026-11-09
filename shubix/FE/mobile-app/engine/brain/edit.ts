@@ -496,7 +496,7 @@ function directorCandidates(){
 function mixStore(){ const b = EH.dirBase(); if(!ES.aiMixes.has(b)) ES.aiMixes.set(b, { plans: [], asked: false, busy: false }); return ES.aiMixes.get(b); }
 // what the music does under every cut (the AI reads it; a fitted plan matches on it)
 function cutMusic(){
-  const sm = getSoundMap(), cx = { hits: ES.hitsRaw || [], hitStr: ES.hitsStr || [], drops: ES.plan.filter(s=>s.type==='drop').map(s=>s.start), beats: ES.beats };
+  const sm = getSoundMap(), cx = { hits: ES.hitsRaw || [], hitStr: ES.hitsStr || [], drops: ES.plan.filter(s=>s.type==='drop').map(s=>s.start), beats: ES.beats, downbeats: ES.downbeats || [] };
   return ES.plan.map(s => sm ? describeCut(sm, s.start, s.end, cx) : null);
 }
 // the AI's answer -> one entry per cut (its shot as a moment of a clip)

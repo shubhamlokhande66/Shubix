@@ -35,12 +35,13 @@ function makeEditNow(){
   if(ES.story && EH.storyEdit()) return;
   if(!ES.buf || !ES.sources.length) return;
   const keptUk = EH.ukKeep();
-  EH.stopAll(); ES.plan = EH.adaptPlan(); { const pc = EH.paceNow(); if(pc) ES.plan = EH.beatEdit(endWell(EH.noFlashCuts(EH.withPartCuts(repace(ES.basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), ES.beats, ES.buf.duration, ES.mode)))), pc.secs); } EH.styleEdit(); const dirInfo = EH.applyDirectorStyle(); if(!dirInfo) EH.finishTransitions(); EH.tastePlan();
+  EH.stopAll(); ES.plan = EH.adaptPlan(); { const pc = EH.paceNow(); if(pc) ES.plan = EH.beatEdit(endWell(EH.noFlashCuts(EH.withPartCuts(repace(ES.basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), ES.beats, ES.buf.duration, ES.mode, ES.downbeats || [])))), pc.secs); } EH.styleEdit(); const dirInfo = EH.applyDirectorStyle(); if(!dirInfo) EH.finishTransitions(); EH.tastePlan();
   const gmax = Math.max(1e-6, ...ES.sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = ES.sources.map(()=>[]);
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
-  const seq = ES.seqOn && ES.sources.length > 1 ? EH.seqSlots(ES.plan.length) : null;
+  // one clip always plays forward (its shots out of order jump back and forth in time)
+  const seq = (ES.seqOn || ES.sources.length === 1) && ES.sources.length ? EH.seqSlots(ES.plan.length) : null;
   const order = ES.plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[ES.plan[a].type]) - (b===0?-1:pr[ES.plan[b].type]) || a-b; });
   const res = new Array(ES.plan.length); ES.dupCount = 0;
   // Shared Director pass: rank the source clips once, then use its explainable quality ranking
@@ -65,7 +66,7 @@ function makeEditNow(){
       isUsable: src.dur > 0.35 && quality > 0.08,
       speech: !!(src.voice && src.voice.has) };
   });
-  const directorMusic = { duration: ES.buf.duration, beats: ES.beats, downbeats: ES.beats.filter((_, i) => i % 2 === 0),
+  const directorMusic = { duration: ES.buf.duration, beats: ES.beats, downbeats: ES.downbeats && ES.downbeats.length ? ES.downbeats : ES.beats.filter((_, i) => i % 4 === 0),
     drops: ES.plan.filter(x => x.type === 'drop').map(x => x.start),
     quietRanges: ES.plan.filter(x => x.type === 'break').map(x => [x.start, x.end] as [number, number]) };
   const inferredMood = ES.mode === 'fast' ? 'energetic' : ES.mode === 'smooth' ? 'minimal' : inferAutonomousMood(directorShots, directorMusic).mood;
