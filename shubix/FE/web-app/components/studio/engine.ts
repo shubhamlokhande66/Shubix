@@ -2218,7 +2218,8 @@ async function aiEarly(){
   if(!aiOn || aiLocked || !location.pathname.startsWith('/create')) return;
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
   if(!aiReelOk()){ generatePressed = true; const go = await aiGate(true).finally(() => { generatePressed = false; }); if(!go) return; }
-  aiRun();
+  void hearSong();   // the song is heard while the clips are read
+  aiRun(); if(!pending && buf && sources.length) paceMaybe();
 }
 async function aiRun(){
   if(!aiOn || aiBusy || !sources.length || aiHeldBack()) return;
@@ -3060,7 +3061,9 @@ function paceFromSong(sp){
 function paceMaybe(){
   if(keepSaved || aiHeldBack()) return;
   if(paceBusy || !paceWanted() || !aiReelOk() || refReading) return;
-  if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) return;   // after the AI has seen what the clips are about
+  // after the AI has seen what the clips are about; after Make Reel (aiPiping) as soon as every clip is read, beside the AI's
+  // last clips (the song decides the pace; the plan still waits for every clip to be seen)
+  if(pending || (!aiPiping() && sources.some(s=>!s.ai && !s.aiFailed && !s.removed))) return;
   const key = paceKey();
   if(paceCache.has(key)){ pacing = paceCache.get(key); makeEdit(); return; }
   const sp = songPace.get(paceSongKey()), p = sp && paceFromSong(sp);
@@ -3077,12 +3080,16 @@ function songSample(M, sr, from, secs){
   return new Uint8Array(dv.buffer);
 }
 // Shubix AI hears 30 s of the part the Reel uses, once per song and part; a failure never stands in the way of the Reel
-let songHeard = '', songFeel = null;
-async function hearSong(){
-  if(!song || !song.mono || kind === 'talk') return;
-  const key = song.key + '|' + Math.round(secStart || 0); if(songHeard === key) return;
-  const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return;
+// (one request at a time: a second caller waits for the same answer)
+let songHeard = '', songFeel = null, songHearing = null;
+function hearSong(){
+  if(!song || !song.mono || kind === 'talk') return Promise.resolve();
+  const key = song.key + '|' + Math.round(secStart || 0); if(songHeard === key) return songHearing || Promise.resolve();
+  const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return Promise.resolve();
   songHeard = key; songFeel = null;
+  return songHearing = songHear(body);
+}
+async function songHear(body){
   const tm = timeoutSignal(20000);
   try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); songFeel = await r.json(); }

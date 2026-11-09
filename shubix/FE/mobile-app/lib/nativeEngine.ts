@@ -245,7 +245,7 @@ export function createNativeEngine(io: NativeIo) {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
-    cancel: () => { stops++; piping = false; return { ok: true }; },
+    cancel: () => { stops++; piping = host.ES.aiPiping = false; return { ok: true }; },
     /** Make Reel pressed (the price was on the screen: the answer): Shubix AI starts on the clips read so far, and each
      * clip read after it is sent on (5 at a time); a plan's Reel with too few credits waits, as in "ai" */
     aiEarly: async () => {
@@ -253,7 +253,9 @@ export function createNativeEngine(io: NativeIo) {
       if (!host.ES.aiOn) return { ok: false };
       const cost = host.brain.aiCostOf("reel") as number, balance = host.brain.aiBal() as number | null;
       if (cost && balance !== null && balance < cost) return { ok: false };
-      host.ES.aiReel = host.brain.reelIdNow(); piping = true; void host.brain.aiRun();
+      host.ES.aiReel = host.brain.reelIdNow(); piping = host.ES.aiPiping = true;
+      void host.brain.hearSong?.();   // the song is heard while the clips are read
+      void host.brain.aiRun(); if (!reading && host.ES.buf && host.ES.sources.length) host.brain.paceMaybe?.();
       return { ok: true };
     },
     clips,
@@ -295,7 +297,7 @@ export function createNativeEngine(io: NativeIo) {
       if (host.ES.aiDown) throw new Error("Our team is working on it. Please try again in a little while. No credits were used.");
       return { went: went && stops === g };
     },
-    newReel: () => { piping = false; host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
+    newReel: () => { piping = host.ES.aiPiping = false; host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
     aiPlan: () => { const d = host.ES.director; return d && d.slots && !d.interim ? { story: d.story || "", lines: [] } : null; },
     history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),

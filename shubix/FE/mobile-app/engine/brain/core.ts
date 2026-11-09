@@ -316,7 +316,9 @@ function directorMaybe(){
 function paceMaybe(){
   if(ES.keepSaved || EH.aiHeldBack()) return;
   if(ES.paceBusy || !EH.paceWanted() || !EH.aiReelOk() || ES.refReading) return;
-  if(ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) return;   // after the AI has seen what the clips are about
+  // after the AI has seen what the clips are about; after Make Reel (aiPiping) as soon as every clip is read, beside the AI's
+  // last clips (the song decides the pace; the plan still waits for every clip to be seen)
+  if(ES.clipsReading || (!ES.aiPiping && ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed))) return;
   const key = EH.paceKey();
   if(ES.paceCache.has(key)){ ES.pacing = ES.paceCache.get(key); makeEdit(); return; }
   const sp = ES.songPace.get(EH.paceSongKey()), p = sp && EH.paceFromSong(sp);

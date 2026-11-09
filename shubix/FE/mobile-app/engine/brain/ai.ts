@@ -116,11 +116,15 @@ function timeoutSignal(ms){
   return { signal: c.signal, timedOut: () => late, done: () => { clearTimeout(t); EH.ac.signal.removeEventListener('abort', stop); } };
 }
 // Shubix AI hears 30 s of the part the Reel uses, once per song and part; a failure never stands in the way of the Reel
-async function hearSong(){
-  if(!ES.song || !ES.song.mono || ES.kind === 'talk') return;
-  const key = ES.song.key + '|' + Math.round(ES.secStart || 0); if(ES.songHeard === key) return;
-  const body = songSample(ES.song.mono, ES.song.buf.sampleRate, ES.secStart || 0, 30); if(!body) return;
+// (one request at a time: a second caller waits for the same answer)
+function hearSong(){
+  if(!ES.song || !ES.song.mono || ES.kind === 'talk') return Promise.resolve();
+  const key = ES.song.key + '|' + Math.round(ES.secStart || 0); if(ES.songHeard === key) return ES.songHearing || Promise.resolve();
+  const body = songSample(ES.song.mono, ES.song.buf.sampleRate, ES.secStart || 0, 30); if(!body) return Promise.resolve();
   ES.songHeard = key; ES.songFeel = null;
+  return ES.songHearing = songHear(body);
+}
+async function songHear(body){
   const tm = timeoutSignal(20000);
   try{ const r = await EH.apiFetch('/api/studio/song?reel=' + encodeURIComponent(EH.reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); ES.songFeel = await r.json(); }
@@ -256,5 +260,5 @@ async function aiActions(list){
   if(ES.layers.length){ EH.lyUI(); await EH.prepLayers(ES.pos); }
   EH.redrawFrame(); EH.saveNow(); return done;
 }
-  return { aiRun, aiGate, directorRun, variantsRun, paceRun, aiActions, aiTexts, timeoutSignal };
+  return { aiRun, aiGate, directorRun, variantsRun, paceRun, hearSong, aiActions, aiTexts, timeoutSignal };
 }
