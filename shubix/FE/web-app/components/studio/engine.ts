@@ -3372,11 +3372,10 @@ function seqPick(seq, res, gmax){
     const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
     const need = ids.map(i => plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
-    // a shot longer than its whole clip plays it a little slower (down to 0.4x) instead of standing still on its last
-    // picture until the cut (what a short phone clip did: "it stops when the clip ends")
-    // and a clip too short for all its shots plays a little slower over them, so no moment of it shows twice
+    // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
+    // last picture until the cut ("it stops when the clip ends") or showing a moment of it twice
     const fit = spare < 0 ? Math.max(0.4, foot/sum(need)*0.98) : 1;
-    const scale = ids.map((i, k) => need[k] > foot ? Math.max(0.4, foot/need[k]*0.98) : spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = 0;
     ids.forEach((i, k) => {
