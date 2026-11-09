@@ -2909,19 +2909,17 @@ async function variantsRun(st){
 }
 const dirCache = new Map();
 // a request that gives up after ms (the phone's own edit is already on screen, so nobody waits for a slow AI)
-/* Every call to Shubix's server: when it is down or busy (no answer, 408, 429, 5xx) it is asked again, the loader on,
- * for up to a minute (2 s, 4 s... up to 10 s apart); then the call fails and the person is told. A real "no" (no credits,
- * not allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
+/* Every call to Shubix's server is tried 3 times by itself when the server could not answer (no answer, 408, 429, 5xx),
+ * 1 s then 2 s apart; after the third it fails and the person gets the popup (Retry / Close). A real "no" (no credits, not
+ * allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
 async function apiFetch(url, opts = {}){
-  const t0 = Date.now(); let tries = 0;
-  for(;;){
+  for(let n = 1; ; n++){
     let r = null;
     try{ r = await fetch(url, opts); if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r; }
     catch(e){ if(e && e.name === 'AbortError') throw e; }
-    if(Date.now() - t0 > 60000){ if(r) return r; throw new Error(TEAM_MSG); }
-    tries++; aiStat('Shubix’s server is not answering yet. Trying again… (' + tries + ')');
-    await new Promise(ok => setTimeout(ok, Math.min(10000, 2000*tries)));
+    if(n >= 3){ if(r) return r; throw new Error(TEAM_MSG); }
+    await new Promise(ok => setTimeout(ok, 1000*n));
     if(opts.signal && opts.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
   }
 }
@@ -2934,7 +2932,7 @@ function aiDown(){
   root.classList.add('aineed'); go.dataset.down = '1'; go.dataset.low = ''; delete go.dataset.change;
   $('aiaskt').textContent = 'Shubix AI is not available right now'; $('aiaskp').textContent = TEAM_MSG; go.textContent = 'Try again';
   root.dispatchEvent(new Event('studio-ai-down'));   // the steps stop waiting: the loader closes, Make Reel is on again
-  if(aiDownAt !== id){ aiDownAt = id; aiLog('Shubix AI was not available. ' + TEAM_MSG); void askCredits({ title: 'Shubix AI is not available right now', text: TEAM_MSG, bal: null, ok: 'OK' }); }
+  if(aiDownAt !== id){ aiDownAt = id; aiLog('Shubix AI was not available. ' + TEAM_MSG); void askCredits({ title: 'Shubix AI is not available right now', text: TEAM_MSG, bal: null, ok: 'Retry', no: 'Close' }).then(v => { if(v === true) aiRetry(); }); }
 }
 // Try again, or Make Reel pressed again after aiDown: Shubix AI is asked again for this Reel (true when it was down)
 function aiRetry(){

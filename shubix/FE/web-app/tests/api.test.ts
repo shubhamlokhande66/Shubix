@@ -41,7 +41,7 @@ describe("api client", () => {
     vi.useRealTimers();
     expect(err.code).toBe("NETWORK_ERROR");
     expect(err.message).toMatch(/Technical issue: our team is looking into it/);
-    expect(fetch).toHaveBeenCalledTimes(4); // the first try and 3 retries
+    expect(fetch).toHaveBeenCalledTimes(3); // 3 tries, then the error (and the Retry popup in the app)
   });
 
   it("retries a read that failed once, so a busy moment is not an error", async () => {
@@ -57,14 +57,18 @@ describe("api client", () => {
     vi.useRealTimers();
   });
 
-  it("never repeats an action (it could run twice)", async () => {
+  it("tries an action 3 times only when the server was not reached", async () => {
+    vi.useFakeTimers();
     const fetch = vi.fn(async () => {
       throw new TypeError("Failed to fetch");
     });
     vi.stubGlobal("fetch", fetch);
-    const err = await api.deleteBrand("p").catch((e) => e);
+    const pending = api.deleteBrand("p").catch((e) => e);
+    await vi.runAllTimersAsync();
+    const err = await pending;
+    vi.useRealTimers();
     expect(err.code).toBe("NETWORK_ERROR");
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("handles 204 responses", async () => {

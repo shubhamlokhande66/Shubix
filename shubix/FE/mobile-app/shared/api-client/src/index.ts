@@ -17,14 +17,18 @@ export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "S
 
 export function createApiClient(o: ClientOptions) {
   const base = o.baseUrl.replace(/\/$/, "");
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(path: string, init: RequestInit = {}, tries = 1): Promise<T> {
     const headers = new Headers(init.headers);
     if (typeof init.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (o.mobile) headers.set("X-Client", "mobile");
     const token = await o.getToken?.();
     if (token) headers.set("Authorization", `Bearer ${token}`);
     let r: Response;
-    const again = async (e: ApiError): Promise<T> => { if (!init.signal?.aborted && o.onServerTrouble && (await o.onServerTrouble(e))) return request<T>(path, init); throw e; };
+    // the server could not answer: tried 3 times by itself (1 s, 2 s apart), then the app's Retry / Close popup
+    const again = async (e: ApiError): Promise<T> => {
+      if (init.signal?.aborted) throw e;
+      if (tries < 3) { await new Promise((ok) => setTimeout(ok, 1000 * tries)); return request<T>(path, init, tries + 1); }
+      if (o.onServerTrouble && (await o.onServerTrouble(e))) return request<T>(path, init); throw e; };
     try { r = await fetch(base + path, { ...init, headers, credentials: "include" }); }
     catch { return again(new ApiError("Cannot reach the server. Check your connection.", 0, "NETWORK")); }
     const data = r.status === 204 ? null : await r.json().catch(() => null);

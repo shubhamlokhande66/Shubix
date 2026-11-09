@@ -274,7 +274,11 @@ function CreateFlowScreen() {
       await queryClient.invalidateQueries({ queryKey: ["drafts"] }); making.current = false; tasks.clear("flow"); tasks.unlock();
       notifyAway(words("Your Reel is ready"), words("Open Shubix to see it"), "/");
       setStep("clips"); router.push({ pathname: "/editor", params: { id } }); // back from the editor: the clips again
-    } catch (e) { const gone = !making.current; making.current = false; tasks.clear("flow"); tasks.unlock(); if (!gone) tell(errorMessage(e), "danger"); setStep("clips"); }
+    } catch (e) {
+      const gone = !making.current; making.current = false; tasks.clear("flow"); tasks.unlock(); setStep("clips");
+      // a popup with Retry (Make Reel again, from where it is) and Close (the clips, nothing lost)
+      if (!gone && (await askAction({ title: words("Your Reel could not be made"), body: errorMessage(e), ok: words("Retry"), cancel: words("Close") })) === 0) void make();
+    }
   }
 
   // Shubix AI's price and the balance, on the screen before Make Reel (pressing it is the answer)

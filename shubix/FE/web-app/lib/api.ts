@@ -115,29 +115,26 @@ export const TECH_ISSUE = "Technical issue: our team is looking into it. Please 
 /** No request may hang forever: without an answer in time it fails with a clear message (the server may be down). */
 const DEFAULT_TIMEOUT_MS = 45_000;
 
-/** A read that timed out or lost the connection is asked again this many times (a busy server usually answers the next one). */
-const GET_RETRIES = 3;
-const RETRYABLE = new Set(["SERVER_TIMEOUT", "NETWORK_ERROR"]);
-
-/** Signing in waits for a sleeping server (it wakes in about 15 s): the request is sent again while the server could not
- * be reached at all (it never got it), for up to a minute; then the technical-issue message. */
-export const SIGN_IN_WAIT_MS = 60_000;
-export async function patiently<T>(send: (timeoutMs: number) => Promise<T>, total = SIGN_IN_WAIT_MS): Promise<T> {
-  const end = Date.now() + total;
-  for (;;) {
-    try { return await send(Math.max(5_000, end - Date.now())); }
-    catch (e) {
-      const unreached = e instanceof ApiError && (e.code === "NETWORK_ERROR" || e.code === "SERVER_DOWN");
-      if (!unreached || Date.now() + 3_000 > end) throw e;
-      await new Promise((r) => setTimeout(r, 3_000));
-    }
+/** Every call is tried 3 times by itself when the server could not answer (no connection, a timeout, 5xx), 1 s then 2 s
+ * apart; after the third the Retry / Close popup (askRetry). A "no" from the server is never sent again. */
+const TRIES = 3;
+const RETRYABLE = new Set(["SERVER_TIMEOUT", "NETWORK_ERROR", "SERVER_DOWN"]);
+// (an action that timed out is not sent again: it may have run on the server; one that never got there, or a 5xx, is)
+async function thrice<T>(once: () => Promise<T>, signal?: AbortSignal | null, action = false): Promise<T> {
+  for (let n = 1; ; n++) {
+    try { return await once(); }
+    catch (e) { if (!(e instanceof ApiError) || !RETRYABLE.has(e.code) || (action && e.code === "SERVER_TIMEOUT") || signal?.aborted || n >= TRIES) throw e; await new Promise((ok) => setTimeout(ok, 1000 * n)); }
   }
+}
+
+export async function patiently<T>(send: (timeoutMs: number) => Promise<T>): Promise<T> {
+  return thrice(() => send(DEFAULT_TIMEOUT_MS));   // (3 tries, as every call: no minute of waiting any more)
 }
 
 async function request<T>(path: string, init?: RequestInit, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   for (;;) {
-    try { return await (method === "GET" ? readWithRetry<T>(path, init, timeoutMs) : tracked(send<T>(path, init, timeoutMs))); } // actions light up the activity bar
+    try { return await thrice(() => method === "GET" ? send<T>(path, init, timeoutMs) : tracked(send<T>(path, init, timeoutMs)), init?.signal, method !== "GET"); } // actions light up the activity bar
     catch (e) { if (!(await askRetry(e, init))) throw e; }   // the server could not be reached: Retry asks again, Close gives the error
   }
 }
@@ -154,19 +151,6 @@ async function askRetry(e: unknown, init?: RequestInit): Promise<boolean> {
     body: "Our team is working on it. Check your internet, then press Retry. Nothing you made here is lost.",
     ok: "Retry", cancel: "Close" })).finally(() => { asking = null; });
   return asking;
-}
-
-/** Reads change nothing on the server, so they are safe to repeat: a slow or dropped one is retried before it is an error. */
-async function readWithRetry<T>(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await send<T>(path, init, timeoutMs);
-    } catch (e) {
-      const retryable = e instanceof ApiError && RETRYABLE.has(e.code) && !init?.signal?.aborted;
-      if (!retryable || attempt >= GET_RETRIES) throw e;
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt)); // 1 s, 2 s, 4 s
-    }
-  }
 }
 
 async function send<T>(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<T> {

@@ -37,26 +37,26 @@ describe("the page to come back to", () => {
   });
 });
 
-describe("signing in waits for a sleeping server, up to a minute", () => {
+describe("signing in tries 3 times when the server cannot be reached", () => {
   it("sends again while the server cannot be reached, then signs in", async () => {
     vi.useFakeTimers();
     const { patiently, ApiError } = await import("@/lib/api");
     let n = 0;
-    const p = patiently(async () => { if (++n < 4) throw new ApiError(0, { code: "NETWORK_ERROR", message: "x" }); return "in"; });
+    const p = patiently(async () => { if (++n < 3) throw new ApiError(0, { code: "NETWORK_ERROR", message: "x" }); return "in"; });
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await p).toBe("in");
-    expect(n).toBe(4);
+    expect(n).toBe(3);
     vi.useRealTimers();
   });
-  it("after a minute says it is a technical issue", async () => {
+  it("after the third try says it is a technical issue", async () => {
     vi.useFakeTimers();
     const { patiently, ApiError, TECH_ISSUE } = await import("@/lib/api");
     let n = 0;
     const p = patiently(async () => { n++; throw new ApiError(502, { code: "SERVER_DOWN", message: TECH_ISSUE }); });
     const caught = p.catch((e: Error) => e);
-    await vi.advanceTimersByTimeAsync(61_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect((await caught).message).toMatch(/Technical issue: our team is looking into it/);
-    expect(n).toBeGreaterThan(10);
+    expect(n).toBe(3);
     vi.useRealTimers();
   });
   it("does not send again a wrong password (the server answered)", async () => {

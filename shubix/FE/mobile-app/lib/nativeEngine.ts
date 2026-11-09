@@ -6,7 +6,7 @@ import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
  * its file server (SongAnalysis.kt, ClipScan.kt, ClipFaces.kt). */
 type Fetch = (url: string, init?: { method?: string; body?: unknown }) => Promise<{ ok: boolean; status: number; text(): Promise<string>; json(): Promise<unknown>; arrayBuffer(): Promise<ArrayBuffer> }>;
-export type NativeIo = { base: string; key: string; fetch: Fetch; /** how long a down server is asked again (ms; 60 s) */ apiWait?: number; token?: () => Promise<string | null>; onProgress?: (what: "song" | "clips", p: number) => void;
+export type NativeIo = { base: string; key: string; fetch: Fetch; /** the pause between the 3 tries (ms; 1 s, then 2 s) */ apiWait?: number; token?: () => Promise<string | null>; onProgress?: (what: "song" | "clips", p: number) => void;
   /** Shubix AI's question: true Use, false the other button, null closed */
   ask?: (q: { title: string; text: string; list?: string[]; bal?: number | null; ok: string; no?: string; after?: number | null }) => Promise<boolean | null>;
   /** what Shubix is doing, in its words; an error when `err` */
@@ -85,19 +85,19 @@ export function createNativeEngine(io: NativeIo) {
   }
   function getCtx() { return { createBuffer: (count: number, n: number, sr: number) => soundOf(Array.from({ length: count }, () => new Float32Array(n)), sr) }; }
 
-  /** a call to Shubix's server; when it is down or busy (no answer, 408, 429, 5xx) it is asked again for up to a minute
-   * (2 s, 4 s... up to 10 s apart), the loader on; then it fails and the person is told. A real "no" is answered at once. */
+  /** a call to Shubix's server, tried 3 times by itself when it could not answer (no answer, 408, 429, 5xx), 1 s then 2 s
+   * apart; then it fails and the person gets the popup. A real "no" is answered at once. */
   async function apiFetch(path: string, o: { method?: string; headers?: Record<string, string>; body?: unknown; signal?: unknown } = {}) {
-    const t0 = Date.now(), stopped = () => !!(o.signal as { aborted?: boolean } | undefined)?.aborted;
-    for (let tries = 1; ; tries++) {
+    const stopped = () => !!(o.signal as { aborted?: boolean } | undefined)?.aborted;
+    for (let n = 1; ; n++) {
       let r: Response | null = null;
       try {
         const token = await io.token?.();
         r = await io.fetch(io.base + path, { ...o, headers: { ...o.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } } as never) as Response;
         if (r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r;
       } catch (e) { if ((e as { name?: string })?.name === "AbortError") throw e; }
-      if (Date.now() - t0 >= (io.apiWait ?? 60_000)) { if (r) return r; throw new Error("Our team is working on it. Please try again in a little while. No credits were used."); }
-      await new Promise((ok) => setTimeout(ok, Math.min(10_000, 2000 * tries)));
+      if (n >= 3) { if (r) return r; throw new Error("Our team is working on it. Please try again in a little while. No credits were used."); }
+      await new Promise((ok) => setTimeout(ok, (io.apiWait ?? 1000) * n));
       if (stopped()) throw Object.assign(new Error("Stopped"), { name: "AbortError" });
     }
   }
