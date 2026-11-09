@@ -180,7 +180,7 @@ let period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, be
 let onEnv=null, onFps=0, onOff=0, hitsRaw=[];
 let cutFx = [], pfArr = null;
 const DRUM_MIN = 0.7;
-let beats = [], cuts = [], cutType = [], peaks = [], peakS = [];
+let beats = [], cuts = [], cutType = [], peaks = [], peakS = [], downbeats = [];   // downbeats: each bar's "1"
 let userMarks = [];   // beats the creator tapped in (song time): cuts can land on them like on the song's own beats
 function withMarks(b, dur){ if(!userMarks.length) return b; const out = b.slice();
   for(const m of userMarks){ const t = m - secStart; if(t > 0.05 && t < dur - 0.05 && !out.some(x => Math.abs(x - t) < 0.08)) out.push(t); }
@@ -392,7 +392,7 @@ async function loadMusic(file, cached = null){
   song = { buf: whole, mono: m, r: null, name, file, key: name + '|' + whole.duration.toFixed(2) };
   buf = whole; mono = m; secStart = 0; capWords = null; capLines = null; capAll = null;
   drawMusic();
-  let r = cached && cached.r;
+  let r = cached && cached.r && cached.r.downbeats ? cached.r : null;   // kept before bars were found: read again
   tasks.update('song', null, r ? 'Using the beats found before' : 'Finding the beats, drops and breaks');
   if(!r){
     try{ r = await analyseInWorker(m, whole.sampleRate); }
@@ -404,7 +404,7 @@ async function loadMusic(file, cached = null){
   if(token !== musicToken) return;
   songBusy(false); $('s1st').textContent = 'Ready'; $('s1').classList.add('done'); $('s2').classList.remove('locked'); $('lenrow').hidden = kind === 'talk';
   tasks.done('song', 'Song ready' + (sources.length ? '' : ' · now add your clips'));
-  if(cached && cached.aiDone){ $('s1st').textContent = 'Ready · beats as checked before'; rememberSong(file, r, true); }
+  if(cached && cached.aiDone && r === cached.r){ $('s1st').textContent = 'Ready · beats as checked before'; rememberSong(file, r, true); }
   else { rememberSong(file, r, false); checkBeatsWithAi(token); }
   if(capsOn) loadCaptions();
 }
@@ -555,7 +555,7 @@ async function useSection(token = musicToken){
       for(let i=0;i<fi;i++) d[i] *= i/fi; for(let i=0;i<fo;i++) d[n-1-i] *= i/fo; }   // no click in, a short fade out
     const m = song.mono.slice(a, a+n);
     const given = (song.r.beats || []).filter(t => t >= st - 0.01 && t < st + L - 0.02).map(t => Math.max(0, t - st));
-    const opts = given.length >= 4 ? { forceBeats: given, forceSource: song.source } : {};
+    const opts = given.length >= 4 ? { forceBeats: given, forceSource: song.source, forceDownbeats: (song.r.downbeats || []).filter(t => t >= st - 0.01 && t < st + L - 0.02).map(t => Math.max(0, t - st)) } : {};
     try{ r = await analyseInWorker(m, sr, opts); }catch(err){ r = songAnalysis(m, sr, opts); }
     if(run !== secBusy || token !== musicToken) return;
     // drops and breaks are judged on the whole song (a drop needs what came before it, which the part may not have; a
@@ -635,7 +635,7 @@ function playPart(from, base){
   cv.addEventListener('pointerup', end, SIG); cv.addEventListener('pointercancel', end, SIG); }
 let beatInfo = { source: 'own', note: '' };
 function applyAnalysis(r){
-  ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff } = r);
+  ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff } = r); downbeats = r.downbeats || [];
   songPartsRel = r.parts || [];
   buildPlan(); drawMusic();
   $('mbpm').textContent = (60/period).toFixed(0);
@@ -669,7 +669,8 @@ async function checkBeatsInner(token){
   catch(err){ beatInfo = { source: 'own', note: String(err && err.message || err) }; say(base); tasks.clear('beats'); console.info('on-device beat tracker not used:', beatInfo.note); return; }
   if(token !== musicToken) return;
   let r;
-  try{ r = await analyseInWorker(m, sr, { beats: bt.beats }); } catch(err){ r = songAnalysis(m, sr, { beats: bt.beats }); }
+  const bo = { beats: bt.beats, downbeats: bt.downbeats || [] };
+  try{ r = await analyseInWorker(m, sr, bo); } catch(err){ r = songAnalysis(m, sr, bo); }
   if(token !== musicToken) return;
   beatInfo = { source: r.beatSource, note: '', ms: bt.ms, judge: r.beatJudge, ai: bt };
   while(exportBusy) await new Promise(rr=>setTimeout(rr, 500));   // the video being made keeps its edit; the better beats come after
@@ -713,6 +714,8 @@ async function clipReader(src, maxSide){
     const track = await input.getPrimaryVideoTrack();
     if(!track || !(await track.canDecode())){ try{ input.dispose(); }catch(e){} throw new Error('no WebCodecs decoder'); }
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
+    // the clip lasts as long as its picture: a phone clip's sound often runs on after the last frame, and a shot there freezes
+    const vEnd = await track.computeDuration().catch(() => 0) - first; if(vEnd > 0.3 && vEnd < src.dur - 0.04) src.dur = vEnd;
     const sink = new mb.CanvasSink(track, { width: Math.max(2, Math.round(src.w*sc/2)*2), height: Math.max(2, Math.round(src.h*sc/2)*2), fit: 'fill', poolSize: 2 });
     return { fast: true,
       async *frames(ts){ for await (const wc of sink.canvasesAtTimestamps(ts.map(t=>first + t))) yield wc ? wc.canvas : null; },
@@ -2807,7 +2810,7 @@ const planSig = () => plan.length + ':' + plan.map(s=>s.start.toFixed(2)).join('
 function mixStore(){ const b = dirBase(); if(!aiMixes.has(b)) aiMixes.set(b, { plans: [], asked: false, busy: false }); return aiMixes.get(b); }
 // what the music does under every cut (the AI reads it; a fitted plan matches on it)
 function cutMusic(){
-  const sm = getSoundMap(), cx = { hits: hitsRaw || [], hitStr: hitsStr || [], drops: plan.filter(s=>s.type==='drop').map(s=>s.start), beats };
+  const sm = getSoundMap(), cx = { hits: hitsRaw || [], hitStr: hitsStr || [], drops: plan.filter(s=>s.type==='drop').map(s=>s.start), beats, downbeats };
   return plan.map(s => sm ? describeCut(sm, s.start, s.end, cx) : null);
 }
 /* ---- every Reel feels new: the tools each finished Reel used are kept on the phone (last 6 Reels) and the AI is told
@@ -3339,10 +3342,15 @@ let seqOn = true; root.classList.add('seqon');   // In my order by default, as o
 function seqSlots(n){
   const S = sources, avg = S.reduce((a,s)=>a+s.dur,0)/S.length, w = S.map(s=>Math.min(2*avg, Math.max(0.5*avg, s.dur))), tot = w.reduce((a,b)=>a+b,0);
   const sum = c => c.reduce((a,b)=>a+b,0);
-  const cnt = w.map(x => Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot)));   // every clip once while there are shots enough
+  // how many shots each clip's footage fills: a short clip given more shows the same moment twice
+  const shot = plan.length ? plan.reduce((a,s)=>a+s.end-s.start,0)/plan.length : 1, room = S.map(s => Math.max(1, Math.floor((s.dur - TAIL)/Math.max(0.2, shot))));
+  const cnt = w.map((x, j) => Math.min(room[j], Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot))));   // every clip once while there are shots enough
   while(sum(cnt) > n){ const k = cnt.lastIndexOf(Math.max(...cnt)); cnt[k]--; }   // (fewer shots than clips: the last clips wait)
-  while(sum(cnt) < n){ let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b){ b = r; k = j; } }); cnt[k]++; }
-  return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
+  while(sum(cnt) < n){ const free = cnt.some((c,j) => c < room[j]); let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b && (!free || c < room[j])){ b = r; k = j; } }); cnt[k]++; }
+  // never the same clip on two cuts in a row: a clip's next shot waits for the next clip (the order stays near the person's)
+  const seq = cnt.flatMap((c, si) => Array(c).fill(si));
+  for(let i = 1; i < seq.length; i++) if(seq[i] === seq[i-1]){ const j = seq.findIndex((x, k) => k > i && x !== seq[i]); if(j > 0) seq.splice(i, 0, seq.splice(j, 1)[0]); }
+  return seq;   // shot i -> its clip
 }
 // In my order, the moments: each clip is walked forward only (a shot starts where the one before it in that clip ended, so
 // no moment is ever used twice, and a clip once left is never come back to); a normal shot takes its clip's best moment
@@ -3401,12 +3409,13 @@ function makeEditNow(){
   if(story && storyEdit()) return;
   if(!buf || !sources.length) return;
   const keptUk = ukKeep();
-  stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode)))), pc.secs); } styleEdit(); const dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
+  stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode, downbeats)))), pc.secs); } styleEdit(); const dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
   const gmax = Math.max(1e-6, ...sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = sources.map(()=>[]);
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
-  const seq = seqOn && sources.length > 1 ? seqSlots(plan.length) : null;
+  // one clip always plays forward (its shots out of order jump back and forth in time)
+  const seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null;
   const order = plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[plan[a].type]) - (b===0?-1:pr[plan[b].type]) || a-b; });
   const res = new Array(plan.length); dupCount = 0;
   // Shared Director pass: rank the source clips once, then use its explainable quality ranking
@@ -3431,7 +3440,7 @@ function makeEditNow(){
       isUsable: src.dur > 0.35 && quality > 0.08,
       speech: !!(src.voice && src.voice.has) };
   });
-  const directorMusic = { duration: buf.duration, beats, downbeats: beats.filter((_, i) => i % 2 === 0),
+  const directorMusic = { duration: buf.duration, beats, downbeats: downbeats.length ? downbeats : beats.filter((_, i) => i % 4 === 0),
     drops: plan.filter(x => x.type === 'drop').map(x => x.start),
     quietRanges: plan.filter(x => x.type === 'break').map(x => [x.start, x.end] as [number, number]) };
   const inferredMood = mode === 'fast' ? 'energetic' : mode === 'smooth' ? 'minimal' : inferAutonomousMood(directorShots, directorMusic).mood;

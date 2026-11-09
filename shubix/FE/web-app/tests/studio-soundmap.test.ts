@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeCut, hitKind, repace, sectionsOf, soundMap, type Slot } from "@/components/studio/soundmap";
+import { barCounter, describeCut, hitKind, repace, sectionsOf, soundMap, type Slot } from "@/components/studio/soundmap";
 
 /** Fast Studio's ears: the sound map says what each moment of the song sounds like, so the AI can decide with it. */
 const SR = 22050;
@@ -79,5 +79,21 @@ describe("the AI's pace on the real beats", () => {
   });
   it("leaves the plan as it is without a steady beat", () => {
     expect(repace(plan, [{ t: 0, len: 16, every: 1 }], [0, 1, 2], 16)).toEqual(plan);
+  });
+});
+
+describe("cuts every 2, 4 or 8 beats on the bar's first beat", () => {
+  const beats = Array.from({ length: 33 }, (_, k) => k * 0.5), downs = beats.filter((_, k) => k % 4 === 1);   // the "1" is on the 2nd beat
+  const plan: Slot[] = [{ start: 0, end: 16, type: "cut" }];
+  it("counts each beat's place in its bar", () => {
+    const bar = barCounter(beats, downs)!;
+    expect([0, 0.5, 1, 2.5, 4.5].map((t) => bar(t).pos)).toEqual([3, 0, 1, 0, 0]);
+    expect(barCounter(beats, [0.5])).toBeNull();
+  });
+  it("puts a cut every 4 beats on each bar's first beat, every 8 on every other bar, every 2 on beats 1 and 3", () => {
+    const at = (every: number) => repace(plan, [{ t: 0, len: 16, every }], beats, 16, "auto", downs).slice(1).map((x) => +(x.start + 1 / 30).toFixed(2));
+    expect(at(4)).toEqual([0.5, 2.5, 4.5, 6.5, 8.5, 10.5, 12.5, 14.5]);
+    expect(at(8)).toEqual([0.5, 4.5, 8.5, 12.5]);
+    expect(at(2).slice(0, 4)).toEqual([0.5, 1.5, 2.5, 3.5]);
   });
 });
