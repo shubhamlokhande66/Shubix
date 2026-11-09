@@ -136,7 +136,24 @@ export async function patiently<T>(send: (timeoutMs: number) => Promise<T>, tota
 
 async function request<T>(path: string, init?: RequestInit, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
-  return method === "GET" ? readWithRetry<T>(path, init, timeoutMs) : tracked(send<T>(path, init, timeoutMs)); // actions light up the activity bar
+  for (;;) {
+    try { return await (method === "GET" ? readWithRetry<T>(path, init, timeoutMs) : tracked(send<T>(path, init, timeoutMs))); } // actions light up the activity bar
+    catch (e) { if (!(await askRetry(e, init))) throw e; }   // the server could not be reached: Retry asks again, Close gives the error
+  }
+}
+/* Shubix's server could not be reached or failed (no answer, a timeout, 5xx), after the usual retries: a popup in the app's
+ * style says so in plain words, with Retry and Close, so the person stays on the page and can go on. One popup at a time:
+ * calls failing together share its answer. A "no" from the server (a wrong password, no credits...) is not this: the page
+ * shows it where it belongs. */
+const SERVER_TROUBLE = new Set(["NETWORK_ERROR", "SERVER_DOWN", "SERVER_TIMEOUT"]);
+let asking: Promise<boolean> | null = null;
+async function askRetry(e: unknown, init?: RequestInit): Promise<boolean> {
+  if (!(e instanceof ApiError) || !SERVER_TROUBLE.has(e.code) || init?.signal?.aborted || typeof document === "undefined") return false;
+  asking ??= import("@/components/molecules/ConfirmDialog").then(({ confirmAction }) => confirmAction({
+    title: "Shubix is not answering right now",
+    body: "Our team is working on it. Check your internet, then press Retry. Nothing you made here is lost.",
+    ok: "Retry", cancel: "Close" })).finally(() => { asking = null; });
+  return asking;
 }
 
 /** Reads change nothing on the server, so they are safe to repeat: a slow or dropped one is retried before it is an error. */

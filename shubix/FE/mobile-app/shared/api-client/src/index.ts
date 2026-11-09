@@ -10,6 +10,8 @@ export type ClientOptions = {
   getToken?: () => Promise<string | null> | string | null;
   setToken?: (token: string | null) => Promise<void> | void;
   mobile?: boolean;
+  /** the server could not be reached or failed (no answer, 408, 429, 5xx): true asks again (the app's Retry popup) */
+  onServerTrouble?: (e: ApiError) => Promise<boolean>;
 };
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Please try again.");
 
@@ -22,10 +24,12 @@ export function createApiClient(o: ClientOptions) {
     const token = await o.getToken?.();
     if (token) headers.set("Authorization", `Bearer ${token}`);
     let r: Response;
+    const again = async (e: ApiError): Promise<T> => { if (!init.signal?.aborted && o.onServerTrouble && (await o.onServerTrouble(e))) return request<T>(path, init); throw e; };
     try { r = await fetch(base + path, { ...init, headers, credentials: "include" }); }
-    catch { throw new ApiError("Cannot reach the server. Check your connection.", 0, "NETWORK"); }
+    catch { return again(new ApiError("Cannot reach the server. Check your connection.", 0, "NETWORK")); }
     const data = r.status === 204 ? null : await r.json().catch(() => null);
-    if (!r.ok) { const e = (data as ApiErrorBody | null)?.error; throw new ApiError(e?.message ?? `Request failed (${r.status})`, r.status, e?.code ?? "HTTP_" + r.status, e?.details); }
+    if (!r.ok) { const e = (data as ApiErrorBody | null)?.error, err = new ApiError(e?.message ?? `Request failed (${r.status})`, r.status, e?.code ?? "HTTP_" + r.status, e?.details);
+      if (r.status === 408 || r.status === 429 || r.status >= 500) return again(err); throw err; }
     return data as T;
   }
   const post = <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
