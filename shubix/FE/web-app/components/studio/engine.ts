@@ -3423,7 +3423,14 @@ function makeEditNow(){
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
   // one clip always plays forward (its shots out of order jump back and forth in time)
-  const seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null;
+  let seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null;
+  // In my order, each clip is one shot (1 2 3 4…): the song's cuts that would fall inside a clip are let go, so its
+  // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
+  if(seq && seqOn && sources.length > 1){
+    for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
+      plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
+    }
+  }
   const order = plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[plan[a].type]) - (b===0?-1:pr[plan[b].type]) || a-b; });
   const res = new Array(plan.length); dupCount = 0;
   // Shared Director pass: rank the source clips once, then use its explainable quality ranking
