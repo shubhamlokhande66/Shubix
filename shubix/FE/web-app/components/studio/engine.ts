@@ -80,7 +80,7 @@ function wipNote(p){ if(WIP) life({ wip: { ...(lifeNote.wip || {}), clips: [...$
 async function wipRestore(w){
   const sf = w.song ? await wipGet(w.song) : null, cf = (await Promise.all((w.clips || []).map(wipGet))).filter(Boolean);
   if(!sf && !cf.length) return;
-  if(w.seq) setSeq(true, false);
+  if(w.seq === false) setSeq(false, false);
   if(sf) loadMusic(sf);
   if(cf.length) addVideos(cf, true);
   root.dispatchEvent(new CustomEvent('studio-restored'));
@@ -3261,7 +3261,7 @@ function ukRestore(kept){ for(const k of kept){ const e = edit.find(x => Math.ab
 let remakeAfterExport = false;
 /* ---- Clip order: "Mix all clips" (the best moments of every clip, anywhere in the Reel) or "In my order" (the clips one
  * after another, as they were added: each gets a share of the shots by its length, and its moments go in time order) ---- */
-let seqOn = false;
+let seqOn = true; root.classList.add('seqon');   // In my order by default, as on the phone
 function seqSlots(n){
   const S = sources, avg = S.reduce((a,s)=>a+s.dur,0)/S.length, w = S.map(s=>Math.min(2*avg, Math.max(0.5*avg, s.dur))), tot = w.reduce((a,b)=>a+b,0);
   const sum = c => c.reduce((a,b)=>a+b,0);
@@ -7537,7 +7537,7 @@ async function openProject(id){
     if(st.vo && st.vo.fp){ const vf = await getF(st.vo.fp, 'voiceover-' + st.vo.key + '.f32'); if(vf){ vo = { raw: new Float32Array(await vf.arrayBuffer()), sr: st.vo.sr, key: st.vo.key }; await cleanVo(); } }
     if(S.bg){ const bf = await getF(S.bg, 'background'); if(bf){ bgFile = bf; const im = new Image(); im.onload = () => { bgImg = im; redrawFrame(); }; im.src = URL.createObjectURL(bf); } }
     if(S.capColor) ACCENT = S.capColor;
-    if(S.seq) setSeq(true, false);
+    if(S.seq === false) setSeq(false, false);
     if(Array.isArray(S.marks)) userMarks = S.marks.filter(Number.isFinite);
     if(Array.isArray(S.sfx)){ sfxList = S.sfx.filter(x => SFX_NAMES[x.kind] && Number.isFinite(x.at)).map(x => ({ ...x, id: ++sfxSeq })); sfxUI(); }
     bgColor = S.bgColor || bgColor; if(S.bgMode && S.bgMode !== 'none') press('bgmode', 'b', S.bgMode);
