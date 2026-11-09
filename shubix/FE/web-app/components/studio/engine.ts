@@ -80,7 +80,7 @@ function wipNote(p){ if(WIP) life({ wip: { ...(lifeNote.wip || {}), clips: [...$
 async function wipRestore(w){
   const sf = w.song ? await wipGet(w.song) : null, cf = (await Promise.all((w.clips || []).map(wipGet))).filter(Boolean);
   if(!sf && !cf.length) return;
-  if(w.seq) setSeq(true, false);
+  if(w.seq === false) setSeq(false, false);
   if(sf) loadMusic(sf);
   if(cf.length) addVideos(cf, true);
   root.dispatchEvent(new CustomEvent('studio-restored'));
@@ -3195,7 +3195,8 @@ function goodSecs(src){
 // is left out, quietly. Off: a line under it says so; nothing pops up while the person works (Make Reel asks: askShort).
 let footTimer = 0;
 const fitOn = () => $('fitclips').checked;
-function footCheckSoon(){ if(!location.pathname.startsWith('/create') || kind === 'talk') return; clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
+function footCheckSoon(){ if(kind === 'talk') return;   // in Create and in the editor (clips added or removed there)
+  clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
   const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
@@ -3261,7 +3262,7 @@ function ukRestore(kept){ for(const k of kept){ const e = edit.find(x => Math.ab
 let remakeAfterExport = false;
 /* ---- Clip order: "Mix all clips" (the best moments of every clip, anywhere in the Reel) or "In my order" (the clips one
  * after another, as they were added: each gets a share of the shots by its length, and its moments go in time order) ---- */
-let seqOn = false;
+let seqOn = true; root.classList.add('seqon');   // In my order by default, as on the phone
 function seqSlots(n){
   const S = sources, avg = S.reduce((a,s)=>a+s.dur,0)/S.length, w = S.map(s=>Math.min(2*avg, Math.max(0.5*avg, s.dur))), tot = w.reduce((a,b)=>a+b,0);
   const sum = c => c.reduce((a,b)=>a+b,0);
@@ -3275,7 +3276,8 @@ function seqSlots(n){
 // within its share of what is left. In a fast part of the song (4 or more cuts in a row, each 0.5 s or less) the shots
 // run on through the clip sped up (up to 40x, like a video app; the export takes the exact frame for every moment, the
 // preview steps through the frames above 16x: rawRate), back to normal after it.
-// A clip too short for its shots plays a little slower instead of repeating.
+// A clip is never slowed down to fill the song: slow motion only where the style or Shubix AI chose it for a shot; too
+// little good video makes the Reel shorter (Make the Reel as long as my clips), the rest of the song is left out.
 const SEQ_FAST = 0.5, SEQ_MAX = 40;
 function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
@@ -3284,10 +3286,11 @@ function seqPick(seq, res, gmax){
     const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
     const need = ids.map(i => plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
-    const scale = ids.map(i => spare < 0 ? Math.max(0.005, foot / sum(need)*0.98) : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    const scale = ids.map(i => spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = 0;
     ids.forEach((i, k) => {
+      cur = Math.min(cur, Math.max(0, foot - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
       const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, foot - nd - rest);
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
@@ -7537,7 +7540,7 @@ async function openProject(id){
     if(st.vo && st.vo.fp){ const vf = await getF(st.vo.fp, 'voiceover-' + st.vo.key + '.f32'); if(vf){ vo = { raw: new Float32Array(await vf.arrayBuffer()), sr: st.vo.sr, key: st.vo.key }; await cleanVo(); } }
     if(S.bg){ const bf = await getF(S.bg, 'background'); if(bf){ bgFile = bf; const im = new Image(); im.onload = () => { bgImg = im; redrawFrame(); }; im.src = URL.createObjectURL(bf); } }
     if(S.capColor) ACCENT = S.capColor;
-    if(S.seq) setSeq(true, false);
+    if(S.seq === false) setSeq(false, false);
     if(Array.isArray(S.marks)) userMarks = S.marks.filter(Number.isFinite);
     if(Array.isArray(S.sfx)){ sfxList = S.sfx.filter(x => SFX_NAMES[x.kind] && Number.isFinite(x.at)).map(x => ({ ...x, id: ++sfxSeq })); sfxUI(); }
     bgColor = S.bgColor || bgColor; if(S.bgMode && S.bgMode !== 'none') press('bgmode', 'b', S.bgMode);

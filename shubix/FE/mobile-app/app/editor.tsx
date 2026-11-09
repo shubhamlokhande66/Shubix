@@ -4,9 +4,9 @@ import { BackHandler, Platform, Pressable, ScrollView, Text, TextInput, View } f
 import { router, useLocalSearchParams } from "expo-router";
 import { useStudioText } from "@mobile/hooks";
 import { asksForAllClips } from "@mobile/core/lib/chatSize";
-import { Button, IconButton, Segmented, Slider, confirmAction, tell, useColors, askAction } from "@mobile/ui-mobile";
+import { Button, IconButton, Segmented, Slider, confirmAction, tell, useColors } from "@mobile/ui-mobile";
 import { errorMessage } from "@mobile/api-client";
-import { clipDuration, projectDuration, splitClip, type ProjectClip, type ReelProject } from "@mobile/validations";
+import { clipDuration, projectDuration, splitClip, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
 import { evaluateSpeedRamp, recordEdit, slipClip, stepEditHistory } from "@mobile/video-engine";
 import { getProject, keepPickedAssets, keepPickedFile, saveProject, setNewReelSeed } from "../lib/projects";
 import { pickSong } from "../lib/songs";
@@ -156,7 +156,7 @@ export default function EditorScreen() {
     }).catch(() => {});
   }, [tool?.key, p?.id]);
   // what Shubix AI planned for this Reel, shown in Ask Shubix (read when the Reel opens, and again after each answer)
-  useEffect(() => { if (p?.studio && engine.holds(p.id)) void engine.aiPlan().then(setAiPlan).catch(() => setAiPlan(undefined)); else setAiPlan(undefined); }, [p?.id, p?.studio]);
+  useEffect(() => { if (p?.studio && engine.holds(p.id)) { void engine.aiPlan().then(setAiPlan).catch(() => setAiPlan(undefined)); aiHistory(); } else setAiPlan(undefined); }, [p?.id, p?.studio]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!p?.studio || !engine.holds(p.id)) { setStudioLayers([]); return; }
     void engine.tool("layerList").then((r) => setStudioLayers(Array.isArray(r) ? r as typeof studioLayers : [])).catch(() => setStudioLayers([]));
@@ -202,6 +202,9 @@ export default function EditorScreen() {
   }, [playing, p]);
 
   const change = (next: Partial<ReelProject>) => setP((old) => { if (!old) return old; const history = recordEdit(undo.current, old, 30); undo.current = history.undo; redo.current = history.redo; return { ...old, ...next, studio: next.studio ?? (old.studio && !("audioUri" in next) && !("overlays" in next)) }; }); // the song or the texts changed: the phone's export makes it (the clips' changes go back to the studio: engine.edit)
+  // Ask Shubix and Shubix AI's history, kept with the Reel (not an edit: undo leaves it); what Shubix AI did is added from the studio
+  const addChat = (add: (l: ChatLine[]) => ChatLine[]) => setP((old) => old ? { ...old, chat: add(old.chat ?? []).slice(-40) } : old);
+  const aiHistory = () => void engine.history().then((h) => addChat((l) => { const seen = new Set(l.map((m) => m.at + m.text)); return [...l, ...h.filter((m) => !seen.has(m.at + m.text))].sort((a, b) => a.at - b.at); })).catch(() => {});
   const setClips = (next: ProjectClip[]) => { change({ clips: next }); setSelected((i) => Math.min(i, Math.max(0, next.length - 1))); };
   const patch = (x: Partial<ProjectClip>) => clip && setClips(clips.map((c, i) => (i === selected ? { ...c, ...x } : c)));
   const setMusicMix = async (patch: { musicVolume?: number; musicFadeIn?: number; musicFadeOut?: number; musicDucking?: boolean; musicDuckLevel?: number }) => {
@@ -363,10 +366,9 @@ export default function EditorScreen() {
   async function addClips(replace = false) {
     const assets = await pickInOrder({ kind: "both", limit: replace ? 1 : 30 }); // in the order tapped
     if (!assets?.length || !p) return;
-    // a Reel made by Shubix AI: other clips are a new Reel, asked for and charged as one; this Reel stays as it is in My Reels
+    // a Reel made by Shubix AI: other clips are a new Reel, made (and charged) only when Make Reel is pressed in Create; no
+    // popup here, and this Reel stays as it is in My Reels
     if (p.studio && (await engine.aiOn().catch(() => false))) {
-      const v = await askAction({ title: words("You changed your Reel"), body: words("Your clips are different now. Make a new Reel with these changes? Keeping this Reel changes nothing and uses no credits."), ok: words("Make new Reel"), cancel: words("Keep this Reel") });
-      if (v !== 0) return;
       const own = [...new Map(clips.map((c) => [c.uri, c])).values()].map((c) => ({ uri: c.uri, type: c.kind === "image" ? "image" : "video", duration: c.sourceDuration * 1000, fileName: c.name, width: 0, height: 0 }) as ImagePickerAsset);
       const picked = replace && clip ? own.map((a) => (a.uri === clip.uri ? assets[0] : a)) : [...own, ...assets];
       setNewReelSeed({ media: picked.slice(0, 30), song: p.audioUri ? { uri: p.audioUri, name: p.audioName ?? "Song", duration: p.music?.duration ?? 0 } : null, start: p.settings?.start ?? 0, length: p.settings?.length ?? 0 });
@@ -835,7 +837,7 @@ export default function EditorScreen() {
           <Button full icon="shuffle" variant="secondary" title={words(mixing ? "Mixing video…" : "Mix Video")} disabled={mixing || clips.length < 2} onPress={() => void mixVideo()} />
         </View>
         <Transport now={now} total={total} playing={playing} sound={sound} onPrev={() => go(selected - 1)} onToggle={() => setPlaying(!playing)} onNext={() => go(selected + 1)} onSound={() => setSound(!sound)} />
-        <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} onAsk={async (t) => {
+        <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} log={p.chat ?? []} onLog={addChat} onAsk={async (t) => {
           // a Reel the studio made and still holds: Shubix AI itself (the website's chat: its credit question asked here,
           // its plan applied there, the clips back here); otherwise the phone's own changes below
           if (p.studio && engine.holds(p.id)) {
@@ -843,7 +845,7 @@ export default function EditorScreen() {
               setPlaying(false);
               const r = await engine.chat(p, t);
               if (r) {
-                void engine.aiPlan().then(setAiPlan).catch(() => {});
+                void engine.aiPlan().then(setAiPlan).catch(() => {}); aiHistory();
                 if (r.clips) { const next = r.clips; setP((old) => old ? { ...old, clips: next, ...(r.overlays ? { overlays: r.overlays } : {}), studio: true } : old); setSelected(0); }
                 return r.answer;
               }

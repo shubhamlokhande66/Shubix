@@ -266,8 +266,8 @@ export const STUDIO_HTML = `
     </div>
     <!-- how the clips go into the Reel: the best moments of all of them, or one after another as they were added (engine.ts) -->
     <div class="row seqrow" id="seqrow"><span class="label">Clip order</span>
-      <div class="${Segmented.normal}" id="seq" role="group" aria-label="Clip order"><button type="button" data-q="mix" aria-pressed="true">Mix all clips</button><button type="button" data-q="order" aria-pressed="false">In my order</button></div>
-      <span class="fname" id="seqhelp">Shubix picks the best moments from all your clips</span>
+      <div class="${Segmented.normal}" id="seq" role="group" aria-label="Clip order"><button type="button" data-q="mix" aria-pressed="false">Mix all clips</button><button type="button" data-q="order" aria-pressed="true">In my order</button></div>
+      <span class="fname" id="seqhelp">Your clips play one after another, in the order you added them</span>
       <small class="text-[12px] text-muted" id="crev" hidden>Drag a clip to move it (on a phone, hold it first)</small></div>
     <div class="row items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2" id="corder" hidden><span class="flex-1 text-[13px] font-semibold">Tap your clips in the order they should play: 1, 2, 3…</span><button type="button" class="${Button.small}" id="corderskip">Keep as is</button></div>
     <span class="flabel fcliplabel">Selected Clips</span>

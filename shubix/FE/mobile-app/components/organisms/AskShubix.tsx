@@ -3,20 +3,26 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { useStudioText } from "@mobile/hooks";
 import { Bubble, ChatChip, Gold, Icon, useColors } from "@mobile/ui-mobile";
+import type { ChatLine } from "@mobile/validations";
+
+// when it was said or done: the time today, the date and time before today
+const when = (at: number) => { const d = new Date(at); return (d.toDateString() === new Date().toDateString() ? "" : d.toLocaleDateString([], { day: "numeric", month: "short" }) + ", ") + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
 
 // the ideas under the box (the website's askchips): what is shown, and what it says
 const IDEAS: [string, string][] = [["Fast & energetic", "Fast cuts on every beat, high energy"], ["Calm & cinematic", "Make it calm and cinematic, slower cuts"], ["Zoom on the drop", "Zoom in on the drop and add camera moves on the beats"], ["Slow-mo ending", "Slow motion on the best moment at the end"]];
 
 /** Ask Shubix AI (the website's studio askbar): a card that opens to a box where you say how you want your Reel, the
- * ideas to tap, and the conversation. `onAsk` does what was asked and returns the answer. */
-export function AskShubix({ onAsk, plan, planned }: { onAsk: (text: string) => string | Promise<string>; plan?: { story: string; lines: string[] } | null; planned?: boolean }) {
+ * ideas to tap, and the conversation with Shubix AI's history, each with its time. `onAsk` does what was asked and returns
+ * the answer; `log` and `onLog` keep the conversation with the Reel (without them it lives only on this screen). */
+export function AskShubix({ onAsk, plan, planned, log: kept, onLog }: { onAsk: (text: string) => string | Promise<string>; plan?: { story: string; lines: string[] } | null; planned?: boolean; log?: ChatLine[]; onLog?: (add: (l: ChatLine[]) => ChatLine[]) => void }) {
   const words = useStudioText(), look = useColors();
-  const [open, setOpen] = useState(false), [said, setSaid] = useState(""), [log, setLog] = useState<{ me: boolean; text: string }[]>([]), [busy, setBusy] = useState(false), [shots, setShots] = useState(false);
+  const [open, setOpen] = useState(false), [said, setSaid] = useState(""), [own, setOwn] = useState<ChatLine[]>([]), [busy, setBusy] = useState(false), [shots, setShots] = useState(false);
+  const log = kept ?? own, setLog = onLog ?? setOwn;
   async function ask(text: string) {
     text = text.trim().slice(0, 300);
     if (!text || busy) return;
-    setSaid(""); setLog((l) => [...l, { me: true, text }]); setBusy(true);
-    try { const answer = await onAsk(text); setLog((l) => [...l, { me: false, text: answer }]); } finally { setBusy(false); }
+    setSaid(""); setLog((l) => [...l, { at: Date.now(), me: true, text }]); setBusy(true);
+    try { const answer = await onAsk(text); setLog((l) => [...l, { at: Date.now(), me: false, text: answer }]); } finally { setBusy(false); }
   }
   return (
     <View className="overflow-hidden rounded-[18px] border border-accent/25 bg-surface">
@@ -38,7 +44,7 @@ export function AskShubix({ onAsk, plan, planned }: { onAsk: (text: string) => s
               {shots && plan.lines.map((line, i) => <Text key={i} className="text-[11.5px] leading-[16px] text-muted">{i + 1}. {line}</Text>)}
             </View>
           ) : planned === false ? <Text className="text-[12px] leading-[17px] text-muted">{words("Shubix AI has not edited this Reel. This is the phone's own edit.")}</Text> : null}
-          {log.map((m, i) => <Bubble key={i} mine={m.me}>{m.text}</Bubble>)}
+          {log.map((m, i) => <View key={i} className={m.me ? "items-end" : "items-start"}><Bubble mine={m.me}>{m.text}</Bubble><Text className="mt-0.5 px-1 text-[10.5px] text-muted">{when(m.at)}</Text></View>)}
           {log.some((m) => !m.me) && <Pressable onPress={() => router.push({ pathname: "/contact", params: { topic: "reels", message: `${words("Report an AI answer")}: ` } })} accessibilityRole="link" className="self-end py-1"><Text className="text-[12px] font-semibold text-muted underline">{words("Report an AI answer")}</Text></Pressable>}
           <View className="flex-row items-center gap-2 rounded-2xl border border-border bg-surface-2 pl-3.5 pr-1.5">
             <TextInput value={said} onChangeText={setSaid} onSubmitEditing={() => void ask(said)} returnKeyType="send" maxLength={300} placeholder={words("e.g. Fast cuts, zoom on the drop")} placeholderTextColor={look.muted} className="h-11 flex-1 text-[14px] text-foreground" />

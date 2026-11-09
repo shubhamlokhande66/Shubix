@@ -20,6 +20,7 @@ function aiGate(again = false){
       // the top-up is offered once per Reel (not again on every Next)
       EH.aiNeed(false); ES.gateNo = id;
       EH.aiStat('Edited on your phone · Shubix AI needs ' + EH.creditWord(cost) + ' (you have ' + EH.creditWord(bal) + ')');
+      EH.aiLog('Edited on your phone: Shubix AI needs ' + EH.creditWord(cost) + ' and you have ' + EH.creditWord(bal) + '.');
       if(ES.lowAsked !== id){ ES.lowAsked = id;
         if(EH.IN_APP) await EH.askCredits({ title: 'Not enough credits for Shubix AI', text: 'Shubix AI uses ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Your Reel is made with the phone\'s own smart edit.', bal, ok: 'OK' });
         else { const go = await EH.askCredits({ title: 'Top up for Shubix AI', text: 'Shubix AI uses ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Your Reel is made with the phone\'s own smart edit now; top up to let Shubix edit it.', bal, ok: 'Top up', no: 'Use the phone\'s edit' });
@@ -72,6 +73,7 @@ async function aiRun(){
     need.forEach(s => framesMade.delete(s));
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
     EH.chatFail('Shubix could not look at your clips right now. Try again in a moment.');
+    EH.aiLog('Shubix AI could not look at your clips this time: your Reel uses the phone’s own edit.');
   }
 }
 // New mix: the AI's other plans for these cuts, all in one call (the input is sent once)
@@ -88,6 +90,7 @@ async function variantsRun(st){
     let k = 1;
     for(const pl of res.plans || []){ while(st.plans[k]) k++; st.plans[k] = { slots: toSlots(pl.slots, cands), ctx, sig, story: pl.story || '' }; n++; }
     EH.aiStat('Shubix made ' + n + ' more version' + (n === 1 ? '' : 's') + ' · press Change Reel to see each.');
+    if(n) EH.aiLog('Shubix AI made ' + n + ' more version' + (n === 1 ? '' : 's') + ' of your Reel (Change Reel shows each).');
   }catch(e){
     if(!(e && e.name==='AbortError') || tm.timedOut()) console.warn('AI mixes not used:', e);
     EH.aiStat('Change Reel uses the phone\'s own versions in Shubix\'s style.');
@@ -139,6 +142,7 @@ async function paceRun(key){
     if(!ES.pacing){ ES.paceFailedKey = key; ES.paceBusy = false; return; }
     ES.paceCache.set(key, ES.pacing);
     EH.aiStat('Shubix chose the pace' + (ES.pacing.story ? ': ' + ES.pacing.story : '') + '. Now planning the shots…');
+    EH.aiLog('Shubix AI chose the pace' + (ES.pacing.story ? ': ' + ES.pacing.story : '.'));
     ES.paceBusy = false; EH.makeEdit();
   }catch(e){
     ES.paceFailedKey = key;
@@ -190,6 +194,7 @@ async function directorRun(key){
       if(tm.timedOut()) EH.aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
+    if(late || !(e && e.name==='AbortError') || tm.timedOut()) EH.aiLog('Shubix AI could not plan this Reel: it uses the phone’s own edit' + back);
   }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,

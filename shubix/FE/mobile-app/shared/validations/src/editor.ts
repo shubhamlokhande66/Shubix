@@ -23,9 +23,13 @@ export const clipSchema = z.object({
   // Optional source-time variable speed curve (1 = normal speed); renderers can subdivide it into constant-rate segments.
   speedRamp: z.array(z.object({ time: z.number().min(0), speed: z.number().min(0.25).max(4), easing: z.enum(["linear", "hold", "in", "out", "inOut", "inQuad", "outCubic", "outBack", "outExpo", "bezier"]).optional() })).optional(),
 }).refine((clip) => clip.end <= clip.sourceDuration && clip.end > clip.start, { message: "The selected clip range must be inside the original media." });
+/** a line of Ask Shubix and Shubix AI's history, with its time (ms), kept with the Reel */
+export const chatLineSchema = z.object({ at: z.number(), me: z.boolean(), text: z.string().max(2000) });
+export type ChatLine = z.infer<typeof chatLineSchema>;
 export const projectSchema = z.object({
   id: z.string(), title: z.string().max(120), kind: z.enum(["music", "talking", "photo", "copy", "story"]), clips: z.array(clipSchema).min(1),
   audioUri: z.string().optional(), audioName: z.string().optional(), templateId: z.string().optional(), overlays: z.array(overlaySchema),
+  chat: z.array(chatLineSchema).max(40).optional(),
   createdAt: z.string(), updatedAt: z.string(), status: z.enum(["draft", "rendered"]), outputUri: z.string().optional(),
   // the Create flow's choices: how much of the song (seconds, 0 = all), the clip order, the format, a Talking Reel's pauses and music under the voice, and what was asked of Shubix AI
   // the song as the website's engine heard it (its tempo, beats, drops, breaks), and whether that engine made the Reel (its shots: the clips)

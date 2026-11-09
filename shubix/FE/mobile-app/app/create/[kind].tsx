@@ -33,7 +33,7 @@ function CreateFlowScreen() {
   const [step, setStep] = useState<FlowStep>("intro");
   const [music, setMusic] = useState<SongAnalysis | null>(null), [song, setSong] = useState<Song | null>(null), [recent, setRecent] = useState<Song[]>([]), [reading, setReading] = useState(false);
   const [length, setLength] = useState(0), [start, setStart] = useState(0), [photos, setPhotos] = useState(kind === "photo"), [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
-  const [settings, setSettings] = useState<ClipSettings>({ order: "order", aspect: "9:16", pace: "natural", under: "0.09" });
+  const [settings, setSettings] = useState<ClipSettings>({ order: "order", aspect: "9:16", pace: "natural", under: "0.09", fit: true });
   const [wish, setWish] = useState(""), [working, setWorking] = useState(false), [focused, setFocused] = useState(true);
   const [clipState, setClipState] = useState<Record<string, ClipState>>({});
   const clipBad = useRef(clipState); clipBad.current = clipState;
@@ -187,7 +187,8 @@ function CreateFlowScreen() {
   // too little good video for the Reel: nothing was taken; more clips, or a Reel as long as they are
   async function tooShort(have: number, need: number): Promise<"stop" | "go"> {
     const secs = Math.floor(have), can = secs >= 5;
-    const v = await askAction({ title: words("Not enough clips"), body: words("Your clips have {h} s of good video. Your Reel is {n} s. No credits were used.", { h: secs, n: Math.round(need) }), ok: words("Add clips"), ...(can ? { cancel: words("Make a {h} s Reel", { h: secs }) } : {}) });
+    // "Make the Reel as long as my clips" (on by default): no question, the rest of the song is left out
+    const v = can && settings.fit !== false ? 1 : await askAction({ title: words("Not enough clips"), body: words("Your clips have {h} s of good video. Your Reel is {n} s. No credits were used.", { h: secs, n: Math.round(need) }), ok: words("Add clips"), ...(can ? { cancel: words("Make a {h} s Reel", { h: secs }) } : {}) });
     if (v === 0) { void addMedia(); return "stop"; }
     if (v !== 1 || !can) return "stop";
     lengthChosen.current = true;
@@ -205,10 +206,8 @@ function CreateFlowScreen() {
     const sig = `${keyOf(media)};${song?.uri ?? ""};${start};${length}`, old = madeReel.current;
     if (old && old.sig === sig) return void router.push({ pathname: "/editor", params: { id: old.id } });
     const again = !!old && (await engine.aiOn().catch(() => false));
+    // changed: no popup, Make Reel makes it as a new Reel (its credits are asked below); the old Reel stays in My Reels
     if (again) {
-      const v = await askAction({ title: words("You changed your Reel"), body: words("Your song or clips are different now. Make a new Reel with these changes? Keeping the old Reel changes nothing and uses no credits."), ok: words("Make new Reel"), cancel: words("Keep old Reel") });
-      if (v === 1) return void keepOldReel(old);
-      if (v !== 0) return;
       draft.current = `draft-${Date.now()}`; kept.current = { uris: [], clips: [] }; keptBy.current = new Map(); copied.current = 0; read.current = null;
     }
     // a plan without Shubix AI is asked first, without waiting for the clips
