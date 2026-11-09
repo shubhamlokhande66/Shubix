@@ -5621,7 +5621,7 @@ async function startPlayback(from, destNode){
   if(destNode) await mixReady;
   else mixReady.catch(()=>{});
   if(gone()) return;
-  edit.forEach(x=>{ x._cued = false; });
+  edit.forEach(x=>{ x._cued = false; x._rolled = false; });
   curIdx = segAt(from); const quick = !destNode;
   if(edit[curIdx-1]){ if(quick) prepare(curIdx-1, edit[curIdx-1].end-0.01, true); else await prepare(curIdx-1, edit[curIdx-1].end-0.01); }
   if(gone()) return; await prepare(curIdx, from, quick); if(gone()) return; if(edit[curIdx+1]) prepare(curIdx+1, edit[curIdx+1].start);
@@ -5649,7 +5649,8 @@ async function startPlayback(from, destNode){
       const r1 = rateAt(e, l), want = srcPos(e, l);
       if(Math.abs(e.el.currentTime-want) > 0.12) e.el.currentTime = want;
       if(r1>0 && rawRate(e, l) <= PLAY_MAX){ e.el.playbackRate = r1; e.el.play().catch(()=>{}); } else e.el.pause();
-      if(prevEl && prevEl!==e.el) prevEl.pause();     // stays on its last frame for the transition
+      // stays on its last frame for the transition; while recording it goes on moving under it (as the fast export)
+      if(prevEl && prevEl!==e.el && !(recording && trDur(e) > 0)) prevEl.pause();
       if(edit[i+1]) prepare(i+1, edit[i+1].start);
     } else {
       const e = edit[i], l = t-e.start, r = rateAt(e, l), want = srcPos(e, l);
@@ -5670,7 +5671,15 @@ async function startPlayback(from, destNode){
         if(e.el.paused) e.el.play().catch(()=>{}); }
       // the shot after next is cued once this one's transition is over (its player may be the one that transition used)
       const n2 = edit[i+2];
-      if(n2 && !n2._cued && l > trDur(e) + 0.05){ n2._cued = true; prepare(i+2, n2.start); }
+      if(n2 && !n2._cued && l > trDur(e) + 0.05){ n2._cued = true; const pv = edit[i-1]?.el; if(pv && pv !== e.el && !pv.paused) pv.pause(); prepare(i+2, n2.start); }
+      // the next shot's player starts a moment before its cut (a paused video needs 0.1-0.3 s to show a moving picture
+      // again on a phone): while recording, that wait was a still picture at every cut of the saved video
+      const nx = edit[i+1], left = e.end - t;
+      if(recording && nx && !nx._rolled && nx.el !== e.el && left <= PREROLL && l > trDur(e) + 0.05 && !(nx.cs && nx.cs.rev)){
+        nx._rolled = true;
+        const r0 = rateAt(nx, 0), w = srcPos(nx, 0) - left*r0;
+        if(r0 > 0 && rawRate(nx, 0) <= PLAY_MAX && w >= 0.02){ nx.el.currentTime = w; nx.el.playbackRate = r0; nx.el.play().catch(()=>{}); }
+      }
     }
     if(layers.length) syncLayers(t);
     // iPhone: 30 pictures a second are enough for a Reel, and leave the phone time to decode; a new shot is drawn at once
@@ -5684,6 +5693,7 @@ async function startPlayback(from, destNode){
   rafId = requestAnimationFrame(raf);
   timer = setInterval(()=>{ if(document.hidden) loop(); }, 33);
 }
+const PREROLL = 0.3;   // seconds
 let onEnd = null;
 $('play').onclick = () => { if(recording) return; if(playing){ pos = curTime(); stopAll(); } else if(starting) stopAll(); else startPlayback(pos >= buf.duration-0.05 ? 0 : pos); };
 
