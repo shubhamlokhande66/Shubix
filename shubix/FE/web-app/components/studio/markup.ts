@@ -139,7 +139,6 @@ export const STUDIO_HTML = `
     <ol class="flex items-start max-lg:col-span-3 max-lg:row-start-2 max-lg:w-full max-lg:max-w-[190px] max-lg:min-w-0 max-lg:items-center max-lg:justify-self-center max-lg:peer-empty:col-span-1 max-lg:peer-empty:col-start-2 max-lg:peer-empty:row-start-1" id="fsteps" aria-label="Steps">
       <li class="${stepItem}" data-f="1"><i class="${stepDot}">1</i><span class="max-lg:hidden">Music</span></li><li class="${stepItem}" data-f="2"><i class="${stepDot}">2</i><span class="max-lg:hidden">Clips</span></li><li class="${stepItem}" data-f="3"><i class="${stepDot}">3</i><span class="max-lg:hidden">Shubix Edit</span></li><li class="${stepItem}" data-f="4"><i class="${stepDot}">4</i><span class="max-lg:hidden">Preview &amp; Export</span></li>
     </ol>
-    <button type="button" class="${Button.ghost} hidden max-lg:col-start-3 max-lg:row-start-1 max-lg:in-[.fopen[data-fstep=intro]]:inline-flex" id="fskip">Skip</button>
   </div>
   <form class="askbar" id="askbar" aria-labelledby="askbarh">
     <button type="button" class="askbarhd" id="asktoggle" aria-expanded="false" aria-controls="askbody">

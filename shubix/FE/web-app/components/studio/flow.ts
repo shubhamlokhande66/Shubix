@@ -84,7 +84,7 @@ export function initFlow(root: HTMLElement): () => void {
   // Shubix's line under the clips ends in "…" while it works (scoring the clips, the pace, planning the shots, the mixes)
   // Shubix AI still working on the Reel (the studio's own state; its status line can end in "…" when it is only cut short)
   const aiWorking = () => { const w = (root as unknown as { __studio?: { work?: { ai?: boolean; dir?: boolean; pace?: boolean; aiWait?: boolean } } }).__studio?.work; return !!w && (!!w.ai || !!w.dir || !!w.pace || !!w.aiWait); };   // (aiWait: agreed to, its plan not here yet, also between its steps)
-  type Live = { aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<boolean>; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
+  type Live = { aiRetry?: () => boolean; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<boolean>; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
   const live = () => (root as unknown as { __studio?: Live }).__studio;
   const stopped = () => live()?.cancelled?.() ?? { song: false, clips: false };
   let aiRunNo = 0;   // the wait for the Reel that the popup's Cancel ended
@@ -410,7 +410,6 @@ export function initFlow(root: HTMLElement): () => void {
     if (t.closest("#fapply")) { closeTool(); return; } // Edit Options: Apply (every change is already in the Reel)
     const fd = t.closest<HTMLElement>("[data-fd]");
     if (fd) { done10(fd.dataset.fd!); return; }
-    if (t.closest("#fskip")) { go(order()[1]); return; }
     if (t.closest("#fadjust")) { go("adjust"); return; }
     if (t.closest("#slen") && e.isTrusted) lengthTouched = true;
     if (t.closest("#fgen")) {
@@ -432,6 +431,7 @@ export function initFlow(root: HTMLElement): () => void {
       const st = live(), run = ++aiRunNo;
       void (async () => {
         if (await st?.askNotDone?.()) return;   // after a Cancel: Proceed reads it again, then Next
+        if (st?.aiRetry?.()) { aiGo = true; apply(); }   // Shubix AI was down for this Reel: asked again (the same Reel, no new question)
         // what the reading found, before Shubix AI and before any credits
         const enough = (await st?.askShort?.()) ?? "go";
         if (enough === "stop") { apply(); return; }
@@ -446,6 +446,7 @@ export function initFlow(root: HTMLElement): () => void {
         // the popup shows the work on every screen size; the Reel opens once Shubix is done
         await new Promise((ok) => setTimeout(ok, 400)); apply();
         for (let t = 0; run === aiRunNo && (aiWorking() || !made()) && t < 600; t++) { await new Promise((ok) => setTimeout(ok, 300)); apply(); }   // the AI's Reel, not the first one (3 min at most)
+        if (run === aiRunNo && !made()) { aiGo = false; wantGen = false; apply(); return; }   // no Reel after all that: never a dead Make Reel
         if (run === aiRunNo && made() && phone()) {   // phones: the finished Reel, with its timeline (also when it is opened again after Back)
           revealed = true; mark(true); apply(); window.scrollTo({ top: 0 });
           requestAnimationFrame(() => { if (!has("editing")) $<HTMLButtonElement>("fedit").click(); void st?.saveNow?.(); });
@@ -542,6 +543,8 @@ export function initFlow(root: HTMLElement): () => void {
 
   // the popup's Cancel during Shubix AI: back to the clips, nothing opens
   root.addEventListener("studio-cancelled", () => { if (step === "adjust" && !done("s1")) go("choose"); else apply(); }, sig);
+  // Shubix AI could not be reached (its popup says so): the steps stop waiting, Make Reel is on again
+  root.addEventListener("studio-ai-down", () => { aiRunNo++; aiGo = false; wantGen = false; if (step === "analyse") go("clips"); else apply(); }, sig);
   root.addEventListener("studio-ai-cancel", () => { aiRunNo++; aiGo = false; if (step === "analyse") go("clips"); else apply(); }, sig);
   // a song that is ready moves the phones on to adjusting it
   let wasSong = done("s1");
