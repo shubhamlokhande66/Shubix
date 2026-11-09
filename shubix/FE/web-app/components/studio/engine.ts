@@ -2138,6 +2138,9 @@ const aiCache = new Map();
 const fpOf = src => [src.name, src.file ? src.file.size : 0, src.file ? src.file.lastModified : 0].join('|');
 function aiStat(t, err){ const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
   if(!t) tasks.clear('ai'); else if(/…$/.test(t)) tasks.start('ai', 'ai', 'Shubix at work', t.replace(/…$/, '')); else if(err) tasks.fail('ai', t); else if(tasks.has('ai')) tasks.done('ai', t); el.style.color = err ? 'var(--drop)' : ''; }
+// nothing of Shubix AI's is running any more (a plan that was final, failed, came from the cache, or a pace with no
+// answer): the popup never stays on "…" (a style changed on a made Reel stayed on "planning the shots" for ever)
+function aiIdleEnd(){ if(/…$/.test($('aistat').textContent || '') && !aiBusy && !paceBusy && !dirBusy && !pending && !chatWaiting && !mixStore().busy) aiStat(''); }
 // The AI's view of footage [a,b]: frames nearby (same scene only), weighted by distance
 // what a clip is about: the vision AI's subjects seen in at least a third of its frames (one stray frame says little)
 function aiTags(src){
@@ -3172,7 +3175,7 @@ async function paceRun(key){
     paceBusy = false; if(buf && sources.length && !recording) directorMaybe();
     // the director did not start (already planned, or no edit yet): the line must not stay on "choosing the pace…"
     if(!dirBusy && /…$/.test($('aistat').textContent || '')) aiStat('Your Reel keeps the song\'s own pace.');
-  }finally{ paceBusy = false; tm.done(); }
+  }finally{ paceBusy = false; tm.done(); aiIdleEnd(); }
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
@@ -3216,7 +3219,7 @@ async function directorRun(key){
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
       if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown(tm.timedOut() ? 'timed out after 4 min' : e, 'the plan');
     }
-  }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
+  }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); aiIdleEnd(); }
 }
 // is the studio's AI on? The administrator decides (Administration -> Features -> AI director) and the server has an AI
 // provider; people never choose: when it is on, every Reel is edited by the AI. Asked at the start, and again when the
@@ -3640,6 +3643,9 @@ function makeEditNow(){
   if(isHidden() && !aiBusy && !dirBusy && !paceBusy && readyToldGen !== reelIdNow()){ readyToldGen = reelIdNow(); void notifyDone('Your Reel is ready', 'Tap to preview it in Shubix', 'shubix-reel'); }
   captureLoop(); editGen++;
   paceMaybe(); directorMaybe();
+  // nothing of Shubix AI's is running now (the plan was final, failed or came from the cache): the popup never stays on
+  // "…planning the shots…" (a style changed on a made Reel stayed there for ever)
+  aiIdleEnd();
   chatReportAuto();
   if(look === 'copy' && refProfile) setTimeout(()=>{ copyLook(); }, 0);
 }
@@ -6401,6 +6407,8 @@ function setMode(m){ mode = m; const shown = m === 'copy' && silentStyle() ? ref
 $('mode').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b || recording) return; remakeOk();
   if(b.dataset.m === 'copy' && (!refProfile || silentStyle())){ $('reffile').click(); return; }
   if(silentStyle() && mode === 'copy' && b.dataset.m === (refProfile.shown || 'auto')) return;   // already what they see
+  // a style chosen on a made Reel is the creator's own ask: Shubix AI plans it again (the same Reel: no new credits)
+  if(b.dataset.m !== mode){ regenOk = true; dirFailedKey = ''; paceFailedKey = ''; }
   setMode(b.dataset.m); });
 $('cover').onclick = async () => {
   // cover: the best drop shot (or the hook) with the hook text, full frame

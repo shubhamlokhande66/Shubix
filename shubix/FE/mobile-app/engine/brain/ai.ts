@@ -131,6 +131,9 @@ async function songHear(body){
   catch(e){ ES.songHeard = ''; console.warn('The song was not heard:', e); }
   finally{ tm.done(); }
 }
+// nothing of Shubix AI's is running any more (a plan that was final, failed, came from the cache, or a pace with no
+// answer): the popup never stays on "…" (a style changed on a made Reel stayed on "planning the shots" for ever)
+function aiIdleEnd(){ if(ES.aiAtWork && !ES.aiBusy && !ES.paceBusy && !ES.dirBusy && !ES.clipsReading && !ES.chatWaiting && !EH.mixStore().busy) EH.aiStat(''); }
 async function paceRun(key){
   const sm = EH.getSoundMap(); if(!sm){ ES.paceFailedKey = key; return; }
   const whole = EH.wholeSections(), songKey = EH.paceSongKey();
@@ -164,7 +167,7 @@ async function paceRun(key){
     ES.paceBusy = false; if(ES.buf && ES.sources.length && !ES.recording) EH.directorMaybe();
     // the director did not start (already planned, or no edit yet): the line must not stay on "choosing the pace…"
     if(!ES.dirBusy && /…$/.test(EH.aiStatText())) EH.aiStat('Your Reel keeps the song\'s own pace.');
-  }finally{ ES.paceBusy = false; tm.done(); }
+  }finally{ ES.paceBusy = false; tm.done(); aiIdleEnd(); }
 }
 /* Shubix AI could not do this Reel after a minute of asking (the server down): no Reel from the phone's own edit. Make Reel
  * says so (nativeEngine "ai" fails with TEAM_MSG); the server gives back any credits taken. */
@@ -213,7 +216,7 @@ async function directorRun(key){
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
     if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown(tm.timedOut() ? 'timed out after 4 min' : e, 'the plan');
-  }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
+  }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); aiIdleEnd(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,
  * the song's sound, the voice), the AI does with the same tools; its steps are used as it gave them ---- */
@@ -260,5 +263,5 @@ async function aiActions(list){
   if(ES.layers.length){ EH.lyUI(); await EH.prepLayers(ES.pos); }
   EH.redrawFrame(); EH.saveNow(); return done;
 }
-  return { aiRun, aiGate, directorRun, variantsRun, paceRun, hearSong, aiActions, aiTexts, timeoutSignal };
+  return { aiRun, aiGate, directorRun, variantsRun, paceRun, hearSong, aiIdleEnd, aiActions, aiTexts, timeoutSignal };
 }

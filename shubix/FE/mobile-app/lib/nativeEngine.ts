@@ -240,6 +240,8 @@ export function createNativeEngine(io: NativeIo) {
   function state(){ return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
   const work = () => ({ clips: host.ES.sources.length, shots: host.ES.edit.length, songReady: !!host.ES.song?.r, pending: reading });
 
+  // a style chosen on a made Reel is the creator's own ask: Shubix AI plans it again (the same Reel: no new credits)
+  const aiAgain = () => { host.ES.regenOk = true; host.ES.dirFailedKey = ""; host.ES.paceFailedKey = ""; };
   let piping = false;   // aiEarly: Shubix AI is fed the clips as they are read
   const ops: Record<string, (a: Args) => unknown> = {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
@@ -353,7 +355,7 @@ export function createNativeEngine(io: NativeIo) {
       if (box === "vfx") { host.ES.au = { ...host.ES.au, vfx: String(v) }; host.brain.applyVo(); }
       else if (box === "aitouch") { host.ES.au = { ...host.ES.au, ai: !!v }; host.brain.autoTools(); host.brain.applyVo(); host.ES.clipMixKey = ""; }
       else if (box === "look") host.ES.look = String(v);
-      else if (box === "mode") { host.ES.mode = String(v); host.makeReel(); }
+      else if (box === "mode") { host.ES.mode = String(v); aiAgain(); host.makeReel(); }
       else if (box === "seq") { host.ES.seqOn = v === "order"; host.makeReel(); }
       else if (box === "aspect") host.ES.aspect = String(v);
       else throw new Error(`The phone's own engine has no ${box}`);
