@@ -168,6 +168,8 @@ export const engine = {
   cancel: () => call<{ ok: boolean }>("cancel"),
   /** Next after the clips: Shubix AI's question, then its work; false when the person closed the question or cancelled */
   ai: () => call<{ went: boolean }>("ai").then((r) => r.went),
+  /** Make Reel pressed: Shubix AI starts on the clips read so far and gets the rest as they are read */
+  aiEarly: () => call<{ ok: boolean }>("aiEarly"),
   /** Make new Reel: charged as a new Reel; Keep old Reel: the studio holds that Reel again */
   newReel: () => call<{ ok: boolean }>("newReel"),
   keptOldReel: () => call<{ ok: boolean }>("keptOldReel"),

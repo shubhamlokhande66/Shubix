@@ -42,8 +42,12 @@ async function aiRun(){
   if(!ES.aiOn || ES.aiBusy || !ES.sources.length || EH.aiHeldBack()) return;
   if(!EH.aiReelOk()){ ES.aiBusy = true; const go = await aiGate(); ES.aiBusy = false; if(!go) return; }
   ES.sources.forEach(s=>{ if(!s.ai) EH.aiRestore(s); });
+  // as the clips are read (nativeEngine clips, after aiEarly): those read so far go 5 at a time while the rest are read; the
+  // last ones when reading is done; the Reel's plan (aiDone) only when every clip is read and seen
+  const still = (ES.clipsReading || 0) > 0;
   const need = ES.sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
-  if(!need.length){ EH.aiDone(); return; }
+  if(!need.length){ if(!still) EH.aiDone(); return; }
+  if(still && need.length < 5) return;
   ES.aiBusy = true; EH.aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
   let charged = 0, failed = 0;
   try{
@@ -68,6 +72,7 @@ async function aiRun(){
     };
     for(let k = 0; k < parts.length; k += 2) await Promise.all(parts.slice(k, k + 2).map(send));
     ES.aiBusy = false;
+    if(ES.clipsReading) return;   // clips still being read: each one read sends them on, and the plan waits for the last
     if(ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !ES.pending) return aiRun();   // clips added meanwhile
     EH.aiDone(charged, failed);
   }catch(e){

@@ -237,6 +237,8 @@ function CreateFlowScreen() {
       if (v === 0) router.push("/credits");
       if (v !== 1 || p.paid) return;
     } else if (p?.on) tasks.note(p.cost && p.balance !== null ? words("Shubix AI: {n} credits · {b} left after", { n: p.cost, b: p.balance - p.cost }) : p.cost ? words("Shubix AI: {n} credits", { n: p.cost }) : words("Shubix AI: included in your plan"));
+    // Shubix AI starts now on the clips read so far, and gets the rest as they are read (no question: Make Reel was the answer)
+    if (engineOn && song && p?.on && !(p.cost && p.balance !== null && p.balance < p.cost)) void engine.aiEarly().catch(() => null);
     // too few clips can be said now: their lengths are known (photos fit any length)
     if (engineOn && song && media.every((m) => m.type !== "image" && m.duration)) {
       const have = media.reduce((t, m) => t + (m.duration ?? 0) / 1000, 0), need = length || now.current.music?.duration || song.duration || 0;

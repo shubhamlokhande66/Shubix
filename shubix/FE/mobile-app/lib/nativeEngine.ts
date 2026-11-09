@@ -220,14 +220,17 @@ export function createNativeEngine(io: NativeIo) {
         if (stops !== g) break;
         io.task?.("progress", "clips", undefined, `Clip ${i + 1} of ${fresh.length}`, undefined, i / fresh.length);
         // a clip that cannot be read is named on its own card: the others go on
+        host.ES.clipsReading = fresh.length - i;
         try { await readClip(fresh[i]); io.clipDone?.(fresh[i].name, true); }
         catch (e) { failed.push(fresh[i].name); lastError = e; io.clipDone?.(fresh[i].name, false); }
         io.onProgress?.("clips", (i + 1) / fresh.length);
+        host.ES.clipsReading = fresh.length - i - 1;
+        if (piping && stops === g) void host.brain.aiRun();   // Shubix AI gets the clips as they are read (aiEarly)
       }
       if (stops === g && !host.ES.sources.length && lastError) throw lastError;
       io.task?.(stops !== g ? "clear" : "done", "clips", `${host.ES.sources.length} clip${host.ES.sources.length > 1 ? "s" : ""} ready`);
     } catch (e) { io.task?.("fail", "clips", e instanceof Error ? e.message : "The clip could not be read"); throw e; }
-    finally { reading--; }
+    finally { reading--; host.ES.clipsReading = 0; }
     host.ES.sources.sort((x: { name: string }, y: { name: string }) => names.indexOf(x.name) - names.indexOf(y.name));
     read = list;
     if (stops === g) host.makeReel();
@@ -237,11 +240,22 @@ export function createNativeEngine(io: NativeIo) {
   function state(){ return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
   const work = () => ({ clips: host.ES.sources.length, shots: host.ES.edit.length, songReady: !!host.ES.song?.r, pending: reading });
 
+  let piping = false;   // aiEarly: Shubix AI is fed the clips as they are read
   const ops: Record<string, (a: Args) => unknown> = {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
-    cancel: () => { stops++; return { ok: true }; },
+    cancel: () => { stops++; piping = false; return { ok: true }; },
+    /** Make Reel pressed (the price was on the screen: the answer): Shubix AI starts on the clips read so far, and each
+     * clip read after it is sent on (5 at a time); a plan's Reel with too few credits waits, as in "ai" */
+    aiEarly: async () => {
+      if (!signedIn) { signedIn = true; await host.account().catch(() => false); }
+      if (!host.ES.aiOn) return { ok: false };
+      const cost = host.brain.aiCostOf("reel") as number, balance = host.brain.aiBal() as number | null;
+      if (cost && balance !== null && balance < cost) return { ok: false };
+      host.ES.aiReel = host.brain.reelIdNow(); piping = true; void host.brain.aiRun();
+      return { ok: true };
+    },
     clips,
     choose: async (a) => {
       if (a.mode) { host.ES.mode = String(a.mode); }
@@ -281,7 +295,7 @@ export function createNativeEngine(io: NativeIo) {
       if (host.ES.aiDown) throw new Error("Our team is working on it. Please try again in a little while. No credits were used.");
       return { went: went && stops === g };
     },
-    newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
+    newReel: () => { piping = false; host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
     aiPlan: () => { const d = host.ES.director; return d && d.slots && !d.interim ? { story: d.story || "", lines: [] } : null; },
     history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),
@@ -356,7 +370,7 @@ export function createNativeEngine(io: NativeIo) {
   const NOT_YET: string[] = [];
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
-    fresh: () => { stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
+    fresh: () => { piping = false; stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
     call: async (op: string, a: Args = {}) => { const f = ops[op]; if (!f) throw new Error(`Not on the phone's own engine yet: ${op}`); return f(a); },
   };
 }
