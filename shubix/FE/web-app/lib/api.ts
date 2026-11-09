@@ -3,7 +3,7 @@ import type { Features } from "@shubix/core/lib/features-list";
 import type { Access } from "@shubix/core/lib/access";
 /** the sign-in rules, and whether the server can sign in with Google */
 export type AccessRules = Access & { googleReady: boolean };
-import { tracked } from "./activity";
+import { clickBusy, tracked } from "./activity";
 
 /** Admin → Messages: a message to a group, in their bell and (email) by email */
 export type Audience = "all" | "paying" | "free" | "affiliates";
@@ -134,7 +134,7 @@ export async function patiently<T>(send: (timeoutMs: number) => Promise<T>): Pro
 async function request<T>(path: string, init?: RequestInit, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   for (;;) {
-    try { return await thrice(() => method === "GET" ? send<T>(path, init, timeoutMs) : tracked(send<T>(path, init, timeoutMs)), init?.signal, method !== "GET"); } // actions light up the activity bar
+    try { return await (method === "GET" ? clickBusy : tracked)(thrice(() => send<T>(path, init, timeoutMs), init?.signal, method !== "GET")); } // actions light up the activity bar
     catch (e) { if (!(await askRetry(e, init))) throw e; }   // the server could not be reached: Retry asks again, Close gives the error
   }
 }

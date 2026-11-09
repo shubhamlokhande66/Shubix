@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, Text } from "react-native";
 import type { IconName } from "@mobile/ui-core";
 import { useColors, type ColorName } from "../theme";
@@ -24,18 +24,31 @@ const SIZE: Record<ButtonSize, { box: string; text: string; icon: number }> = {
   xl: { box: "h-[52px] rounded-[14px] px-5", text: "text-[16px]", icon: 20 }, // the phones' bottom button (the studio's phoneBottomButton)
 };
 
+/* The button pressed a moment ago is busy (spinner, no second press) while the calls it started run, with no code on each
+ * screen: the API client asks claimPressed() when a call starts (lib/session.ts) and calls what it gets back when it ends.
+ * As the website's lib/activity.ts. */
+const PRESS_MS = 1500;
+let pressed: { at: number; add: (n: number) => void } | null = null;
+export function claimPressed(): (() => void) | null {
+  const p = pressed; if (!p || Date.now() - p.at > PRESS_MS) return null;
+  p.add(1); let done = false;
+  return () => { if (!done) { done = true; p.add(-1); } };
+}
 export function Button({ title, onPress, variant = "primary", size = "md", full = false, icon, iconAfter, loading = false, disabled = false, className = "" }: { title: string; onPress: () => void; variant?: ButtonVariant; size?: ButtonSize; full?: boolean; icon?: IconName | ReactNode; iconAfter?: IconName; loading?: boolean; disabled?: boolean; className?: string }) {
   const v = VARIANT[variant], s = SIZE[size], look = useColors() as Record<string, string>;
+  const [calls, setCalls] = useState(0), alive = useRef(true), busy = loading || calls > 0;
+  useEffect(() => () => { alive.current = false; }, []);
+  const press = () => { pressed = { at: Date.now(), add: (n) => { if (alive.current) setCalls((c) => Math.max(0, c + n)); } }; onPress(); };
   // off: a solid, quieter look of its own, never see-through (a bottom button over the page must not show the page through it)
-  const off = disabled && !loading;
+  const off = disabled && !busy;
   const offBg = variant === "primary" ? mix(look.accent, look.raised, 0.24) : variant === "destroy" ? mix(look.danger, look.raised, 0.35) : look.raised;
   const offInk = variant === "primary" ? mix(look.accent, look.foreground, 0.72) : look.muted;
   return (
-    <Pressable onPress={onPress} disabled={disabled || loading} accessibilityRole="button" accessibilityState={{ busy: loading, disabled }}
+    <Pressable onPress={press} disabled={disabled || busy} accessibilityRole="button" accessibilityState={{ busy, disabled }}
       style={off ? { backgroundColor: offBg } : undefined}
       className={`flex-row items-center justify-center gap-2 overflow-hidden active:opacity-80 ${v.box} ${s.box} ${full ? "w-full" : "self-start"} ${className}`}>
       {variant === "primary" && !off && <Gold />}
-      {loading ? <ActivityIndicator size="small" color={look[v.color] ?? v.color} /> : typeof icon === "string" ? <Icon name={icon as IconName} size={s.icon} color={(off ? offInk : v.color) as ColorName} /> : icon}
+      {busy ? <ActivityIndicator size="small" color={look[v.color] ?? v.color} /> : typeof icon === "string" ? <Icon name={icon as IconName} size={s.icon} color={(off ? offInk : v.color) as ColorName} /> : icon}
       <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={off ? { color: offInk } : undefined} className={`font-bold ${v.text} ${s.text}`}>{title}</Text>
       {iconAfter && <Icon name={iconAfter} size={s.icon} color={(off ? offInk : v.color) as ColorName} />}
     </Pressable>

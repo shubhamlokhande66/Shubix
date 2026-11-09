@@ -12,12 +12,19 @@ export type ClientOptions = {
   mobile?: boolean;
   /** the server could not be reached or failed (no answer, 408, 429, 5xx): true asks again (the app's Retry popup) */
   onServerTrouble?: (e: ApiError) => Promise<boolean>;
+  /** a call starts: what it returns is called when the call ends (the pressed button's spinner) */
+  onStart?: () => (() => void) | null;
 };
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Please try again.");
 
 export function createApiClient(o: ClientOptions) {
   const base = o.baseUrl.replace(/\/$/, "");
   async function request<T>(path: string, init: RequestInit = {}, tries = 1): Promise<T> {
+    if (tries > 1) return call<T>(path, init, tries);
+    const end = o.onStart?.() ?? null;
+    try { return await call<T>(path, init, tries); } finally { end?.(); }
+  }
+  async function call<T>(path: string, init: RequestInit, tries: number): Promise<T> {
     const headers = new Headers(init.headers);
     if (typeof init.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (o.mobile) headers.set("X-Client", "mobile");
