@@ -1145,7 +1145,7 @@ function cardsPlay(){
   [...cardsPlaying].forEach(c => { if(!want.includes(c)) cardStop(c); });
   want.forEach(c => { if(cardsPlaying.has(c)) return; cardsPlaying.add(c); const v = c.querySelector('.cv'); v.muted = true; v.src = c.__src.url; v.onplaying = () => v.classList.add('on'); v.play().catch(() => {}); });
 }
-{ const t = setInterval(() => { cardsPlay(); void editorChangeCheck(); }, 700); ac.signal.addEventListener('abort', () => { clearInterval(t); cardSight.disconnect(); [...cardsPlaying].forEach(cardStop); }); }
+{ const t = setInterval(() => { cardsPlay(); changeNote(); }, 700); ac.signal.addEventListener('abort', () => { clearInterval(t); cardSight.disconnect(); [...cardsPlaying].forEach(cardStop); }); }
 function makeCard(f){
   const url = URL.createObjectURL(f);
   const card = document.createElement('div'); card.className='clip';
@@ -1930,19 +1930,27 @@ async function changeGate(){
   const v = await askCredits({ title: 'You changed your Reel', text: 'Your song or clips are different now. Make a new Reel with these changes? Keeping the old Reel changes nothing and uses no credits.', bal: null, ok: 'Make new Reel', no: 'Keep old Reel' });
   if(v === null) return 'stay';
   if(v === false) return 'old';
-  regenOk = true; reelId = newId(); aiReel = ''; gateNo = ''; chatUsed = 0; director = null; dirCache.clear(); aiMixes.clear(); dirPlannedReel = ''; aiGaveUp = ''; dirFailedKey = ''; paceFailedKey = '';
+  newReelNow();
   return 'new';
 }
-// a change made inside the editor (clips added or removed, another song): asked the same way, straight away
-let askingChange = false;
-async function editorChangeCheck(){
-  if(askingChange || root.classList.contains('fopen') || restoring || pending || recording || !aiOn || !aiHeldBack() || !$('cconf').hidden) return;
-  askingChange = true;
-  try{
-    const g = await changeGate();
-    if(g === 'new'){ if(await upsell() === 'close') keepOldReel(); else if(buf && sources.length) makeEdit(); }
-    else if(g === 'old' || g === 'stay') keepOldReel();
-  } finally { askingChange = false; }
+/** the changed Reel is a new Reel (its own credits when Shubix AI makes it) */
+function newReelNow(){ regenOk = true; reelId = newId(); aiReel = ''; gateNo = ''; chatUsed = 0; director = null; dirCache.clear(); aiMixes.clear(); dirPlannedReel = ''; aiGaveUp = ''; dirFailedKey = ''; paceFailedKey = ''; }
+// a change made inside the editor (clips added or removed, another song, the Reel's length): no popup while the person
+// works; a note on the Reel says it changed, and Shubix AI makes it again only when they press its Make Reel
+function changeNote(){
+  const on = !root.classList.contains('fopen') && !restoring && !pending && !recording && aiOn && aiHeldBack(), shown = !!$('aiaskgo').dataset.change;
+  if(on === shown) return;
+  if(!on){ delete $('aiaskgo').dataset.change; root.classList.remove('aineed'); return; }
+  const cost = aiCostOf('reel');
+  $('aiaskgo').dataset.change = '1'; $('aiaskgo').dataset.low = ''; root.classList.add('aineed');
+  $('aiaskt').textContent = 'You changed your Reel';
+  $('aiaskp').textContent = 'Shubix AI edits it again when you press Make Reel' + (cost ? ' · ' + creditWord(cost) : '') + '.';
+  $('aiaskgo').textContent = 'Make Reel';
+}
+async function makeChangedReel(){
+  delete $('aiaskgo').dataset.change; root.classList.remove('aineed');
+  newReelNow();
+  if(await upsell() !== 'close' && buf && sources.length) makeEdit();
 }
 // the old Reel, exactly as it was saved
 function keepOldReel(){ if(proj){ leavingOk = true; location.assign('/editor?p=' + encodeURIComponent(proj.id)); } }
@@ -1981,6 +1989,17 @@ let generatePressed = false;
 let gateNo = '', lowAsked = '';   // lowAsked: the Reel whose too-few-credits question was shown
 // A plan with Shubix AI makes every Reel with it: when the creator closes the credits question (or has too few credits)
 // the Reel is not shown, played or exported; the preview says so and its button asks again (or opens the top-ups)
+/* To the plans or a top-up from the studio: the Reel is saved on this device first, and the pricing page offers "Back to
+ * your Reel" (?back=), which opens it again where it was (a Reel still in the Create steps: its clips step). */
+async function toPricing(where){
+  if(IN_APP) return;
+  let id = ''; try{ id = await saveNow(); }catch(e){}
+  const inSteps = location.pathname.startsWith('/create') && location.pathname !== '/create/edit';
+  const back = id ? (inSteps ? location.pathname : '/editor') + '?p=' + encodeURIComponent(id) + (inSteps ? '&step=clips' : '') : location.pathname + location.search;
+  const u = new URL('/pricing' + where, location.origin); u.searchParams.set('back', back);
+  leavingOk = true; location.assign(u.pathname + u.search + u.hash);
+}
+const pricingLink = label => { const a = document.createElement('a'); a.href = '/pricing'; a.className = `${Button.primary} up`; a.textContent = label; a.addEventListener('click', e => { e.preventDefault(); void toPricing(''); }, SIG); return a; };
 function aiNeed(on, low){
   root.classList.toggle('aineed', !!on); if(!on) return;
   const cost = aiCostOf('reel');
@@ -1989,7 +2008,8 @@ function aiNeed(on, low){
   $('aiaskgo').textContent = low ? 'Top up' : 'Make it with Shubix AI'; $('aiaskgo').dataset.low = low ? '1' : '';
 }
 $('aiaskgo').addEventListener('click', async () => {
-  if($('aiaskgo').dataset.low){ if(!IN_APP) location.assign('/pricing#topup'); return; }
+  if($('aiaskgo').dataset.change){ void makeChangedReel(); return; }
+  if($('aiaskgo').dataset.low){ void toPricing('#topup'); return; }
   if(await aiGate(true)) aiRun();
 }, SIG);
 function aiGate(again = false){
@@ -2002,15 +2022,16 @@ function aiGate(again = false){
     if(cost && bal !== null && bal < cost){
       // too few credits, on a plan: only a top-up; the Reel waits for it (no free edit), Generate asks again
       if(!IN_APP && planNow !== 'free'){ aiNeed(true, true); gateNo = id; aiStat('Your Reel waits for credits · Shubix AI needs ' + creditWord(cost) + ' (you have ' + creditWord(bal) + ')');
-        if(await askCredits({ title: 'Not enough credits', text: 'Shubix AI needs ' + creditWord(cost) + ' for this Reel and you have ' + creditWord(bal) + '.', bal, ok: 'Top up' }) === true) location.assign('/pricing#topup');
+        if(await askCredits({ title: 'Not enough credits', text: 'Shubix AI needs ' + creditWord(cost) + ' for this Reel and you have ' + creditWord(bal) + '.', bal, ok: 'Top up' }) === true) void toPricing('#topup');
         return false; }
       // without a plan: the Reel is still made, by the phone's own smart edit, never held back; the plans are offered once per Reel (not again on every Next)
       aiNeed(false); gateNo = id;
       aiStat('Free edit · Shubix AI needs ' + creditWord(cost) + ' (you have ' + creditWord(bal) + ')');
+      aiLog('Edited on your phone: Shubix AI needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '.');
       if(lowAsked !== id){ lowAsked = id;
         if(IN_APP) await askCredits({ title: 'Not enough credits for Shubix AI', text: 'Shubix AI uses ' + creditWord(cost) + ' for this Reel and you have ' + creditWord(bal) + '. Your Reel is made with the phone\'s own smart edit.', bal, ok: 'OK' });
         else { const go = await askCredits({ title: 'Not enough credits', text: 'Shubix AI needs ' + creditWord(cost) + ' for this Reel and you have ' + creditWord(bal) + '.', bal, ok: 'See plans', no: 'Free edit' });
-          if(go === true) location.assign('/pricing?feature=ai');
+          if(go === true) void toPricing('?feature=ai');
           // See plans or the popup closed: nothing is made; Generate asks again
           if(go !== false){ lowAsked = ''; gateNo = ''; } } }
       return false; }
@@ -2088,7 +2109,7 @@ async function upsell(){
     list: ['The best moments of every clip, picked for you', 'Trendy transitions and effects, right on the beat', 'Ask Shubix: change anything in your own words', 'Captions and pro colour, automatically'],
     bal: null, ok: 'Upgrade to Shubix AI', no: 'Create basic Reel' });
   if(v !== null) upsold = id;
-  if(v === true){ location.assign('/pricing?feature=ai'); return 'upgrade'; }
+  if(v === true){ void toPricing('?feature=ai'); return 'upgrade'; }
   return v === false ? 'basic' : 'close';
 }
 const aiCache = new Map();
@@ -2193,11 +2214,13 @@ async function aiRun(){
     if(e && e.name === 'AbortError') return;
     aiGaveUp = reelIdNow();   // nothing more comes from Shubix for this Reel: it is final as the phone made it
     need.forEach(s => { delete s.aiFramesMade; });
+    aiLog('Shubix AI could not look at your clips this time: your Reel uses the phone\'s own edit.');
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
   }
 }
 function aiDone(charged, failed){
   const withAi = sources.filter(s=>s.ai), n = withAi.reduce((q,s)=>q+s.ai.frames.length, 0);
+  if(charged !== undefined) aiLog('Shubix AI looked at your ' + withAi.length + ' clip' + (withAi.length>1?'s':'') + ' and scored ' + n + ' moments' + (failed ? ' (' + failed + ' could not be read)' : '') + '.');
   aiStat('Shubix scored ' + n + ' moments in ' + withAi.length + ' clip' + (withAi.length>1?'s':'') + (failed ? ' (' + failed + ' skipped)' : '') + (charged ? ' · ' + charged + ' credit' + (charged>1?'s':'') : ''));
   if(buf && sources.length && !recording) makeEdit();
 }
@@ -2206,16 +2229,25 @@ function aiDone(charged, failed){
  * the creator's wish, which wins over the style and over the house taste (tastePlan / tasteFx step aside for the AI's
  * choices then). A few plain words also work without the AI: faster / calmer switch the style, "new version" remixes. */
 let wish = '', chatMsgs = [], chatWaiting = false, chatAsk = null, chatN = 0;
+const CHAT_KEEP = 40;   // the chat and Shubix AI's history kept with the Reel (the newest)
 // asked for anything in the chat: the AI's choices stand (the house taste steps aside)
 // the AI's plan is applied as it is: its transitions, keyframes and effects are not cut back by the rules' taste (that is
 // for a Reel made without the AI); what the creator asks for in Ask Shubix comes first
 const aiTrusted = () => aiOn && !!director && director.key === dirKey();
-function chatSay(who, text, wait){
+function chatSay(who, text, wait, at){
   const p = document.createElement('p'); p.className = who + (wait ? ' wait' : ''); p.textContent = text;
+  if(!wait) p.appendChild(chatTime(at));
   $('chatlog').appendChild(p); $('chatlog').scrollTop = $('chatlog').scrollHeight; return p;
 }
+// when it was said or done: the time today, the date and time before today
+function chatTime(at){
+  const d = new Date(at || Date.now()), t = document.createElement('time');
+  t.dateTime = d.toISOString(); t.className = 'block mt-1 text-[10.5px] opacity-60';
+  t.textContent = (d.toDateString() === new Date().toDateString() ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', ') + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return t;
+}
 function chatClearWait(){ $('chatlog').querySelectorAll('.wait').forEach(x => x.remove()); }
-function chatAnswer(text){ chatClearWait(); chatSay('ai', text); chatMsgs.push({ who: 'ai', text }); chatWaiting = false; $('chatsend').disabled = false; }
+function chatAnswer(text){ chatClearWait(); chatSay('ai', text); chatMsgs.push({ at: Date.now(), who: 'ai', text }); chatWaiting = false; $('chatsend').disabled = false; }
 let chatPending = null, chatReported = '';
 // the AI's plan arrived: asked for in the chat, it is shown as a report and waits for Generate; otherwise it is used
 function dirArrived(key, d){
@@ -2223,22 +2255,28 @@ function dirArrived(key, d){
   aiDoneSig = inputSig(); regenOk = false;
   director = { key, slots: d.slots, story: d.story || '', texts: d.texts, actions: d.actions }; dirCache.set(key, director); if(d.texts || d.actions) queueMicrotask(() => void aiApply(d)); return true;   // (after the shots are made: makeEdit)
 }
-// the plan, shot by shot, in words: which clip and what is in it, the transition into it, its effect, speed and keyframes
-function planReport(slots, story, changed){
+// the plan, shot by shot, in words: which clip and what is in it, the transition into it, its effect, speed and keyframes.
+// As data (planData), so the chat's history keeps it with the Reel and shows it again when the Reel is opened again.
+function planReport(slots, story, changed){ return reportBox(planData(slots, story, changed)); }
+function reportBox(r, at){
   const box = document.createElement('div'); box.className = 'ai rep';
+  const head = document.createElement('b'); head.textContent = r.head; box.appendChild(head); box.appendChild(chatTime(at));
+  if(r.story){ const p = document.createElement('span'); p.className = 'repstory'; p.textContent = r.story; box.appendChild(p); }
+  const det = document.createElement('details'), sum = document.createElement('summary'), ol = document.createElement('ol');
+  sum.textContent = r.chg ? 'See the change' : 'See every shot'; det.appendChild(sum); if(r.chg) det.open = true;
+  for(const it of r.items || []){ const li = document.createElement('li'); li.textContent = it.t; if(it.c) li.className = 'chg'; ol.appendChild(li); }
+  det.appendChild(ol); box.appendChild(det);
+  return box;
+}
+function planData(slots, story, changed){
   const n = plan.length, tr = slots.filter((d,i) => i && d && d.tr && d.tr !== 'hard').length, fx = slots.filter((d,i) => d && d.fx && d.fx !== 'none' && !(i === 0 && d.fx === 'hook')).length,
     keys = slots.reduce((a,d) => a + (d && d.keys ? d.keys.length : 0) + (d && d.move && d.move.length ? 1 : 0), 0);
-  const head = document.createElement('b');
-  head.textContent = changed && changed.size ? 'Shubix changes ' + (changed.size === 1 ? 'shot ' : 'shots ') + [...changed].sort((a, b) => a - b).map(i => i + 1).join(', ') + ' (the rest stays as it is)'
+  const chg = !!(changed && changed.size), items = [];
+  const head = chg ? 'Shubix changes ' + (changed.size === 1 ? 'shot ' : 'shots ') + [...changed].sort((a, b) => a - b).map(i => i + 1).join(', ') + ' (the rest stays as it is)'
     : 'Shubix\'s plan: ' + n + ' shots · ' + tr + ' transitions · ' + fx + ' effects · ' + keys + ' keyframes';
-  box.appendChild(head);
-  if(story){ const p = document.createElement('span'); p.className = 'repstory'; p.textContent = story; box.appendChild(p); }
-  const det = document.createElement('details'), sum = document.createElement('summary'), ol = document.createElement('ol');
-  sum.textContent = changed && changed.size ? 'See the change' : 'See every shot'; det.appendChild(sum); if(changed && changed.size) det.open = true;
   plan.forEach((s, i) => {
-    if(changed && changed.size && !changed.has(i)) return;
-    const d = slots[i] || {}, li = document.createElement('li'), c = d.cand, src = c ? sources[c.src] : null;
-    if(changed && changed.has(i)) li.className = 'chg';
+    if(chg && !changed.has(i)) return;
+    const d = slots[i] || {}, c = d.cand, src = c ? sources[c.src] : null;
     const cand = c && dirCands && (dirCands[i] || []).find(x => x.si === c.src && Math.abs(x.a - c.in) < 0.05);
     const what = (cand && cand.note) || (src && src.ai && src.ai.summary) || '';
     const bits = [];
@@ -2247,19 +2285,25 @@ function planReport(slots, story, changed){
     if(d.sp && d.sp !== 'normal') bits.push('⏱ ' + d.sp);
     if(d.keys && d.keys.length) bits.push('◆ ' + d.keys.map(k => k.do).join(', '));
     if(d.move && d.move.length) bits.push('◆ camera move');
-    li.textContent = fmt(s.start).replace(/\.\d+$/, '') + ' · ' + (src ? src.name.replace(/\.[^.]+$/, '') + (c ? ' @' + c.in.toFixed(1) + 's' : '') : 'best moment') + (what ? ' — ' + what : '') + (s.type === 'drop' ? ' · DROP' : s.type === 'break' ? ' · break' : '') + '\n' + (bits.length ? bits.join('  ') : 'clean cut, no effect') + (d.why ? ' · ' + d.why : '');
-    ol.appendChild(li);
+    items.push({ c: chg ? 1 : 0, t: fmt(s.start).replace(/\.\d+$/, '') + ' · ' + (src ? src.name.replace(/\.[^.]+$/, '') + (c ? ' @' + c.in.toFixed(1) + 's' : '') : 'best moment') + (what ? ' — ' + what : '') + (s.type === 'drop' ? ' · DROP' : s.type === 'break' ? ' · break' : '') + '\n' + (bits.length ? bits.join('  ') : 'clean cut, no effect') + (d.why ? ' · ' + d.why : '') });
   });
-  det.appendChild(ol); box.appendChild(det);
-  return box;
+  return { head, story: story || '', chg, items };
+}
+/* Shubix AI's history: everything it did to this Reel (looked at the clips, chose the pace, planned the shots, could
+ * not and left the phone's edit) goes into the chat, kept with the Reel and shown again when it is opened again. */
+function aiLog(text, rep){
+  const last = chatMsgs[chatMsgs.length - 1]; if(last && last.who === 'ai' && last.text === text) return;
+  chatMsgs.push({ at: Date.now(), who: 'ai', text, ...(rep ? { rep } : {}) });
+  if(rep) $('chatlog').appendChild(reportBox(rep)); else chatSay('ai', text);
+  $('chatlog').scrollTop = $('chatlog').scrollHeight; $('chatfab').classList.add('news'); $('tbchat').classList.add('news');
 }
 function chatProposal(pd){
   chatClearWait();
-  const box = planReport(pd.slots, pd.story, pd.changed), go = document.createElement('button');
+  const rep = planData(pd.slots, pd.story, pd.changed), box = reportBox(rep), go = document.createElement('button');
   go.type = 'button'; go.className = `${Button.primary} repgo`; go.textContent = 'Generate Reel';
   go.addEventListener('click', () => chatGenerate(go), SIG);
   box.appendChild(go); $('chatlog').appendChild(box); $('chatlog').scrollTop = $('chatlog').scrollHeight;
-  chatMsgs.push({ who: 'ai', text: 'Plan ready: ' + (pd.story || plan.length + ' shots') });
+  chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Plan ready: ' + (pd.story || plan.length + ' shots'), rep });
   chatWaiting = false; $('chatsend').disabled = false;
 }
 function applyChatVisualIntent(intent, slots = []){
@@ -2392,7 +2436,7 @@ async function chatGenerate(btn){
 // a plan the AI made by itself (no chat): its report goes into the chat too, and the button shows there is one
 function chatReportAuto(){
   if(chatWaiting || chatPending || !aiOn || !director || director.key !== dirKey() || chatReported === director.key) return;
-  chatReported = director.key; $('chatlog').appendChild(planReport(director.slots, director.story)); $('chatfab').classList.add('news'); $('tbchat').classList.add('news');
+  chatReported = director.key; const rep = planData(director.slots, director.story); aiLog(rep.head + (rep.story ? ' — ' + rep.story : ''), rep);
 }
 // the phone app's Ask Shubix: the website's own chat (the same AI, its credit questions asked on the phone); the plan it
 // makes is applied at once (the phone has no Generate button of the studio's), and the answer goes back to the phone
@@ -2406,7 +2450,7 @@ async function chatApp(text){
     const pd = chatPending; chatPending = null; chatReported = pd.key;
     director = { key: pd.key, slots: pd.slots, story: pd.story }; dirCache.set(pd.key, director);
     makeEdit(); await aiApply(pd); try{ applyChatVisualIntent(pd.intent, pd.slots); }catch(e){}
-    applied = !!edit.length; if(applied){ chatMsgs.push({ who: 'ai', text: 'Done ✓' }); saveNow(); }
+    applied = !!edit.length; if(applied){ chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Done ✓' }); saveNow(); }
   }
   const said = chatMsgs.slice(before).filter(m => m.who === 'ai').map(m => m.text).filter(t => t !== 'Done ✓').pop() || '';
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (director && director.story ? ': ' + director.story : '.') : said || (chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
@@ -2414,8 +2458,8 @@ async function chatApp(text){
 function chatDone(story){ if(!chatWaiting) return; chatAnswer('Done ✓ Your Reel is edited the way you asked' + (story ? ': ' + story : '.') + ' Tell me if you want anything else.'); }
 function chatFail(msg){ if(chatWaiting) chatAnswer(msg); }
 function chatRestore(list){
-  if(!Array.isArray(list)) return; chatMsgs = list.filter(m => m && typeof m.text === 'string').slice(-20);
-  $('chatlog').innerHTML = ''; chatMsgs.forEach(m => chatSay(m.who === 'me' ? 'me' : 'ai', m.text));
+  if(!Array.isArray(list)) return; chatMsgs = list.filter(m => m && typeof m.text === 'string').slice(-CHAT_KEEP);
+  $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep, m.at)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text, false, m.at); });
   wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800);
 }
 // plain words the phone understands by itself (with or without the AI)
@@ -2457,8 +2501,8 @@ async function chatPatch(text, n, id){
 async function chatSend(text){
   remakeOk();
   text = String(text || '').trim().slice(0, 300); if(!text || chatWaiting) return;
-  if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
-  chatSay('me', text); chatMsgs.push({ who: 'me', text });
+  if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
+  chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
   $('chatin').value = ''; chatFit();
   const ready = buf && sources.length && edit.length && !recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
@@ -2487,7 +2531,7 @@ async function chatSend(text){
     const did = chatLocal(text);
     if(ready && did.length) makeEdit();
     chatAnswer((did.length ? 'Done ✓ I used ' + did.join(' and ') + ' (on your phone). ' : '') + (aiLocked && IN_APP ? 'Changing the Reel from your words is Shubix AI, which is not on your plan.' : aiLocked ? 'Changing the Reel from your words is Shubix AI: it is in the Editor and Pro plans.' : 'Shubix AI is off for this Reel, so I can only switch the style (say "faster" or "calmer") or make a new version.'));
-    if(aiLocked && !IN_APP){ const a = document.createElement('a'); a.href = '/pricing'; a.className = `${Button.primary} up`; a.textContent = 'See Editor & Pro'; $('chatlog').appendChild(a); }
+    if(aiLocked && !IN_APP) $('chatlog').appendChild(pricingLink('See Editor & Pro'));
     return;
   }
   if(!ready){ wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800); chatAnswer('Got it! I\'ll edit your Reel this way as soon as it is made.'); return; }
@@ -2503,7 +2547,7 @@ async function chatSend(text){
     const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (cost ? 'It uses ' + creditWord(cost) + '.' : 'Included in your plan.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
   } else if(cost && bal !== null){
-    if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '.'); if(!IN_APP){ const a = document.createElement('a'); a.href = '/pricing'; a.className = `${Button.primary} up`; a.textContent = 'Top up'; $('chatlog').appendChild(a); } return; }
+    if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '.'); if(!IN_APP) $('chatlog').appendChild(pricingLink('Top up')); return; }
     const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed and no credits used.'); return; }
   }
@@ -2853,6 +2897,7 @@ async function variantsRun(st){
     let k = 1;
     for(const pl of res.plans || []){ while(st.plans[k]) k++; st.plans[k] = { slots: toSlots(pl.slots, cands), ctx, sig, story: pl.story || '' }; n++; }
     aiStat('Shubix made ' + n + ' more version' + (n === 1 ? '' : 's') + ' · press Change Reel to see each.');
+    if(n) aiLog('Shubix AI made ' + n + ' more version' + (n === 1 ? '' : 's') + ' of your Reel (Change Reel shows each).');
   }catch(e){
     if(!(e && e.name==='AbortError') || tm.timedOut()) console.warn('AI mixes not used:', e);
     aiStat('Change Reel uses the phone\'s own versions in Shubix\'s style.');
@@ -2984,6 +3029,7 @@ async function paceRun(key){
     if(!pacing){ paceFailedKey = key; paceBusy = false; return; }
     paceCache.set(key, pacing);
     aiStat('Shubix chose the pace' + (pacing.story ? ': ' + pacing.story : '') + '. Now planning the shots…');
+    aiLog('Shubix AI chose the pace' + (pacing.story ? ': ' + pacing.story : '.'));
     paceBusy = false; makeEdit();
   }catch(e){
     paceFailedKey = key;
@@ -3034,6 +3080,7 @@ async function directorRun(key){
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
+      if(!(e && e.name==='AbortError') || tm.timedOut()) aiLog('Shubix AI could not plan this Reel: it uses the phone\'s own edit' + back);
     }
   }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
 }
@@ -3144,18 +3191,20 @@ function goodSecs(src){
   if(!S.length) return usable;
   return usable * S.filter(x => (x.sh || 0) / med >= 0.45 && (x.b ?? 1) >= 0.08).length / S.length;
 }
-let footTimer = 0, footSaid = '';
+// "Make the Reel as long as my clips" (on by default): the Reel's length follows the good footage, the rest of the song
+// is left out, quietly. Off: a line under it says so; nothing pops up while the person works (Make Reel asks: askShort).
+let footTimer = 0;
+const fitOn = () => $('fitclips').checked;
 function footCheckSoon(){ if(!location.pathname.startsWith('/create') || kind === 'talk') return; clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
-async function footCheck(){
+function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
-  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0)), n = sources.length;   // whole seconds, said the same way everywhere
-  const key = (have >= need * 0.95 ? 'ok:' : 'low:') + Math.round(need) + ':' + n;
-  if(key === footSaid) return; footSaid = key;
-  if(have >= need * 0.95 || root.dataset.fquiet === '1') return;   // (in the steps: Generate says it, flow.ts)
-  const v = await askCredits({ title: 'Not enough clips for ' + fmtS(need), text: 'Your clips have ' + fmtS(have) + ' of good footage, the Reel is ' + fmtS(need) + '. Shorten the music to about ' + fmtS(Math.max(5, have)) + ', or add more clips, so no moment is repeated or slowed down.', ok: 'Shorten the music', no: 'Add more clips' });
-  if(v === true) root.dispatchEvent(new CustomEvent('studio-goto', { detail: 'music' }));
-  else if(v === false) $('vfile').click();
+  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
+  const short = have < need * 0.95;
+  if(short && fitOn() && have >= 5){ $('fitnote').hidden = true; setLen(have); return; }
+  $('fitnote').hidden = !short;
+  if(short) $('fitnote').textContent = 'Your clips have ' + fmtS(have) + ' of good video and the Reel is ' + fmtS(need) + ': tick the box above, shorten the music or add clips.';
 }
+$('fitclips').addEventListener('change', () => footCheckSoon(), SIG);
 /* Generate, before Shubix AI and before any credits: a clip that could not be read, too little good video. 'go', 'stop', or
  * 'again' (the Reel is now as long as the clips: Generate goes on once it is made). */
 let badTold = 0;
@@ -3167,9 +3216,9 @@ async function askShort(){
     badTold = bad;
   }
   if(!buf || !sources.length || kind === 'talk') return 'go';
-  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0)), n = sources.length;
-  footSaid = (have >= need * 0.95 ? 'ok:' : 'low:') + Math.round(need) + ':' + n;
+  const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));
   if(have >= need * 0.95) return 'go';
+  if(fitOn() && have >= 5){ setLen(have); return 'again'; }   // as long as the clips: no question
   const v = await askCredits({ title: 'Not enough clips', text: 'Your clips have ' + fmtS(have) + ' of good video. Your Reel is ' + fmtS(need) + '. No credits were used.', ok: 'Add clips', ...(have >= 5 ? { no: 'Make a ' + fmtS(have) + ' Reel' } : {}) });
   if(v === true){ $('vfile').click(); return 'stop'; }
   if(v === false){ setLen(Math.max(5, have)); return 'again'; }
@@ -4285,6 +4334,7 @@ async function translateSoon(){
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Translation failed (' + r.status + ').'));
     for(const l of res.lines || []) if(need[l.i] !== undefined) trCache.set(to + '|' + need[l.i], l.text);
     capStat((capWords ? capWords.length + ' words · ' : '') + 'translated');
+    aiLog('Shubix AI translated ' + need.length + ' caption line' + (need.length === 1 ? '' : 's') + ' (' + to + ').');
   }catch(err){ if(!(err && err.name === 'AbortError')) { console.warn('translation failed:', err); capStat('Translation did not work this time. Please try again.', true); } }
   finally{ trBusy = false; if(trTo !== to) translateSoon(); redraw(); }
 }
@@ -5967,7 +6017,7 @@ async function autoExport(cloud = false){
 }
 async function runExport(toCloud){
   if(recording || exportBusy) return;
-  if(root.classList.contains('aineed')){ $('aiaskgo').click(); return; }   // no Reel without its Shubix AI (the creator closed the question)
+  if(root.classList.contains('aineed') && !$('aiaskgo').dataset.change){ $('aiaskgo').click(); return; }   // no Reel without its Shubix AI (the creator closed the question)
   exportBusy = true; $('saverow').hidden = true; lastVideo = null;
   tasks.start('export', 'export', 'Exporting your Reel', 'Getting ready');   // in view at once, whatever comes next
   askToNotify();   // once: a notification when the Reel is ready while the person is in another app
@@ -6104,7 +6154,7 @@ $('xgo').addEventListener('click', async () => { const L = lockedUsed(); if(L.le
   wmOff = wmPaid && xq.nowm; sheetOpen(false); runExport(!!cloudInfo && cloudInfo.used < cloudInfo.limit && xq.my); }, SIG);
 $('xgocloud').addEventListener('click', async () => { const L = lockedUsed(); if(L.length){ if(!(await planGate(L))) return; renderEDL(true); renderOvList(); }
   sheetOpen(false); runExport(true); }, SIG);
-$('export').onclick = () => { if(recording || exportBusy) return; if(root.classList.contains('aineed')){ $('aiaskgo').click(); return; } sheetOpen(true); };
+$('export').onclick = () => { if(recording || exportBusy) return; if(root.classList.contains('aineed') && !$('aiaskgo').dataset.change){ $('aiaskgo').click(); return; } sheetOpen(true); };
 
 async function saveToMyReels(blob){
   if(!cloud) return;
@@ -6687,6 +6737,7 @@ async function refLookRun(file, R){
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
     if(refProfile !== R) return;   // another Reel was picked meanwhile
     R.design = res; R.designDone = false; refLookApplySoon(R);
+    aiLog('Shubix AI read the look of "' + R.name + '": its texts, stickers and captions go on your Reel.');
   }catch(err){
     if(err && err.name === 'AbortError') return;
     console.warn('reference texts not read:', err); note('its texts could not be read this time');
@@ -7400,7 +7451,7 @@ function editOf(){
 function stateOf(){
   return { kind, song: song && song.file ? { fp: fileFp(song.file), name: song.name } : null, sec: { len: sec.len, auto: sec.auto, start: sec.start },
     clips: sources.map(s => ({ fp: fileFp(s.file), name: s.name })),
-    settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-20), reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
+    settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-CHAT_KEEP), reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
     overlays: overlays.map(o => { const c = { ...o }; delete c.box; return c; }),
     lmedia: lmedia.map(M => ({ fp: fileFp(M.file), name: M.name })), layers: lyOf(),
     edit: editOf(),

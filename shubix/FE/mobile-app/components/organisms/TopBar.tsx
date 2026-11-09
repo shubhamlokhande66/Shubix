@@ -14,14 +14,14 @@ import { NotificationBell } from "../molecules/NotificationBell";
  * title · the page's own buttons. */
 export function TopBar({ pathname, onMenu }: { pathname: string; onMenu: () => void }) {
   const text = useText(), insets = useSafeAreaInsets(), { me } = useApi();
-  const meta = pageMeta(pathname), home = pathname === "/", back = meta.back;
+  // every page but Home has Back (to the screen before; none: Home), and the menu beside it
+  const meta = pageMeta(pathname), home = pathname === "/", back = meta.back ?? (home ? undefined : "/");
   return (
     <View className="flex-row items-center gap-2 border-b border-accent/15 bg-bar/90 px-3.5 pb-2.5" style={{ paddingTop: Math.max(10, insets.top) }}>
       <Hairline />
-      <View className="w-10">
-        {back
-          ? <IconButton icon="back" look="plain" label={text("common.back")} onPress={() => (router.canGoBack() ? router.back() : router.replace(back as never))} />
-          : <IconButton icon="menu" look="plain" iconSize={22} label={text("common.openMenu")} onPress={onMenu} />}
+      <View className="flex-row">
+        {back && <IconButton icon="back" look="plain" label={text("common.back")} onPress={() => (router.canGoBack() ? router.back() : router.replace(back as never))} />}
+        <IconButton icon="menu" look="plain" iconSize={22} label={text("common.openMenu")} onPress={onMenu} />
       </View>
       <View className={`min-w-0 flex-1 ${meta.left || home ? "items-start" : "items-center"}`}>
         {home ? <Logo height={42} /> : <>

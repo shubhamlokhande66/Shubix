@@ -200,7 +200,7 @@ export const TEXT_GROUPS: TextGroup[] = [
   ),
   page(PAGES, "pricing", "Pricing & plans",
     S("Hero",
-      C("Title", T("pricing.badge", "Badge above", "Pricing"), T("pricing.title1", "First part", "Simple plans."), T("pricing.title2", "Coloured part", "Pay for what you make.")),
+      C("Title", T("pricing.backToReel", "Button when the studio sent them here (their Reel is saved)", "Back to your Reel"), T("pricing.badge", "Badge above", "Pricing"), T("pricing.title1", "First part", "Simple plans."), T("pricing.title2", "Coloured part", "Pay for what you make.")),
       C("Text", T("pricing.sub", "Line ({aiCost}: credits of an AI Reel)", "Make Reels free on your phone. Shubix AI edits them for you in Editor and Pro: an AI Reel uses {aiCost} credits. No card for Free, nothing renews by itself, every price includes GST.", true)),
       C("Monthly / Yearly switch", T("pricing.monthly", "Monthly", "Monthly"), T("pricing.yearly", "Yearly", "Yearly"), T("pricing.monthsFree", "Saving ({n}: months)", "{n} months free"))),
     S("Plan cards",

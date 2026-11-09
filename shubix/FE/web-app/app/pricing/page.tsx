@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { safeNext } from "@shubix/core/lib/access";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage } from "@/lib/api";
 import { useCredits, useList, useMe, useText } from "@/hooks/useApi";
 import { pay } from "@/lib/razorpay";
 import { cn } from "@/lib/cn";
 import type { Credits } from "@/types/api";
-import { Badge, Button, Card, Icon, Spinner } from "@/components/atoms";
+import { Badge, Button, buttonClass, Card, Icon, Spinner } from "@/components/atoms";
 import { ErrorBanner } from "@/components/molecules";
 import { SectionHeading } from "@/components/molecules/SectionHeading";
 import { PlanAction, PlanCard, rupees } from "@/components/organisms/pricing/PlanCard";
@@ -55,6 +56,15 @@ function MyCredits({ c }: { c: Extract<Credits, { enabled: true }> }) {
       )}
     </Card>
   );
+}
+
+/** The studio sent them here (?back=): their Reel is saved, this goes back to it (a whole page load: the studio's own setup). */
+function BackToReel({ strong = false }: { strong?: boolean }) {
+  const text = useText();
+  const [back, setBack] = useState("");
+  useEffect(() => { const b = new URLSearchParams(window.location.search).get("back"); if (b) setBack(safeNext(b)); }, []);
+  if (!back || back === "/") return null;
+  return <a href={back} className={buttonClass({ variant: strong ? "primary" : "secondary", className: "self-center" })}>{text("pricing.backToReel")}</a>;
 }
 
 /** Plans and credits. Open to everyone (also before signing in); signed-in users can buy and see their credits. */
@@ -109,6 +119,7 @@ export default function PricingPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 pb-4 md:gap-16">
       {/* the hero: what it costs, in one line */}
       <header className="relative flex flex-col items-center gap-4 pt-4 text-center md:pt-8">
+        <BackToReel />
         <div aria-hidden className="pointer-events-none absolute inset-x-0 -top-10 -z-10 mx-auto h-64 max-w-3xl rounded-full bg-[radial-gradient(closest-side,rgba(216,189,123,.2),transparent)] blur-2xl" />
         <Badge tone="brand" className="h-8 px-3.5 text-[12.5px] uppercase tracking-wider">
           <Icon name="coins" size={15} />
@@ -156,6 +167,7 @@ export default function PricingPage() {
           {notice.text}
         </p>
       )}
+      {notice?.ok && <BackToReel strong />}
 
       {/* the plans */}
       <section aria-label="Plans" className={cn("mx-auto grid w-full gap-5 lg:max-w-none lg:gap-4", p.plans.filter((x) => !x.hidden).length === 3 ? "max-w-md lg:grid-cols-3" : "max-w-3xl sm:grid-cols-2 2xl:grid-cols-4")}>
