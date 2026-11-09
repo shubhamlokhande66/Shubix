@@ -2237,6 +2237,7 @@ async function aiRun(){
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
   let charged = 0, failed = 0;
   try{
+    if(!(await serverUp())) throw new Error(TEAM_MSG);   // a down server: said at once (aiDown), never waited for
     const jobs = [];
     for(const [i, s] of need.entries()){ if(aiStopper.signal.aborted) return; aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); const frames = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s)); if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
     aiStat('Shubix is choosing the best moments of your clips…');
@@ -2958,6 +2959,13 @@ const dirCache = new Map();
  * 1 s then 2 s apart; after the third it fails and the person gets the popup (Retry / Close). A real "no" (no credits, not
  * allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
+// is the server there? (8 s at most: a down or sleeping server is not waited for minutes)
+async function serverUp(){
+  const t = timeoutSignal(8000);
+  try{ const r = await fetch('/api/health', { cache: 'no-store', signal: t.signal }); return r.ok; }
+  catch(e){ return false; }
+  finally{ t.done(); }
+}
 async function apiFetch(url, opts = {}){
   for(let n = 1; ; n++){
     let r = null;
@@ -3119,12 +3127,13 @@ async function paceRun(key){
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
-  // the loader stays until Shubix answers (a down server is asked again for a minute: apiFetch); 4 min: given up (the
-  // server's AI gives up before that and the credits come back). Never the phone's own edit instead: aiDown.
-  const tm = timeoutSignal(240000);
+  // the loader stays until Shubix answers; 130 s: given up (the server's AI gives up before that, 2 tries of 60 s, and the
+  // credits come back). A server that does not answer at all is known in seconds: the popup says so at once (aiDown).
+  const tm = timeoutSignal(130000);
   let late = false;
   const soft = setTimeout(() => aiStat('Shubix is still working on your Reel…'), 75000);   // no phone's edit meanwhile: the loader stays
   try{
+    if(!(await serverUp())){ dirFailedKey = key; aiDown(); return; }
     await hearSong();
     const cands = directorCandidates(); dirCands = cands;
     const { req, ctx } = dirRequest(cands), sig = planSig(), mix = mixNo, st = mixStore();
