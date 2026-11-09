@@ -6,7 +6,8 @@ export type Sticker = { name: string; cat: "Point" | "Highlight" | "Mood" | "Soc
 const circ = (x: number, y: number, r: number) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
 const star = (n: number, ro: number, ri: number) => Array.from({ length: n * 2 }, (_, i) => { const r = i % 2 ? ri : ro, a = (Math.PI * i) / n - Math.PI / 2; return `${i ? "L" : "M"}${(50 + r * Math.cos(a)).toFixed(1)} ${(50 + r * Math.sin(a)).toFixed(1)}`; }).join("") + "z";
 
-export const STICKERS: Record<string, Sticker> = {
+// no prototype: a key from the AI or a saved Reel ("constructor", "__proto__") is never taken for a sticker
+export const STICKERS: Record<string, Sticker> = Object.assign(Object.create(null) as Record<string, Sticker>, {
   arrow: { name: "Arrow", cat: "Point", color: "#FFD54A", d: "M8 38h52V18l34 32-34 32V62H8z" },
   arrowdown: { name: "Arrow down", cat: "Point", color: "#FFD54A", d: "M38 6h24v50h20L50 94 18 56h20z" },
   curve: { name: "Curved arrow", cat: "Point", color: "#FFFFFF", d: "M14 84C14 46 38 26 66 26V10l28 26-28 26V46C46 46 34 58 32 84z" },
@@ -31,5 +32,5 @@ export const STICKERS: Record<string, Sticker> = {
   crown: { name: "Crown", cat: "Shop", color: "#FFD54A", d: "M6 28l23 20 21-36 21 36 23-20-9 54H15zM15 86h70v9H15z" },
   tag: { name: "Price tag", cat: "Shop", color: "#FFD54A", d: "M4 50L38 16h50a8 8 0 0 1 8 8v52a8 8 0 0 1-8 8H38z" + circ(28, 50, 7) },
   new: { name: "New badge", cat: "Shop", color: "#FF4D4D", d: star(16, 48, 40) },
-};
+});
 export const STICKER_KEYS = Object.keys(STICKERS);
