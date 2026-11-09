@@ -3195,7 +3195,8 @@ function goodSecs(src){
 // is left out, quietly. Off: a line under it says so; nothing pops up while the person works (Make Reel asks: askShort).
 let footTimer = 0;
 const fitOn = () => $('fitclips').checked;
-function footCheckSoon(){ if(!location.pathname.startsWith('/create') || kind === 'talk') return; clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
+function footCheckSoon(){ if(kind === 'talk') return;   // in Create and in the editor (clips added or removed there)
+  clearTimeout(footTimer); footTimer = setTimeout(footCheck, 900); }
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
   const need = buf.duration, have = Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
@@ -3275,7 +3276,8 @@ function seqSlots(n){
 // within its share of what is left. In a fast part of the song (4 or more cuts in a row, each 0.5 s or less) the shots
 // run on through the clip sped up (up to 40x, like a video app; the export takes the exact frame for every moment, the
 // preview steps through the frames above 16x: rawRate), back to normal after it.
-// A clip too short for its shots plays a little slower instead of repeating.
+// A clip is never slowed down to fill the song: slow motion only where the style or Shubix AI chose it for a shot; too
+// little good video makes the Reel shorter (Make the Reel as long as my clips), the rest of the song is left out.
 const SEQ_FAST = 0.5, SEQ_MAX = 40;
 function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
@@ -3284,10 +3286,11 @@ function seqPick(seq, res, gmax){
     const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
     const need = ids.map(i => plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
-    const scale = ids.map(i => spare < 0 ? Math.max(0.005, foot / sum(need)*0.98) : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    const scale = ids.map(i => spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = 0;
     ids.forEach((i, k) => {
+      cur = Math.min(cur, Math.max(0, foot - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
       const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, foot - nd - rest);
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
