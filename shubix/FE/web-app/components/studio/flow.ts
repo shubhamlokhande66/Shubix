@@ -325,6 +325,8 @@ export function initFlow(root: HTMLElement): () => void {
     setFlag($<HTMLButtonElement>("fgen"), "disabled", (!ready && !paused && !goes) || wantGen || checking);
     setAttr($("fclipsnext"), "aria-busy", String(wantGen || checking));
     setAttr($("fgen"), "aria-busy", String(wantGen || checking));
+    // a real spinner in the button while it works ("Getting ready…", "Making your Reel…")
+    for (const id of ["fgen", "fclipsnext"]) { const sp = $(id).querySelector(".fspin"); if (sp) setClass(sp as HTMLElement, "hidden", !(wantGen || checking)); }
     setText($("fgent"), checking ? "Getting ready…" : paused ? "Continue analysis" : wantGen ? "Making your Reel…" : ready || goes ? "Generate Reel" : stopped().song ? missing || "Generate Reel" : (!songOk() && !songComing && (kind !== "copy" || has("pickown")) ? "Add your song first" : missing || "Generate Reel"));
     const aiDone = aiGo && made() && !aiWorking();
     setText($("freadyt"), aiDone ? "Your Reel is ready!" : aiGo ? "Shubix is editing your Reel…" : "Ready to create your Reel!");

@@ -1422,8 +1422,7 @@
 .brs.seqon .clips .clip::before{counter-increment:clipn;content:counter(clipn);position:absolute;top:6px;left:6px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:11px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font:600 12px var(--body)}
 /* a button forward that waits (flow.ts: reading the song, the clips, making the Reel): a spinner in place of its arrow */
 .brs :is(.fnext,.fgen)[aria-busy="true"]{cursor:progress}
-.brs :is(.fnext,.fgen)[aria-busy="true"] > svg:last-child{display:none}
-.brs :is(.fnext,.fgen)[aria-busy="true"]::after{content:"";width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+.brs :is(.fnext,.fgen)[aria-busy="true"] > svg{display:none}   /* the spinner (.fspin, flow.ts) takes the icons' place */
 /* Shubix is thinking (flow.ts .aithink): the preview waits for its Reel behind a loader, never shows the first version
    made without it */
 .brs .aiwait{display:none}
