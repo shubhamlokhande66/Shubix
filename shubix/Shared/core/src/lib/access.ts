@@ -1,6 +1,6 @@
 /** Who may open which page before signing in (Administration → Settings → Sign-in rules). The legal and sign-in pages are
  * always open; the person's own pages (My Reels, account, admin…) always need an account; the rest the administrator
- * chooses. In the studio, the account is asked for when the Reel is generated or exported, and the work is kept. */
+ * chooses. In the studio, Generate Reel always needs an account (free or paid): the song and clips are kept meanwhile. */
 
 export const ACCESS_PAGES = [
   { path: "/", label: "Home" },
@@ -17,13 +17,8 @@ export const ACCESS_PAGES = [
 /** open to everyone, whatever the administrator chose */
 export const ALWAYS_OPEN = ["/about", "/terms", "/privacy", "/refunds", "/delete-account", "/contact"];
 
-export type StudioAsk = "generate" | "export";
-export type Access = { open: string[]; studioAsk: StudioAsk; google: boolean };
-export const STUDIO_ASK: { key: StudioAsk; label: string }[] = [
-  { key: "generate", label: "When they press Generate Reel" },
-  { key: "export", label: "When they export or save the Reel" },
-];
-export const DEFAULT_ACCESS: Access = { open: ACCESS_PAGES.map((p) => p.path), studioAsk: "generate", google: true };
+export type Access = { open: string[]; google: boolean };
+export const DEFAULT_ACCESS: Access = { open: ACCESS_PAGES.map((p) => p.path), google: true };
 
 /** Open before signing in: an always-open page, or a page the administrator opened (a page's sub-pages with it). */
 export function isOpen(pathname: string, a: Access = DEFAULT_ACCESS): boolean {

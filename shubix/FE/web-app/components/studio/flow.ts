@@ -414,11 +414,12 @@ export function initFlow(root: HTMLElement): () => void {
     if (t.closest("#fadjust")) { go("adjust"); return; }
     if (t.closest("#slen") && e.isTrusted) lengthTouched = true;
     if (t.closest("#fgen")) {
-      // nobody signed in and the administrator asks for an account here: the Reel is saved on this device, the sign-in
-      // page opens, and the studio comes back to this Reel and generates it (?go=1)
-      if (!signInOk) {
+      // Generate needs an account, free or paid: nobody signed in (or it cannot be checked), so the Reel is saved on this
+      // device, the sign-in page opens, and the studio comes back to this Reel and generates it (?go=1). The phone app's
+      // hidden studio (/engine) is signed in by the app itself.
+      if (!signInOk && !inEngine) {
         void (async () => {
-          if (await needsSignIn("generate")) { const id = await live()?.saveNow?.(); return signInThen(id ? `${location.pathname}?p=${id}&step=clips&go=1` : location.pathname); }
+          if (await needsSignIn()) { const id = await live()?.saveNow?.(); return signInThen(id ? `${location.pathname}?p=${id}&step=clips&go=1` : location.pathname); }
           signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click();
         })();
         return;
