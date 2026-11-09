@@ -50,8 +50,10 @@ async function aiRun(){
     const jobs = [];
     for(const [i, s] of need.entries()){ EH.aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); if(ES.aiStopper.signal.aborted) return; let frames = framesMade.get(s); if(!frames){ frames = await EH.aiFrames(s); framesMade.set(s, frames); } if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
     EH.aiStat('Shubix is choosing the best moments of your clips…');
-    for(let k=0; k<jobs.length; k+=12){
-      const part = jobs.slice(k, k+12);
+    // 5 clips a call, two calls at once: each call stays small (one call of 12 clips, up to 60 pictures, timed out on an iPhone
+    // with 28 clips), and Retry sends only the clips not answered yet (the answered ones are kept)
+    const parts = []; for(let k = 0; k < jobs.length; k += 5) parts.push(jobs.slice(k, k + 5));
+    const send = async part => {
       const r = await EH.apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: ES.aiStopper.signal,
         body: JSON.stringify({ reelId: EH.reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
@@ -63,7 +65,8 @@ async function aiRun(){
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = EH.fpOf(j.src); EH.aiCache.set(fp, j.src.ai);
         try{ EH.keepAiPick(fp, j.src.ai); }catch(e){} }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; framesMade.delete(j.src); failed++; } }
-    }
+    };
+    for(let k = 0; k < parts.length; k += 2) await Promise.all(parts.slice(k, k + 2).map(send));
     ES.aiBusy = false;
     if(ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !ES.pending) return aiRun();   // clips added meanwhile
     EH.aiDone(charged, failed);

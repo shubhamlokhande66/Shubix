@@ -2158,7 +2158,9 @@ function aiBonus(ai, slot, last){
 }
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
-  const n = Math.max(3, Math.min(5, Math.round(src.dur/3))), out = [];
+  // many clips: fewer pictures of each (2-3, not 3-5), so Shubix AI has less to read and costs less
+  const many = sources.filter(x => !x.removed).length > 15;
+  const n = many ? Math.max(2, Math.min(3, Math.round(src.dur/4))) : Math.max(3, Math.min(5, Math.round(src.dur/3))), out = [];
   for(let k=0;k<n;k++){
     const a = src.dur*k/n, b = src.dur*(k+1)/n, c0 = a+(b-a)*0.2, c1 = a+(b-a)*0.8;
     let best = null, bs = -1;
@@ -2203,8 +2205,10 @@ async function aiRun(){
     const jobs = [];
     for(const [i, s] of need.entries()){ if(aiStopper.signal.aborted) return; aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); const frames = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s)); if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
     aiStat('Shubix is choosing the best moments of your clips…');
-    for(let k=0; k<jobs.length; k+=12){
-      const part = jobs.slice(k, k+12);
+    // 5 clips a call, two calls at once: each call stays small (one call of 12 clips, up to 60 pictures, timed out on an iPhone
+    // with 28 clips), and Retry sends only the clips not answered yet (the answered ones are kept)
+    const parts = []; for(let k = 0; k < jobs.length; k += 5) parts.push(jobs.slice(k, k + 5));
+    const send = async part => {
       const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
@@ -2216,7 +2220,8 @@ async function aiRun(){
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = fpOf(j.src); aiCache.set(fp, j.src.ai);
         try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){} }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; } }
-    }
+    };
+    for(let k = 0; k < parts.length; k += 2) await Promise.all(parts.slice(k, k + 2).map(send));
     aiBusy = false;
     if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
     aiDone(charged, failed);
