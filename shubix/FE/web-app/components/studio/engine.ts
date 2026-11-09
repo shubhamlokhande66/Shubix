@@ -3159,7 +3159,12 @@ async function directorRun(key){
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
       if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown();
     }
-  }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
+  }finally{
+    clearTimeout(soft); if(!late) dirBusy = false; tm.done();
+    // the answer came but the Reel was not remade with it here (it was being exported, the clips changed and nothing
+    // new was asked, a chat plan waits for Generate): the "Shubix at work" popup must not stay on for ever
+    if(!dirBusy && /choosing every shot|still working on your Reel/.test($('aistat').textContent || '')) aiStat(dirPlannedReel === reelIdNow() ? 'Shubix planned your Reel.' : '');
+  }
 }
 // is the studio's AI on? The administrator decides (Administration -> Features -> AI director) and the server has an AI
 // provider; people never choose: when it is on, every Reel is edited by the AI. Asked at the start, and again when the
