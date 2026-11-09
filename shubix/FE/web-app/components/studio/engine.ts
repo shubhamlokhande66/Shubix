@@ -2235,12 +2235,20 @@ const CHAT_KEEP = 40;   // the chat and Shubix AI's history kept with the Reel (
 // the AI's plan is applied as it is: its transitions, keyframes and effects are not cut back by the rules' taste (that is
 // for a Reel made without the AI); what the creator asks for in Ask Shubix comes first
 const aiTrusted = () => aiOn && !!director && director.key === dirKey();
-function chatSay(who, text, wait){
+function chatSay(who, text, wait, at){
   const p = document.createElement('p'); p.className = who + (wait ? ' wait' : ''); p.textContent = text;
+  if(!wait) p.appendChild(chatTime(at));
   $('chatlog').appendChild(p); $('chatlog').scrollTop = $('chatlog').scrollHeight; return p;
 }
+// when it was said or done: the time today, the date and time before today
+function chatTime(at){
+  const d = new Date(at || Date.now()), t = document.createElement('time');
+  t.dateTime = d.toISOString(); t.className = 'block mt-1 text-[10.5px] opacity-60';
+  t.textContent = (d.toDateString() === new Date().toDateString() ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', ') + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return t;
+}
 function chatClearWait(){ $('chatlog').querySelectorAll('.wait').forEach(x => x.remove()); }
-function chatAnswer(text){ chatClearWait(); chatSay('ai', text); chatMsgs.push({ who: 'ai', text }); chatWaiting = false; $('chatsend').disabled = false; }
+function chatAnswer(text){ chatClearWait(); chatSay('ai', text); chatMsgs.push({ at: Date.now(), who: 'ai', text }); chatWaiting = false; $('chatsend').disabled = false; }
 let chatPending = null, chatReported = '';
 // the AI's plan arrived: asked for in the chat, it is shown as a report and waits for Generate; otherwise it is used
 function dirArrived(key, d){
@@ -2251,9 +2259,9 @@ function dirArrived(key, d){
 // the plan, shot by shot, in words: which clip and what is in it, the transition into it, its effect, speed and keyframes.
 // As data (planData), so the chat's history keeps it with the Reel and shows it again when the Reel is opened again.
 function planReport(slots, story, changed){ return reportBox(planData(slots, story, changed)); }
-function reportBox(r){
+function reportBox(r, at){
   const box = document.createElement('div'); box.className = 'ai rep';
-  const head = document.createElement('b'); head.textContent = r.head; box.appendChild(head);
+  const head = document.createElement('b'); head.textContent = r.head; box.appendChild(head); box.appendChild(chatTime(at));
   if(r.story){ const p = document.createElement('span'); p.className = 'repstory'; p.textContent = r.story; box.appendChild(p); }
   const det = document.createElement('details'), sum = document.createElement('summary'), ol = document.createElement('ol');
   sum.textContent = r.chg ? 'See the change' : 'See every shot'; det.appendChild(sum); if(r.chg) det.open = true;
@@ -2286,7 +2294,7 @@ function planData(slots, story, changed){
  * not and left the phone's edit) goes into the chat, kept with the Reel and shown again when it is opened again. */
 function aiLog(text, rep){
   const last = chatMsgs[chatMsgs.length - 1]; if(last && last.who === 'ai' && last.text === text) return;
-  chatMsgs.push({ who: 'ai', text, ...(rep ? { rep } : {}) });
+  chatMsgs.push({ at: Date.now(), who: 'ai', text, ...(rep ? { rep } : {}) });
   if(rep) $('chatlog').appendChild(reportBox(rep)); else chatSay('ai', text);
   $('chatlog').scrollTop = $('chatlog').scrollHeight; $('chatfab').classList.add('news'); $('tbchat').classList.add('news');
 }
@@ -2296,7 +2304,7 @@ function chatProposal(pd){
   go.type = 'button'; go.className = `${Button.primary} repgo`; go.textContent = 'Generate Reel';
   go.addEventListener('click', () => chatGenerate(go), SIG);
   box.appendChild(go); $('chatlog').appendChild(box); $('chatlog').scrollTop = $('chatlog').scrollHeight;
-  chatMsgs.push({ who: 'ai', text: 'Plan ready: ' + (pd.story || plan.length + ' shots'), rep });
+  chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Plan ready: ' + (pd.story || plan.length + ' shots'), rep });
   chatWaiting = false; $('chatsend').disabled = false;
 }
 function applyChatVisualIntent(intent, slots = []){
@@ -2443,7 +2451,7 @@ async function chatApp(text){
     const pd = chatPending; chatPending = null; chatReported = pd.key;
     director = { key: pd.key, slots: pd.slots, story: pd.story }; dirCache.set(pd.key, director);
     makeEdit(); await aiApply(pd); try{ applyChatVisualIntent(pd.intent, pd.slots); }catch(e){}
-    applied = !!edit.length; if(applied){ chatMsgs.push({ who: 'ai', text: 'Done ✓' }); saveNow(); }
+    applied = !!edit.length; if(applied){ chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Done ✓' }); saveNow(); }
   }
   const said = chatMsgs.slice(before).filter(m => m.who === 'ai').map(m => m.text).filter(t => t !== 'Done ✓').pop() || '';
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (director && director.story ? ': ' + director.story : '.') : said || (chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
@@ -2452,7 +2460,7 @@ function chatDone(story){ if(!chatWaiting) return; chatAnswer('Done ✓ Your Ree
 function chatFail(msg){ if(chatWaiting) chatAnswer(msg); }
 function chatRestore(list){
   if(!Array.isArray(list)) return; chatMsgs = list.filter(m => m && typeof m.text === 'string').slice(-CHAT_KEEP);
-  $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text); });
+  $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep, m.at)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text, false, m.at); });
   wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800);
 }
 // plain words the phone understands by itself (with or without the AI)
@@ -2494,8 +2502,8 @@ async function chatPatch(text, n, id){
 async function chatSend(text){
   remakeOk();
   text = String(text || '').trim().slice(0, 300); if(!text || chatWaiting) return;
-  if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
-  chatSay('me', text); chatMsgs.push({ who: 'me', text });
+  if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
+  chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
   $('chatin').value = ''; chatFit();
   const ready = buf && sources.length && edit.length && !recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
@@ -2890,6 +2898,7 @@ async function variantsRun(st){
     let k = 1;
     for(const pl of res.plans || []){ while(st.plans[k]) k++; st.plans[k] = { slots: toSlots(pl.slots, cands), ctx, sig, story: pl.story || '' }; n++; }
     aiStat('Shubix made ' + n + ' more version' + (n === 1 ? '' : 's') + ' · press Change Reel to see each.');
+    if(n) aiLog('Shubix AI made ' + n + ' more version' + (n === 1 ? '' : 's') + ' of your Reel (Change Reel shows each).');
   }catch(e){
     if(!(e && e.name==='AbortError') || tm.timedOut()) console.warn('AI mixes not used:', e);
     aiStat('Change Reel uses the phone\'s own versions in Shubix\'s style.');
@@ -4326,6 +4335,7 @@ async function translateSoon(){
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Translation failed (' + r.status + ').'));
     for(const l of res.lines || []) if(need[l.i] !== undefined) trCache.set(to + '|' + need[l.i], l.text);
     capStat((capWords ? capWords.length + ' words · ' : '') + 'translated');
+    aiLog('Shubix AI translated ' + need.length + ' caption line' + (need.length === 1 ? '' : 's') + ' (' + to + ').');
   }catch(err){ if(!(err && err.name === 'AbortError')) { console.warn('translation failed:', err); capStat('Translation did not work this time. Please try again.', true); } }
   finally{ trBusy = false; if(trTo !== to) translateSoon(); redraw(); }
 }
@@ -6732,6 +6742,7 @@ async function refLookRun(file, R){
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
     if(refProfile !== R) return;   // another Reel was picked meanwhile
     R.design = res; R.designDone = false; refLookApplySoon(R);
+    aiLog('Shubix AI read the look of "' + R.name + '": its texts, stickers and captions go on your Reel.');
   }catch(err){
     if(err && err.name === 'AbortError') return;
     console.warn('reference texts not read:', err); note('its texts could not be read this time');

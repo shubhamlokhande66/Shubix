@@ -30,7 +30,7 @@ export function MenuDrawer({ open, onClose, pathname }: { open: boolean; onClose
   }, [open, shown]);
   if (!mounted) return null;
   const email = me?.user?.email;
-  const go = (item: NavItem) => { onClose(); router.navigate(item.href as never); };
+  const go = (item: NavItem) => { onClose(); router.push(item.href as never); }; // Back comes here again (Android back, the top bar)
   const link = (item: NavItem) => {
     const active = isActive(pathname, item.href);
     return (

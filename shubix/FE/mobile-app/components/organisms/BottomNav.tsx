@@ -27,7 +27,7 @@ export function BottomNav({ pathname }: { pathname: string }) {
           </View>
           <Text className="text-[11px] font-semibold text-foreground">{text(tab.tk)}</Text>
         </Pressable>
-      ) : item(text(tab.tk), isActive(pathname, tab.href), tab.icon as IconName, () => router.navigate(tab.href as never)))}
+      ) : item(text(tab.tk), isActive(pathname, tab.href), tab.icon as IconName, () => router.push(tab.href as never)))}
     </View>
   );
 }

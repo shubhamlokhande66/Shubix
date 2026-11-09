@@ -100,3 +100,17 @@ describe("AppShell: parts the administrator turned off", () => {
     features.value = { ...features.value, brands: true };
   });
 });
+
+describe("AppShell: Back on every page", () => {
+  it("shows Back beside the menu on every page but Home", () => {
+    at.path = "/pricing";
+    render(<QueryClientProvider client={new QueryClient()}><AppShell><p>content</p></AppShell></QueryClientProvider>);
+    expect(screen.getAllByRole("button", { name: "Back" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /menu/i }).length).toBeGreaterThan(0);
+  });
+  it("has no Back on Home", () => {
+    at.path = "/";
+    render(<QueryClientProvider client={new QueryClient()}><AppShell><p>content</p></AppShell></QueryClientProvider>);
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+});

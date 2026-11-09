@@ -349,10 +349,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     : undefined;
   const meta = pageMeta(pathname);
   const title = customTitle ?? (meta.tk ? text(meta.tk) : meta.title);
-  const back = meta.back;
   // phones: the bottom tab bar, the plan pill and the bell on every page; the studio (/create/…) keeps the whole screen
   // for its own tool bars, and the admin pages keep their Admin badge
   const studio = isStudio(pathname), tabs = showTabs(pathname);
+  // every page but Home has Back (to the screen before; none: Home); the studio has its own
+  const back = meta.back ?? (pathname === "/" || studio ? undefined : "/");
 
   return (
     <div className="rm min-h-screen md:flex">
@@ -361,12 +362,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <HelpChat raised={tabs} />
 
       {/* phones: the top bar */}
-      <header className="relative isolate sticky top-0 z-30 grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2 border-b border-[color-mix(in_srgb,var(--accent)_16%,var(--line))] bg-[color-mix(in_srgb,var(--bar)_90%,transparent)] px-3.5 pb-2.5 pt-[max(10px,env(safe-area-inset-top))] shadow-[0_12px_30px_-28px_rgba(0,0,0,.85)] backdrop-blur-2xl md:hidden before:absolute before:inset-x-8 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-accent/45 before:to-transparent before:content-['']">
-        {back ? (
-          <IconButton icon="back" plain label={text("common.back")} onClick={() => (window.history.length > 1 ? router.back() : router.push(back))} />
-        ) : (
+      <header className="relative isolate sticky top-0 z-30 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-[color-mix(in_srgb,var(--accent)_16%,var(--line))] bg-[color-mix(in_srgb,var(--bar)_90%,transparent)] px-3.5 pb-2.5 pt-[max(10px,env(safe-area-inset-top))] shadow-[0_12px_30px_-28px_rgba(0,0,0,.85)] backdrop-blur-2xl md:hidden before:absolute before:inset-x-8 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-accent/45 before:to-transparent before:content-['']">
+        <span className="flex items-center">
+          {back && <IconButton icon="back" plain label={text("common.back")} onClick={() => (window.history.length > 1 ? router.back() : router.push(back))} />}
           <IconButton icon="menu" plain iconSize={22} label={text("common.openMenu")} aria-expanded={drawer} onClick={() => setDrawer(true)} />
-        )}
+        </span>
         <span className={cn("min-w-0", meta.left || pathname === "/" ? "text-left" : "text-center")}>
           {pathname === "/" ? <Logo height={42} /> : (
             <span className={cn("mx-auto grid min-w-0 max-w-full leading-tight", meta.left || pathname === "/" ? "justify-items-start" : "justify-items-center")}>
