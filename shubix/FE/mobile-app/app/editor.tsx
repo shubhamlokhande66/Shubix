@@ -1,6 +1,6 @@
 import type { ImagePickerAsset } from "expo-image-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { BackHandler, PanResponder, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useStudioText } from "@mobile/hooks";
 import { asksForAllClips } from "@mobile/core/lib/chatSize";
@@ -97,6 +97,40 @@ function FineTune({ fields, patch }: { fields: Fine[]; patch: (v: Record<string,
   return shown.length ? <View className="gap-2 rounded-xl border border-border bg-surface-2 p-3">
     {shown.map(([k, label, min, max, step]) => <Slider key={k} label={label} value={at(k)} min={min} max={max} step={step ?? 0.01} format={(v) => k === "mk.a" ? `${Math.round(v)}°` : k === "zoom" ? `${v.toFixed(2)}×` : min < 0 ? `${v > 0 ? "+" : ""}${Math.round(v * 100)}` : `${Math.round(v * 100)}%`} onDone={(v) => set(k, v)} />)}
   </View> : null;
+}
+// HSL one colour band at a time (the website's HSL panel): its hue, saturation and lightness
+const HSL_BANDS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
+function HslTune({ patch }: { patch: (v: Record<string, unknown>) => unknown }) {
+  const words = useStudioText(), [band, setBand] = useState("blue");
+  return <View className="gap-2">
+    <Choices items={HSL_BANDS.map((b) => b[0].toUpperCase() + b.slice(1))} on={band[0].toUpperCase() + band.slice(1)} onPick={(v) => setBand(v.toLowerCase())} />
+    <FineTune key={band} fields={[[`hsl.${band}.0`, words("Hue"), -1, 1], [`hsl.${band}.1`, words("Saturation"), -1, 1], [`hsl.${band}.2`, words("Lightness"), -1, 1]]} patch={patch} />
+  </View>;
+}
+/** Motion by hand (the website's keyframe sliders): drag the dot to place the shot (or the selected text) at the playhead,
+ * then its size, turn and opacity; each change is a keyframe at the playhead. */
+function KfPad({ time, onSet }: { time: number; onSet: (v: Record<string, number>) => unknown }) {
+  const words = useStudioText(), BOX = 150, [v, setV] = useState({ x: 0, y: 0, s: 1, r: 0, o: 1 }), cur = useRef(v), from = useRef({ x: 0, y: 0 });
+  cur.current = v;
+  useEffect(() => { void engine.tool("kfSeek", { time }).then((row) => {
+    const r = row as { a?: number; keyframes?: Array<Record<string, number>> } | null, l = time - (r?.a ?? 0), k = r?.keyframes?.find((f) => Math.abs(f.t - l) < 0.05);
+    if (k) setV({ x: k.x ?? 0, y: k.y ?? 0, s: k.s ?? 1, r: k.r ?? 0, o: k.o ?? 1 });
+  }).catch(() => {}); }, [time]);
+  const clamp = (n: number) => Math.max(-1, Math.min(1, n));
+  const pan = useRef(PanResponder.create({ onStartShouldSetPanResponder: () => true, onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => { from.current = { x: cur.current.x, y: cur.current.y }; },
+    onPanResponderMove: (_, g) => setV((o) => ({ ...o, x: clamp(from.current.x + (g.dx / BOX) * 2), y: clamp(from.current.y + (g.dy / BOX) * 2) })),
+    onPanResponderRelease: () => void onSet({ x: cur.current.x, y: cur.current.y }) })).current;
+  const set = (k: "s" | "r" | "o", n: number) => { setV((o) => ({ ...o, [k]: n })); void onSet({ [k]: n }); };
+  return <View className="gap-2 rounded-xl border border-border bg-surface-2 p-3">
+    <Text className="text-[11px] text-muted">{words("Drag the dot to place it at the playhead")}</Text>
+    <View {...pan.panHandlers} accessibilityLabel={words("Position")} className="self-center rounded-lg border border-border bg-surface" style={{ width: BOX, height: BOX }}>
+      <View pointerEvents="none" className="absolute h-6 w-6 rounded-full border-2 border-white bg-accent" style={{ left: (v.x + 1) / 2 * BOX - 12, top: (v.y + 1) / 2 * BOX - 12 }} />
+    </View>
+    <Slider label={words("Size")} value={v.s} min={0.2} max={4} step={0.01} format={(n) => `${n.toFixed(2)}×`} onDone={(n) => set("s", n)} />
+    <Slider label={words("Turn")} value={v.r} min={-180} max={180} step={1} format={(n) => `${Math.round(n)}°`} onDone={(n) => set("r", n)} />
+    <Slider label={words("Opacity")} value={v.o} min={0} max={1} step={0.01} format={(n) => `${Math.round(n * 100)}%`} onDone={(n) => set("o", n)} />
+  </View>;
 }
 const VFX = [["none", "Original"], ["enhance", "Enhance voice"], ["deep", "Deep"], ["chipmunk", "Chipmunk"], ["robot", "Robot"], ["radio", "Radio"], ["echo", "Echo"]];
 const CSNDS = [["mute", "Mute it"], ["voices", "Keep voices only"], ["all", "Keep all"]];
@@ -735,6 +769,7 @@ export default function EditorScreen() {
       </View>;
       case "motion": return <View className="gap-2">
         <Text className="text-[11px] text-muted">{words("Move the playhead, then add a keyframe. Add another at a later time to animate the move.")}</Text>
+        {p.studio && engine.holds(p.id) && <KfPad key={`k${selected}`} time={now} onSet={studioKeyframe} />}
         <Choices items={["Zoom in", "Zoom out", "Slide left", "Slide right", "Move up", "Move down", "Rotate", "Fade", "Reset frame"]} onPick={(v) => {
           const values: Record<string, Record<string, number>> = {
             "Zoom in": { s: 1.2 }, "Zoom out": { s: 0.85 }, "Slide left": { x: -0.08 }, "Slide right": { x: 0.08 },
@@ -811,11 +846,11 @@ export default function EditorScreen() {
         "More contrast": { m: [0, 0.18, 0.5, 0.82, 1] }, "Faded film": { m: [0.1, 0.3, 0.52, 0.76, 0.94] }, "Brighter mids": { m: [0, 0.32, 0.6, 0.83, 1] },
         Moody: { m: [0, 0.2, 0.45, 0.72, 0.95], b: [0.05, 0.28, 0.52, 0.75, 0.97] }, "Cross process": { r: [0, 0.2, 0.55, 0.85, 1], g: [0, 0.25, 0.52, 0.8, 1], b: [0.12, 0.3, 0.48, 0.66, 0.85] },
       } as Record<string, unknown>)[v] ?? null })} /></View>;
-      case "hsl": return <Choices items={["Bluer sky", "Warm skin", "Greener leaves", "Only red in colour", "Teal & orange", "Reset HSL"]} onPick={(v) => void studioPatch({ hsl: ({
+      case "hsl": return <View className="gap-2">{p.studio && <HslTune key={`h${selected}`} patch={studioPatch} />}<Choices items={["Bluer sky", "Warm skin", "Greener leaves", "Only red in colour", "Teal & orange", "Reset HSL"]} onPick={(v) => void studioPatch({ hsl: ({
         "Bluer sky": { blue: [0, 0.45, -0.1], aqua: [0.1, 0.3, 0] }, "Warm skin": { orange: [-0.05, 0.15, 0.1], red: [0.05, -0.1, 0.05] }, "Greener leaves": { green: [0, 0.5, -0.05], yellow: [0.15, 0.2, 0] },
         "Only red in colour": { orange: [0, -1, 0], yellow: [0, -1, 0], green: [0, -1, 0], aqua: [0, -1, 0], blue: [0, -1, 0], purple: [0, -1, 0], magenta: [0, -0.6, 0] },
         "Teal & orange": { green: [0.35, -0.2, 0], aqua: [0.1, 0.3, 0], blue: [-0.15, 0.2, -0.1], orange: [0, 0.3, 0.05], yellow: [-0.2, 0.1, 0] },
-      } as Record<string, unknown>)[v] ?? null })} />;
+      } as Record<string, unknown>)[v] ?? null })} /></View>;
       case "border": return <Choices items={["No border", "Fine white", "Gold frame", "Soft frame"]} onPick={(v) => {
         if (v === "No border") return void studioPatch({ fit: false, bd: 0 });
         void studioPatch({ fit: true, bd: v === "Fine white" ? 0.035 : 0.08, bdc: v === "Gold frame" ? "#d4b07a" : v === "Soft frame" ? "#f3ede3" : "#ffffff" });
