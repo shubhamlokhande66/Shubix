@@ -1324,6 +1324,9 @@ async function compressHighResolutionPreview(src, dd){
     return;
   }
   if(heavy){
+    // an iPhone plays and reads its own 4K / HDR clip itself (Safari decodes it): its edit copy is made at export instead
+    // (runExport), as the Android app works, so choosing the clips is not a long wait for copies
+    if(IOS && probe && probe.decodes){ src.copyLater = plan; src.proxyStatus = 'Copy made at export'; updateClipHoverInfo(src); return; }
     if(!(await makeEditCopy(src, dd, src.facts, plan, true)) && !src.removed) editCopyFailNote(src, src.facts);
     return;
   }
@@ -6132,6 +6135,15 @@ async function runExport(toCloud){
   const awake = holdAwake();
   await holdScreen();
   expCancel = false;
+  // iPhone: the 4K / HDR clips' edit copies, put off until now (copyLater: the clips were chosen without that wait); a copy
+  // that cannot be made leaves the original, as before
+  const later = sources.filter(s => s.copyLater && !s.edFile && !s.removed);
+  for(const [k, s] of later.entries()){
+    if(expCancel) break;
+    tasks.update('export', null, 'Preparing clip ' + (k + 1) + ' of ' + later.length + ' for the export');
+    const dd = (s.card && s.card.querySelector('.dd')) || { textContent: '' };
+    await makeEditCopy(s, dd, s.facts, s.copyLater, true).catch(() => false); delete s.copyLater;
+  }
   // work interrupted by the background (the browser took the decoder back, or stopped drawing) is not lost: it waits
   // for the page to come back and goes on (twice at most), instead of falling to the slower way or failing
   const paused = async () => { tasks.update('export', null, 'Paused while you were away · it goes on when you come back'); showMsg('Your export paused while Shubix was in the background. It goes on now that you are back.'); await whenVisible(); tasks.update('export', exportP || 0, 'Going on with your export'); };
