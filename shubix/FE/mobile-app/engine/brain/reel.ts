@@ -168,6 +168,7 @@ function makeEditNow(){
     const keys = ES.edit.reduce((n,e)=>n+((e.acc&&e.acc.length)||0), 0);
     // what the AI really decided: the cuts it answered; the rest are the phone's (said, never hidden)
     const answered = ES.plan.filter((_, i) => { const d = ES.director.slots[i]; return d && !d.auto; }).length;
+    if(answered) EH.aiLog('Shubix AI planned your Reel: ' + answered + ' of ' + ES.plan.length + ' shots' + (ES.director.story ? ' — ' + ES.director.story : '') + '.');
     if(!answered) EH.aiStat('Shubix could not plan this Reel. Your Reel uses the phone\'s own smart edit.');
     else EH.aiStat('Shubix planned your Reel' + (ES.director.story ? ': ' + ES.director.story : '') + (answered < ES.plan.length ? ' (' + answered + ' of ' + ES.plan.length + ' shots; the rest from your phone\'s edit)' : '') + (keys ? ' · ' + keys + ' keyframe' + (keys>1?'s':'') + ' on the hits' : '') + (answered < ES.plan.length || ES.director.story ? '' : '.')); }
   // made while the person was in another app (the clips read, the AI's plan arrived): they are told

@@ -106,6 +106,7 @@ function styleEdit(){
 }
 function aiDone(charged, failed){
   const withAi = ES.sources.filter(s=>s.ai), n = withAi.reduce((q,s)=>q+s.ai.frames.length, 0);
+  if(charged !== undefined) EH.aiLog('Shubix AI looked at your ' + withAi.length + ' clip' + (withAi.length>1?'s':'') + ' and scored ' + n + ' moments' + (failed ? ' (' + failed + ' could not be read)' : '') + '.');
   EH.aiStat('Shubix scored ' + n + ' moments in ' + withAi.length + ' clip' + (withAi.length>1?'s':'') + (failed ? ' (' + failed + ' skipped)' : '') + (charged ? ' · ' + charged + ' credit' + (charged>1?'s':'') : ''));
   if(ES.buf && ES.sources.length && !ES.recording) makeEdit();
 }

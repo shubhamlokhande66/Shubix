@@ -1,7 +1,7 @@
 import { AppRegistry, Platform } from "react-native";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
 import { ShubixVideo } from "../modules/shubix-video";
-import { clipDuration, type ProjectClip, type ReelProject } from "@mobile/validations";
+import { clipDuration, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
 import { buildSpeedRampSegments } from "@mobile/video-engine";
 import { tokenStore } from "./device";
 import { API_URL } from "./session";
@@ -180,6 +180,8 @@ export const engine = {
   fresh: () => restart(),
   /** what Shubix AI planned for the Reel the studio holds: its story and a line per shot; null when it did not edit it */
   aiPlan: () => call<AiPlan | null>("aiPlan"),
+  /** what Shubix AI did to the Reel the studio holds (looked at the clips, the pace, the plan, could not), with its time */
+  history: () => call<ChatLine[]>("history"),
   /** everything the studio is doing stops (the person left the screen that asked for it) */
   stop: () => restart(),
   /** the clips' smooth copies the studio made (4K / HDR / 60 fps / a changing frame rate), saved on the phone: the

@@ -2,7 +2,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SongAnalysis } from "../../lib/engine";
-import { ActivityIndicator, Animated, Image, PanResponder, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Animated, Image, PanResponder, Pressable, ScrollView, Switch, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import type { ImagePickerAsset } from "expo-image-picker";
@@ -209,7 +209,7 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart }: { 
 export type ClipOrder = "mix" | "order";
 export type Aspect = "9:16" | "4:5" | "1:1" | "16:9" | "3:4" | "4:3" | "2:1" | "2.35:1";
 export type TalkPace = "tight" | "natural" | "relaxed" | "off";
-export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; under: string };
+export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; under: string; fit: boolean };
 
 /** Add Your Clips: Videos / Photos, the tap-to-add area, the clips as squares (their length, remove), the clip order,
  * a Talking Reel's pauses and music, and the format. */
@@ -244,7 +244,7 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
 }
 
 export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; photos: boolean; states?: (ClipState | undefined)[]; onTab: (photos: boolean) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
-  const words = useStudioText(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3;
+  const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3;
   return (
     <FlowCard>
       {kind !== "talking" && kind !== "copy" && (
@@ -283,6 +283,12 @@ export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove,
         <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks the best moments from all your clips" : "Your clips play one after another, as you added them")}>
           <Segmented small value={settings.order} onChange={(order) => onSettings({ order })} options={[{ value: "mix" as ClipOrder, label: words("Mix all clips") }, { value: "order" as ClipOrder, label: words("In my order") }]} />
         </Row>
+      )}
+      {kind !== "talking" && (
+        <View className="flex-row items-center gap-3">
+          <Text className="flex-1 text-[13px] text-foreground">{words("Make the Reel as long as my clips (the rest of the song is left out)")}</Text>
+          <Switch value={settings.fit !== false} onValueChange={(fit) => onSettings({ fit })} trackColor={{ true: look.accent }} />
+        </View>
       )}
       <Row label={words("Format")}><Segmented small value={settings.aspect} onChange={(aspect) => onSettings({ aspect })} options={(["9:16", "4:5", "1:1", "16:9", "3:4", "4:3", "2:1", "2.35:1"] as Aspect[]).map((a) => ({ value: a, label: a === "9:16" ? words("9:16 Reel") : a }))} /></Row>
     </FlowCard>

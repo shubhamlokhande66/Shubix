@@ -11,7 +11,7 @@ async function chatApp(text){
     const pd = ES.chatPending; ES.chatPending = null; ES.chatReported = pd.key;
     ES.director = { key: pd.key, slots: pd.slots, story: pd.story }; ES.dirCache.set(pd.key, ES.director);
     EH.makeEdit(); await EH.aiApply(pd); try{ EH.applyChatVisualIntent(pd.intent, pd.slots); }catch(e){}
-    applied = !!ES.edit.length; if(applied){ ES.chatMsgs.push({ who: 'ai', text: 'Done ✓' }); EH.saveNow(); }
+    applied = !!ES.edit.length; if(applied){ ES.chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Done ✓' }); EH.saveNow(); }
   }
   const said = ES.chatMsgs.slice(before).filter(m => m.who === 'ai').map(m => m.text).filter(t => t !== 'Done ✓').pop() || '';
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (ES.director && ES.director.story ? ': ' + ES.director.story : '.') : said || (ES.chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
@@ -43,8 +43,8 @@ async function chatPatch(text, n, id){
 async function chatSend(text){
   EH.remakeOk();
   text = String(text || '').trim().slice(0, 300); if(!text || ES.chatWaiting) return;
-  if(EH.aiHeldBack()){ EH.chatSay('me', text); ES.chatMsgs.push({ who: 'me', text }); chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
-  EH.chatSay('me', text); ES.chatMsgs.push({ who: 'me', text });
+  if(EH.aiHeldBack()){ EH.chatSay('me', text); ES.chatMsgs.push({ at: Date.now(), who: 'me', text }); chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
+  EH.chatSay('me', text); ES.chatMsgs.push({ at: Date.now(), who: 'me', text });
   EH.chatInputClear();
   const ready = ES.buf && ES.sources.length && ES.edit.length && !ES.recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
@@ -109,6 +109,9 @@ async function chatSend(text){
     EH.chatFail(ES.dirBusy || ES.paceBusy ? 'Still working on it… it is taking longer than usual. I\'ll keep going; you can ask again in a moment.' : ES.director && ES.director.key === EH.dirKey() ? 'Your Reel is updated.' : 'Shubix could not change the Reel right now. Try again in a moment.'); };
   setTimeout(noAnswer, 120000);
 }
-function chatAnswer(text){ EH.chatClearWait(); EH.chatSay('ai', text); ES.chatMsgs.push({ who: 'ai', text }); ES.chatWaiting = false; EH.chatUiBusy(false); }
-  return { chatApp, chatPatch, chatSend, chatAnswer };
+function chatAnswer(text){ EH.chatClearWait(); EH.chatSay('ai', text); ES.chatMsgs.push({ at: Date.now(), who: 'ai', text }); ES.chatWaiting = false; EH.chatUiBusy(false); }
+/* Shubix AI's history: what it did to this Reel (looked at the clips, chose the pace, planned the shots, could not and left
+ * the phone's edit), kept with the Reel and shown in Ask Shubix (the website's aiLog) */
+function aiLog(text){ const last = ES.chatMsgs[ES.chatMsgs.length - 1]; if(last && last.text === text) return; ES.chatMsgs.push({ at: Date.now(), who: 'ai', text, log: true }); }
+  return { chatApp, chatPatch, chatSend, chatAnswer, aiLog };
 }

@@ -267,6 +267,7 @@ export function createNativeEngine(io: NativeIo) {
     newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
     aiPlan: () => { const d = host.ES.director; return d && d.slots && !d.interim ? { story: d.story || "", lines: [] } : null; },
+    history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),
     undo: () => ({ ok: !!host.brain.histGo(true), state: state() }),
     redo: () => ({ ok: !!host.brain.histGo(false), state: state() }),
     kfSet: (a) => { host.brain.kfSet(a.values); return { ok: true }; },
