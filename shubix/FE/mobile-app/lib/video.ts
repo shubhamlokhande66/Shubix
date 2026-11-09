@@ -2,6 +2,7 @@ import { Paths } from "expo-file-system";
 import { clipDuration, type ProjectClip, type ReelProject } from "@mobile/validations";
 import { ShubixVideo } from "../modules/shubix-video";
 import { ADJ_FRAG, BEAUTY_FRAG, GRADE_FRAG, KEY_FRAG, MAIN_FRAG, PASS_VERT, PIC_FRAG, PIC_FX, TR_DUR } from "@mobile/core/lib/shaders";
+import { STICKERS } from "@mobile/core/lib/stickers";
 import {
   createAndroidRendererAdapter,
   createRenderJobFromProject,
@@ -122,7 +123,7 @@ function nativeSpec(p: ReelProject, width: number, height: number, preview = fal
     audio: p.audioUri ? { uri: p.audioUri, start: p.settings?.start ?? 0, volume: Math.min(1, Math.max(0, p.settings?.musicVolume ?? 1)), fadeIn: p.settings?.musicFadeIn ?? 0, fadeOut: p.settings?.musicFadeOut ?? 0, ducking: p.settings?.musicDucking ?? false, duckLevel: p.settings?.musicDuckLevel ?? 0.35 } : undefined,
     // every setting of a text (style, font, entrance, exit, loop, place, keyframes), drawn as the studio does (StudioTexts.kt)
     studioTexts: true,
-    texts: p.overlays.map((o) => ({ ...o, size: Math.min(120, Math.max(8, o.size ?? 36)) })),
+    texts: p.overlays.map((o) => ({ ...o, size: Math.min(120, Math.max(8, o.size ?? 36)), ...(o.stk && STICKERS[o.stk] ? { stkD: STICKERS[o.stk].d } : {}) })),
   };
 }
 /** a shot's keyframes and speed ramp as the phone's engine accepts them (finite, increasing; keyframes within the

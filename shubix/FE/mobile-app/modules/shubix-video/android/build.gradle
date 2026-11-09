@@ -18,6 +18,7 @@ android {
 def media3 = "1.9.1"
 dependencies {
   implementation "com.facebook.react:react-android" // the JS task that keeps timers running (ShubixWorkService)
+  implementation "androidx.core:core:1.13.1" // PathParser: Shubix stickers drawn from their SVG paths (StudioTexts)
   implementation "androidx.media3:media3-transformer:$media3"
   implementation "androidx.media3:media3-effect:$media3"
   implementation "androidx.media3:media3-common:$media3"

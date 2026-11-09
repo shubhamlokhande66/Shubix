@@ -6,10 +6,12 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.graphics.Typeface
+import androidx.core.graphics.PathParser
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import org.json.JSONArray
@@ -64,6 +66,9 @@ internal class StudioTextRenderer(texts: JSONArray, private val w: Int, private 
     override fun getBitmap(presentationTimeUs: Long): Bitmap = at(offset + presentationTimeUs / 1_000_000.0)
   }
 
+  // Shubix stickers: their SVG path (stkD, sent with the text by video.ts), parsed once each; null when it cannot be read
+  private val stkPaths = HashMap<String, Path?>()
+  private fun stkPath(d: String): Path? = stkPaths.getOrPut(d) { try { PathParser.createPathFromPathData(d).apply { fillType = Path.FillType.EVEN_ODD } } catch (_: Exception) { null } }
   private fun col(s: String, d: Int = Color.WHITE) = try { Color.parseColor(s) } catch (_: Exception) { d }
   private fun dark(c: Int) = Color.red(c) * 0.299 + Color.green(c) * 0.587 + Color.blue(c) * 0.114 < 140
   /** the studio's own font, from the APK (assets/fonts); else the nearest Android family */
@@ -126,7 +131,8 @@ internal class StudioTextRenderer(texts: JSONArray, private val w: Int, private 
     val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = fs; typeface = if (emoji) Typeface.DEFAULT else face(ov.optString("font"), style == "clean"); textAlign = Paint.Align.CENTER; strokeJoin = Paint.Join.ROUND }
     if (blurPx > 0.5f) p.maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
     val lines = if (emoji) listOf(txt) else wrap(p, txt, W * 0.82f); val lh = fs * 1.18f
-    val tw = max(lines.maxOf { p.measureText(it) }, fs * 0.6f); val th = lh * lines.size
+    val stk = if (emoji) ov.optString("stkD").takeIf { it.isNotEmpty() }?.let { stkPath(it) } else null
+    val tw = if (stk != null) fs * 1.1f else max(lines.maxOf { p.measureText(it) }, fs * 0.6f); val th = if (stk != null) fs * 1.1f else lh * lines.size
     val top = H * (220f / 1920f) + th / 2 + fs * 0.3f; val bot = H * (1 - 450f / 1920f) - th / 2 - fs * 0.3f
     var cx = max(tw / 2 + W * 0.05f, min(W - tw / 2 - W * 0.05f, (ov.optDouble("x", 0.5) * W).toFloat()))
     var cy = (max(top, min(bot, (ov.optDouble("y", 0.4) * H).toFloat())) + dy).toFloat()
@@ -151,6 +157,9 @@ internal class StudioTextRenderer(texts: JSONArray, private val w: Int, private 
     if (glitchPx != 0f) { val a0 = p.alpha; p.alpha = 153; fill(Color.rgb(255, 42, 109), glitchPx, 0f); fill(Color.rgb(5, 217, 232), -glitchPx, 0f); p.alpha = a0 }
     val contrast = if (dark(color)) Color.WHITE else Color.rgb(17, 17, 17)
     when {
+      stk != null -> { val k = fs * 1.1f / 100f; g.scale(k, k); g.translate(-50f, -50f)   // as the website: a white border (dark on a white sticker), then the shape
+        val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 9f; strokeJoin = Paint.Join.ROUND; this.color = if (color == Color.WHITE) Color.rgb(17, 17, 17) else Color.WHITE; setShadowLayer(fs * 0.12f / k, 0f, 0f, Color.argb(89, 0, 0, 0)) }
+        g.drawPath(stk, sp); g.drawPath(stk, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; this.color = color }) }
       emoji -> fill(color, 0f, 0f)
       style == "box" || style == "tag" -> { val tag = style == "tag"; val pw = tw + fs * (if (tag) 1.05f else 0.6f); val ph = th + fs * 0.36f; val r = if (tag) fs * 0.5f else fs * 0.2f
         val bp = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }; g.drawRoundRect(RectF(-pw / 2, -ph / 2, pw / 2, ph / 2), r, r, bp)
