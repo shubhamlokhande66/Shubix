@@ -2090,12 +2090,13 @@ function resumeSong(){
   void loadMusic(lastSong, song && song.file === lastSong && song.r ? { r: song.r } : null);
 }
 // Next after a Cancel: the work again (true: Next waits for it), or not
+// '' nothing was stopped; 'go' Continue (reading again: Generate goes on by itself when it is done); 'stay' Not now / ✕ / Discard
 async function askNotDone(){
-  if(!songCancelled && !clipsStopped) return false;
+  if(!songCancelled && !clipsStopped) return '';
   const v = await askCredits({ title: 'Analysis not done', text: songCancelled ? "Your song's beat check did not finish." : "Your clips' analysis did not finish.", bal: null, ok: 'Continue', no: 'Not now', extra: 'Discard Reel' });
   if(v === 'extra') void cancelReel();
-  else if(v === true){ if(songCancelled) resumeSong(); if(clipsStopped) queueClips(unreadClips()); }
-  return true;
+  else if(v === true){ if(songCancelled) resumeSong(); if(clipsStopped) queueClips(unreadClips()); return 'go'; }
+  return 'stay';
 }
 async function upsell(){
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
