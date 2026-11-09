@@ -176,9 +176,6 @@ function makeEditNow(){
   EH.tellReadyIfAway();
   EH.captureLoop(); ES.editGen++;
   EH.paceMaybe(); EH.directorMaybe();
-  // nothing of Shubix AI's is running now (the plan was final, failed or came from the cache): the popup never stays on
-  // "…planning the shots…" (a style changed on a made Reel stayed there for ever)
-  EH.aiIdleEnd();
   EH.chatReportAuto();
   EH.copyLookSoon();
 }

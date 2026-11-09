@@ -26,7 +26,7 @@ export function createHost(initial, io = {}){
   }
   // Shubix AI: its calls, its question, its words and each clip's frames come from the app
   const aiCache = new Map();
-  Object.assign(values, { IN_APP: true, aiCache, apiFetch: io.apiFetch, askCredits: io.ask, aiFrames: io.aiFrames, ...(io.stat ? { aiStat: (t, e) => { ES.aiAtWork = !!t && /…$/.test(t); io.stat(t, e); } } : {}), aiStatText: () => '',
+  Object.assign(values, { IN_APP: true, aiCache, apiFetch: io.apiFetch, askCredits: io.ask, aiFrames: io.aiFrames, ...(io.stat ? { aiStat: io.stat } : {}), aiStatText: () => '',
     keepAiPick: (fp, ai) => aiCache.set(fp, ai), aiRestore: (src) => { const c = aiCache.get(brain.fpOf(src)); if(c && Array.isArray(c.frames)) src.ai = c; },
     aiSpent: () => io.spent && io.spent(), creditsChanged: () => {}, newId: () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36), openPricing: () => {} });
   ES.aiStopper = new AbortController();

@@ -1,5 +1,4 @@
 import { AppRegistry, Platform } from "react-native";
-import { reportProblem } from "./errors";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
 import { ShubixVideo } from "../modules/shubix-video";
 import { clipDuration, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
@@ -44,7 +43,7 @@ const files = ShubixVideo ? ShubixVideo.fileServer(API_URL) : null;
 /** whether this phone can make Reels with the studio (the app's own build, not Expo Go or the web) */
 export const engineOn = Platform.OS !== "web" && !!files;
 
-const native = files ? createNativeEngine({ report: reportProblem,
+const native = files ? createNativeEngine({
   base: `http://127.0.0.1:${files.port}`, key: files.key, fetch: nativeFetch as never, token: () => tokenStore.get(),
   ask: async (q) => { const v = await askAction({ title: q.title, body: [q.text, q.bal == null ? "" : `You have ${q.bal} credits`].filter(Boolean).join(" · "), list: q.list, ok: q.ok, ...(q.no ? { cancel: q.no } : {}) }); return v === 0 ? true : v === 1 && q.no ? false : null; },
   stat: (text, err) => { if (!text) return tasks.clear("ai"); if (text.endsWith("…")) { tasks.start("ai", "ai", "Shubix at work", text.slice(0, -1)); return; } if (err) tasks.fail("ai", text); else tasks.done("ai", text); },
@@ -168,8 +167,6 @@ export const engine = {
   cancel: () => call<{ ok: boolean }>("cancel"),
   /** Next after the clips: Shubix AI's question, then its work; false when the person closed the question or cancelled */
   ai: () => call<{ went: boolean }>("ai").then((r) => r.went),
-  /** Make Reel pressed: Shubix AI starts on the clips read so far and gets the rest as they are read */
-  aiEarly: () => call<{ ok: boolean }>("aiEarly"),
   /** Make new Reel: charged as a new Reel; Keep old Reel: the studio holds that Reel again */
   newReel: () => call<{ ok: boolean }>("newReel"),
   keptOldReel: () => call<{ ok: boolean }>("keptOldReel"),

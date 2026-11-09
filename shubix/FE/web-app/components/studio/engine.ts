@@ -649,11 +649,6 @@ let beatsBusy = false;
 // beats are good, and the person must be able to make the Reel at all
 const AI_BEATS_OFF = 'brs-ai-beats-off';
 if(IOS && lifeBefore && lifeBefore.stage === 'checking beats' && Date.now() - lifeBefore.at < 10*60e3) try{ localStorage.setItem(AI_BEATS_OFF, String(Date.now())); }catch(e){}
-// the same for the 4K / HDR clips played as they are (copyLater): after any reload of the studio on this iPhone, their copies
-// are made when they are added again, for a week (less memory, as before)
-const COPY_EARLY = 'brs-copy-early';
-if(IOS && lifeBefore && Date.now() - lifeBefore.at < 10*60e3 && location.pathname !== '/engine') try{ localStorage.setItem(COPY_EARLY, String(Date.now())); }catch(e){}
-function copyEarly(){ try{ return Date.now() - (+localStorage.getItem(COPY_EARLY) || 0) < 7*864e5; }catch(e){ return true; } }
 function aiBeatsOff(){ try{ return Date.now() - (+localStorage.getItem(AI_BEATS_OFF) || 0) < 7*864e5; }catch(e){ return false; } }
 async function checkBeatsWithAi(token){
   if(!aiBeats || !song) return;
@@ -737,10 +732,10 @@ async function clipReader(src, maxSide){
   }
 }
 
-async function scanMotion(src, onProgress, faces, pics){
+async function scanMotion(src, onProgress, faces){
   // read the clip's frames (see clipReader) and compare small frames: how much moves, where it moves, how bright.
   // faces (a faceScanner): its frames come from this same pass, so the clip is decoded once (an iPhone)
-  const rd = await clipReader(src, faces || pics ? 480 : 256);   // Shubix AI's pictures (pics) are 384 wide: read at 480 if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
+  const rd = await clipReader(src, faces ? 480 : 256); if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
   const c = document.createElement('canvas'); c.width=SW; c.height=SH; const g = c.getContext('2d', {willReadFrequently:true});
   const c2 = document.createElement('canvas'); c2.width=128; c2.height=72; const g2 = c2.getContext('2d', {willReadFrequently:true});
   let prev = null; const out = [], hists = [], lums = [];
@@ -775,7 +770,7 @@ async function scanMotion(src, onProgress, faces, pics){
   try{
     let k = 0;
     let fi = 0; const half = step/2;
-    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img){ grab(img, t); if(pics) pics.take(img, t, out[out.length-1]); } if(k % 8 === 0){ onProgress(t/src.dur); await new Promise(r=>setTimeout(r,0)); }
+    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img) grab(img, t); if(k % 8 === 0){ onProgress(t/src.dur); await new Promise(r=>setTimeout(r,0)); }
       // the faces' times this frame stands for (within half a step: at most 0.1 s off)
       if(faces && img) while(fi < faces.ts.length && faces.ts[fi] <= t + half){ if(faces.ts[fi] >= t - half && !(await faces.each(img, faces.ts[fi]))){ faces = null; break; } fi++; }
     }
@@ -1034,10 +1029,10 @@ function queueClips(jobs){
   if(!pending){ batchN = 0; batchDone = 0; }
   batchN += jobs.length; pending += jobs.length; updateQ();
   tasks.start('clips', 'clips', 'Reading your clips', 'Finding the best moments in ' + batchN + ' clip' + (batchN > 1 ? 's' : ''));
-  jobs.forEach(job=>{ addQueue = addQueue.then(async ()=>{
-    if(!clipsStopped){ await readVideo(job); await aiFramesNow(job); return; }
+  jobs.forEach(job=>{ addQueue = addQueue.then(()=>{
+    if(!clipsStopped) return readVideo(job);
     job.unread = true; const dd = job.card && job.card.querySelector('.dd'); if(dd) dd.textContent = 'Not analysed yet';
-  }).catch(()=>{}).then(()=>{ pending--; batchDone++; updateQ(); aiFeed(); }); });
+  }).catch(()=>{}).then(()=>{ pending--; batchDone++; updateQ(); }); });
   addQueue = addQueue.then(()=>{ if(!pending) finishAdding(); });
 }
 function addVideos(files, restored = false){
@@ -1313,9 +1308,7 @@ async function compressHighResolutionPreview(src, dd){
   const facts = { size: src.file.size, width: src.w, height: src.h, duration: src.dur, fps: probe ? probe.fps : 0, hdr: !!(probe && probe.hdr), tenBit: !!(probe && probe.tenBit), chroma422: !!(probe && probe.chroma422), vfr: !!(probe && probe.vfr) };
   src.facts = { ...facts, decodes: !!(probe && probe.decodes) };
   const isMov = /\.mov$/i.test(src.name || src.file.name || '') || /quicktime/i.test(src.file.type || '');
-  // an iPhone plays its own camera's .mov itself: no light copy for it there (28 clips meant 28 copies made in the browser,
-  // the long 'creating a copy' wait); a heavy clip (4K, HDR, 10-bit, 60 fps) still gets its edit copy for the export
-  const plan=previewProxyPlan(facts, isMov && !IOS);
+  const plan=previewProxyPlan(facts, isMov);
   const heavy = !!(plan && plan.forExport);
   // Reuse the copy made for this original file when a saved draft is reopened.
   const cached = await keptGet('p:', src.file);
@@ -1332,9 +1325,6 @@ async function compressHighResolutionPreview(src, dd){
     return;
   }
   if(heavy){
-    // an iPhone plays and reads its own 4K / HDR clip itself (Safari decodes it): its edit copy is made at export instead
-    // (runExport), as the Android app works, so choosing the clips is not a long wait for copies
-    if(IOS && probe && probe.decodes && !copyEarly()){ src.copyLater = plan; src.proxyStatus = 'Copy made at export'; updateClipHoverInfo(src); return; }
     if(!(await makeEditCopy(src, dd, src.facts, plan, true)) && !src.removed) editCopyFailNote(src, src.facts);
     return;
   }
@@ -1438,9 +1428,8 @@ async function readVideo(src){
       const doFaces = () => scanFaces(src, p=>{ pf = p; show(); }).then(()=>{ src.readMs.faces = Math.round(performance.now()-tq); });
       // two decoders at once is ~40% faster, but on an iPhone it doubles the memory of a 4K video: one after the other there
       if(IOS){   // one decode of the clip for motion and faces: half the work and the memory of two decoders
-        const fsc = faceScanner(src), pics = aiOn && kind !== 'talk' && !src.ai ? aiPicker(src) : null;
-        await scanMotion(src, p=>{ pm = pf = p; show(); }, fsc, pics);
-        if(pics && !src.removed){ const f = pics.done(); if(f) src.aiFramesMade = f; } src.readMs.motion = src.readMs.faces = Math.round(performance.now()-tq);
+        const fsc = faceScanner(src);
+        await scanMotion(src, p=>{ pm = pf = p; show(); }, fsc); src.readMs.motion = src.readMs.faces = Math.round(performance.now()-tq);
         if(!fsc) src.faces = src.faces || [];
       } else await Promise.all([doMotion(), doFaces()]);
       if(!src.removed) scanPut(src);
@@ -2141,9 +2130,6 @@ const aiCache = new Map();
 const fpOf = src => [src.name, src.file ? src.file.size : 0, src.file ? src.file.lastModified : 0].join('|');
 function aiStat(t, err){ const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
   if(!t) tasks.clear('ai'); else if(/…$/.test(t)) tasks.start('ai', 'ai', 'Shubix at work', t.replace(/…$/, '')); else if(err) tasks.fail('ai', t); else if(tasks.has('ai')) tasks.done('ai', t); el.style.color = err ? 'var(--drop)' : ''; }
-// nothing of Shubix AI's is running any more (a plan that was final, failed, came from the cache, or a pace with no
-// answer): the popup never stays on "…" (a style changed on a made Reel stayed on "planning the shots" for ever)
-function aiIdleEnd(){ if(/…$/.test($('aistat').textContent || '') && !aiBusy && !paceBusy && !dirBusy && !pending && !chatWaiting && !mixStore().busy) aiStat(''); }
 // The AI's view of footage [a,b]: frames nearby (same scene only), weighted by distance
 // what a clip is about: the vision AI's subjects seen in at least a third of its frames (one stray frame says little)
 function aiTags(src){
@@ -2173,36 +2159,9 @@ function aiBonus(ai, slot, last){
   if(last && role!=='ending') fit += 0.3*(ai.roles.ending || 0);
   return ai.conf * (2.2*(ai.score - 0.5) + fit);
 }
-const aiCount = (src, many) => many ? Math.max(2, Math.min(3, Math.round(src.dur/4))) : Math.max(3, Math.min(5, Math.round(src.dur/3)));
-// an iPhone: Shubix AI's pictures from the clip's one reading (scanMotion), not a second decode of it. The clip in n parts,
-// as aiTimes: the 2 best moments of each part's middle are kept small; once the scenes are known, the best one not on a
-// scene change is the part's picture (none: aiFrames reads the clip as before)
-function aiPicker(src){
-  const n = aiCount(src, sources.filter(x => !x.removed).length + pending > 15), parts = Array.from({ length: n }, () => []);
-  const sc = Math.min(1, 384/Math.max(src.w, src.h)), w = Math.max(2, Math.round(src.w*sc)), h = Math.max(2, Math.round(src.h*sc));
-  return {
-    take(img, t, s){
-      const k = Math.min(n-1, Math.floor(t*n/src.dur)), a = src.dur*k/n, b = src.dur*(k+1)/n, L = parts[k];
-      if(!s || t < a+(b-a)*0.2 || t > a+(b-a)*0.8) return;
-      const v = s.sh * (s.b > 0.08 ? 1 : 0.2); if(L.length >= 2 && v <= L[1].v) return;
-      const c = L.length >= 2 ? L.pop().c : document.createElement('canvas'); c.width = w; c.height = h;
-      try{ c.getContext('2d').drawImage(img, 0, 0, w, h); }catch(e){ return; }
-      L.push({ t, v, c }); L.sort((x, y) => y.v - x.v);
-    },
-    done(){
-      const out = [];
-      for(const L of parts){ const p = L.find(x => !crossesScene(src, x.t-0.2, x.t+0.2));
-        if(p){ const url = p.c.toDataURL('image/jpeg', AI_JPEG); out.push({ t: +Math.min(src.dur-0.05, p.t).toFixed(2), image: url.slice(url.indexOf(',')+1) }); }
-        L.forEach(x => { x.c.width = x.c.height = 0; }); }
-      return out.length === n ? out : null;
-    } };
-}
-// the pictures' JPEG quality: Shubix AI sees them small ("low" detail), so a lighter file sends faster with the same answer
-const AI_JPEG = 0.62;
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
-  // many clips: fewer pictures of each (2-3, not 3-5), so Shubix AI has less to read and costs less
-  const n = aiCount(src, sources.filter(x => !x.removed).length > 15), out = [];
+  const n = Math.max(3, Math.min(5, Math.round(src.dur/3))), out = [];
   for(let k=0;k<n;k++){
     const a = src.dur*k/n, b = src.dur*(k+1)/n, c0 = a+(b-a)*0.2, c1 = a+(b-a)*0.8;
     let best = null, bs = -1;
@@ -2219,7 +2178,7 @@ async function aiFrames(src){
   const out = [], ts = aiTimes(src).slice().sort((a,b)=>a-b);
   let k = 0;
   try{ for await (const v of rd.frames(ts)){ const t = ts[k++]; if(!v) continue;
-    g.drawImage(v, 0, 0, w, h); const url = c.toDataURL('image/jpeg', AI_JPEG);
+    g.drawImage(v, 0, 0, w, h); const url = c.toDataURL('image/jpeg', 0.72);
     out.push({ t: +t.toFixed(2), image: url.slice(url.indexOf(',')+1) });
   } } finally { rd.close(); }
   return out;
@@ -2235,45 +2194,20 @@ function aiRestore(src){
 let aiHeld = location.pathname.startsWith('/create');
 // …and the API (asleep after a quiet while: 20-30 s to wake) is woken now, so Generate does not wait for it
 if(aiHeld) fetch('/api/health').catch(() => {});
-const clipRead = s => Array.isArray(s.samples) && s.samples.length > 0;
-// Shubix AI goes on as each clip is read, once the Reel is agreed to (Make Reel: aiEarly or upsell)
-const aiPiping = () => aiOn && kind !== 'talk' && !aiHeld && aiReelOk() && !aiHeldBack();
-function aiFeed(){ if(aiPiping()) aiRun(); }
-// an iPhone: the clip's pictures for Shubix AI right after it is read, in the same queue (never two decoders at once)
-async function aiFramesNow(src){
-  if(!IOS || !aiPiping() || src.ai || src.aiFramesMade || src.removed || !clipRead(src)) return;
-  try{ src.aiFramesMade = await aiFrames(src); }catch(e){ delete src.aiFramesMade; }
-}
-// Make Reel pressed while the clips are still read: the price was on the screen (that is the answer, no question), and
-// Shubix AI starts on the clips read so far
-async function aiEarly(){
-  if(!aiOn || aiLocked || !location.pathname.startsWith('/create')) return;
-  aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
-  if(!aiReelOk()){ generatePressed = true; const go = await aiGate(true).finally(() => { generatePressed = false; }); if(!go) return; }
-  void hearSong();   // the song is heard while the clips are read
-  aiRun(); if(!pending && buf && sources.length) paceMaybe();
-}
 async function aiRun(){
   if(!aiOn || aiBusy || !sources.length || aiHeldBack()) return;
   if(!aiReelOk()){ aiBusy = true; const go = await aiGate(); aiBusy = false; if(!go) return; }
   sources.forEach(s=>{ if(!s.ai) aiRestore(s); });
-  // as the clips are read (aiFeed): those read so far go 5 at a time while the rest are read; the last ones when reading is
-  // done; the Reel's plan (aiDone) only when every clip is read and seen. An iPhone takes the pictures in the reading queue
-  // (one decoder at a time): here it only sends the ones ready.
-  const still = pending > 0;
-  const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed && clipRead(s) && (!IOS || !still || s.aiFramesMade));
-  if(!need.length){ if(!still) aiDone(); return; }
-  if(still && need.length < 5) return;
+  const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
+  if(!need.length){ aiDone(); return; }
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
   let charged = 0, failed = 0;
   try{
     const jobs = [];
     for(const [i, s] of need.entries()){ if(aiStopper.signal.aborted) return; aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); const frames = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s)); if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
     aiStat('Shubix is choosing the best moments of your clips…');
-    // 5 clips a call, two calls at once: each call stays small (one call of 12 clips, up to 60 pictures, timed out on an iPhone
-    // with 28 clips), and Retry sends only the clips not answered yet (the answered ones are kept)
-    const parts = []; for(let k = 0; k < jobs.length; k += 5) parts.push(jobs.slice(k, k + 5));
-    const send = async part => {
+    for(let k=0; k<jobs.length; k+=12){
+      const part = jobs.slice(k, k+12);
       const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
@@ -2285,17 +2219,15 @@ async function aiRun(){
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = fpOf(j.src); aiCache.set(fp, j.src.ai);
         try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){} }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; } }
-    };
-    for(let k = 0; k < parts.length; k += 2) await Promise.all(parts.slice(k, k + 2).map(send));
+    }
     aiBusy = false;
-    if(pending) return;   // clips still being read: aiFeed sends them, and the plan waits for the last one
-    if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) return aiRun();   // clips added meanwhile
+    if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
     aiDone(charged, failed);
   }catch(e){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => { delete s.aiFramesMade; });
-    if(aiOn){ console.warn('AI picks failed:', e); aiDown(e, 'looking at the clips'); return; }   // no Reel from the phone's own edit (aiDown)
+    if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
     aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
   }
@@ -2734,25 +2666,8 @@ function applyDirectorStyle(){
     if(d.keys && d.keys.length){ asked += d.keys.length;
       for(const k of d.keys){ if(ACCENTS.includes(k.do)){ s.acc.push({at: Math.min(Math.max(0.04, k.at), Math.max(0.04, len-0.05)), do:k.do}); used++; } else fixed++; } }
   });
-  aiRestraint();
   finishTransitions();
   return {used, fixed, asked};
-}
-// The AI's plan, kept as a good editor's when the creator asked for nothing (no words, no chat, no copied Reel): most shots
-// clean, a zoom or a camera move on at most a third of them (drops first) and never two zooms in a row, a key only on a
-// drop or a hit (one a shot, 2 s apart). Without it every shot zoomed and bobbed. What the creator asks is followed as asked.
-function aiRestraint(){
-  if(wish || chatN || mode === 'copy') return;
-  const P = plan, most = Math.max(1, Math.ceil(P.length / 3)), keep = new Set();
-  const moves = s => ZOOM_FX.has(s.efx) || MOVE_FX.has(s.efx) || !!(s.ak && s.ak.length);
-  const order = P.map((s, i) => i).sort((a, b) => (P[b].type === 'drop') - (P[a].type === 'drop') || a - b);
-  for(const i of order) if(i > 0 && keep.size < most && moves(P[i])) keep.add(i);
-  let prevZoom = false, lastAcc = -99;
-  P.forEach((s, i) => {
-    if(i > 0 && moves(s) && (!keep.has(i) || (prevZoom && (ZOOM_FX.has(s.efx) || (s.ak && s.ak.length))))){ if(ZOOM_FX.has(s.efx) || MOVE_FX.has(s.efx)) s.efx = 'none'; s.ak = []; }
-    prevZoom = i === 0 || ZOOM_FX.has(s.efx) || !!(s.ak && s.ak.length);
-    if(s.acc && s.acc.length){ if((s.type === 'drop' || s.type === 'hit') && s.start - lastAcc >= 2){ s.acc = s.acc.slice(0, 1); lastAcc = s.start; } else s.acc = []; }
-  });
 }
 // One last pass over every cut: the AI's transitions all stay (shortened to fit a short shot); the rules' own special
 // transitions stay within their ration, finish well inside both shots, and the same one never runs twice in a row.
@@ -3009,17 +2924,12 @@ const dirCache = new Map();
  * 1 s then 2 s apart; after the third it fails and the person gets the popup (Retry / Close). A real "no" (no credits, not
  * allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
-const report = (kind, msg) => { try{ window.__shubixReport && window.__shubixReport(kind, String(msg).slice(0, 380)); }catch(e){} };   // Admin → Errors
-const device = () => (IOS ? 'iPhone' : /Android/i.test(navigator.userAgent) ? 'Android' : 'computer') + ' · ' + sources.length + ' clips';
-let lastApiFail = '';   // why the last call failed (for Shubix AI's report)
 async function apiFetch(url, opts = {}){
-  const t0 = Date.now(), path = String(url).split('?')[0];
   for(let n = 1; ; n++){
     let r = null;
     try{ r = await fetch(url, opts); if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r; }
     catch(e){ if(e && e.name === 'AbortError') throw e; }
-    if(n >= 3){ lastApiFail = (r ? r.status : 'no answer') + ' ' + path; report('api', lastApiFail + ' after 3 tries, ' + Math.round((Date.now() - t0)/1000) + ' s · ' + device());
-      if(r) return r; throw new Error(TEAM_MSG); }
+    if(n >= 3){ if(r) return r; throw new Error(TEAM_MSG); }
     await new Promise(ok => setTimeout(ok, 1000*n));
     if(opts.signal && opts.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
   }
@@ -3027,9 +2937,8 @@ async function apiFetch(url, opts = {}){
 // Shubix AI could not do this Reel after that minute: the Reel waits (not shown, played or exported), a popup says so,
 // and its button asks Shubix again. The server gives back any credits taken for it.
 let aiDownAt = '';
-function aiDown(e, step){
+function aiDown(){
   if(!aiOn) return;
-  report('ai', 'Shubix AI not available at ' + (step || '?') + ': ' + String(e && e.message || e || lastApiFail || '?').slice(0, 200) + ' · ' + device());
   const id = reelIdNow(), go = $('aiaskgo'); aiGaveUp = id; aiStat(TEAM_MSG); chatFail(TEAM_MSG);   // (nothing is waited for any more)
   root.classList.add('aineed'); go.dataset.down = '1'; go.dataset.low = ''; delete go.dataset.change;
   $('aiaskt').textContent = 'Shubix AI is not available right now'; $('aiaskp').textContent = TEAM_MSG; go.textContent = 'Try again';
@@ -3110,9 +3019,7 @@ function paceFromSong(sp){
 function paceMaybe(){
   if(keepSaved || aiHeldBack()) return;
   if(paceBusy || !paceWanted() || !aiReelOk() || refReading) return;
-  // after the AI has seen what the clips are about; after Make Reel (aiPiping) as soon as every clip is read, beside the AI's
-  // last clips (the song decides the pace; the plan still waits for every clip to be seen)
-  if(pending || (!aiPiping() && sources.some(s=>!s.ai && !s.aiFailed && !s.removed))) return;
+  if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) return;   // after the AI has seen what the clips are about
   const key = paceKey();
   if(paceCache.has(key)){ pacing = paceCache.get(key); makeEdit(); return; }
   const sp = songPace.get(paceSongKey()), p = sp && paceFromSong(sp);
@@ -3129,16 +3036,12 @@ function songSample(M, sr, from, secs){
   return new Uint8Array(dv.buffer);
 }
 // Shubix AI hears 30 s of the part the Reel uses, once per song and part; a failure never stands in the way of the Reel
-// (one request at a time: a second caller waits for the same answer)
-let songHeard = '', songFeel = null, songHearing = null;
-function hearSong(){
-  if(!song || !song.mono || kind === 'talk') return Promise.resolve();
-  const key = song.key + '|' + Math.round(secStart || 0); if(songHeard === key) return songHearing || Promise.resolve();
-  const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return Promise.resolve();
+let songHeard = '', songFeel = null;
+async function hearSong(){
+  if(!song || !song.mono || kind === 'talk') return;
+  const key = song.key + '|' + Math.round(secStart || 0); if(songHeard === key) return;
+  const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return;
   songHeard = key; songFeel = null;
-  return songHearing = songHear(body);
-}
-async function songHear(body){
   const tm = timeoutSignal(20000);
   try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); songFeel = await r.json(); }
@@ -3178,7 +3081,7 @@ async function paceRun(key){
     paceBusy = false; if(buf && sources.length && !recording) directorMaybe();
     // the director did not start (already planned, or no edit yet): the line must not stay on "choosing the pace…"
     if(!dirBusy && /…$/.test($('aistat').textContent || '')) aiStat('Your Reel keeps the song\'s own pace.');
-  }finally{ paceBusy = false; tm.done(); aiIdleEnd(); }
+  }finally{ paceBusy = false; tm.done(); }
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
@@ -3215,14 +3118,14 @@ async function directorRun(key){
   }catch(e){
     dirFailedKey = key;
     const back = aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(e, 'the plan (late)'); }
+    if(late){ aiDown(); }
     else {
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
-      if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown(tm.timedOut() ? 'timed out after 4 min' : e, 'the plan');
+      if(!(e && e.name==='AbortError') || tm.timedOut()) aiDown();
     }
-  }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); aiIdleEnd(); }
+  }finally{ clearTimeout(soft); if(!late) dirBusy = false; tm.done(); }
 }
 // is the studio's AI on? The administrator decides (Administration -> Features -> AI director) and the server has an AI
 // provider; people never choose: when it is on, every Reel is edited by the AI. Asked at the start, and again when the
@@ -3652,9 +3555,6 @@ function makeEditNow(){
   if(isHidden() && !aiBusy && !dirBusy && !paceBusy && readyToldGen !== reelIdNow()){ readyToldGen = reelIdNow(); void notifyDone('Your Reel is ready', 'Tap to preview it in Shubix', 'shubix-reel'); }
   captureLoop(); editGen++;
   paceMaybe(); directorMaybe();
-  // nothing of Shubix AI's is running now (the plan was final, failed or came from the cache): the popup never stays on
-  // "…planning the shots…" (a style changed on a made Reel stayed there for ever)
-  aiIdleEnd();
   chatReportAuto();
   if(look === 'copy' && refProfile) setTimeout(()=>{ copyLook(); }, 0);
 }
@@ -4042,16 +3942,13 @@ const playerLoaded = v => !!v.getAttribute('src');
 const PLAYERS_MAX = IOS ? 4 : 8, PLAYER_KEEP_MS = 4000;
 function playersAround(i){
   const c = playing || starting ? curIdx : i, keep = new Set(), now = Date.now();
-  // an iPhone playing original 4K / HDR clips (copyLater): only this shot and the next one hold a video, and nothing is kept
-  // longer (each such player holds 100-200 MB there)
-  const tight = IOS && sources.some(s => s.copyLater && !s.edFile), max = tight ? 2 : PLAYERS_MAX, keepMs = tight ? 0 : PLAYER_KEEP_MS;
-  for(let k = Math.min(c, i) - (tight ? 0 : 1); k <= Math.max(c, i) + (tight ? 1 : 2); k++) if(edit[k]) keep.add(edit[k].el);
+  for(let k = Math.min(c, i) - 1; k <= Math.max(c, i) + 2; k++) if(edit[k]) keep.add(edit[k].el);
   const drop = v => { v.pause(); v.removeAttribute('src'); v.load(); };
   const loaded = [];
   for(const s of sources) for(const v of s.els || []) if(playerLoaded(v)){
-    if(!keep.has(v) && now - (v._used || 0) > keepMs) drop(v); else loaded.push(v); }
+    if(!keep.has(v) && now - (v._used || 0) > PLAYER_KEEP_MS) drop(v); else loaded.push(v); }
   const v = edit[i].el; v._used = now; if(!playerLoaded(v) && v._url){ v.src = v._url; loaded.push(v); }
-  loaded.filter(x => x !== v).sort((a, b) => (keep.has(a) ? 1 : 0) - (keep.has(b) ? 1 : 0) || (a._used || 0) - (b._used || 0)).slice(0, Math.max(0, loaded.length - max)).forEach(drop);   // (the shot itself is never let go)
+  loaded.filter(x => !keep.has(x)).sort((a, b) => (a._used || 0) - (b._used || 0)).slice(0, Math.max(0, loaded.length - PLAYERS_MAX)).forEach(drop);
 }
 // quick: Play is waiting. Then the picture gets at most a moment: while clips are being read the phone's video decoder is
 // busy (an iPhone may not answer at all), and the song must start anyway; the shot catches up while it plays.
@@ -6231,15 +6128,6 @@ async function runExport(toCloud){
   const awake = holdAwake();
   await holdScreen();
   expCancel = false;
-  // iPhone: the 4K / HDR clips' edit copies, put off until now (copyLater: the clips were chosen without that wait); a copy
-  // that cannot be made leaves the original, as before
-  const later = sources.filter(s => s.copyLater && !s.edFile && !s.removed);
-  for(const [k, s] of later.entries()){
-    if(expCancel) break;
-    tasks.update('export', null, 'Preparing clip ' + (k + 1) + ' of ' + later.length + ' for the export');
-    const dd = (s.card && s.card.querySelector('.dd')) || { textContent: '' };
-    await makeEditCopy(s, dd, s.facts, s.copyLater, true).catch(() => false); delete s.copyLater;
-  }
   // work interrupted by the background (the browser took the decoder back, or stopped drawing) is not lost: it waits
   // for the page to come back and goes on (twice at most), instead of falling to the slower way or failing
   const paused = async () => { tasks.update('export', null, 'Paused while you were away · it goes on when you come back'); showMsg('Your export paused while Shubix was in the background. It goes on now that you are back.'); await whenVisible(); tasks.update('export', exportP || 0, 'Going on with your export'); };
@@ -6416,8 +6304,6 @@ function setMode(m){ mode = m; const shown = m === 'copy' && silentStyle() ? ref
 $('mode').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b || recording) return; remakeOk();
   if(b.dataset.m === 'copy' && (!refProfile || silentStyle())){ $('reffile').click(); return; }
   if(silentStyle() && mode === 'copy' && b.dataset.m === (refProfile.shown || 'auto')) return;   // already what they see
-  // a style chosen on a made Reel is the creator's own ask: Shubix AI plans it again (the same Reel: no new credits)
-  if(b.dataset.m !== mode){ regenOk = true; dirFailedKey = ''; paceFailedKey = ''; }
   setMode(b.dataset.m); });
 $('cover').onclick = async () => {
   // cover: the best drop shot (or the hook) with the hook text, full frame
@@ -7876,7 +7762,7 @@ listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
 root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
-  snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry, aiEarly, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
+  snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
   get work(){ return { song: !!song || kind === 'talk', songReady: kind === 'talk' || !!(song && buf && song.r), beats: beatsBusy, pending, clips: sources.length, shots: edit.length, ai: aiBusy, dir: dirBusy, pace: paceBusy,
     // Shubix AI is on for this Reel and its plan has not come yet (nor failed): the Reel is not final (the phone app waits)
     aiWait: !!(aiOn && !planIsFinal() && !aiHeldBack() && aiReelOk() && aiGaveUp !== reelIdNow() && edit.length && !(director && director.key === dirKey() && !director.interim) && dirFailedKey !== dirKey()), speech: speechBusy, exporting: exportBusy, exportP }; }, shotExtract: () => edit.length && extractAudio(edit[segAt(pos)].src), get au(){ return au; }, setAudioMix: async patch => { auSet(patch); clipMixKey = ''; await ensureMix(); return au; }, remix: remixNow, ensureMix, get canUndo(){ return hist.u.length > 0; }, get layers(){ return layers; }, get lmedia(){ return lmedia; }, layerAdd, layerSelect: lySelect, layerSet: lySet, layerDelete: lyDelete, get ttsVoices(){ return tts ? tts.voices : []; }, addTts: addTtsAtPlayhead, clearTts, setCaptions, setCaptionStyle, get canRedo(){ return hist.r.length > 0; },

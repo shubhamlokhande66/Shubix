@@ -274,25 +274,8 @@ function applyDirectorStyle(){
     if(d.keys && d.keys.length){ asked += d.keys.length;
       for(const k of d.keys){ if(EH.ACCENTS.includes(k.do)){ s.acc.push({at: Math.min(Math.max(0.04, k.at), Math.max(0.04, len-0.05)), do:k.do}); used++; } else fixed++; } }
   });
-  aiRestraint();
   EH.finishTransitions();
   return {used, fixed, asked};
-}
-// The AI's plan, kept as a good editor's when the creator asked for nothing (no words, no chat, no copied Reel): most shots
-// clean, a zoom or a camera move on at most a third of them (drops first) and never two zooms in a row, a key only on a
-// drop or a hit (one a shot, 2 s apart). Without it every shot zoomed and bobbed. What the creator asks is followed as asked.
-function aiRestraint(){
-  if(ES.wish || ES.chatN || ES.mode === 'copy') return;
-  const P = ES.plan, most = Math.max(1, Math.ceil(P.length / 3)), keep = new Set();
-  const moves = s => EH.ZOOM_FX.has(s.efx) || EH.MOVE_FX.has(s.efx) || !!(s.ak && s.ak.length);
-  const order = P.map((s, i) => i).sort((a, b) => (P[b].type === 'drop') - (P[a].type === 'drop') || a - b);
-  for(const i of order) if(i > 0 && keep.size < most && moves(P[i])) keep.add(i);
-  let prevZoom = false, lastAcc = -99;
-  P.forEach((s, i) => {
-    if(i > 0 && moves(s) && (!keep.has(i) || (prevZoom && (EH.ZOOM_FX.has(s.efx) || (s.ak && s.ak.length))))){ if(EH.ZOOM_FX.has(s.efx) || EH.MOVE_FX.has(s.efx)) s.efx = 'none'; s.ak = []; }
-    prevZoom = i === 0 || EH.ZOOM_FX.has(s.efx) || !!(s.ak && s.ak.length);
-    if(s.acc && s.acc.length){ if((s.type === 'drop' || s.type === 'hit') && s.start - lastAcc >= 2){ s.acc = s.acc.slice(0, 1); lastAcc = s.start; } else s.acc = []; }
-  });
 }
 function dirRequest(cands){
   const per = Math.max(1, ES.buf.duration/30), music = EH.cutMusic(), pc = EH.paceNow();
@@ -333,9 +316,7 @@ function directorMaybe(){
 function paceMaybe(){
   if(ES.keepSaved || EH.aiHeldBack()) return;
   if(ES.paceBusy || !EH.paceWanted() || !EH.aiReelOk() || ES.refReading) return;
-  // after the AI has seen what the clips are about; after Make Reel (aiPiping) as soon as every clip is read, beside the AI's
-  // last clips (the song decides the pace; the plan still waits for every clip to be seen)
-  if(ES.clipsReading || (!ES.aiPiping && ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed))) return;
+  if(ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) return;   // after the AI has seen what the clips are about
   const key = EH.paceKey();
   if(ES.paceCache.has(key)){ ES.pacing = ES.paceCache.get(key); makeEdit(); return; }
   const sp = ES.songPace.get(EH.paceSongKey()), p = sp && EH.paceFromSong(sp);

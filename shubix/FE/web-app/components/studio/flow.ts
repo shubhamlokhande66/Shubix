@@ -87,7 +87,7 @@ export function initFlow(root: HTMLElement): () => void {
   // Shubix's line under the clips ends in "…" while it works (scoring the clips, the pace, planning the shots, the mixes)
   // Shubix AI still working on the Reel (the studio's own state; its status line can end in "…" when it is only cut short)
   const aiWorking = () => { const w = (root as unknown as { __studio?: { work?: { ai?: boolean; dir?: boolean; pace?: boolean; aiWait?: boolean } } }).__studio?.work; return !!w && (!!w.ai || !!w.dir || !!w.pace || !!w.aiWait); };   // (aiWait: agreed to, its plan not here yet, also between its steps)
-  type Live = { aiEarly?: () => Promise<void>; aiRetry?: () => boolean; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
+  type Live = { aiRetry?: () => boolean; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
   const live = () => (root as unknown as { __studio?: Live }).__studio;
   const stopped = () => live()?.cancelled?.() ?? { song: false, clips: false };
   let aiRunNo = 0;   // the wait for the Reel that the popup's Cancel ended
@@ -434,8 +434,7 @@ export function initFlow(root: HTMLElement): () => void {
       // too few credits: said at once, before any waiting (Top up, or a free edit)
       if (live()?.aiPrice?.().low) { void live()!.askLow!().then(() => { if (live()?.aiPrice?.().low) return; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }); return; }   // (Free edit goes on; Top up and closing it do not)
       // still being read: the one popup shows it now, and this goes on by itself when it is done
-      // (Shubix AI starts on the clips read so far, at once: aiEarly; the rest go as they are read)
-      if (!stopped().song && !stopped().clips && (working.size > 0 || shubixBusy() || !made())) { wantGen = true; apply(); void live()?.aiEarly?.(); return; }
+      if (!stopped().song && !stopped().clips && (working.size > 0 || shubixBusy() || !made())) { wantGen = true; apply(); return; }
       // Free: first, once per Reel, why Shubix AI is worth it (Upgrade, Create basic Reel, or ✕ to stay here)
       const st = live(), run = ++aiRunNo;
       void (async () => {

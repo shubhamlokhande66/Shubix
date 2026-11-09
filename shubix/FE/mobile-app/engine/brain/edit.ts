@@ -377,9 +377,7 @@ function aiAt(src, a, b){
 // how much the AI's opinion adds to a candidate moment for this slot
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
-  // many clips: fewer pictures of each (2-3, not 3-5), so Shubix AI has less to read and costs less
-  const many = ES.sources.filter(x => !x.removed).length > 15;
-  const n = many ? Math.max(2, Math.min(3, Math.round(src.dur/4))) : Math.max(3, Math.min(5, Math.round(src.dur/3))), out = [];
+  const n = Math.max(3, Math.min(5, Math.round(src.dur/3))), out = [];
   for(let k=0;k<n;k++){
     const a = src.dur*k/n, b = src.dur*(k+1)/n, c0 = a+(b-a)*0.2, c1 = a+(b-a)*0.8;
     let best = null, bs = -1;

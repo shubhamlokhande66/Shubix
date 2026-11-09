@@ -42,22 +42,16 @@ async function aiRun(){
   if(!ES.aiOn || ES.aiBusy || !ES.sources.length || EH.aiHeldBack()) return;
   if(!EH.aiReelOk()){ ES.aiBusy = true; const go = await aiGate(); ES.aiBusy = false; if(!go) return; }
   ES.sources.forEach(s=>{ if(!s.ai) EH.aiRestore(s); });
-  // as the clips are read (nativeEngine clips, after aiEarly): those read so far go 5 at a time while the rest are read; the
-  // last ones when reading is done; the Reel's plan (aiDone) only when every clip is read and seen
-  const still = (ES.clipsReading || 0) > 0;
   const need = ES.sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
-  if(!need.length){ if(!still) EH.aiDone(); return; }
-  if(still && need.length < 5) return;
+  if(!need.length){ EH.aiDone(); return; }
   ES.aiBusy = true; EH.aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
   let charged = 0, failed = 0;
   try{
     const jobs = [];
     for(const [i, s] of need.entries()){ EH.aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); if(ES.aiStopper.signal.aborted) return; let frames = framesMade.get(s); if(!frames){ frames = await EH.aiFrames(s); framesMade.set(s, frames); } if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
     EH.aiStat('Shubix is choosing the best moments of your clips…');
-    // 5 clips a call, two calls at once: each call stays small (one call of 12 clips, up to 60 pictures, timed out on an iPhone
-    // with 28 clips), and Retry sends only the clips not answered yet (the answered ones are kept)
-    const parts = []; for(let k = 0; k < jobs.length; k += 5) parts.push(jobs.slice(k, k + 5));
-    const send = async part => {
+    for(let k=0; k<jobs.length; k+=12){
+      const part = jobs.slice(k, k+12);
       const r = await EH.apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: ES.aiStopper.signal,
         body: JSON.stringify({ reelId: EH.reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
@@ -69,17 +63,15 @@ async function aiRun(){
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = EH.fpOf(j.src); EH.aiCache.set(fp, j.src.ai);
         try{ EH.keepAiPick(fp, j.src.ai); }catch(e){} }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; framesMade.delete(j.src); failed++; } }
-    };
-    for(let k = 0; k < parts.length; k += 2) await Promise.all(parts.slice(k, k + 2).map(send));
+    }
     ES.aiBusy = false;
-    if(ES.clipsReading) return;   // clips still being read: each one read sends them on, and the plan waits for the last
     if(ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !ES.pending) return aiRun();   // clips added meanwhile
     EH.aiDone(charged, failed);
   }catch(e){
     ES.aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => framesMade.delete(s));
-    if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(e, 'looking at the clips'); return; }   // never the phone's own edit instead
+    if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // never the phone's own edit instead
     ES.aiGaveUp = EH.reelIdNow();
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
     EH.chatFail('Shubix could not look at your clips right now. Try again in a moment.');
@@ -116,24 +108,17 @@ function timeoutSignal(ms){
   return { signal: c.signal, timedOut: () => late, done: () => { clearTimeout(t); EH.ac.signal.removeEventListener('abort', stop); } };
 }
 // Shubix AI hears 30 s of the part the Reel uses, once per song and part; a failure never stands in the way of the Reel
-// (one request at a time: a second caller waits for the same answer)
-function hearSong(){
-  if(!ES.song || !ES.song.mono || ES.kind === 'talk') return Promise.resolve();
-  const key = ES.song.key + '|' + Math.round(ES.secStart || 0); if(ES.songHeard === key) return ES.songHearing || Promise.resolve();
-  const body = songSample(ES.song.mono, ES.song.buf.sampleRate, ES.secStart || 0, 30); if(!body) return Promise.resolve();
+async function hearSong(){
+  if(!ES.song || !ES.song.mono || ES.kind === 'talk') return;
+  const key = ES.song.key + '|' + Math.round(ES.secStart || 0); if(ES.songHeard === key) return;
+  const body = songSample(ES.song.mono, ES.song.buf.sampleRate, ES.secStart || 0, 30); if(!body) return;
   ES.songHeard = key; ES.songFeel = null;
-  return ES.songHearing = songHear(body);
-}
-async function songHear(body){
   const tm = timeoutSignal(20000);
   try{ const r = await EH.apiFetch('/api/studio/song?reel=' + encodeURIComponent(EH.reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); ES.songFeel = await r.json(); }
   catch(e){ ES.songHeard = ''; console.warn('The song was not heard:', e); }
   finally{ tm.done(); }
 }
-// nothing of Shubix AI's is running any more (a plan that was final, failed, came from the cache, or a pace with no
-// answer): the popup never stays on "…" (a style changed on a made Reel stayed on "planning the shots" for ever)
-function aiIdleEnd(){ if(ES.aiAtWork && !ES.aiBusy && !ES.paceBusy && !ES.dirBusy && !ES.clipsReading && !ES.chatWaiting && !EH.mixStore().busy) EH.aiStat(''); }
 async function paceRun(key){
   const sm = EH.getSoundMap(); if(!sm){ ES.paceFailedKey = key; return; }
   const whole = EH.wholeSections(), songKey = EH.paceSongKey();
@@ -167,12 +152,12 @@ async function paceRun(key){
     ES.paceBusy = false; if(ES.buf && ES.sources.length && !ES.recording) EH.directorMaybe();
     // the director did not start (already planned, or no edit yet): the line must not stay on "choosing the pace…"
     if(!ES.dirBusy && /…$/.test(EH.aiStatText())) EH.aiStat('Your Reel keeps the song\'s own pace.');
-  }finally{ ES.paceBusy = false; tm.done(); aiIdleEnd(); }
+  }finally{ ES.paceBusy = false; tm.done(); }
 }
 /* Shubix AI could not do this Reel after a minute of asking (the server down): no Reel from the phone's own edit. Make Reel
  * says so (nativeEngine "ai" fails with TEAM_MSG); the server gives back any credits taken. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
-function aiDown(e, step){ if(!ES.aiOn) return; ES.aiDown = true; ES.aiDownWhy = (step || '?') + ': ' + String(e && e.message || e || '?').slice(0, 200); ES.aiGaveUp = EH.reelIdNow();   // (nothing is waited for any more)
+function aiDown(){ if(!ES.aiOn) return; ES.aiDown = true; ES.aiGaveUp = EH.reelIdNow();   // (nothing is waited for any more)
   EH.aiStat(TEAM_MSG); EH.chatFail(TEAM_MSG); EH.aiLog('Shubix AI was not available. ' + TEAM_MSG); }
 async function directorRun(key){
   ES.dirBusy = true; EH.aiStat('Shubix is choosing every shot, transition and effect…');
@@ -209,14 +194,14 @@ async function directorRun(key){
   }catch(e){
     ES.dirFailedKey = key;
     const back = EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(e, 'the plan (late)'); }
+    if(late){ aiDown(); }
     else {
       EH.chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) EH.aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
-    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown(tm.timedOut() ? 'timed out after 4 min' : e, 'the plan');
-  }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); aiIdleEnd(); }
+    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown();
+  }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,
  * the song's sound, the voice), the AI does with the same tools; its steps are used as it gave them ---- */
@@ -263,5 +248,5 @@ async function aiActions(list){
   if(ES.layers.length){ EH.lyUI(); await EH.prepLayers(ES.pos); }
   EH.redrawFrame(); EH.saveNow(); return done;
 }
-  return { aiRun, aiGate, directorRun, variantsRun, paceRun, hearSong, aiIdleEnd, aiActions, aiTexts, timeoutSignal };
+  return { aiRun, aiGate, directorRun, variantsRun, paceRun, aiActions, aiTexts, timeoutSignal };
 }

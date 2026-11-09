@@ -41,7 +41,7 @@ describe("api client", () => {
     vi.useRealTimers();
     expect(err.code).toBe("NETWORK_ERROR");
     expect(err.message).toMatch(/Technical issue: our team is looking into it/);
-    expect((fetch.mock.calls as unknown[][]).filter((c) => !String(c[0]).includes("client-error"))).toHaveLength(3); // 3 tries (the failure is also reported to Admin → Errors)
+    expect(fetch).toHaveBeenCalledTimes(3); // 3 tries, then the error (and the Retry popup in the app)
   });
 
   it("retries a read that failed once, so a busy moment is not an error", async () => {
@@ -68,7 +68,7 @@ describe("api client", () => {
     const err = await pending;
     vi.useRealTimers();
     expect(err.code).toBe("NETWORK_ERROR");
-    expect((fetch.mock.calls as unknown[][]).filter((c) => !String(c[0]).includes("client-error"))).toHaveLength(3); // 3 tries (the failure is also reported to Admin → Errors)
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("handles 204 responses", async () => {

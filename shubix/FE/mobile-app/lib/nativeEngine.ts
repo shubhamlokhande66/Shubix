@@ -6,7 +6,7 @@ import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
  * its file server (SongAnalysis.kt, ClipScan.kt, ClipFaces.kt). */
 type Fetch = (url: string, init?: { method?: string; body?: unknown }) => Promise<{ ok: boolean; status: number; text(): Promise<string>; json(): Promise<unknown>; arrayBuffer(): Promise<ArrayBuffer> }>;
-export type NativeIo = { base: string; key: string; fetch: Fetch; /** the pause between the 3 tries (ms; 1 s, then 2 s) */ apiWait?: number; /** to Admin → Errors (lib/errors.ts reportProblem) */ report?: (message: string, kind: "api" | "ai") => void; token?: () => Promise<string | null>; onProgress?: (what: "song" | "clips", p: number) => void;
+export type NativeIo = { base: string; key: string; fetch: Fetch; /** the pause between the 3 tries (ms; 1 s, then 2 s) */ apiWait?: number; token?: () => Promise<string | null>; onProgress?: (what: "song" | "clips", p: number) => void;
   /** Shubix AI's question: true Use, false the other button, null closed */
   ask?: (q: { title: string; text: string; list?: string[]; bal?: number | null; ok: string; no?: string; after?: number | null }) => Promise<boolean | null>;
   /** what Shubix is doing, in its words; an error when `err` */
@@ -96,8 +96,7 @@ export function createNativeEngine(io: NativeIo) {
         r = await io.fetch(io.base + path, { ...o, headers: { ...o.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } } as never) as Response;
         if (r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) return r;
       } catch (e) { if ((e as { name?: string })?.name === "AbortError") throw e; }
-      if (n >= 3) { io.report?.(`${r ? r.status : "no answer"} ${path.split("?")[0]} after 3 tries · ${host?.ES?.sources?.length ?? 0} clips`, "api");
-        if (r) return r; throw new Error("Our team is working on it. Please try again in a little while. No credits were used."); }
+      if (n >= 3) { if (r) return r; throw new Error("Our team is working on it. Please try again in a little while. No credits were used."); }
       await new Promise((ok) => setTimeout(ok, (io.apiWait ?? 1000) * n));
       if (stopped()) throw Object.assign(new Error("Stopped"), { name: "AbortError" });
     }
@@ -220,17 +219,14 @@ export function createNativeEngine(io: NativeIo) {
         if (stops !== g) break;
         io.task?.("progress", "clips", undefined, `Clip ${i + 1} of ${fresh.length}`, undefined, i / fresh.length);
         // a clip that cannot be read is named on its own card: the others go on
-        host.ES.clipsReading = fresh.length - i;
         try { await readClip(fresh[i]); io.clipDone?.(fresh[i].name, true); }
         catch (e) { failed.push(fresh[i].name); lastError = e; io.clipDone?.(fresh[i].name, false); }
         io.onProgress?.("clips", (i + 1) / fresh.length);
-        host.ES.clipsReading = fresh.length - i - 1;
-        if (piping && stops === g) void host.brain.aiRun();   // Shubix AI gets the clips as they are read (aiEarly)
       }
       if (stops === g && !host.ES.sources.length && lastError) throw lastError;
       io.task?.(stops !== g ? "clear" : "done", "clips", `${host.ES.sources.length} clip${host.ES.sources.length > 1 ? "s" : ""} ready`);
     } catch (e) { io.task?.("fail", "clips", e instanceof Error ? e.message : "The clip could not be read"); throw e; }
-    finally { reading--; host.ES.clipsReading = 0; }
+    finally { reading--; }
     host.ES.sources.sort((x: { name: string }, y: { name: string }) => names.indexOf(x.name) - names.indexOf(y.name));
     read = list;
     if (stops === g) host.makeReel();
@@ -240,26 +236,11 @@ export function createNativeEngine(io: NativeIo) {
   function state(){ return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
   const work = () => ({ clips: host.ES.sources.length, shots: host.ES.edit.length, songReady: !!host.ES.song?.r, pending: reading });
 
-  // a style chosen on a made Reel is the creator's own ask: Shubix AI plans it again (the same Reel: no new credits)
-  const aiAgain = () => { host.ES.regenOk = true; host.ES.dirFailedKey = ""; host.ES.paceFailedKey = ""; };
-  let piping = false;   // aiEarly: Shubix AI is fed the clips as they are read
   const ops: Record<string, (a: Args) => unknown> = {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
-    cancel: () => { stops++; piping = host.ES.aiPiping = false; return { ok: true }; },
-    /** Make Reel pressed (the price was on the screen: the answer): Shubix AI starts on the clips read so far, and each
-     * clip read after it is sent on (5 at a time); a plan's Reel with too few credits waits, as in "ai" */
-    aiEarly: async () => {
-      if (!signedIn) { signedIn = true; await host.account().catch(() => false); }
-      if (!host.ES.aiOn) return { ok: false };
-      const cost = host.brain.aiCostOf("reel") as number, balance = host.brain.aiBal() as number | null;
-      if (cost && balance !== null && balance < cost) return { ok: false };
-      host.ES.aiReel = host.brain.reelIdNow(); piping = host.ES.aiPiping = true;
-      void host.brain.hearSong?.();   // the song is heard while the clips are read
-      void host.brain.aiRun(); if (!reading && host.ES.buf && host.ES.sources.length) host.brain.paceMaybe?.();
-      return { ok: true };
-    },
+    cancel: () => { stops++; return { ok: true }; },
     clips,
     choose: async (a) => {
       if (a.mode) { host.ES.mode = String(a.mode); }
@@ -295,11 +276,10 @@ export function createNativeEngine(io: NativeIo) {
       host.ES.aiDown = false; host.ES.aiGaveUp = "";
       const went = await host.runAi();
       // Shubix AI could not be reached for a minute: no Reel from the phone's own edit; Make Reel says so (a popup)
-      if (host.ES.aiDown) io.report?.(`Shubix AI not available at ${host.ES.aiDownWhy ?? "?"} · ${host.ES.sources?.length ?? 0} clips`, "ai");
       if (host.ES.aiDown) throw new Error("Our team is working on it. Please try again in a little while. No credits were used.");
       return { went: went && stops === g };
     },
-    newReel: () => { piping = host.ES.aiPiping = false; host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
+    newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
     aiPlan: () => { const d = host.ES.director; return d && d.slots && !d.interim ? { story: d.story || "", lines: [] } : null; },
     history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),
@@ -355,7 +335,7 @@ export function createNativeEngine(io: NativeIo) {
       if (box === "vfx") { host.ES.au = { ...host.ES.au, vfx: String(v) }; host.brain.applyVo(); }
       else if (box === "aitouch") { host.ES.au = { ...host.ES.au, ai: !!v }; host.brain.autoTools(); host.brain.applyVo(); host.ES.clipMixKey = ""; }
       else if (box === "look") host.ES.look = String(v);
-      else if (box === "mode") { host.ES.mode = String(v); aiAgain(); host.makeReel(); }
+      else if (box === "mode") { host.ES.mode = String(v); host.makeReel(); }
       else if (box === "seq") { host.ES.seqOn = v === "order"; host.makeReel(); }
       else if (box === "aspect") host.ES.aspect = String(v);
       else throw new Error(`The phone's own engine has no ${box}`);
@@ -374,7 +354,7 @@ export function createNativeEngine(io: NativeIo) {
   const NOT_YET: string[] = [];
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
-    fresh: () => { piping = false; stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
+    fresh: () => { stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
     call: async (op: string, a: Args = {}) => { const f = ops[op]; if (!f) throw new Error(`Not on the phone's own engine yet: ${op}`); return f(a); },
   };
 }
