@@ -154,7 +154,13 @@ async function flickBuild(){
 }
 let blackC = null;
 const blackPic = () => { if(!blackC){ blackC = document.createElement('canvas'); blackC.width = 16; blackC.height = 16; const g = blackC.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 16, 16); } return blackC; };
-const texOf = (e, local) => e.black ? blackPic() : e.flick && flickPool.length ? flickPick(e, local || 0) : exporting ? (e.fc || e.fcLast) : e.rc && e.cs && e.cs.rev && local !== undefined ? revFrame(e, local) : smoothOn(e, local) ? smoothLive(e, local) : e.el;
+// the export's picture of a shot: its decoded frame; while it is the outgoing shot of the next shot's transition, its
+// own following frames (decoded for that: exportTail), so it keeps moving under a dissolve / whip / zoom as in the
+// preview, instead of standing still on its last frame (a "photo" at every cut, seen only in the exported video)
+let exportK = 0;
+let exportTailN = 0;   // frames drawn from a tail (root.__prof.tail: tests)
+const exportPic = e => { if(e.tail && e.tail.length && exportK >= e.tailF0){ exportTailN++; return e.tail[Math.min(e.tail.length - 1, exportK - e.tailF0)]; } return e.fc || e.fcLast; };
+const texOf = (e, local) => e.black ? blackPic() : e.flick && flickPool.length ? flickPick(e, local || 0) : exporting ? exportPic(e) : e.rc && e.cs && e.cs.rev && local !== undefined ? revFrame(e, local) : smoothOn(e, local) ? smoothLive(e, local) : e.el;
 /* ---- smooth slow motion (Clip tools -> Smooth slow-mo, as CapCut's): on a slowed shot every picture between two real frames
  * is the two mixed by how far between them the moment is, so a 0.25× shot glides instead of stepping. The two frames are the
  * last two the decoder gave (a, then b at ts); the mix runs a -> b over one frame's time, so it lags one frame and never jumps. ---- */
@@ -5968,14 +5974,20 @@ async function fastExport(){
     const open = async (i) => {
       const e = edit[i], sh = shots[i]; if(!e || sh.fEnd <= sh.f0) return null;
       const { sink, first, half } = await sinkFor(e.src, i % 2), sdur = sources[e.src].dur, ts = [];
-      for(let k=sh.f0; k<sh.fEnd; k++){ const v = first + half + Math.min(Math.max(0, srcPos(e, Math.max(0, k/fps - e.start))), sdur - 2*half - 0.01); ts.push(!ts.length ? v : e.cs && e.cs.rev ? Math.min(v, ts[ts.length-1]) : Math.max(v, ts[ts.length-1])); }
+      // and the frames it shows after its end, under the next shot's transition (half a second at most)
+      const nx = edit[i+1], tailN = nx && !e.black && !nx.black && trDur(nx) > 0 ? Math.min(Math.ceil(trDur(nx)*fps) + 1, Math.round(0.5*fps)) : 0;
+      for(let k=sh.f0; k<sh.fEnd + tailN; k++){ const v = first + half + Math.min(Math.max(0, srcPos(e, Math.max(0, k/fps - e.start))), sdur - 2*half - 0.01); ts.push(!ts.length ? v : e.cs && e.cs.rev ? Math.min(v, ts[ts.length-1]) : Math.max(v, ts[ts.length-1])); }
       const it = (e.cs && e.cs.rev ? revFramesExport(sink, ts) : sink.canvasesAtTimestamps(ts))[Symbol.asyncIterator]();
       const firstP = it.next(); firstP.catch(()=>{});
-      return { it, firstP, ts, sink, first, half };
+      return { it, firstP, ts, sink, first, half, tailN };
     };
+    // a frame kept for a transition: a copy (the decoder reuses its canvases), at most 1080 × 1920 (half that on phones
+    // with little memory): it is under a moving, blending transition for a few frames only
+    const tailCopy = (pic) => { const w0 = pic.width, h0 = pic.height, sc = Math.min(1, Math.sqrt((LOW_MEMORY_DEVICE ? 540*960 : 1080*1920)/(w0*h0)));
+      const c = document.createElement('canvas'); c.width = Math.max(2, Math.round(w0*sc)); c.height = Math.max(2, Math.round(h0*sc)); c.getContext('2d').drawImage(pic, 0, 0, c.width, c.height); return c; };
     // yield to the page without timers (a hidden tab throttles setTimeout to once a second or less)
     const yieldNow = () => (globalThis.scheduler && scheduler.yield) ? scheduler.yield() : new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
-    let f = 0, nextAudio = 0; const prof = root.__prof = { decode:0, draw:0, encode:0, frames:0, glLostFrames:0, missing:0, recovered:0, unresolved:0 }; let tq = performance.now();
+    let f = 0, nextAudio = 0; const prof = root.__prof = { decode:0, draw:0, encode:0, frames:0, glLostFrames:0, missing:0, recovered:0, unresolved:0 }; let tq = performance.now(); exportTailN = 0;
     // Sample the actual composited output (not source footage) for the autonomous quality gate.
     const qualityFrames = []; let previousQualityPixels = null, lastQualityShot = -1;
     const qualityCanvas = document.createElement('canvas'); qualityCanvas.width = qualityCanvas.height = 32;
@@ -6019,14 +6031,18 @@ async function fastExport(){
             nearest = await cur.sink.getCanvas(requested + offset);
             if(nearest) break;
           }
-          if(!nearest) nearest = await cur.sink.getCanvas(cur.first + 0.02);
+          // nothing near it: the frame just before stays one more frame (never the clip's first frame, which flashed a
+          // picture from another moment into the shot); only a shot with no picture at all starts from its first frame
+          if(!nearest && !e.fc) nearest = await cur.sink.getCanvas(cur.first + 0.02);
           if(nearest){ e.fc = nearest.canvas; consecutiveMissing = 0; prof.recovered = (prof.recovered || 0) + 1; }
           else {
             consecutiveMissing++; prof.unresolved = (prof.unresolved || 0) + 1;
-            if(!e.fc || consecutiveMissing >= 2) throw new Error('The video decoder could not supply consecutive frames for this clip; retrying with real-time export.');
+            // a few held frames (a fifth of a second) are better than the slow real-time way, whose video stutters
+            if(!e.fc || consecutiveMissing > Math.round(fps/5)) throw new Error('The video decoder could not supply consecutive frames for this clip; retrying with real-time export.');
           }
         }
         if(GL && GL.lost) prof.glLostFrames++;
+        exportK = k;
         if(lyIts.length) await layerFrames(k);
         if(bgNeeded() && personMask){ holdText = true; try{ drawFrame(k/fps); } finally { holdText = false; } await maskNow(); bgPass(k/fps); drawText(k/fps); }
         else drawFrame(k/fps);
@@ -6052,9 +6068,15 @@ async function fastExport(){
         if(k < sh.fEnd && !r.done) r = await cur.it.next();
       }
       if(e.fc){ const c = document.createElement('canvas'); c.width = e.fc.width; c.height = e.fc.height; c.getContext('2d').drawImage(e.fc,0,0); e.fcLast = c; }
+      // its frames after its end, for the next shot's transition (a missing one repeats the one before)
+      if(cur.tailN){ e.tail = []; e.tailF0 = sh.fEnd;
+        for(let j=0; j<cur.tailN; j++){ r = await cur.it.next(); if(r.done) break; const wc = r.value;
+          if(wc) e.tail.push(tailCopy(wc.canvas)); else if(e.tail.length) e.tail.push(e.tail[e.tail.length-1]); } }
       e.fc = null; f = sh.fEnd;
       { const o = edit[i-2]; if(o && o.fcLast){ o.fcLast.width = o.fcLast.height = 0; o.fcLast = null; } }   // older last frames are not drawn again
+      { const o = edit[i-1]; if(o && o.tail){ o.tail.forEach(c => { c.width = c.height = 0; }); o.tail = null; } }   // its transition is over
     }
+    prof.tail = exportTailN;
     { const p2 = await pre; pre = null; if(p2 && p2.it.return) try{ await p2.it.return(); }catch(err){} }
     while(as && nextAudio < dur){ const ab = chunkOf(nextAudio); if(ab) await as.add(ab); nextAudio++; }
     if(prof.frames !== total) throw new Error('Export frame count mismatch: expected ' + total + ', encoded ' + prof.frames + '. Retrying with real-time export.');
@@ -6087,7 +6109,7 @@ async function fastExport(){
     notify('Your Reel is ready', 'ok'); showMsg(savedMsg(sh, 'Video') + ': ' + name + ' (' + (blob.size/1e6).toFixed(1) + ' MB). Ready for Instagram, TikTok and Shorts.');
     return true;
   } finally {
-    exporting = false; edit.forEach(e=>{ e.fc = null; e.fcLast = null; }); layers.forEach(L => { L.fc = null; });
+    exporting = false; edit.forEach(e=>{ e.fc = null; e.fcLast = null; if(e.tail){ e.tail.forEach(c => { c.width = c.height = 0; }); e.tail = null; } }); layers.forEach(L => { L.fc = null; });
     // a read-ahead still running (the export stopped early) ends first: letting its decoder go under it fails
     if(pre){ try{ const p2 = await pre; if(p2 && p2.it.return) await p2.it.return(); }catch(err){} pre = null; }
     inputs.forEach(x=>{ try{ x.dispose(); }catch(err){} });
