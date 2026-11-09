@@ -3043,18 +3043,30 @@ async function paceRun(key){
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
-  // 45 s: the phone's own edit is shown and the person can go on; the request is NOT dropped (the plan is paid for): when it
+  // 75 s (a minute of asking again when the server is down, and more): the phone's own edit is shown and the person can go on; the request is NOT dropped (the plan is paid for): when it
   // comes later it is offered ("Use it"). 4 min: given up (the server's AI gives up before that and the credits come back).
   const tm = timeoutSignal(240000);
   let late = false;
   const soft = setTimeout(() => { late = true; dirBusy = false; dirFailedKey = key;
-    aiStat('Shubix is taking longer than usual. Your Reel uses the phone\'s own smart edit for now; Shubix\'s plan comes as soon as it is ready.'); }, 45000);
+    aiStat('Shubix is taking longer than usual. Your Reel uses the phone\'s own smart edit for now; Shubix\'s plan comes as soon as it is ready.'); }, 75000);
   try{
     await hearSong();
     const cands = directorCandidates(); dirCands = cands;
     const { req, ctx } = dirRequest(cands), sig = planSig(), mix = mixNo, st = mixStore();
-    const r = await fetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
-    const res = await r.json().catch(()=>({}));
+    // the server down or busy for a moment (no answer, 408, 429, 5xx): asked again, the loader on, for up to a minute;
+    // a real "no" (no credits, not allowed, a bad request) is not asked again. The same Reel is charged once (chargeOnce).
+    const t0 = Date.now(); let r = null, res = {}, tries = 0;
+    for(;;){
+      try{ r = await fetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal }); res = await r.json().catch(()=>({}));
+        if(r.ok || !(r.status === 408 || r.status === 429 || r.status >= 500)) break; }
+      catch(e){ if(e && e.name === 'AbortError') throw e; r = null; }
+      if(Date.now() - t0 > 60000 || tm.signal.aborted) break;
+      tries++; aiStat('Shubix’s server is not answering yet. Trying again… (' + tries + ')');
+      await new Promise(ok => setTimeout(ok, Math.min(10000, 2000*tries)));
+      if(tm.signal.aborted) throw Object.assign(new Error('Stopped'), { name: 'AbortError' });
+      aiStat('Shubix is choosing every shot, transition and effect…');
+    }
+    if(!r) throw new Error('Shubix’s server could not be reached.');
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
