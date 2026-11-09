@@ -3401,7 +3401,9 @@ function seqPick(seq, res, gmax){
     const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
     const need = ids.map(i => plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
-    const scale = ids.map(i => spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    // a shot longer than its whole clip plays it a little slower (down to 0.4x) instead of standing still on its last
+    // picture until the cut (what a short phone clip did: "it stops when the clip ends")
+    const scale = ids.map((i, k) => need[k] > foot ? Math.max(0.4, foot/need[k]*0.98) : spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = 0;
     ids.forEach((i, k) => {
@@ -5996,7 +5998,8 @@ async function fastExport(){
         inputs.push(input);
         const r = Math.min(1, Math.max(W/sw, H/sh0)*1.3);
         let sfps = 30; try{ const stt = await track.computePacketStats(90); if(stt && stt.averagePacketRate > 1) sfps = stt.averagePacketRate; }catch(err){}
-        sinks.set(key, { input, sink: new mb.CanvasSink(track, { width: Math.max(16, Math.round(sw*r/2)*2), height: Math.max(16, Math.round(sh0*r/2)*2), fit: 'fill', poolSize: EXPORT_FRAME_POOL }), first: await track.getFirstTimestamp(), half: 0.5/sfps });
+        const first = await track.getFirstTimestamp(), vEnd = (await track.computeDuration().catch(() => 0)) - first;
+        sinks.set(key, { input, sink: new mb.CanvasSink(track, { width: Math.max(16, Math.round(sw*r/2)*2), height: Math.max(16, Math.round(sh0*r/2)*2), fit: 'fill', poolSize: EXPORT_FRAME_POOL }), first, vEnd, half: 0.5/sfps });
       }
       return sinks.get(key);
     };
@@ -6017,10 +6020,15 @@ async function fastExport(){
     const shots = []; { let f0 = 0; edit.forEach((e,i)=>{ const fEnd = i+1 < edit.length ? Math.min(total, Math.ceil(edit[i+1].start*fps - 1e-6)) : total; shots.push({ f0, fEnd }); f0 = fEnd; }); }
     const open = async (i) => {
       const e = edit[i], sh = shots[i]; if(!e || sh.fEnd <= sh.f0) return null;
-      const { sink, first, half } = await sinkFor(e.src, i % 2), sdur = sources[e.src].dur, ts = [];
+      const { sink, first, half, vEnd } = await sinkFor(e.src, i % 2), ts = [];
+      // the file's last picture, not its length: a phone clip's sound often runs on after it (and the length read first
+      // can be the sound's). A shot planned past that picture showed it still for up to a second before the cut ("it
+      // stops when a clip ends"); it starts that much earlier in its clip instead, and keeps moving to the cut.
+      const sdur = vEnd > 0.3 ? Math.min(sources[e.src].dur, vEnd) : sources[e.src].dur, lastOk = sdur - 2*half - 0.01;
+      const over = e.cs && e.cs.rev ? 0 : srcPos(e, Math.max(0, (sh.fEnd - 1)/fps - e.start)) - lastOk, back = over > 0 ? Math.min(over, Math.max(0, e.in)) : 0;
       // and the frames it shows after its end, under the next shot's transition (half a second at most)
       const nx = edit[i+1], tailN = nx && !e.black && !nx.black && trDur(nx) > 0 ? Math.min(Math.ceil(trDur(nx)*fps) + 1, Math.round(0.5*fps)) : 0;
-      for(let k=sh.f0; k<sh.fEnd + tailN; k++){ const v = first + half + Math.min(Math.max(0, srcPos(e, Math.max(0, k/fps - e.start))), sdur - 2*half - 0.01); ts.push(!ts.length ? v : e.cs && e.cs.rev ? Math.min(v, ts[ts.length-1]) : Math.max(v, ts[ts.length-1])); }
+      for(let k=sh.f0; k<sh.fEnd + tailN; k++){ const v = first + half + Math.min(Math.max(0, srcPos(e, Math.max(0, k/fps - e.start)) - back), lastOk); ts.push(!ts.length ? v : e.cs && e.cs.rev ? Math.min(v, ts[ts.length-1]) : Math.max(v, ts[ts.length-1])); }
       const it = (e.cs && e.cs.rev ? revFramesExport(sink, ts) : sink.canvasesAtTimestamps(ts))[Symbol.asyncIterator]();
       const firstP = it.next(); firstP.catch(()=>{});
       return { it, firstP, ts, sink, first, half, tailN };
