@@ -1137,13 +1137,18 @@ function setClipStatus(src, status, detail){
 /* ---- on the Create page each clip plays itself in its card (muted, looping), once the work is over. Only the cards on the
  * screen, and only a few at once: each playing video holds a decoder and its frames, and many would run a phone out of memory
  * (the rest show their picture until they are scrolled to). A heavy clip with no light copy keeps its picture on phones. ---- */
+let cardsFreeAt = 0;
 const CARD_PLAYERS = IOS ? 2 : matchMedia('(max-width:1023px)').matches ? 4 : 8, cardsOnScreen = new Set(), cardsPlaying = new Set();
 const cardSight = new IntersectionObserver(list => { list.forEach(e => { if(e.isIntersecting) cardsOnScreen.add(e.target); else cardsOnScreen.delete(e.target); }); cardsPlay(); }, { threshold: 0.25 });
 function cardStop(card){ const v = card.querySelector('.cv'); cardsPlaying.delete(card); if(v){ v.classList.remove('on'); v.pause(); v.removeAttribute('src'); v.load(); } }
 function cardsPlay(){
   const free = root.classList.contains('fopen') && !document.hidden && !pending && !aiBusy && !paceBusy && !dirBusy && !recording && !playing && !exportBusy && $('cconf').hidden && root.querySelector('[data-tasks]')?.hidden !== false;
   const light = s => !matchMedia('(max-width:1023px)').matches || s.previewProxy || (s.w || 0) * (s.h || 0) <= 2400000;
-  const want = free ? [...$('clips').children].filter(c => cardsOnScreen.has(c) && c.__src && !c.__src.removed && sources.includes(c.__src) && light(c.__src)).slice(0, CARD_PLAYERS) : [];
+  // free for 2 s in a row before a card starts again: while a Reel is made the flags flip all the time, and each restart set the
+  // video's src again (a new request for its blob every 700 ms, without end)
+  if(!free) cardsFreeAt = 0; else if(!cardsFreeAt) cardsFreeAt = Date.now();
+  const settled = free && Date.now() - cardsFreeAt >= 2000;
+  const want = settled ? [...$('clips').children].filter(c => cardsOnScreen.has(c) && c.__src && !c.__src.removed && sources.includes(c.__src) && light(c.__src)).slice(0, CARD_PLAYERS) : [];
   [...cardsPlaying].forEach(c => { if(!want.includes(c)) cardStop(c); });
   want.forEach(c => { if(cardsPlaying.has(c)) return; cardsPlaying.add(c); const v = c.querySelector('.cv'); v.muted = true; v.src = c.__src.url; v.onplaying = () => v.classList.add('on'); v.play().catch(() => {}); });
 }
@@ -3889,11 +3894,19 @@ function segAt(t){ let lo=0,hi=edit.length-1,r=0; while(lo<=hi){ const m=(lo+hi)
  * The nearby window preserves transition look-ahead while avoiding N-clips × 3 active decoders. */
 function lazyPlayer(url){ const v = makeVideo(''); v._url = url; return v; }
 const playerLoaded = v => !!v.getAttribute('src');
+// A player used in the last 4 s keeps its video: the Reel being made asks for shots all over it in a moment, and letting go
+// and loading again each time sent a new request for the clip's blob, without end. At most PLAYERS_MAX stay loaded (the
+// iPhone's memory): past that the one used longest ago lets go.
+const PLAYERS_MAX = IOS ? 4 : 8, PLAYER_KEEP_MS = 4000;
 function playersAround(i){
-  const c = playing || starting ? curIdx : i, keep = new Set();
+  const c = playing || starting ? curIdx : i, keep = new Set(), now = Date.now();
   for(let k = Math.min(c, i) - 1; k <= Math.max(c, i) + 2; k++) if(edit[k]) keep.add(edit[k].el);
-  for(const s of sources) for(const v of s.els || []) if(!keep.has(v) && playerLoaded(v)){ v.pause(); v.removeAttribute('src'); v.load(); }
-  const v = edit[i].el; if(!playerLoaded(v) && v._url) v.src = v._url;
+  const drop = v => { v.pause(); v.removeAttribute('src'); v.load(); };
+  const loaded = [];
+  for(const s of sources) for(const v of s.els || []) if(playerLoaded(v)){
+    if(!keep.has(v) && now - (v._used || 0) > PLAYER_KEEP_MS) drop(v); else loaded.push(v); }
+  const v = edit[i].el; v._used = now; if(!playerLoaded(v) && v._url){ v.src = v._url; loaded.push(v); }
+  loaded.filter(x => !keep.has(x)).sort((a, b) => (a._used || 0) - (b._used || 0)).slice(0, Math.max(0, loaded.length - PLAYERS_MAX)).forEach(drop);
 }
 // quick: Play is waiting. Then the picture gets at most a moment: while clips are being read the phone's video decoder is
 // busy (an iPhone may not answer at all), and the song must start anyway; the shot catches up while it plays.
