@@ -3353,10 +3353,9 @@ function seqSlots(n){
   const cnt = w.map((x, j) => Math.min(room[j], Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot))));   // every clip once while there are shots enough
   while(sum(cnt) > n){ const k = cnt.lastIndexOf(Math.max(...cnt)); cnt[k]--; }   // (fewer shots than clips: the last clips wait)
   while(sum(cnt) < n){ const free = cnt.some((c,j) => c < room[j]); let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b && (!free || c < room[j])){ b = r; k = j; } }); cnt[k]++; }
-  // never the same clip on two cuts in a row: a clip's next shot waits for the next clip (the order stays near the person's)
-  const seq = cnt.flatMap((c, si) => Array(c).fill(si));
-  for(let i = 1; i < seq.length; i++) if(seq[i] === seq[i-1]){ const j = seq.findIndex((x, k) => k > i && x !== seq[i]); if(j > 0) seq.splice(i, 0, seq.splice(j, 1)[0]); }
-  return seq;   // shot i -> its clip
+  // strictly the person's order: a clip's shots one after another (it plays on forward across them), then the next
+  // clip; never back to a clip already left (moving a shot to avoid a repeat sent the Reel back to the clip before)
+  return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
 }
 // In my order, the moments: each clip is walked forward only (a shot starts where the one before it in that clip ended, so
 // no moment is ever used twice, and a clip once left is never come back to); a normal shot takes its clip's best moment
@@ -3375,7 +3374,9 @@ function seqPick(seq, res, gmax){
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
     // a shot longer than its whole clip plays it a little slower (down to 0.4x) instead of standing still on its last
     // picture until the cut (what a short phone clip did: "it stops when the clip ends")
-    const scale = ids.map((i, k) => need[k] > foot ? Math.max(0.4, foot/need[k]*0.98) : spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    // and a clip too short for all its shots plays a little slower over them, so no moment of it shows twice
+    const fit = spare < 0 ? Math.max(0.4, foot/sum(need)*0.98) : 1;
+    const scale = ids.map((i, k) => need[k] > foot ? Math.max(0.4, foot/need[k]*0.98) : spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = 0;
     ids.forEach((i, k) => {
