@@ -14,7 +14,7 @@
 
 import type { TaskEvent } from "./tasks";
 import { tx } from "./i18n";
-import { needsSignIn, signInThen } from "../../lib/returnTo";
+import { needsSignIn, signInBeside } from "../../lib/returnTo";
 
 type Kind = "music" | "talk" | "photo" | "copy";
 type Step = "intro" | "choose" | "adjust" | "clips" | "analyse";
@@ -413,13 +413,14 @@ export function initFlow(root: HTMLElement): () => void {
     if (t.closest("#fadjust")) { go("adjust"); return; }
     if (t.closest("#slen") && e.isTrusted) lengthTouched = true;
     if (t.closest("#fgen")) {
-      // Generate needs an account, free or paid: nobody signed in (or it cannot be checked), so the Reel is saved on this
-      // device, the sign-in page opens, and the studio comes back to this Reel and generates it (?go=1). The phone app's
-      // hidden studio (/engine) is signed in by the app itself.
+      // Generate needs an account, free or paid: nobody signed in (or it cannot be checked), so sign-in opens in a new tab
+      // and this Reel is generated when it is done (signInBeside). The phone app's hidden studio (/engine) is signed in by
+      // the app itself.
       if (!signInOk && !inEngine) {
         void (async () => {
-          if (await needsSignIn()) { const id = await live()?.saveNow?.(); return signInThen(id ? `${location.pathname}?p=${id}&step=clips&go=1` : location.pathname); }
-          signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click();
+          const go = () => { signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); };
+          if (await needsSignIn()) return signInBeside(go);   // in a new tab: this one keeps the Reel (no save and reload: an iPhone ran out of memory)
+          go();
         })();
         return;
       }
