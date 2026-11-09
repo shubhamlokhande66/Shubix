@@ -157,7 +157,8 @@ async function paceRun(key){
 /* Shubix AI could not do this Reel after a minute of asking (the server down): no Reel from the phone's own edit. Make Reel
  * says so (nativeEngine "ai" fails with TEAM_MSG); the server gives back any credits taken. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
-function aiDown(){ if(!ES.aiOn) return; ES.aiDown = true; EH.aiStat(TEAM_MSG); EH.chatFail(TEAM_MSG); EH.aiLog('Shubix AI was not available. ' + TEAM_MSG); }
+function aiDown(){ if(!ES.aiOn) return; ES.aiDown = true; ES.aiGaveUp = EH.reelIdNow();   // (nothing is waited for any more)
+  EH.aiStat(TEAM_MSG); EH.chatFail(TEAM_MSG); EH.aiLog('Shubix AI was not available. ' + TEAM_MSG); }
 async function directorRun(key){
   ES.dirBusy = true; EH.aiStat('Shubix is choosing every shot, transition and effect…');
   // the loader stays until Shubix answers (a down server is asked again for a minute: apiFetch); 4 min: given up (the

@@ -2930,7 +2930,7 @@ async function apiFetch(url, opts = {}){
 let aiDownAt = '';
 function aiDown(){
   if(!aiOn) return;
-  const id = reelIdNow(), go = $('aiaskgo'); aiStat(TEAM_MSG); chatFail(TEAM_MSG);
+  const id = reelIdNow(), go = $('aiaskgo'); aiGaveUp = id; aiStat(TEAM_MSG); chatFail(TEAM_MSG);   // (nothing is waited for any more)
   root.classList.add('aineed'); go.dataset.down = '1'; go.dataset.low = ''; delete go.dataset.change;
   $('aiaskt').textContent = 'Shubix AI is not available right now'; $('aiaskp').textContent = TEAM_MSG; go.textContent = 'Try again';
   if(aiDownAt !== id){ aiDownAt = id; aiLog('Shubix AI was not available. ' + TEAM_MSG); void askCredits({ title: 'Shubix AI is not available right now', text: TEAM_MSG, bal: null, ok: 'OK' }); }

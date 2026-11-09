@@ -29,7 +29,7 @@ function fileServer(mono: Float32Array) {
   };
   return { fetcher, saved };
 }
-const engine = (seconds = 30) => { const s = fileServer(clickTrack(seconds)); return { ...s, e: createNativeEngine({ base: "http://phone", key: "k", fetch: s.fetcher }) }; };
+const engine = (seconds = 30) => { const s = fileServer(clickTrack(seconds)); return { ...s, e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: s.fetcher }) }; };
 const clips = [{ path: "/a.mp4", name: "a.mp4" }, { path: "/b.mp4", name: "b.mp4" }, { path: "/c.mp4", name: "c.mp4" }];
 
 const reel = async (seconds = 30) => { const x = engine(seconds); await x.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await x.e.call("clips", { paths: clips }); return x; };
@@ -156,7 +156,7 @@ describe("what the old page did, on the phone's own engine", () => {
       const got = answer(path, init, u);
       return got !== undefined ? got as never : s.fetcher(to, init);
     };
-    return { ...s, calls, e: createNativeEngine({ base: "http://phone", key: "k", fetch: fetch as never, ...extra } as never) };
+    return { ...s, calls, e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetch as never, ...extra } as never) };
   };
   const ok = (body: unknown, tag?: string) => ({ ok: true, status: 200, text: async () => String(body), json: async () => body, arrayBuffer: async () => body as ArrayBuffer, headers: { get: () => tag ?? null } });
   const refused = (status = 404) => ({ ok: false, status, text: async () => "no", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) });
@@ -293,7 +293,7 @@ describe("clips read behind the screen", () => {
       if (u.pathname === "/probe" && u.searchParams.get("p") === "/b.mp4") return { ok: false, status: 422, text: async () => "no", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
       return server.fetcher(to, init);
     };
-    const e = createNativeEngine({ base: "http://phone", key: "k", fetch: fetcher as never, clipDone: (name: string, ok: boolean) => told.push([name, ok]) } as never);
+    const e = createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher as never, clipDone: (name: string, ok: boolean) => told.push([name, ok]) } as never);
     await e.call("song", { path: "/s.mp3", name: "s.mp3" });
     const r = await e.call("clips", { paths: clips }) as { clips: number; names: string[]; failed: string[] };
     expect(r.failed).toEqual(["b.mp4"]);
@@ -304,7 +304,7 @@ describe("clips read behind the screen", () => {
   it("no clip readable at all says so", async () => {
     const server = fileServer(clickTrack(10));
     const fetcher = async (to: string, init?: { method?: string; body?: unknown }) => new URL(to).pathname === "/probe" ? { ok: false, status: 422, text: async () => "no", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) } : server.fetcher(to, init);
-    const e = createNativeEngine({ base: "http://phone", key: "k", fetch: fetcher as never } as never);
+    const e = createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher as never } as never);
     await e.call("song", { path: "/s.mp3", name: "s.mp3" });
     await expect(e.call("clips", { paths: clips })).rejects.toThrow(/cannot be read/);
   });
@@ -322,25 +322,27 @@ describe("Shubix AI's price before Make Reel", () => {
       if (p.startsWith("/api/")) return { ok: false, status: 503, text: async () => "no", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
       return s.fetcher(to, init);
     };
-    return { asked, e: createNativeEngine({ base: "http://phone", key: "k", fetch: fetcher as never, ask: async (q: { title: string }) => { asked.push(q.title); return true; } } as never) };
+    return { asked, e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher as never, ask: async (q: { title: string }) => { asked.push(q.title); return true; } } as never) };
   };
   it("gives the price and the balance", async () => {
     expect(await priced(240).e.call("aiPrice")).toEqual({ on: true, cost: 10, balance: 240, paid: true });
   });
-  it("asks nothing again after Make Reel; too few credits: Free goes on with the phone's edit, a plan waits", async () => {
-    for (const [balance, plan, went] of [[240, "editor", true], [3, "free", true], [3, "editor", false]] as const) {
+  it("asks nothing again after Make Reel; too few credits: Free goes on with the phone's edit, a plan waits; the server down: an error", async () => {
+    // (the server here answers 503: a Reel Shubix AI should make fails with the team's message, never the phone's edit)
+    for (const [balance, plan, went] of [[240, "editor", "down"], [3, "free", true], [3, "editor", false]] as const) {
       const { e, asked } = priced(balance, plan);
       await e.call("song", { path: "/s.mp3", name: "s.mp3" });
       await e.call("clips", { paths: clips });
       await e.call("aiPrice");
-      expect((await e.call("ai") as { went: boolean }).went).toBe(went);
+      if (went === "down") await expect(e.call("ai")).rejects.toThrow(/Our team is working on it/);
+      else expect((await e.call("ai") as { went: boolean }).went).toBe(went);
       expect(asked).toEqual([]);
     }
   }, 30_000);
 });
 
 describe("the clips before Shubix AI", () => {
-  const counted = () => { const s = fileServer(clickTrack(30)), read: string[] = []; const fetcher = async (to: string, init?: { method?: string; body?: unknown }) => { const u = new URL(to); if (u.pathname === "/scan") read.push(u.searchParams.get("p")!); return s.fetcher(to, init); }; return { read, e: createNativeEngine({ base: "http://phone", key: "k", fetch: fetcher as never } as never) }; };
+  const counted = () => { const s = fileServer(clickTrack(30)), read: string[] = []; const fetcher = async (to: string, init?: { method?: string; body?: unknown }) => { const u = new URL(to); if (u.pathname === "/scan") read.push(u.searchParams.get("p")!); return s.fetcher(to, init); }; return { read, e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher as never } as never) }; };
   it("reads only a new clip, also after one was taken out or moved", async () => {
     const { e, read } = counted();
     await e.call("song", { path: "/s.mp3", name: "s.mp3" });
