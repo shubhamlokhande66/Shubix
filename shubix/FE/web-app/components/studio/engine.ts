@@ -1031,10 +1031,10 @@ function queueClips(jobs){
   if(!pending){ batchN = 0; batchDone = 0; }
   batchN += jobs.length; pending += jobs.length; updateQ();
   tasks.start('clips', 'clips', 'Reading your clips', 'Finding the best moments in ' + batchN + ' clip' + (batchN > 1 ? 's' : ''));
-  jobs.forEach(job=>{ addQueue = addQueue.then(()=>{
-    if(!clipsStopped) return readVideo(job);
+  jobs.forEach(job=>{ addQueue = addQueue.then(async ()=>{
+    if(!clipsStopped){ await readVideo(job); await aiFramesNow(job); return; }
     job.unread = true; const dd = job.card && job.card.querySelector('.dd'); if(dd) dd.textContent = 'Not analysed yet';
-  }).catch(()=>{}).then(()=>{ pending--; batchDone++; updateQ(); }); });
+  }).catch(()=>{}).then(()=>{ pending--; batchDone++; updateQ(); aiFeed(); }); });
   addQueue = addQueue.then(()=>{ if(!pending) finishAdding(); });
 }
 function addVideos(files, restored = false){
@@ -2203,12 +2203,34 @@ function aiRestore(src){
 let aiHeld = location.pathname.startsWith('/create');
 // …and the API (asleep after a quiet while: 20-30 s to wake) is woken now, so Generate does not wait for it
 if(aiHeld) fetch('/api/health').catch(() => {});
+const clipRead = s => Array.isArray(s.samples) && s.samples.length > 0;
+// Shubix AI goes on as each clip is read, once the Reel is agreed to (Make Reel: aiEarly or upsell)
+const aiPiping = () => aiOn && kind !== 'talk' && !aiHeld && aiReelOk() && !aiHeldBack();
+function aiFeed(){ if(aiPiping()) aiRun(); }
+// an iPhone: the clip's pictures for Shubix AI right after it is read, in the same queue (never two decoders at once)
+async function aiFramesNow(src){
+  if(!IOS || !aiPiping() || src.ai || src.aiFramesMade || src.removed || !clipRead(src)) return;
+  try{ src.aiFramesMade = await aiFrames(src); }catch(e){ delete src.aiFramesMade; }
+}
+// Make Reel pressed while the clips are still read: the price was on the screen (that is the answer, no question), and
+// Shubix AI starts on the clips read so far
+async function aiEarly(){
+  if(!aiOn || aiLocked || !location.pathname.startsWith('/create')) return;
+  aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
+  if(!aiReelOk()){ generatePressed = true; const go = await aiGate(true).finally(() => { generatePressed = false; }); if(!go) return; }
+  aiRun();
+}
 async function aiRun(){
   if(!aiOn || aiBusy || !sources.length || aiHeldBack()) return;
   if(!aiReelOk()){ aiBusy = true; const go = await aiGate(); aiBusy = false; if(!go) return; }
   sources.forEach(s=>{ if(!s.ai) aiRestore(s); });
-  const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
-  if(!need.length){ aiDone(); return; }
+  // as the clips are read (aiFeed): those read so far go 5 at a time while the rest are read; the last ones when reading is
+  // done; the Reel's plan (aiDone) only when every clip is read and seen. An iPhone takes the pictures in the reading queue
+  // (one decoder at a time): here it only sends the ones ready.
+  const still = pending > 0;
+  const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed && clipRead(s) && (!IOS || !still || s.aiFramesMade));
+  if(!need.length){ if(!still) aiDone(); return; }
+  if(still && need.length < 5) return;
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
   let charged = 0, failed = 0;
   try{
@@ -2233,7 +2255,8 @@ async function aiRun(){
     };
     for(let k = 0; k < parts.length; k += 2) await Promise.all(parts.slice(k, k + 2).map(send));
     aiBusy = false;
-    if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
+    if(pending) return;   // clips still being read: aiFeed sends them, and the plan waits for the last one
+    if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) return aiRun();   // clips added meanwhile
     aiDone(charged, failed);
   }catch(e){
     aiBusy = false;
@@ -7786,7 +7809,7 @@ listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
 root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
-  snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
+  snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry, aiEarly, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
   get work(){ return { song: !!song || kind === 'talk', songReady: kind === 'talk' || !!(song && buf && song.r), beats: beatsBusy, pending, clips: sources.length, shots: edit.length, ai: aiBusy, dir: dirBusy, pace: paceBusy,
     // Shubix AI is on for this Reel and its plan has not come yet (nor failed): the Reel is not final (the phone app waits)
     aiWait: !!(aiOn && !planIsFinal() && !aiHeldBack() && aiReelOk() && aiGaveUp !== reelIdNow() && edit.length && !(director && director.key === dirKey() && !director.interim) && dirFailedKey !== dirKey()), speech: speechBusy, exporting: exportBusy, exportP }; }, shotExtract: () => edit.length && extractAudio(edit[segAt(pos)].src), get au(){ return au; }, setAudioMix: async patch => { auSet(patch); clipMixKey = ''; await ensureMix(); return au; }, remix: remixNow, ensureMix, get canUndo(){ return hist.u.length > 0; }, get layers(){ return layers; }, get lmedia(){ return lmedia; }, layerAdd, layerSelect: lySelect, layerSet: lySet, layerDelete: lyDelete, get ttsVoices(){ return tts ? tts.voices : []; }, addTts: addTtsAtPlayhead, clearTts, setCaptions, setCaptionStyle, get canRedo(){ return hist.r.length > 0; },
