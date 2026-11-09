@@ -231,6 +231,8 @@ export const STUDIO_HTML = `
       <span class="sinfo" id="sinfo"></span>
     </div>
     <p class="hint" id="lenhint" hidden>Drag on the waveform to choose the part yourself.</p>
+    <label class="tog" id="fitw"><input type="checkbox" id="fitclips" checked> Make the Reel as long as my clips (the rest of the song is left out)</label>
+    <p class="hint" id="fitnote" hidden></p>
     <div class="stats">
       <span>Length <b id="mdur">—</b></span>
       <span><b id="mbpm">—</b> BPM</span>
