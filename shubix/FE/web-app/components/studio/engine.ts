@@ -2074,9 +2074,9 @@ function cancelNow(){
   }
   root.dispatchEvent(new Event('studio-cancelled'));
 }
-// Cancel Reel: nothing of it stays, back to Home
+// Discard Reel: nothing of it stays, back to Home
 async function cancelReel(){
-  const v = await askCredits({ title: 'Cancel this Reel?', text: 'Your song, clips and progress for this Reel will be removed.', bal: null, ok: 'Cancel Reel', no: 'Keep working' });
+  const v = await askCredits({ title: 'Discard this Reel?', text: 'Your song, clips and progress for this Reel will be removed.', bal: null, ok: 'Discard Reel', no: 'Keep working' });
   if(v !== true) return;
   aiStopper.abort();
   try{ life({ wip: null }); if(proj) await idb('meta', 'readwrite', s => s.delete(proj.id)); sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){}
@@ -2092,7 +2092,7 @@ function resumeSong(){
 // Next after a Cancel: the work again (true: Next waits for it), or not
 async function askNotDone(){
   if(!songCancelled && !clipsStopped) return false;
-  const v = await askCredits({ title: 'Analysis not done', text: songCancelled ? "Your song's beat check did not finish." : "Your clips' analysis did not finish.", bal: null, ok: 'Proceed', no: 'Cancel', extra: 'Cancel Reel' });
+  const v = await askCredits({ title: 'Analysis not done', text: songCancelled ? "Your song's beat check did not finish." : "Your clips' analysis did not finish.", bal: null, ok: 'Continue', no: 'Not now', extra: 'Discard Reel' });
   if(v === 'extra') void cancelReel();
   else if(v === true){ if(songCancelled) resumeSong(); if(clipsStopped) queueClips(unreadClips()); }
   return true;
@@ -2106,6 +2106,8 @@ async function upsell(){
     if(go){ aiRun(); return 'skip'; }   // Use: the AI starts on this Reel
     return 'close';                      // ✕: back, nothing generated
   }
+  // Make Reel runs in one popup: no Shubix AI offer in between (the plans are shown on the screen), the basic Reel is made
+  if(location.pathname.startsWith('/create')) return 'skip';
   const id = reelIdNow(); if(upsold === id || IN_APP) return 'skip';   // never an upgrade offer in the app
   const cost = aiCostOf('reel');
   const v = await askCredits({ upsell: true, title: 'Make it perfect with Shubix AI', text: 'Your Reel is ready. With the Editor or Pro plan, Shubix AI edits it like a pro' + (cost ? ' (' + creditWord(cost) + ' per Reel)' : '') + ':' + (aiInfo && aiInfo.creditsOpen ? ' Or invite friends on Invite & earn: your credits pay for AI Reels on Free too.' : ''),
@@ -7547,7 +7549,7 @@ setInterval(() => {
 }, 3000);
 // leaving or reloading while Shubix is still working, or before the last change is kept: the browser asks first
 window.addEventListener('beforeunload', e => {
-  if(leavingOk) return;   // the person chose to leave (Keep old Reel, Cancel Reel): nothing to warn about
+  if(leavingOk) return;   // the person chose to leave (Keep old Reel, Discard Reel): nothing to warn about
   if(pending || exporting || recording){ e.preventDefault(); e.returnValue = ''; return; }
   if((song || sources.length) && !restoring){ try{ const sig = JSON.stringify(stateOf()); if(sig !== lastSig){ e.preventDefault(); e.returnValue = ''; } }catch(err){} }
 });

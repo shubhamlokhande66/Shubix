@@ -63,9 +63,9 @@ function CreateFlowScreen() {
     if (stage.current === "clips") askAgain.current = true;
     if (stage.current === "ai") setStep("clips");
   };
-  // Cancel Reel: nothing of it stays, back to Home
+  // Discard Reel: nothing of it stays, back to Home
   async function cancelReel() {
-    if (!(await confirmAction({ title: words("Cancel this Reel?"), body: words("Your song, clips and progress for this Reel will be removed."), ok: words("Cancel Reel"), cancel: words("Keep working"), danger: true }))) return;
+    if (!(await confirmAction({ title: words("Discard this Reel?"), body: words("Your song, clips and progress for this Reel will be removed."), ok: words("Discard Reel"), cancel: words("Keep working"), danger: true }))) return;
     stop(); forgetKeptFiles(draft.current); void AsyncStorage.removeItem(DRAFT); router.replace("/");
   }
   const act = useRef({ cancelWork, cancelReel }); act.current = { cancelWork, cancelReel };
@@ -77,7 +77,7 @@ function CreateFlowScreen() {
   useEffect(() => { if (Platform.OS === "web") return; const h = BackHandler.addEventListener("hardwareBackPress", () => { back(); return true; }); return () => h.remove(); }); // Android back: the screen before
   // Next while its work was cancelled: the work again, or not; true on Proceed
   const notDone = async (body: string) => {
-    const v = await askAction({ title: words("Analysis not done"), body, ok: words("Proceed"), cancel: words("Cancel"), extra: words("Cancel Reel") });
+    const v = await askAction({ title: words("Analysis not done"), body, ok: words("Continue"), cancel: words("Not now"), extra: words("Discard Reel") });
     if (v === 2) void cancelReel();
     return v === 0;
   };
@@ -210,12 +210,7 @@ function CreateFlowScreen() {
     if (again) {
       draft.current = `draft-${Date.now()}`; kept.current = { uris: [], clips: [] }; keptBy.current = new Map(); copied.current = 0; read.current = null;
     }
-    // a plan without Shubix AI is asked first, without waiting for the clips
-    if (engineOn && song && !(await engine.aiOn().catch(() => true))) {
-      const v = await askAction({ title: words("Make it perfect with Shubix AI"), body: words("Continue free with your phone's own edit, or add more credits for Shubix AI."), ok: words("Add more credits"), cancel: words("Free") });
-      if (v === 0) router.push("/credits");
-      if (v !== 1) return;
-    }
+    // (a plan without Shubix AI: no offer in between, Make Reel makes the Reel in one popup; the plans are on the screen)
     // too few credits: said at once, before any waiting; without a plan the Reel can still be made by the phone's own edit, on a plan it waits for credits
     const p = engineOn && song ? await engine.aiPrice().catch(() => null) : null;
     if (p?.on && p.cost && p.balance !== null && p.balance < p.cost) {

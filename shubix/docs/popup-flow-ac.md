@@ -17,11 +17,12 @@ Status of each rule on each platform is at the end of this file.
 
 ## 2. Song and clips
 
-- Adding a song or clips opens the popup with Cancel and Cancel Reel.
+- Adding a song or clips opens the popup with Stop and a small red Discard Reel (changed 2026-11-09: Cancel / Cancel Reel confused people).
 - Cancel deletes nothing. The song and every video stay, and the video count never grows.
-- After Cancel, Next asks "Analysis not done" with Cancel, Proceed and Cancel Reel.
+- After Stop, Next asks "Analysis not done" with Continue, Not now and Discard Reel.
 - Proceed goes on from where it stopped: clips already read are not read again, and an analysed song only finishes its beat check.
-- Cancel Reel asks once, removes everything for this Reel and goes Home.
+- Discard Reel asks once, removes everything for this Reel and goes Home.
+- Make Reel runs in one popup (2026-11-09): no Shubix AI question or offer in between; the price is on the screen and pressing Make Reel is the answer. Every API call is tried 3 times, then a Retry / Close popup; Shubix AI never falls back to the phone's edit.
 - Next and Generate are off without a song and clips, and while either is being worked on. After a Cancel, Generate says "Continue analysis" and only offers Proceed.
 - Each clip plays in its own card, muted and looping, once the work is over. There is no play button. Only cards on the screen play, and only a few at once, so a phone does not run out of memory. Cards do not play during Shubix AI or in the editor.
 - A clip is moved by dragging it: at once with a mouse, after holding it a moment with a finger. A quick swipe still scrolls. There is no arrow and no Reverse order. The Reel and the numbers follow the new order.
