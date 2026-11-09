@@ -25,7 +25,7 @@ export const GET = route(async (req) => {
   if (settings.billingEnabled) sweepSoon(); // unfinished checkouts' reminder emails, now and then, in the background
   const part = async <T,>(f: () => Promise<T> | T) => { try { return await f(); } catch { return undefined; } };
   const [texts, account, site, admin, features, planLocks, credits, offer, help, plans, content, ads, notifications, access] = await Promise.all([
-    part(getTexts), part(me), part(getSite), part(() => adminState(req)),
+    part(getTexts), part(() => me(req)), part(getSite), part(() => adminState(req)),
     part(getFeatures), part(getLocks), signedIn ? part(myCredits) : undefined,
     part(async () => ({ offer: await currentOffer() })),
     part(async () => ({ on: (await getSupport()).chat })), part(pricing), part(getContent), signedIn ? part(getAds) : undefined, signedIn ? part(myNotifications) : undefined, part(getAccess),

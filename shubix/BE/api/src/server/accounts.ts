@@ -2,7 +2,7 @@ import { ensureUsername, noteReferral, rewardFor } from "./marketing";
 import { grantCredits } from "./credits";
 import { sendWelcome } from "./broadcasts";
 import crypto from "node:crypto";
-import { AuthRequired, clearCookie, currentUser, forgetSessionCache, hashPassword, sessionCookie, verifyPassword } from "./core/auth";
+import { AuthRequired, clearCookie, cookieOf, currentUser, forgetSessionCache, hashPassword, makeToken, readSession, sessionCookie, verifyPassword } from "./core/auth";
 import { settings } from "./core/config";
 import { codeLetter, sendMail } from "./core/mail";
 import { mainDb, ObjectId, OWNER, UNSCOPED } from "./core/db";
@@ -21,8 +21,14 @@ type Doc = Record<string, unknown>;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/, CODE_MINUTES = 10, CODE_TRIES = 5, RESEND_SECONDS = 60, MIN_PASSWORD = 8;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const users = async () => (await mainDb()).collection<any>("users");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const signups = async () => (await mainDb()).collection<any>("signups");
 const userOut = (u: Doc) => ({ id: String(u._id), email: u.email, emailVerified: u.emailVerified !== false, username: (u.username as string | undefined) ?? null });
-const withCookie = (body: unknown, cookie: string, status = 200) => Response.json(body, { status, headers: { "Set-Cookie": cookie } });
+const withCookie = (body: unknown, cookie: string | string[], status = 200) => {
+  const r = Response.json(body, { status });
+  for (const c of [cookie].flat()) r.headers.append("Set-Cookie", c);
+  return r;
+};
 // an affiliate partner's account (made on the partner dashboard, no password): "Forgot password" gives it one, by a code
 const PARTNER_ONLY = "This email is an affiliate partner account. Use “Forgot password” to set a password and use Shubix with it.";
 function needAccounts() { if (!settings.authEnabled) throw new ValidationFailed("Accounts are not switched on for this studio.", { code: "AUTH_DISABLED" }); }
@@ -48,10 +54,10 @@ const codeHash = (id: unknown, purpose: string, code: string) => hashToken(`${St
 type Otp = { hash: string; expires: Date; tries: number; sentAt: Date };
 type Purpose = "verify" | "reset" | "admin";
 const FIELD: Record<Purpose, string> = { verify: "verifyOtp", reset: "resetOtp", admin: "adminOtp" };
-async function sendCode(u: Doc, purpose: Purpose) {
+async function sendCode(u: Doc, purpose: Purpose, col = users) {
   const code = newCode(), b = settings.businessName;
   const otp: Otp = { hash: codeHash(u._id, purpose, code), expires: new Date(Date.now() + CODE_MINUTES * 60_000), tries: 0, sentAt: new Date() };
-  await (await users()).updateOne({ _id: u._id }, { $set: { [FIELD[purpose]]: otp } });
+  await (await col()).updateOne({ _id: u._id }, { $set: { [FIELD[purpose]]: otp } });
   if (purpose === "admin") {
     const a = codeLetter("Your admin sign-in code", `Someone (we hope you) signed in to the ${b} administration with your account. Enter this code to open it for the next ${ADMIN_CODE_HOURS} hours.`, code,
       `The code works for ${CODE_MINUTES} minutes. If this was not you, change your password now: without this code nobody can open the administration.`, "Admin security");
@@ -67,7 +73,7 @@ async function sendCode(u: Doc, purpose: Purpose) {
 /** a code may be sent again once RESEND_SECONDS have passed (the wait left, in seconds, or 0) */
 const waitLeft = (otp: Otp | undefined) => (otp?.sentAt ? Math.max(0, Math.ceil((new Date(otp.sentAt).getTime() + RESEND_SECONDS * 1000 - Date.now()) / 1000)) : 0);
 /** Check a code (a wrong one counts a try; the last try or an old code means a new one is needed). Throws when wrong. */
-async function checkCode(u: Doc, purpose: Purpose, code: string) {
+async function checkCode(u: Doc, purpose: Purpose, code: string, col = users) {
   const field = FIELD[purpose], otp = u[field] as Otp | undefined;
   const fail = (msg: string, c: string) => new ValidationFailed(msg, { code: c });
   if (!otp || new Date(otp.expires).getTime() < Date.now()) throw fail("This code has expired. Ask for a new one.", "CODE_EXPIRED");
@@ -75,25 +81,58 @@ async function checkCode(u: Doc, purpose: Purpose, code: string) {
   const ok = /^\d{6}$/.test(code) && crypto.timingSafeEqual(Buffer.from(codeHash(u._id, purpose, code)), Buffer.from(otp.hash));
   if (!ok) {
     // counted atomically: several guesses at once still count each one
-    const after = await (await users()).findOneAndUpdate({ _id: u._id, [`${field}.hash`]: otp.hash }, { $inc: { [`${field}.tries`]: 1 } }, { returnDocument: "after" });
+    const after = await (await col()).findOneAndUpdate({ _id: u._id, [`${field}.hash`]: otp.hash }, { $inc: { [`${field}.tries`]: 1 } }, { returnDocument: "after" });
     const left = CODE_TRIES - Number((after?.[field] as Otp | undefined)?.tries ?? CODE_TRIES);
     throw left > 0 ? fail(`That code is not right. ${left} ${left === 1 ? "try" : "tries"} left.`, "CODE_WRONG") : fail("Too many wrong tries. Ask for a new code.", "CODE_LOCKED");
   }
   // used once: only the request that removes it goes on
-  const r = await (await users()).updateOne({ _id: u._id, [`${field}.hash`]: otp.hash }, { $unset: { [field]: "" } });
+  const r = await (await col()).updateOne({ _id: u._id, [`${field}.hash`]: otp.hash }, { $unset: { [field]: "" } });
   if (!r.modifiedCount) throw fail("This code was already used. Ask for a new one.", "CODE_EXPIRED");
 }
 
 async function markVerified(u: Doc) {
   await (await users()).updateOne({ _id: u._id }, { $set: { emailVerified: true, emailVerifiedAt: new Date() }, $unset: { verify: "", verifyOtp: "" } });
   forgetSessionCache(String(u._id)); // the account opens at once
+  return welcome(u);
+}
+/** an account with a proved email: the welcome email and an invite's reward */
+async function welcome(u: Doc) {
   void sendWelcome(String(u._id), String(u.email)); // only an account with a proved email gets it
   await rewardFor(String(u._id), "verified", grantCredits).catch(() => {}); // an invite rewarded on a verified email
   return { ok: true, email: String(u.email) };
 }
+
+// ---------------------------------------------------------------- sign-ups waiting for their code
+// A sign-up is not an account: it waits in "signups" (its email, password hash, invite and code) with its own short
+// cookie, and becomes an account only when its code is entered. Not finished within a day, it is gone (a TTL index).
+const SIGNUP_COOKIE = "reel_signup", SIGNUP_HOURS = 24;
+const signupCookie = (id: unknown) => `${SIGNUP_COOKIE}=${makeToken(`signup:${String(id)}`, SIGNUP_HOURS / 24)}; Max-Age=${SIGNUP_HOURS * 3600}; Path=/; HttpOnly; SameSite=Lax${settings.cookieSecure ? "; Secure" : ""}`;
+const clearSignup = () => `${SIGNUP_COOKIE}=""; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`;
+/** this browser's sign-up waiting for its code (null: none, or it is gone) */
+async function pendingSignup(req?: Request): Promise<Doc | null> {
+  const s = req ? readSession(cookieOf(req, SIGNUP_COOKIE)) : null, id = s?.[0].startsWith("signup:") ? s[0].slice(7) : "";
+  return ObjectId.isValid(id) ? (await signups()).findOne({ _id: new ObjectId(id) }) : null;
+}
+const pendingOut = (p: Doc) => ({ id: "", email: p.email, emailVerified: false, username: null });
+/** a sign-up's code was right: now it is an account (its email proved), signed in on this browser */
+async function finishSignup(p: Doc) {
+  const now = new Date(), u = { _id: new ObjectId(), email: p.email, password: p.password, sessionVersion: 0, createdAt: now, lastLoginAt: now, loginCount: 1, emailVerified: true, emailVerifiedAt: now };
+  try { await (await users()).insertOne(u); }
+  catch (e) { if ((e as { code?: number }).code === 11000) throw new ConflictError("An account with this email already exists. Sign in instead.", { code: "EMAIL_TAKEN" }); throw e; }
+  await (await signups()).deleteOne({ _id: p._id });
+  const uid = String(u._id);
+  try { (u as Doc).username = await ensureUsername(uid); await noteReferral(uid, p.ref as string | undefined, grantCredits); } catch (e) { console.warn("sign-up marketing:", (e as Error).message); }
+  return withCookie(await welcome(u), [sessionCookie(u), clearSignup()]);
+}
 /** The signed-in person enters the code from their sign-up email. */
-export async function verifyCode(code: string) {
+export async function verifyCode(code: string, req?: Request) {
   needAccounts();
+  if (!currentUser()) {   // a new sign-up: its code makes the account
+    const p = await pendingSignup(req);
+    if (!p) throw new ValidationFailed("This sign-up has expired. Create your account again.", { code: "SIGNUP_EXPIRED" });
+    await checkCode(p, "verify", code.trim(), signups);
+    return finishSignup(p);
+  }
   const u = await meDoc();
   if (u.emailVerified !== false) return { ok: true, email: String(u.email) };
   await checkCode(u, "verify", code.trim());
@@ -106,8 +145,14 @@ export async function verifyEmail(token: string) {
   return markVerified(u);
 }
 /** The signed-in person asks for the code again (a minute apart). */
-export async function resendVerify() {
+export async function resendVerify(req?: Request) {
   needAccounts();
+  const p = currentUser() ? null : await pendingSignup(req);
+  if (p) {
+    const wait = waitLeft(p.verifyOtp as Otp | undefined);
+    if (wait) throw new ValidationFailed(`We just sent one: wait ${wait} seconds, then try again.`, { code: "VERIFY_TOO_SOON", details: { wait } });
+    return { ok: true, sent: await sendCode(p, "verify", signups), wait: RESEND_SECONDS };
+  }
   const u = await meDoc();
   if (u.emailVerified !== false) return { ok: true, verified: true };
   const wait = waitLeft(u.verifyOtp as Otp | undefined);
@@ -115,14 +160,17 @@ export async function resendVerify() {
   return { ok: true, sent: await sendCode(u, "verify"), wait: RESEND_SECONDS };
 }
 
-export async function me() {
+export async function me(req?: Request) {
   const uid = currentUser(), u = uid && ObjectId.isValid(uid) ? await (await users()).findOne({ _id: new ObjectId(uid) }) : null;
   // iosApp: the Shubix app on this person's iPhone was opened in the last 14 days (adminDashboard.ts ping), so Safari
   // hides its "Install the app" banner; not opened for 14 days, it was most likely removed, and the banner comes back
   const iosApp = !!u && u.iosAppAt instanceof Date && Date.now() - u.iosAppAt.getTime() < 14 * 864e5;
-  return { authEnabled: settings.authEnabled, user: u ? { ...userOut(u), iosApp, ...(u.emailVerified === false ? { codeWait: waitLeft(u.verifyOtp as Otp | undefined) } : {}) } : null };
+  // a sign-up waiting for its code: the code screen shows its email and when a new code may be sent
+  const p = u ? null : await pendingSignup(req);
+  return { authEnabled: settings.authEnabled, user: u ? { ...userOut(u), iosApp, ...(u.emailVerified === false ? { codeWait: waitLeft(u.verifyOtp as Otp | undefined) } : {}) } : null,
+    ...(p ? { pending: { email: String(p.email), codeWait: waitLeft(p.verifyOtp as Otp | undefined) } } : {}) };
 }
-export async function register(email0: string, password: string, ref?: string) {
+export async function register(email0: string, password: string, ref?: string, o: { accountFirst?: boolean } = {}) {
   needAccounts();
   const email = email0.trim().toLowerCase();
   if (!EMAIL.test(email)) throw new ValidationFailed("Enter a valid email address.", { code: "INVALID_EMAIL" });
@@ -131,16 +179,24 @@ export async function register(email0: string, password: string, ref?: string) {
   const taken = await col.findOne({ email }, { projection: { partnerOnly: 1, password: 1 } });
   if (taken && taken.partnerOnly && !taken.password) throw new ConflictError(PARTNER_ONLY, { code: "PARTNER_ONLY" });
   if (taken) throw new ConflictError("An account with this email already exists. Sign in instead.", { code: "EMAIL_TAKEN" });
+  if (o.accountFirst) return registerAccountFirst(email, password, ref);
+  // not an account yet: a sign-up waiting for its code (the same email again: its password and invite are the newest;
+  // a code is sent at most once a minute). The account is made only with the code (finishSignup), so a sign-up left on
+  // the code screen leaves nothing behind after a day.
+  const now = new Date();
+  const p = await (await signups()).findOneAndUpdate({ email },
+    { $set: { password: hashPassword(password), ref: ref ?? null, expiresAt: new Date(now.getTime() + SIGNUP_HOURS * 3600_000) }, $setOnInsert: { _id: new ObjectId(), email, createdAt: now } },
+    { upsert: true, returnDocument: "after" });
+  const codeSent = waitLeft(p!.verifyOtp as Otp | undefined) ? true : await sendCode(p!, "verify", signups); // not sent: the screen offers to send it again
+  return withCookie({ user: pendingOut(p!), codeSent }, signupCookie(p!._id), 201);
+}
+/** The phone app as published (its token comes only from the session cookie, and it keeps none after the code): the
+ * account is made at once, unproved, and its code opens it. Its next version moves to the sign-up above. */
+async function registerAccountFirst(email: string, password: string, ref?: string) {
   const now = new Date(), u = { _id: new ObjectId(), email, password: hashPassword(password), sessionVersion: 0, createdAt: now, lastLoginAt: now, loginCount: 1, emailVerified: false };
-  try {
-    await col.insertOne(u);
-  } catch (e) {
-    // two sign-ups with the same email at the same moment: the unique index (server/core/indexes.ts) lets one through
-    if ((e as { code?: number }).code === 11000) throw new ConflictError("An account with this email already exists. Sign in instead.", { code: "EMAIL_TAKEN" });
-    throw e;
-  }
-  const codeSent = await sendCode(u, "verify"); // the account opens only with this code; not sent: the screen offers to send it again
-  // a username (also the invite code) and, if a friend's link brought them, the invite (its rewards follow the admin's rule)
+  try { await (await users()).insertOne(u); }
+  catch (e) { if ((e as { code?: number }).code === 11000) throw new ConflictError("An account with this email already exists. Sign in instead.", { code: "EMAIL_TAKEN" }); throw e; }
+  const codeSent = await sendCode(u, "verify");
   const uid = String(u._id);
   try { (u as Doc).username = await ensureUsername(uid); await noteReferral(uid, ref, grantCredits); } catch (e) { console.warn("sign-up marketing:", (e as Error).message); }
   return withCookie({ user: userOut(u), codeSent }, sessionCookie(u), 201);
@@ -149,7 +205,14 @@ export async function login(email: string, password: string) {
   needAccounts();
   const u = await (await users()).findOne({ email: email.trim().toLowerCase() });
   if (u && u.partnerOnly && !u.password) throw new AuthRequired(PARTNER_ONLY, "PARTNER_ONLY");
-  if (!u || !verifyPassword(password, String(u.password))) throw new AuthRequired("The email or password is not correct.", "BAD_CREDENTIALS");
+  if (!u) {
+    // a sign-up still waiting for its code: back to its code screen (a new code, at most one a minute)
+    const p = await (await signups()).findOne({ email: email.trim().toLowerCase() });
+    if (!p || !verifyPassword(password, String(p.password))) throw new AuthRequired("The email or password is not correct.", "BAD_CREDENTIALS");
+    if (!waitLeft(p.verifyOtp as Otp | undefined)) await sendCode(p, "verify", signups);
+    return withCookie({ user: pendingOut(p), adminCode: false }, signupCookie(p._id));
+  }
+  if (!verifyPassword(password, String(u.password))) throw new AuthRequired("The email or password is not correct.", "BAD_CREDENTIALS");
   await (await users()).updateOne({ _id: u._id }, { $set: { lastLoginAt: new Date() }, $inc: { loginCount: 1 } }); // for the admin dashboard
   // the email not proved yet: only its code opens the account (a new one is sent, at most one a minute)
   if (u.emailVerified === false && !waitLeft(u.verifyOtp as Otp | undefined)) await sendCode(u, "verify");
@@ -173,6 +236,7 @@ export async function googleAccount(p: { email: string; sub: string; name?: stri
     try { await ensureUsername(uid); await noteReferral(uid, ref, grantCredits); } catch (e) { console.warn("sign-up marketing:", (e as Error).message); }
   }
   if (u!.emailVerified === false) await markVerified(u!); // the welcome email and an invite's reward, as after the emailed code
+  await (await signups()).deleteOne({ email }); // a sign-up left on the code screen: Google has proved the email instead
   if (await isAdminEmail(email) && !waitLeft(u!.adminOtp as Otp | undefined)) await sendCode(u!, "admin"); // admin pages still ask their code
   return sessionCookie(u!);
 }

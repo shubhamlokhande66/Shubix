@@ -27,7 +27,7 @@ afterAll(async () => {
   await (await (await import("../../src/server/core/db")).client()).close();
   await mongo?.stop();
 });
-beforeEach(async () => { const d = await mainDb(); await d.collection("users").deleteMany({}); await d.collection("app_settings").deleteMany({}); await X.setAccess({}); });
+beforeEach(async () => { const d = await mainDb(); await d.collection("users").deleteMany({}); await d.collection("signups").deleteMany({}); await d.collection("app_settings").deleteMany({}); await X.setAccess({}); });
 
 const now = Date.now() / 1000;
 const claims = (c: Record<string, unknown> = {}) => ({ iss: "https://accounts.google.com", aud: "cid.apps", exp: now + 600, email: "Riya@Example.com", email_verified: true, sub: "g-1", name: "Riya", ...c });
@@ -76,14 +76,19 @@ describe("the account", () => {
     expect(u!.password).toBeUndefined();
   });
   it("opens the existing account with that email and proves its email", async () => {
-    await A.register("riya@example.com", "password123");
-    const before = await (await mainDb()).collection("users").findOne({ email: "riya@example.com" });
-    expect(before!.emailVerified).toBe(false);
+    const id = (await (await mainDb()).collection("users").insertOne({ email: "riya@example.com", password: "x", sessionVersion: 0, emailVerified: false })).insertedId;
     await signIn(claims());
     const users = await (await mainDb()).collection("users").find({}).toArray();
     expect(users).toHaveLength(1);
-    expect(String(users[0]._id)).toBe(String(before!._id));
+    expect(String(users[0]._id)).toBe(String(id));
     expect(users[0].emailVerified).toBe(true);
+  });
+  it("finishes a sign-up left on the code screen: one account, the sign-up gone", async () => {
+    await A.register("riya@example.com", "password123");
+    expect(await (await mainDb()).collection("users").countDocuments()).toBe(0);
+    await signIn(claims());
+    expect(await (await mainDb()).collection("users").countDocuments({ email: "riya@example.com", emailVerified: true })).toBe(1);
+    expect(await (await mainDb()).collection("signups").countDocuments()).toBe(0);
   });
   it("is off when the administrator turns Google off", async () => {
     await X.setAccess({ google: false });
