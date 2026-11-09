@@ -247,7 +247,7 @@ function adaptPlan(){ return copyTimed() ? copyPlanTimed() : mode === 'copy' && 
  * a busy mix's onsets are dense everywhere). Smooth keeps its calm; a copied Reel keeps its own edit. */
 // ai: the AI's pace (its sections with "hits" and "flicker" are used as they are, in any style; nothing else is added)
 function beatEdit(p, ai){
-  if(!(mode === 'auto' || mode === 'fast' || ai) || mode === 'copy' || !buf || !rmsF || !hopSec || !hitsRaw || hitsRaw.length < 8 || p.length < 2 || !(period > 0)) return p;
+  if(!(mode === 'auto' || mode === 'fast' || ai) || mode === 'copy' || (!ai && naturalFootage()) || !buf || !rmsF || !hopSec || !hitsRaw || hitsRaw.length < 8 || p.length < 2 || !(period > 0)) return p;
   const dur = buf.duration, H = hitsRaw.filter(t => t > 0.1 && t < dur - 0.15), W = 1, step = 0.25;
   const ss = (hitsStr || []).slice().sort((a,b)=>a-b), sMed = ss.length ? ss[ss.length>>1] : 0;
   const HS = hitsRaw.filter((t, i) => (hitsStr[i] || 0) >= sMed && t > 0.1 && t < dur - 0.15);   // the strong hits
@@ -282,8 +282,36 @@ function noFlashCuts(p){
     else if(!keepStart){ p[i-1].end = s.end; p.splice(i, 1); i--; } }
   return p;
 }
+/* ---- Natural: the edit a person makes in VN or CapCut of family, festival, travel and home clips (measured on such a
+ * Reel: shots of 3-15 s, the clip's own camera only, a few soft transitions where the song's phrase changes, no zooms,
+ * shakes or flashes). Chosen by the phone itself in the Auto style when the footage is people and places, not action:
+ * a dance, gym, car or sports Reel keeps the beat edit. ---- */
+const LIFE_TAGS = /travel|wedding|devot|temple|prayer|festival|diwali|holi|ganpati|puja|family|home|house|food|nature|landscape|baby|kid|child|garden|decor|rangoli|light/;
+const ACTION_TAGS = /dance|gym|workout|sport|action|car|bike|race|stunt|party|club|skate/;
+function naturalFootage(){
+  if(mode !== 'auto' || !sources.length) return false;
+  let n = 0, act = 0, life = 0, faces = 0;
+  for(const src of sources){
+    const S = src.samples || []; if(!S.length) continue; n++;
+    const m = S.reduce((a, x) => a + (Number(x.m) || 0), 0)/S.length, tags = aiTags(src).join(' ').toLowerCase();
+    if(m > 0.68 || ACTION_TAGS.test(tags)) act++;
+    if(LIFE_TAGS.test(tags)) life++;
+    const F = src.faces || []; if(F.length && F.filter(x => x.n).length/F.length >= 0.3) faces++;
+  }
+  if(!n || act/n >= 0.4) return false;
+  return life > 0 || faces/n >= 0.3 || period >= 0.45;   // people or places, or a calm song (under ~133 BPM)
+}
 function adaptPlan0(){
   if(mode==='copy' && refProfile) return copyPlan();
+  if(naturalFootage()){
+    // one shot per musical phrase: 3-8 s, cut on the song's own part changes
+    const bar = Math.max(1.4, period*4), want = Math.min(8, Math.max(3, 2*bar)), outP = [];
+    basePlan.forEach(s=>{ const last = outP[outP.length-1], since = last ? s.start - last.start : 0;
+      const part = s.type==='drop' || s.type==='break' || isPartStart(s.start);
+      const keep = !last || (part && since >= 2.4) || since >= want - 0.1 || s.end - last.start > 8.5;
+      if(keep) outP.push({...s}); else last.end = s.end; });
+    return outP;
+  }
   if(mode==='smooth'){
     const bar = Math.min(3, Math.max(1.4, period*4)), outP = [];
     basePlan.forEach(s=>{ const last = outP[outP.length-1], minLen = outP.length === 1 ? Math.min(bar, 2.6) : partAt(s.start) === 'drop' ? (bar > 2.2 ? bar/2 : bar) : Math.min(4, 2*bar);
@@ -3507,6 +3535,7 @@ function makeEditNow(){
   const useCount = sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   edit = plan.map((s,i)=>({...s, ...res[i], el: sources[res[i].src].els[(useCount[res[i].src]++)%3]}));
   flickBuild();   // a copied flicker montage: its stills (once per set of clips)
+  const natural = naturalFootage();
   const taste = { n: edit.length, moves: 0, prevZoom: false, lastZoom: -99, shape: false, drops: edit.filter(x => x.type === 'drop').map(x => x.start) };
   edit.forEach((e,i)=>{
     const d = dirSlotOf(i), shared = sharedDirector.shots.find(x => x.sourceIndex === e.src);
@@ -3535,9 +3564,14 @@ function makeEditNow(){
           });
         }
       }
-      if(e.type === 'drop' && shared.speed > 1.05 && (e.end - e.start) >= 0.4) e.sp = rampSpeed(e.end - e.start);
+      if(!natural && e.type === 'drop' && shared.speed > 1.05 && (e.end - e.start) >= 0.4) e.sp = rampSpeed(e.end - e.start);
     }
     if(shared && !e.why) e.why = shared.reason;
+    if(natural){   // the clip as it was filmed: the AI's own explicit choices stay
+      if(!e.fxByDir){ e.efx = 'none'; e.why = 'natural: the clip as filmed'; }
+      if(!e.byDir){ e.ak = []; e.sp = SPEED.normal; }
+      if(!e.trByDir) e.tr = i > 0 && (e.type === 'drop' || e.type === 'break' || isPartStart(e.start)) && e.end - e.start >= 1.2 ? 'dissolve' : 'hard';
+    }
     e.kf = keyframesFor(e);
     e.beatsIn = beats.filter(b=>b>e.start+0.12 && b<e.end-0.05).map(b=>b-e.start);
   });
@@ -3546,7 +3580,7 @@ function makeEditNow(){
   autoTools(); speechScan();
   $('s3').classList.remove('locked'); $('s3').classList.add('done');
   const total = sources.reduce((a,s)=>a+s.dur,0);
-  $('s3st').textContent = edit.length + ' shots · ' + fmt(buf.duration) + (dupCount ? ' · ' + dupCount + ' shots reused (not enough footage)' : ' · no repeated moments');
+  $('s3st').textContent = edit.length + ' shots · ' + fmt(buf.duration) + (natural ? ' · Natural style (your clips as filmed)' : '') + (dupCount ? ' · ' + dupCount + ' shots reused (not enough footage)' : ' · no repeated moments');
   showCopyMatch();
   if(dupCount) showMsg(dupCount + ' shot' + (dupCount>1?'s repeat':' repeats') + ': your clips are short for this song · add more clips to avoid it', false, 'addclips');
   else $('xmsg').hidden = true;
