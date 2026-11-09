@@ -158,6 +158,24 @@ export async function login(email: string, password: string) {
   if (adminCode && !waitLeft(u.adminOtp as Otp | undefined)) await sendCode(u, "admin");
   return withCookie({ user: userOut(u), adminCode }, sessionCookie(u));
 }
+/** "Continue with Google": Google has proved this email. Its account is opened (and its email marked as proved), or a new
+ * one is made without a password ("Forgot password" can give it one later). Returns the session cookie. */
+export async function googleAccount(p: { email: string; sub: string; name?: string }, ref?: string): Promise<string> {
+  needAccounts();
+  const email = p.email.trim().toLowerCase(), col = await users(), now = new Date();
+  if (!EMAIL.test(email)) throw new ValidationFailed("Google did not give a valid email address.", { code: "INVALID_EMAIL" });
+  let u = await col.findOneAndUpdate({ email }, { $set: { lastLoginAt: now, googleId: p.sub }, $inc: { loginCount: 1 } }, { returnDocument: "after" });
+  if (!u) {
+    u = { _id: new ObjectId(), email, googleId: p.sub, ...(p.name ? { name: p.name.slice(0, 80) } : {}), sessionVersion: 0, createdAt: now, lastLoginAt: now, loginCount: 1, emailVerified: false };
+    try { await col.insertOne(u); }
+    catch (e) { if ((e as { code?: number }).code !== 11000) throw e; u = await col.findOne({ email }); } // the same person, twice at once
+    const uid = String(u!._id);
+    try { await ensureUsername(uid); await noteReferral(uid, ref, grantCredits); } catch (e) { console.warn("sign-up marketing:", (e as Error).message); }
+  }
+  if (u!.emailVerified === false) await markVerified(u!); // the welcome email and an invite's reward, as after the emailed code
+  if (await isAdminEmail(email) && !waitLeft(u!.adminOtp as Otp | undefined)) await sendCode(u!, "admin"); // admin pages still ask their code
+  return sessionCookie(u!);
+}
 /** The administrator asks for their daily admin code (a minute apart). */
 export async function sendAdminCode() {
   const u = await meDoc();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -8,7 +8,8 @@ import { StoreBadges } from "@/components/molecules/StoreBadges";
 import { api, errorMessage } from "@/lib/api";
 import { emailOk, passwordOk } from "@/lib/validate";
 import { clearRef, savedRef } from "@/lib/marketing";
-import { useText } from "@/hooks/useApi";
+import { useAccess, useText } from "@/hooks/useApi";
+import { keepNext, takeNext } from "@/lib/returnTo";
 import { cn } from "@/lib/cn";
 import { Button, Card, Eyebrow, Icon, Input, Logo } from "@/components/atoms";
 import { ErrorBanner, Field, PasswordInput, SoundBars } from "@/components/molecules";
@@ -35,6 +36,19 @@ export default function LoginPage() {
   const [touched, setTouched] = useState<Record<string, boolean>>({}); // the fields left once: their message shows
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const access = useAccess(), google = access.google && access.googleReady;
+  const [fromStudio, setFromStudio] = useState(false);
+  // ?next= the page to return to (kept through the email code and Google); ?error= Google's sign-in did not finish
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search), next = q.get("next"), err = q.get("error");
+    keepNext(next);
+    setFromStudio(!!next && /^\/(create|editor)/.test(next));
+    if (err?.startsWith("google")) setError(text(err === "google_cancelled" ? "auth.googleCancelled" : "auth.googleFailed"));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the page opens
+  const withGoogle = () => {
+    const next = takeNext(); keepNext(next);
+    window.location.assign(`/api/auth/google?next=${encodeURIComponent(next)}&ref=${encodeURIComponent(savedRef() ?? "")}`);
+  };
   const signin = mode === "signin";
   const touch = (k: string) => setTouched((x) => ({ ...x, [k]: true }));
 
@@ -63,7 +77,9 @@ export default function LoginPage() {
       if (!signin) clearRef(); // the invite is used
       await qc.invalidateQueries();
       // a new account: the code from the email first; an administrator: the admin code (emailed now) first
-      router.replace(!signin || r.user?.emailVerified === false ? "/verify?sent=1" : "adminCode" in r && r.adminCode ? "/admin?code=sent" : "/");
+      if (!signin || r.user?.emailVerified === false) router.replace("/verify?sent=1");
+      else if ("adminCode" in r && r.adminCode) router.replace("/admin?code=sent");
+      else { const next = takeNext(); if (next === "/") router.replace("/"); else window.location.assign(next); } // the studio loads whole (its own page setup)
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -133,8 +149,17 @@ export default function LoginPage() {
               <div className="pointer-events-none absolute -top-[90px] -right-[70px] z-0 size-[210px] rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent)_13%,transparent),transparent_70%)]" aria-hidden />
               <div className="relative z-10">
                 <h1 className="m-0 font-[family-name:var(--font-display)] text-[25px] font-semibold tracking-[-0.035em] sm:text-[28px]">{text(signin ? "auth.signIn" : "auth.signUp")}</h1>
-                <p className="m-0 mt-1.5 text-[12.5px] leading-relaxed text-muted sm:text-[13px]">{text(signin ? "auth.signInSub" : "auth.signUpSub")}</p>
+                <p className="m-0 mt-1.5 text-[12.5px] leading-relaxed text-muted sm:text-[13px]">{text(fromStudio ? "auth.keepWork" : signin ? "auth.signInSub" : "auth.signUpSub")}</p>
               </div>
+              {google && (
+                <div className="relative z-10 flex flex-col gap-3">
+                  <Button type="button" variant="secondary" size="lg" disabled={busy} onClick={withGoogle} className="!h-12 w-full !rounded-xl !text-[13.5px]">
+                    <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" /><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" /><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z" /><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" /></svg>
+                    {text("auth.google")}
+                  </Button>
+                  <span className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[.1em] text-muted"><i className="h-px flex-1 bg-border" />{text("auth.or")}<i className="h-px flex-1 bg-border" /></span>
+                </div>
+              )}
               <form onSubmit={submit} noValidate className="relative z-10 flex flex-col gap-3 sm:gap-[18px]"><fieldset disabled={busy} className="contents">
                 <Field label={text("auth.email")} error={touched.email ? emailErr : ""}>
                   <Input type="email" autoComplete="email" placeholder={text("auth.emailPlaceholder")} value={email} aria-invalid={!!(touched.email && emailErr) || undefined}

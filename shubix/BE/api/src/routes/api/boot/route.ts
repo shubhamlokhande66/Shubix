@@ -2,6 +2,7 @@ import { adminState } from "../../../server/core/admin";
 import { currentUser, sessionVerified } from "../../../server/core/auth";
 import { settings } from "../../../server/core/config";
 import { getFeatures } from "../../../server/core/features";
+import { getAccess } from "../../../server/core/access";
 import { route } from "../../../server/core/http";
 import { me } from "../../../server/accounts";
 import { myCredits } from "../../../server/credits";
@@ -23,11 +24,11 @@ export const GET = route(async (req) => {
   const uid = currentUser(), signedIn = !settings.authEnabled || (!!uid && (await sessionVerified(uid)));
   if (settings.billingEnabled) sweepSoon(); // unfinished checkouts' reminder emails, now and then, in the background
   const part = async <T,>(f: () => Promise<T> | T) => { try { return await f(); } catch { return undefined; } };
-  const [texts, account, site, admin, features, planLocks, credits, offer, help, plans, content, ads, notifications] = await Promise.all([
+  const [texts, account, site, admin, features, planLocks, credits, offer, help, plans, content, ads, notifications, access] = await Promise.all([
     part(getTexts), part(me), part(getSite), part(() => adminState(req)),
     part(getFeatures), part(getLocks), signedIn ? part(myCredits) : undefined,
     part(async () => ({ offer: await currentOffer() })),
-    part(async () => ({ on: (await getSupport()).chat })), part(pricing), part(getContent), signedIn ? part(getAds) : undefined, signedIn ? part(myNotifications) : undefined,
+    part(async () => ({ on: (await getSupport()).chat })), part(pricing), part(getContent), signedIn ? part(getAds) : undefined, signedIn ? part(myNotifications) : undefined, part(getAccess),
   ]);
-  return { texts, me: account, site, admin, features, planLocks, credits, offer, help, plans, content, ads, notifications };
+  return { texts, me: account, site, admin, features, planLocks, credits, offer, help, plans, content, ads, notifications, access };
 });

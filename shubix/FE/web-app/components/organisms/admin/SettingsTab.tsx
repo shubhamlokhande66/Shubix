@@ -9,7 +9,10 @@ import { PLAN_NAME } from "@shubix/core/lib/plan-locks";
 import { Badge, Heading, Icon } from "@/components/atoms";
 import { SidePanel } from "@/components/molecules";
 import { useSite } from "@/components/molecules/Legal";
+import { AccessSettings } from "@/components/organisms/AccessSettings";
 import { AdminsSettings } from "@/components/organisms/AdminsSettings";
+import { useAccess } from "@/hooks/useApi";
+import { ACCESS_PAGES } from "@shubix/core/lib/access";
 import { BackupSettings } from "@/components/organisms/BackupSettings";
 import { BusinessSettings } from "@/components/organisms/BusinessSettings";
 import { FeatureSettings } from "@/components/organisms/FeatureSettings";
@@ -17,7 +20,7 @@ import { ReelsKeepSettings } from "@/components/organisms/ReelsKeepSettings";
 
 /** Admin → Settings: the studio's system settings as a list of sections (like the CMS); a tap opens the section's form
  * on the right. Texts, plans and prices are in the CMS; the AI's settings and its report in Tools → AI settings. */
-type Id = "business" | "admins" | "features" | "reels" | "backup";
+type Id = "business" | "admins" | "features" | "access" | "reels" | "backup";
 type Tone = "success" | "neutral" | "brand" | "danger";
 
 export function SettingsTab() {
@@ -26,6 +29,7 @@ export function SettingsTab() {
   const features = useQuery({ queryKey: ["features"], queryFn: api.features }).data ?? DEFAULTS;
   const keep = useQuery({ queryKey: ["reels-keep"], queryFn: api.reelsKeep }).data;
   const admins = useQuery({ queryKey: ["admins"], queryFn: api.admins }).data;
+  const access = useAccess();
 
   const missing = site ? [!site.supportEmail && "support email", !site.businessAddress && "address"].filter(Boolean) : [];
   const on = FEATURE_LIST.filter((f) => features[f.key]).length;
@@ -43,6 +47,11 @@ export function SettingsTab() {
     {
       id: "features", icon: "sparkle", title: "Features", line: FEATURE_LIST.map((f) => `${f.label}: ${features[f.key] ? "on" : "off"}`).join(" · "),
       badge: { text: `${on} of ${FEATURE_LIST.length} on`, tone: "brand" }, body: <FeatureSettings bare />,
+    },
+    {
+      id: "access", icon: "user", title: "Sign-in rules",
+      line: `Open without an account: ${ACCESS_PAGES.filter((p) => access.open.includes(p.path)).map((p) => p.label).join(", ") || "none"} · the studio asks on ${access.studioAsk}${access.google && access.googleReady ? " · Google on" : ""}`,
+      badge: { text: `${access.open.length} open`, tone: "brand" }, body: <AccessSettings />,
     },
     {
       id: "reels", icon: "reels", title: "My Reels storage",

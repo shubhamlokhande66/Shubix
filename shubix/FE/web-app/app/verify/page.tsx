@@ -8,6 +8,7 @@ import { api, errorMessage } from "@/lib/api";
 import { useMe, useText } from "@/hooks/useApi";
 import { useCountdown } from "@/lib/useCountdown";
 import { maskEmail } from "@/lib/validate";
+import { takeNext } from "@/lib/returnTo";
 import { Button, Card, Icon, Spinner } from "@/components/atoms";
 import { AuthFrame } from "@/components/molecules/AuthFrame";
 import { ErrorBanner } from "@/components/molecules";
@@ -20,7 +21,7 @@ const Done = ({ email }: { email: string }) => {
       <span className="grid size-14 place-items-center rounded-full bg-success/15 text-success"><Icon name="check" size={28} /></span>
       <h2 className="m-0 text-[17px] font-semibold">{text("auth.verifiedTitle")}</h2>
       <p className="m-0 text-[13px] text-muted">{text("auth.verifiedText", { email })}</p>
-      <Button href="/" full>{text("auth.continue")}</Button>
+      <Button full onClick={() => window.location.assign(takeNext())}>{text("auth.continue")}</Button>
     </div>
   );
 };

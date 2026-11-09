@@ -1,5 +1,8 @@
 import { noteMe, noteSignedIn, skipSignedOut, viaBoot } from "@/lib/boot";
 import type { Features } from "@shubix/core/lib/features-list";
+import type { Access } from "@shubix/core/lib/access";
+/** the sign-in rules, and whether the server can sign in with Google */
+export type AccessRules = Access & { googleReady: boolean };
 import { tracked } from "./activity";
 
 /** Admin → Messages: a message to a group, in their bell and (email) by email */
@@ -302,6 +305,9 @@ export const api = {
   setContent: (patch: Record<string, import("@shubix/core/lib/collections").ListItem[] | null>) => request<import("@shubix/core/lib/collections").Content>("/api/admin/content", { method: "PUT", body: JSON.stringify(patch) }),
   /** Which parts of the app are on (Administration → Features). */
   features: () => viaBoot("features", () => request<Features>("/api/features")),
+  /** Who may open which page before signing in, and when the studio asks for an account (Administration → Settings). */
+  access: () => viaBoot("access", () => request<AccessRules>("/api/access")),
+  setAccess: (patch: Partial<Access>) => request<AccessRules>("/api/admin/access", { method: "PUT", body: JSON.stringify(patch) }),
   aiDirectorReport: () => request<AiDirectorReport>("/api/admin/ai-director"),
   setFeatures: (patch: Partial<Features>) => request<Features>("/api/admin/features", { method: "PUT", body: JSON.stringify(patch) }),
   adminOverview: () => request<AdminOverview>("/api/admin/overview"),

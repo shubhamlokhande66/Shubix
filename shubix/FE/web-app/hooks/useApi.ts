@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { DEFAULTS, type Features } from "@shubix/core/lib/features-list";
 import { useSafeQuery as useQuery } from "@/lib/useSafeQuery";
-import { api } from "@/lib/api";
+import { api, type AccessRules } from "@/lib/api";
+import { DEFAULT_ACCESS } from "@shubix/core/lib/access";
 import { DEFAULT_LOCKS, lockedFor, needMap, type PlanId } from "@shubix/core/lib/plan-locks";
 import { fill, TEXT_DEFAULTS, type Texts } from "@shubix/core/lib/texts";
 import { listDef, type ListItem } from "@shubix/core/lib/collections";
@@ -50,6 +51,12 @@ export function useHealth() {
 export function useFeatures(): Features {
   const q = useQuery({ queryKey: ["features"], queryFn: api.features, staleTime: 60_000, retry: false });
   return q.data ?? DEFAULTS;
+}
+
+/** The sign-in rules (Administration → Settings → Sign-in rules); the defaults until they are read. */
+export function useAccess(): AccessRules {
+  const q = useQuery({ queryKey: ["access"], queryFn: api.access, staleTime: 60_000, retry: false });
+  return q.data ?? { ...DEFAULT_ACCESS, googleReady: false };
 }
 
 /** What each plan unlocks (Admin → Settings → Plan locks). */

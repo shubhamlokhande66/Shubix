@@ -9,6 +9,7 @@ const admin = vi.hoisted(() => ({ value: false }));
 const features = vi.hoisted(() => ({ value: { fastStudio: true, studioAI: true, brands: true } as Record<string, boolean> }));
 vi.mock("@/hooks/useApi", async () => {
   const { defaultText } = await import("./helpers/texts");
+  const { DEFAULT_ACCESS } = await import("@shubix/core/lib/access");
   return {
     useText: () => defaultText,
     useLockCheck: () => () => "",
@@ -16,6 +17,7 @@ vi.mock("@/hooks/useApi", async () => {
     useMe: () => ({ data: at.me }),
     useCredits: () => ({ data: { enabled: false } }),
     useFeatures: () => features.value,
+    useAccess: () => ({ ...DEFAULT_ACCESS, googleReady: false }),
   };
 });
 

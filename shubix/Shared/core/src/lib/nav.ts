@@ -60,11 +60,8 @@ export const TABS: NavTab[] = [
   { href: "/account", label: "Account", tk: "nav.account", icon: "user" },
 ];
 
-/** Pages shown on their own (no bars), and pages open before signing in. */
+/** Pages shown on their own (no bars). Which pages are open before signing in: lib/access.ts (the administrator's rules). */
 export const AUTH_PAGES = ["/login", "/forgot", "/reset", "/verify"];
-export const PUBLIC_PAGES = ["/", "/guides", "/about", "/pricing", "/terms", "/privacy", "/refunds", "/delete-account", "/contact", "/editor"];
-/** open before signing in: the pages above and every guide (/guides/…) */
-export const isPublic = (pathname: string) => PUBLIC_PAGES.includes(pathname) || pathname.startsWith("/guides/");
 
 export function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";

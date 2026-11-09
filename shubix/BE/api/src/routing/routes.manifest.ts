@@ -2,6 +2,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 export const ROUTES: [string, () => Record<string, unknown>][] = [
   ["ads.txt", () => require("../routes/ads.txt/route")],
+  ["api/access", () => require("../routes/api/access/route")],
+  ["api/admin/access", () => require("../routes/api/admin/access/route")],
   ["api/admin/admins", () => require("../routes/api/admin/admins/route")],
   ["api/admin/ads", () => require("../routes/api/admin/ads/route")],
   ["api/admin/affiliates", () => require("../routes/api/admin/affiliates/route")],
@@ -40,6 +42,8 @@ export const ROUTES: [string, () => Record<string, unknown>][] = [
   ["api/ai/usage", () => require("../routes/api/ai/usage/route")],
   ["api/auth/delete-account", () => require("../routes/api/auth/delete-account/route")],
   ["api/auth/forgot", () => require("../routes/api/auth/forgot/route")],
+  ["api/auth/google", () => require("../routes/api/auth/google/route")],
+  ["api/auth/google/callback", () => require("../routes/api/auth/google/callback/route")],
   ["api/auth/login", () => require("../routes/api/auth/login/route")],
   ["api/auth/logout", () => require("../routes/api/auth/logout/route")],
   ["api/auth/logout-everywhere", () => require("../routes/api/auth/logout-everywhere/route")],
