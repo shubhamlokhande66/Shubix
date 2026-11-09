@@ -1305,7 +1305,9 @@ async function compressHighResolutionPreview(src, dd){
   const facts = { size: src.file.size, width: src.w, height: src.h, duration: src.dur, fps: probe ? probe.fps : 0, hdr: !!(probe && probe.hdr), tenBit: !!(probe && probe.tenBit), chroma422: !!(probe && probe.chroma422), vfr: !!(probe && probe.vfr) };
   src.facts = { ...facts, decodes: !!(probe && probe.decodes) };
   const isMov = /\.mov$/i.test(src.name || src.file.name || '') || /quicktime/i.test(src.file.type || '');
-  const plan=previewProxyPlan(facts, isMov);
+  // an iPhone plays its own camera's .mov itself: no light copy for it there (28 clips meant 28 copies made in the browser,
+  // the long 'creating a copy' wait); a heavy clip (4K, HDR, 10-bit, 60 fps) still gets its edit copy for the export
+  const plan=previewProxyPlan(facts, isMov && !IOS);
   const heavy = !!(plan && plan.forExport);
   // Reuse the copy made for this original file when a saved draft is reopened.
   const cached = await keptGet('p:', src.file);
