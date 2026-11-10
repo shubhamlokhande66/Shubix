@@ -69,7 +69,7 @@ export async function getPricing(): Promise<Pricing> {
   for (const [k, v] of Object.entries((saved.costs as Record<string, number>) ?? {})) if (k in out.costs) out.costs[k] = v;
   return out;
 }
-export const paymentsOpen = () => Boolean(settings.billingEnabled && settings.razorpayKeyId && settings.razorpayKeySecret);
+export const paymentsOpen = () => Boolean(settings.billingEnabled && settings.cashfreeAppId && settings.cashfreeSecretKey);
 export async function pricing() {
   const p = await getPricing();
   return { currency: "INR", yearlyMonthsCharged: YEARLY_MONTHS_CHARGED, plans: p.plans.map((x) => ({ ...x, yearly: x.monthly * YEARLY_MONTHS_CHARGED })), topUps: p.topUps, costLabels: COST_LABELS,

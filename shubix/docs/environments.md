@@ -9,7 +9,7 @@ Three copies of Shubix, each with its own website, API, database and bucket, so 
 | API (Cloudflare Worker) | `shubix-api-qa`, `api-qa.shubix.in` | `shubix-api-uat`, `api-uat.shubix.in` | `shubix-api`, `api.shubix.in` |
 | Database (`MONGODB_DB`) | `shubix_qa` | `shubix_uat` | as before |
 | R2 bucket | `smgroup-qa` | `smgroup-uat` | `smgroup` |
-| Payments | Razorpay test keys | Razorpay test keys | live keys |
+| Payments (Cashfree) | test keys (`CASHFREE_ENV=sandbox`) | test keys (`CASHFREE_ENV=sandbox`) | live keys |
 
 Work goes up one step at a time: a feature branch is merged into `qa`, tested there, `qa` is merged into `uat` for the
 final check, and `uat` into `main` for production.
@@ -45,9 +45,8 @@ is production).
    npx wrangler secret put R2_ACCESS_KEY_ID --env qa
    npx wrangler secret put R2_SECRET_ACCESS_KEY --env qa
    npx wrangler secret put OPENAI_API_KEY --env qa        # and GEMINI_API_KEY if used
-   npx wrangler secret put RAZORPAY_KEY_ID --env qa       # Razorpay TEST keys
-   npx wrangler secret put RAZORPAY_KEY_SECRET --env qa
-   npx wrangler secret put RAZORPAY_WEBHOOK_SECRET --env qa
+   npx wrangler secret put CASHFREE_APP_ID --env qa       # Cashfree TEST keys (Test mode on merchant.cashfree.com)
+   npx wrangler secret put CASHFREE_SECRET_KEY --env qa
    npx wrangler secret put GOOGLE_CLIENT_ID --env qa
    npx wrangler secret put GOOGLE_CLIENT_SECRET --env qa
    npx wrangler secret put SMTP_USER --env qa             # and SMTP_PASSWORD, SMTP_FALLBACK_USER, SMTP_FALLBACK_PASSWORD

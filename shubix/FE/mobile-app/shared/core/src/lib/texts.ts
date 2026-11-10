@@ -42,7 +42,7 @@ const LEGAL_TERMS = `These terms apply when you use {name} (“we”, “the ser
 - Pictures from public-domain artworks are credited in the app. AI pictures and voices may be used for your Reels freely.
 
 ## 5. Plans, credits and payments
-- Prices are in Indian rupees and include GST. Payments are processed by Razorpay.
+- Prices are in Indian rupees and include GST. Payments are processed by Cashfree.
 - Paid plans are prepaid for one month or one year and do **not** renew automatically. Plan credits refresh every 30 days during the paid period and do not carry over; starter and top-up credits do not expire.
 - Credits are used when a Reel is made. If a Reel fails, its credits are returned automatically.
 - All purchases are final and **non-refundable**; see our [Refund & Cancellation Policy](/refunds).
@@ -74,7 +74,7 @@ const LEGAL_PRIVACY = `This policy explains what {name} collects, why, and the c
 - **Usage:** your projects, credits and their history, and payment records (amount, date, plan).
 - **Phone app:** on the Free plan, Google AdMob uses your device's Advertising ID to show ads.
 - **Error reports:** when the website or the app breaks, the error message, the page and the type of browser or device, so we can fix it. Kept for 30 days.
-- **Payments:** handled by Razorpay. Your card, UPI or bank details go to Razorpay, not to us; we only receive a payment confirmation.
+- **Payments:** handled by Cashfree. Your card, UPI or bank details go to Cashfree, not to us; we only receive a payment confirmation.
 - **Invites and rewards:** your username (people you share it with can send you credits with it), who invited you, and the credits you send or receive.
 - **Affiliates:** if you join the affiliate program, the payout details you give us (a UPI ID or bank account), used only to pay your commission, and the sales made through your link (the customers' usernames are shown to you, never their emails).
 
@@ -86,7 +86,7 @@ const LEGAL_PRIVACY = `This policy explains what {name} collects, why, and the c
 ## Services that help us
 - AI services (for example Google Gemini) receive the text, keyframes or a short sample of your song needed for a feature you use, such as planning a story, making a narration or choosing an AI Reel's edit. We do not keep the keyframes or the song's sample, only labels such as what a clip shows or a song's mood, so the work is not repeated; these labels are deleted after 30 days.
 - Cloud services host the app and its database, and may make AI pictures for story scenes.
-- Razorpay processes payments. Social networks receive a Reel only when you ask us to post it.
+- Cashfree processes payments (it also receives your mobile number and email, which it needs to take the payment). Social networks receive a Reel only when you ask us to post it.
 - Google AdSense on the website and Google AdMob in the phone app may show ads on the Free plan (only on pages like Home and My Reels, never in the editor).
 - An email service sends account emails (sign-up and password codes, a welcome email about the app and its plans, payment receipts) and notes about your invites, credits and affiliate earnings.
 - The Help chat sends your questions to the AI service that answers them. Messages you send from the Contact page, and the questions you ask the Help chat, are kept so our team can help you and improve the answers.
@@ -225,8 +225,8 @@ export const TEXT_GROUPS: TextGroup[] = [
         T("pricing.costFree", "Free", "Free"), T("pricing.costCredit", "1 credit", "1 credit"), T("pricing.costCredits", "More ({n})", "{n} credits"))),
     S("Questions", C("Section", T("pricing.faqTitle", "Title", "Questions"), T("pricing.faqSub", "Line", "Everything about plans, credits and payments."))),
     S("Payments",
-      C("Notes", T("pricing.secure", "At the end: payments open", "Payments are handled securely by Razorpay. We never see your card or UPI details."),
-        T("pricing.soon", "At the end: payments closed", "Online payment opens soon."), T("pricing.paid", "After a payment ({item})", "Payment received: {item} is active. Thank you!"))),
+      C("Notes", T("pricing.secure", "At the end: payments open", "Payments are handled securely by Cashfree. We never see your card or UPI details."),
+        T("pricing.soon", "At the end: payments closed", "Online payment opens soon."), T("pricing.paid", "After a payment ({item})", "Payment received: {item} is active. Thank you!"), T("pricing.paidBack", "After paying on Cashfree's own page", "Payment received. Thank you!"))),
     S("Coupons & offers",
       C("Checkout", T("pricing.checkoutTitle", "Title", "Your order"), T("pricing.checkoutPrice", "Price line", "Price"), T("pricing.checkoutOffer", "Offer line ({title})", "{title}"),
         T("pricing.checkoutCoupon", "Coupon line ({code})", "Coupon {code}"), T("pricing.checkoutTotal", "Total line", "You pay"), T("pricing.couponLabel", "Coupon field label", "Have a coupon code?"),
@@ -520,10 +520,10 @@ export const TEXT_GROUPS: TextGroup[] = [
   ),
 
   // ---------------------------------------------------------------- plans & payments
-  page(PLANS, "checkout", "Payment window (Razorpay)",
-    S("Payment window", C("Look", T("checkout.name", "Business name at the top", "Shubix"),
-      T("checkout.logo", "Logo (a square picture: a link, or /icon-512.png from this site)", "/icon-512.png"), T("checkout.color", "Colour (#rrggbb)", "#d8bd7b")),
-      C("Phone app", T("checkout.needsApp", "Paying in Expo Go (it has no Razorpay)", "Payments work in the Shubix app from the Play Store. Here (Expo Go) you can look around, but not pay.")))),
+  page(PLANS, "checkout", "Payment window (Cashfree)",
+    S("Mobile number", C("Before paying (its look: merchant.cashfree.com)", T("checkout.phone", "Field", "Mobile number"),
+      T("checkout.phoneHint", "Under the field", "Cashfree needs it to take the payment. It is kept on your account for next time."), T("checkout.phoneBad", "A wrong number", "Enter your 10-digit mobile number.")),
+      C("Phone app", T("checkout.needsApp", "Paying in Expo Go (no payments there)", "Payments work in the Shubix app from the Play Store. Here (Expo Go) you can look around, but not pay.")))),
 ];
 
 export const TEXT_DEFAULTS: Record<string, string> = Object.fromEntries(TEXT_GROUPS.flatMap((g) => g.items.map((t) => [t.key, t.value])));

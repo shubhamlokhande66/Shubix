@@ -11,15 +11,15 @@ import { cn } from "@/lib/cn";
 
 /** Admin → Settings → Business details: the name, support email, phone / WhatsApp, address, the legal pages' date and the
  * phone apps' store links (the Google Play and App Store badges).
- * The Contact, Privacy, Terms and Refunds pages show them (and Razorpay asks for a real email and address); a detail not
+ * The Contact, Privacy, Terms and Refunds pages show them (and Cashfree asks for a real email and address); a detail not
  * filled in is left out for people, never a placeholder. Saved here, no restart; an empty field follows the server's
  * environment. */
 const FIELDS: { key: keyof SiteInfo; label: string; hint: string; placeholder: string; needed?: boolean; long?: boolean }[] = [
   { key: "businessName", label: "Business name", hint: "On the legal pages and the Contact page", placeholder: "Shubix" },
-  { key: "supportEmail", label: "Support email", hint: "Where people write to you; needed by Razorpay", placeholder: "support@yourdomain.com", needed: true },
+  { key: "supportEmail", label: "Support email", hint: "Where people write to you; needed by Cashfree", placeholder: "support@yourdomain.com", needed: true },
   { key: "supportPhone", label: "Phone / WhatsApp (optional)", hint: "Shown on the Contact page with a WhatsApp link", placeholder: "+91 98765 43210" },
   { key: "legalUpdated", label: "Legal pages last updated", hint: "Shown under the Terms, Privacy and Refunds titles", placeholder: "25 October 2026" },
-  { key: "businessAddress", label: "Registered address", hint: "On the legal pages; needed by Razorpay", placeholder: "Street, city, state, PIN", needed: true, long: true },
+  { key: "businessAddress", label: "Registered address", hint: "On the legal pages; needed by Cashfree", placeholder: "Street, city, state, PIN", needed: true, long: true },
   { key: "gstin", label: "GSTIN (optional)", hint: "Printed on every payment receipt; leave empty if not registered", placeholder: "27ABCDE1234F1Z5" },
   { key: "playStoreUrl", label: "Google Play link (Android app)", hint: "The “Get it on Google Play” badge; empty shows “Coming soon”", placeholder: "https://play.google.com/store/apps/details?id=…" },
   { key: "appStoreUrl", label: "App Store link (iPhone app)", hint: "The “Download on the App Store” badge; empty shows “Coming soon”", placeholder: "https://apps.apple.com/app/…" },

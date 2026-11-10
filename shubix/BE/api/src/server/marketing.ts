@@ -210,7 +210,7 @@ export async function quote(uid: string | null, item: { kind: string; rupees: nu
       after -= coupon.off;
     }
   }
-  const final = Math.max(1, Math.round(after)); // whole rupees (Razorpay takes paise; the app's prices are whole)
+  const final = Math.max(1, Math.round(after)); // whole rupees (the app's prices are whole)
   return { base, offer: offer ? { id: String(offer._id), title: String(offer.title), percent: Number(offer.percent), off: offerOff } : null, coupon, couponError, final };
 }
 /** A paid order with a coupon: its use counted, once. */

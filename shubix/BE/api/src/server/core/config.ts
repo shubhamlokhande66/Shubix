@@ -95,9 +95,11 @@ export const settings = {
   smtpFallbackPassword: env("SMTP_FALLBACK_PASSWORD", ""),
   smtpFallbackFrom: env("SMTP_FALLBACK_FROM", ""),
   smtpFallbackSsl: bool("SMTP_FALLBACK_SSL", false),
-  razorpayKeyId: env("RAZORPAY_KEY_ID", ""),
-  razorpayKeySecret: env("RAZORPAY_KEY_SECRET", ""),
-  razorpayWebhookSecret: env("RAZORPAY_WEBHOOK_SECRET", ""),
+  // payments: Cashfree (merchant.cashfree.com → Developers → API keys). The secret key also signs its webhooks.
+  // CASHFREE_ENV "sandbox" takes Cashfree's test payments (QA, UAT); anything else is real money
+  cashfreeAppId: env("CASHFREE_APP_ID", ""),
+  cashfreeSecretKey: env("CASHFREE_SECRET_KEY", ""),
+  cashfreeEnv: env("CASHFREE_ENV", "production") === "sandbox" ? "sandbox" : "production",
   retentionEnabled: bool("RETENTION_ENABLED", false),
   keepUploadsHours: num("KEEP_UPLOADS_HOURS", 2),
   keepProjectsHours: num("KEEP_PROJECTS_HOURS", 24),

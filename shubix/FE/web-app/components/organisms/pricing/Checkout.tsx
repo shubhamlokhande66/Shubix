@@ -8,11 +8,16 @@ import { ErrorBanner, SidePanel } from "@/components/molecules";
 import { rupees } from "@/components/organisms/pricing/PlanCard";
 import type { Quote } from "@/lib/marketing";
 
+// what the server takes (server/credits.ts cleanPhone): 10 digits, with or without +91 / 0
+const phoneOk = (v: string) => /^[6-9]\d{9}$/.test(v.replace(/[\s-]/g, "").replace(/^(\+?91|0)(?=\d{10}$)/, ""));
+
 /** Before the payment window: what you pay (the price, a sale running, your coupon) and the total, worked out by the
- * server (Admin → Marketing sets the offers and codes). Pay opens Razorpay with that total. */
-export function Checkout({ item, label, onClose, onPay, busy }: { item: string | null; label: string; onClose: () => void; onPay: (coupon?: string) => void; busy: boolean }) {
+ * server (Admin → Marketing sets the offers and codes), and the mobile number Cashfree needs (the one kept on the account
+ * is filled in). Pay opens Cashfree with that total. */
+export function Checkout({ item, label, onClose, onPay, busy }: { item: string | null; label: string; onClose: () => void; onPay: (coupon?: string, phone?: string) => void; busy: boolean }) {
   const text = useText();
   const [q, setQ] = useState<Quote | null>(null), [err, setErr] = useState<string | null>(null), [loading, setLoading] = useState(false);
+  const [phone, setPhone] = useState(""), [phoneTouched, setPhoneTouched] = useState(false);
   const [code, setCode] = useState(""), [applied, setApplied] = useState<string | undefined>(undefined), [codeErr, setCodeErr] = useState("");
 
   const check = async (coupon?: string) => {
@@ -20,7 +25,7 @@ export function Checkout({ item, label, onClose, onPay, busy }: { item: string |
     setLoading(true); setErr(null);
     try {
       const r = await api.quote(item, coupon);
-      setQ(r);
+      setQ(r); if (r.phone) setPhone((p) => p || r.phone || "");
       if (coupon && r.couponError) { setCodeErr(r.couponError); setApplied(undefined); } else { setCodeErr(""); setApplied(coupon); }
     } catch (e) { setErr(errorMessage(e)); } finally { setLoading(false); }
   };
@@ -31,7 +36,7 @@ export function Checkout({ item, label, onClose, onPay, busy }: { item: string |
   );
   return (
     <SidePanel open={!!item} onClose={onClose} title={text("pricing.checkoutTitle")} where={label}
-      footer={q && <Button size="lg" full icon="bolt" loading={busy} disabled={loading} onClick={() => onPay(applied)}>{text("pricing.payNow", { price: rupees(q.final) })}</Button>}>
+      footer={q && <Button size="lg" full icon="bolt" loading={busy} disabled={loading || !phoneOk(phone)} onClick={() => onPay(applied, phone.trim())}>{text("pricing.payNow", { price: rupees(q.final) })}</Button>}>
       {err && <ErrorBanner message={err} onRetry={() => void check(applied)} />}
       {!q && !err && <Spinner label={text("pricing.checking")} />}
       {q && (
@@ -42,6 +47,14 @@ export function Checkout({ item, label, onClose, onPay, busy }: { item: string |
             {q.coupon && row(<span className="inline-flex items-center gap-1.5"><Icon name="tag" size={14} className="text-accent" />{text("pricing.checkoutCoupon", { code: q.coupon.code })} · {q.coupon.label}</span>, `−${rupees(q.coupon.off)}`, "text-success")}
             <div className="my-0.5 h-px bg-border" />
             {row(<b className="text-[15px]">{text("pricing.checkoutTotal")}</b>, <b className="font-[family-name:var(--font-display)] text-[22px]">{rupees(q.final)}</b>)}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="payphone" className="text-[12px] font-semibold text-muted">{text("checkout.phone")}</label>
+            <Input id="payphone" type="tel" inputMode="tel" autoComplete="tel" maxLength={16} value={phone} placeholder="98765 43210"
+              onChange={(e) => setPhone(e.target.value)} onBlur={() => setPhoneTouched(true)}
+              className={phoneTouched && !phoneOk(phone) ? "border-danger" : ""} aria-invalid={(phoneTouched && !phoneOk(phone)) || undefined} aria-describedby="payphonehint" />
+            <p id="payphonehint" role={phoneTouched && !phoneOk(phone) ? "alert" : undefined} className={"m-0 text-[12px] " + (phoneTouched && !phoneOk(phone) ? "text-danger" : "text-muted")}>
+              {phoneTouched && !phoneOk(phone) ? text("checkout.phoneBad") : text("checkout.phoneHint")}</p>
           </div>
           <form className="flex flex-col gap-1.5" onSubmit={(e) => { e.preventDefault(); if (code.trim()) void check(code.trim().toUpperCase()); }}>
             <label htmlFor="coupon" className="text-[12px] font-semibold text-muted">{text("pricing.couponLabel")}</label>
