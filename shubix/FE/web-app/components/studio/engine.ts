@@ -3123,7 +3123,16 @@ async function paceRun(key){
     paceBusy = false; if(buf && sources.length && !recording) directorMaybe();
     // the director did not start (already planned, or no edit yet): the line must not stay on "choosing the pace…"
     if(!dirBusy && /…$/.test($('aistat').textContent || '')) aiStat('Your Reel keeps the song\'s own pace.');
-  }finally{ paceBusy = false; tm.done(); }
+  }finally{ paceBusy = false; tm.done(); aiSettle(); }
+}
+// no Shubix AI work running any more, but its line still ends "…" ("…Now planning the shots…" when no plan was needed or
+// asked: a saved Reel opened again, the plan already made): closed, so the "Shubix at work" popup never stays on
+function aiSettle(){
+  setTimeout(() => {
+    if(aiBusy || paceBusy || dirBusy) return;
+    const t = $('aistat').textContent || ''; if(!/…$/.test(t)) return;
+    aiStat(director && director.key === dirKey() ? 'Shubix planned your Reel' + (director.story ? ': ' + director.story : '.') : /^Shubix chose the pace/.test(t) ? t.replace(/\s*Now planning the shots…$/, '') : '');
+  }, 1500);
 }
 async function directorRun(key){
   dirBusy = true; aiStat('Shubix is choosing every shot, transition and effect…');
@@ -3617,7 +3626,7 @@ function makeEditNow(){
   // made while the person was in another app (the clips read, the AI's plan arrived): they are told
   if(isHidden() && !aiBusy && !dirBusy && !paceBusy && readyToldGen !== reelIdNow()){ readyToldGen = reelIdNow(); void notifyDone('Your Reel is ready', 'Tap to preview it in Shubix', 'shubix-reel'); }
   captureLoop(); editGen++;
-  paceMaybe(); directorMaybe();
+  paceMaybe(); directorMaybe(); aiSettle();
   chatReportAuto();
   if(look === 'copy' && refProfile) setTimeout(()=>{ copyLook(); }, 0);
 }
@@ -7657,7 +7666,20 @@ function stateOf(){
     lmedia: lmedia.map(M => ({ fp: fileFp(M.file), name: M.name })), layers: lyOf(),
     edit: editOf(),
     kfs: kind === 'talk' && edit.some(e => e.uk && e.uk.length) ? edit.map(e => e.uk && e.uk.length ? e.uk : null) : undefined,
-    caps: capAll && capKeyNow ? { key: capKeyNow, all: capAll } : null, vo: vo ? { key: vo.key, sr: vo.sr, fp: fileFp(voFile()) } : null };
+    caps: capAll && capKeyNow ? { key: capKeyNow, all: capAll } : null, vo: vo ? { key: vo.key, sr: vo.sr, fp: fileFp(voFile()) } : null,
+    ai: aiSaved() };
+}
+// what Shubix AI already decided for this Reel (its pace, its plan): saved with it, so opening it again never asks again
+function aiSaved(){
+  try{ return JSON.parse(JSON.stringify({ pace: [...paceCache].slice(-6), song: [...songPace].slice(-4),
+    dir: [...dirCache].slice(-6).map(([k, v]) => [k, { key: v.key, slots: v.slots, story: v.story || '' }]) })); }
+  catch(e){ return null; }
+}
+function aiRestore(a){
+  if(!a) return;
+  for(const [k, v] of a.pace || []) paceCache.set(k, v);
+  for(const [k, v] of a.song || []) songPace.set(k, v);
+  for(const [k, v] of a.dir || []) dirCache.set(k, v);
 }
 async function putFile(f){ const k = 'f:' + fileFp(f); if(await idb('files', 'readonly', s => s.getKey(k)) === undefined) await idb('files', 'readwrite', s => s.put(f, k)); }
 function thumbOf(){ if(!edit.length) return ''; const c = document.createElement('canvas'), H = 240, W = Math.round(H*out.width/out.height); c.width = W; c.height = H; c.getContext('2d').drawImage(out, 0, 0, W, H); try{ return c.toDataURL('image/jpeg', 0.7); }catch(e){ return ''; } }
@@ -7750,6 +7772,7 @@ async function openProject(id){
     if(st.sec){ sec.len = st.sec.len; sec.auto = st.sec.auto; sec.start = st.sec.start;
       [...$('slen').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.l === (!sec.len ? '0' : [15,30,60].includes(sec.len) ? String(sec.len) : 'c'))));
       if(sec.len && ![15,30,60].includes(sec.len)){ $('slenc').value = sec.len; $('slencw').hidden = false; } $('sauto').hidden = !sec.len; $('lenhint').hidden = !sec.len; $('mwave').classList.toggle('drag', !!sec.len); }
+    aiRestore(st.ai);
     const clips = []; for(const c of st.clips || []){ const f = await getF(c.fp, c.name); if(f) clips.push(f); }
     const sf = st.song ? await getF(st.song.fp, st.song.name) : null;
     if(sf){ let cs = null; try{ cs = await idb('songs', 'readonly', s => s.get(st.song.fp)); }catch(e){} await loadMusic(sf, cs && cs.r ? { r: cs.r, aiDone: cs.aiDone } : null); }
