@@ -1,28 +1,42 @@
 name: Deploy website (Vercel)
 
-# The website (shubix/FE/web-app) to production on Vercel, by hand only: Actions, Deploy website (Vercel), Run workflow.
-# Vercel's own deploy on a push is off (vercel.json git.deploymentEnabled false). Built here with the Vercel CLI and the
-# project's settings and environment variables from Vercel, then deployed as it was built.
+# The website (shubix/FE/web-app) on Vercel, by hand only: Actions, Deploy website (Vercel), Run workflow, pick qa / uat /
+# prod. Vercel's own deploy on a push is off (vercel.json git.deploymentEnabled false). Built here with the Vercel CLI and
+# the project's settings and environment variables from Vercel, then deployed as it was built.
+# prod: Vercel's Production (shubix.in). qa / uat: a Preview build with that branch's variables (Vercel, Settings,
+# Environment Variables, Preview, branch qa or uat: API_URL, PUBLIC_BASE_URL), then given its address (qa.shubix.in,
+# uat.shubix.in). Each deploys its own branch (qa, uat, main): docs/environments.md.
 # Secrets (Settings, Secrets and variables, Actions): VERCEL_TOKEN (vercel.com/account/tokens), VERCEL_ORG_ID and
 # VERCEL_PROJECT_ID (the project's Settings, General: Team ID / Project ID).
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to deploy the website"
+        type: choice
+        options: [qa, uat, prod]
+        default: qa
 
 concurrency:
-  group: deploy-vercel
+  group: deploy-vercel-${{ inputs.target }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # GitHub environments (Settings, Environments): "production" can ask for an approval before it runs
+    environment: ${{ inputs.target == 'prod' && 'production' || inputs.target }}
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      TARGET: ${{ inputs.target }}
     steps:
       - name: The Vercel secrets are there
         run: test -n "$VERCEL_TOKEN" && test -n "$VERCEL_ORG_ID" && test -n "$VERCEL_PROJECT_ID" || { echo "::error::Add VERCEL_TOKEN, VERCEL_ORG_ID and VERCEL_PROJECT_ID to the repo secrets first."; exit 1; }
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target == 'prod' && 'main' || inputs.target }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
@@ -33,6 +47,16 @@ jobs:
           cache: pnpm
           cache-dependency-path: shubix/pnpm-lock.yaml
       # from the repository root: the project's Root Directory (shubix/FE/web-app) is set on Vercel
-      - run: npx -y vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - run: npx -y vercel@latest build --prod --token="$VERCEL_TOKEN"
-      - run: npx -y vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: Production
+        if: inputs.target == 'prod'
+        run: |
+          npx -y vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx -y vercel@latest build --prod --token="$VERCEL_TOKEN"
+          npx -y vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: QA / UAT
+        if: inputs.target != 'prod'
+        run: |
+          npx -y vercel@latest pull --yes --environment=preview --git-branch="$TARGET" --token="$VERCEL_TOKEN"
+          npx -y vercel@latest build --token="$VERCEL_TOKEN"
+          url=$(npx -y vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN")
+          npx -y vercel@latest alias set "$url" "$TARGET.shubix.in" --token="$VERCEL_TOKEN"
