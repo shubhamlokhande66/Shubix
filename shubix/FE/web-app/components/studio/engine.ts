@@ -1505,7 +1505,9 @@ async function readVideo(src){
       const doMotion = () => scanMotion(src, p=>{ pm = p; show(); }).then(()=>{ src.readMs.motion = Math.round(performance.now()-tq); });
       const doFaces = () => scanFaces(src, p=>{ pf = p; show(); }).then(()=>{ src.readMs.faces = Math.round(performance.now()-tq); });
       // two decoders at once is ~40% faster, but on an iPhone it doubles the memory of a 4K video: one after the other there
-      if(IOS){   // one decode of the clip for motion and faces: half the work and the memory of two decoders
+      // one decode of the clip for motion and faces: half the work and the memory of two decoders. On every phone and for
+      // any 4K clip (an Android phone read a 1.8 s 4K clip in 7.8 s with two 4K decoders at once)
+      if(IOS || /Android/i.test(navigator.userAgent) || src.w*src.h > 4e6){
         const fsc = faceScanner(src);
         await scanMotion(src, p=>{ pm = pf = p; show(); }, fsc); src.readMs.motion = src.readMs.faces = Math.round(performance.now()-tq);
         if(!fsc) src.faces = src.faces || [];
@@ -3014,11 +3016,22 @@ const dirCache = new Map();
  * allowed, a bad request) is answered at once. Shubix AI never falls back to the phone's own edit: aiDown. */
 const TEAM_MSG = 'Our team is working on it. Please try again in a little while. No credits were used.';
 // is the server there? (8 s at most: a down or sleeping server is not waited for minutes)
+// is the server there? A sleeping server takes 20-60 s to wake (its first answer is slow, or a 502/503 meanwhile): that is
+// waited for, saying so. Down = no answer for 75 s, or no network at all (then at once). 8 s was too short: a waking
+// server was called "not available", the popup closed, and the Reel then wanted Shubix AI again at Save.
 async function serverUp(){
-  const t = timeoutSignal(8000);
-  try{ const r = await fetch('/api/health', { cache: 'no-store', signal: t.signal }); return r.ok; }
-  catch(e){ return false; }
-  finally{ t.done(); }
+  const until = Date.now() + 75000;
+  for(let n = 0; Date.now() < until; n++){
+    if(typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    const t = timeoutSignal(20000);
+    try{ const r = await fetch('/api/health', { cache: 'no-store', signal: t.signal }); if(r.ok) return true; }
+    catch(e){ /* not answered yet */ }
+    finally{ t.done(); }
+    if(ac.signal.aborted || aiStopper.signal.aborted) return false;
+    if(n === 0) aiStat('Waking Shubix up · it takes up to a minute…');
+    await new Promise(ok => setTimeout(ok, 2000));
+  }
+  return false;
 }
 async function apiFetch(url, opts = {}){
   for(let n = 1; ; n++){
