@@ -63,5 +63,79 @@
     "SMTP_FALLBACK_PORT": "587",
     "SMTP_FALLBACK_SSL": "false",
     "SMTP_FALLBACK_FROM": "Shubix <shubix.smempire@gmail.com>"
+  },
+  // QA and UAT (docs/environments.md): the same API as production, each its own Worker (shubix-api-qa, shubix-api-uat),
+  // container, address, database and bucket, so a test never touches real users. Everything above is production.
+  // Deploy: npx wrangler deploy --env qa | uat; secrets: npx wrangler secret put <NAME> --env qa | uat.
+  // (Wrangler does not carry vars, containers or Durable Objects into an environment: each lists its own.)
+  "env": {
+    "qa": {
+      "routes": [{ "pattern": "api-qa.shubix.in", "custom_domain": true }],
+      "containers": [{ "class_name": "ReelApp", "image": "../docker/api.Dockerfile", "image_build_context": "../..", "instance_type": "basic", "max_instances": 1 }],
+      "durable_objects": { "bindings": [{ "name": "APP", "class_name": "ReelApp" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReelApp"] }],
+      "vars": {
+        "NODE_ENV": "production",
+        "CONTAINER_ROLE": "api",
+        "WEB_ORIGINS": "https://qa.shubix.in",
+        "SLEEP_AFTER": "30s",
+        "STORAGE_PATH": "/data/storage",
+        "R2_BUCKET": "smgroup-qa",
+        "R2_ACCOUNT_ID": "2d7702f8679dc5b3d44ce59ab951ca00",
+        "PUBLIC_BASE_URL": "https://qa.shubix.in",
+        "MONGODB_DB": "shubix_qa",
+        "AUTH_ENABLED": "true",
+        "BILLING_ENABLED": "true",
+        "ADMIN_EMAILS": "shubix.smempire@gmail.com",
+        "COOKIE_SECURE": "true",
+        "AI_PROVIDER": "openai",
+        "OPENAI_TEXT_MODEL": "gpt-5.6-luna",
+        "GEMINI_TEXT_MODEL": "gemini-3.5-flash-lite",
+        "MAX_CONCURRENT_JOBS": "1",
+        "MAX_VIDEO_SIZE_MB": "95",
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "587",
+        "SMTP_SSL": "false",
+        "SMTP_FROM": "Shubix QA <shubix.smempire@gmail.com>",
+        "SMTP_FALLBACK_HOST": "smtp-relay.brevo.com",
+        "SMTP_FALLBACK_PORT": "587",
+        "SMTP_FALLBACK_SSL": "false",
+        "SMTP_FALLBACK_FROM": "Shubix QA <shubix.smempire@gmail.com>"
+      }
+    },
+    "uat": {
+      "routes": [{ "pattern": "api-uat.shubix.in", "custom_domain": true }],
+      "containers": [{ "class_name": "ReelApp", "image": "../docker/api.Dockerfile", "image_build_context": "../..", "instance_type": "basic", "max_instances": 1 }],
+      "durable_objects": { "bindings": [{ "name": "APP", "class_name": "ReelApp" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReelApp"] }],
+      "vars": {
+        "NODE_ENV": "production",
+        "CONTAINER_ROLE": "api",
+        "WEB_ORIGINS": "https://uat.shubix.in",
+        "SLEEP_AFTER": "30s",
+        "STORAGE_PATH": "/data/storage",
+        "R2_BUCKET": "smgroup-uat",
+        "R2_ACCOUNT_ID": "2d7702f8679dc5b3d44ce59ab951ca00",
+        "PUBLIC_BASE_URL": "https://uat.shubix.in",
+        "MONGODB_DB": "shubix_uat",
+        "AUTH_ENABLED": "true",
+        "BILLING_ENABLED": "true",
+        "ADMIN_EMAILS": "shubix.smempire@gmail.com",
+        "COOKIE_SECURE": "true",
+        "AI_PROVIDER": "openai",
+        "OPENAI_TEXT_MODEL": "gpt-5.6-luna",
+        "GEMINI_TEXT_MODEL": "gemini-3.5-flash-lite",
+        "MAX_CONCURRENT_JOBS": "1",
+        "MAX_VIDEO_SIZE_MB": "95",
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "587",
+        "SMTP_SSL": "false",
+        "SMTP_FROM": "Shubix UAT <shubix.smempire@gmail.com>",
+        "SMTP_FALLBACK_HOST": "smtp-relay.brevo.com",
+        "SMTP_FALLBACK_PORT": "587",
+        "SMTP_FALLBACK_SSL": "false",
+        "SMTP_FALLBACK_FROM": "Shubix UAT <shubix.smempire@gmail.com>"
+      }
+    }
   }
 }
