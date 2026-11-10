@@ -23,6 +23,7 @@ Status of each rule on each platform is at the end of this file.
 - Proceed goes on from where it stopped: clips already read are not read again, and an analysed song only finishes its beat check.
 - Discard Reel asks once, removes everything for this Reel and goes Home.
 - Make Reel runs in one popup (2026-11-09): no Shubix AI question or offer in between; the price is on the screen and pressing Make Reel is the answer. Every API call is tried 3 times, then a Retry / Close popup; Shubix AI never falls back to the phone's edit.
+- After Make Reel the popup stays open until the editor opens, also between two steps (2026-11-10). If Shubix AI stops moving, it is tried again after 10 s and a Retry / Close popup shows after 30 s. Retry continues to the editor without another click.
 - Next and Generate are off without a song and clips, and while either is being worked on. After a Cancel, Generate says "Continue analysis" and only offers Proceed.
 - Each clip plays in its own card, muted and looping, once the work is over. There is no play button. Only cards on the screen play, and only a few at once, so a phone does not run out of memory. Cards do not play during Shubix AI or in the editor.
 - A clip is moved by dragging it: at once with a mouse, after holding it a moment with a finger. A quick swipe still scrolls. There is no arrow and no Reverse order. The Reel and the numbers follow the new order.
