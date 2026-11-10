@@ -86,8 +86,10 @@ export function initFlow(root: HTMLElement): () => void {
   const clipsOk = () => done("s2");
   // Shubix's line under the clips ends in "…" while it works (scoring the clips, the pace, planning the shots, the mixes)
   // Shubix AI still working on the Reel (the studio's own state; its status line can end in "…" when it is only cut short)
-  const aiWorking = () => { const w = (root as unknown as { __studio?: { work?: { ai?: boolean; dir?: boolean; pace?: boolean; aiWait?: boolean } } }).__studio?.work; return !!w && (!!w.ai || !!w.dir || !!w.pace || !!w.aiWait); };   // (aiWait: agreed to, its plan not here yet, also between its steps)
-  type Live = { aiRetry?: () => boolean; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
+  const aiWork = () => (root as unknown as { __studio?: { work?: { ai?: boolean; dir?: boolean; pace?: boolean; aiWait?: boolean } } }).__studio?.work;
+  const aiWorking = () => { const w = aiWork(); return !!w && (!!w.ai || !!w.dir || !!w.pace || !!w.aiWait); };   // (aiWait: agreed to, its plan not here yet, also between its steps)
+  const aiRunning = () => { const w = aiWork(); return !!w && (!!w.ai || !!w.dir || !!w.pace); };   // a step of it is running right now
+  type Live = { aiRetry?: () => boolean; aiKick?: () => void; aiStalled?: () => void; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
   const live = () => (root as unknown as { __studio?: Live }).__studio;
   const stopped = () => live()?.cancelled?.() ?? { song: false, clips: false };
   let aiRunNo = 0;   // the wait for the Reel that the popup's Cancel ended
@@ -345,7 +347,10 @@ export function initFlow(root: HTMLElement): () => void {
     if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     // no popup until Generate: the work goes on behind the page
     const quiet = !revealed && !aiGo && !wantGen && !inEngine ? "1" : "";
-    if ((root.dataset.fquiet ?? "") !== quiet) { root.dataset.fquiet = quiet; root.dispatchEvent(new Event("studio-quiet")); }
+    // from Make Reel to the editor the popup stays open, also between two steps with nothing running (it closed there, and
+    // Make Reel had to be pressed again)
+    const hold = (wantGen || aiGo) && !revealed && !inEngine ? "1" : "";
+    if ((root.dataset.fquiet ?? "") !== quiet || (root.dataset.fhold ?? "") !== hold) { root.dataset.fquiet = quiet; root.dataset.fhold = hold; root.dispatchEvent(new Event("studio-quiet")); }
   };
 
   const go = (s: Step, push = true) => {
@@ -458,9 +463,14 @@ export function initFlow(root: HTMLElement): () => void {
         await new Promise((ok) => setTimeout(ok, 400)); apply();
         // the AI's Reel, not the first one: as long as work goes on (50 clips may take minutes; a fixed 3 minutes closed the
         // popup halfway and Make Reel had to be pressed again); given up only after 20 s with nothing working and no Reel
-        for (let idle = 0; run === aiRunNo && (aiWorking() || !made()) && idle < 66; ) {
+        // Shubix's plan waited for with nothing running at all (it stood "stuck" for ever): after 10 s its next step is
+        // tried again, after 30 s the popup says so (Retry / Close), never a silent wait
+        for (let idle = 0, still = 0; run === aiRunNo && (aiWorking() || !made()) && idle < 66; ) {
           await new Promise((ok) => setTimeout(ok, 300)); apply();
           idle = aiWorking() || working.size > 0 || shubixBusy() ? 0 : idle + 1;
+          still = aiRunning() || working.size > 0 || !aiWorking() ? 0 : still + 1;
+          if (still === 33) live()?.aiKick?.();
+          if (still >= 100) { live()?.aiStalled?.(); break; }
         }
         if (run === aiRunNo && !made()) { aiGo = false; wantGen = false; apply(); return; }   // no Reel after all that: never a dead Make Reel
         if (run === aiRunNo && made() && phone()) {   // phones: the finished Reel, with its timeline (also when it is opened again after Back)
@@ -561,7 +571,9 @@ export function initFlow(root: HTMLElement): () => void {
   root.addEventListener("studio-cancelled", () => { if (step === "adjust" && !done("s1")) go("choose"); else apply(); }, sig);
   // Shubix AI could not be reached (its popup says so): the steps stop waiting, Make Reel is on again
   root.addEventListener("studio-ai-down", () => { aiRunNo++; aiGo = false; wantGen = false; if (step === "analyse") go("clips"); else apply(); }, sig);
-  root.addEventListener("studio-ai-cancel", () => { aiRunNo++; aiGo = false; if (step === "analyse") go("clips"); else apply(); }, sig);
+  // its Retry: as Make Reel again (the same Reel, no new question), so the editor opens by itself when Shubix is done
+  root.addEventListener("studio-ai-retry", (e) => { if (revealed || inEngine) return; e.preventDefault(); const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, sig);
+  root.addEventListener("studio-ai-cancel",() => { aiRunNo++; aiGo = false; if (step === "analyse") go("clips"); else apply(); }, sig);
   // a song that is ready moves the phones on to adjusting it
   let wasSong = done("s1");
   // the engine's progress (reading the clips, the beats, the AI) fills the checklist and the ring

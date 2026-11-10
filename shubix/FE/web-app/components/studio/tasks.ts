@@ -63,7 +63,14 @@ export function createTasks(host: HTMLElement) {
       steps.appendChild(li);
     }
   };
-  const list = box.querySelector<HTMLElement>("[data-list]")!, why = box.querySelector<HTMLElement>("[data-why]")!, acts = box.querySelector<HTMLElement>("[data-acts]")!;
+  const list = box.querySelector<HTMLElement>("[data-list]")!;
+  // Make Reel pressed (host.dataset.fhold, flow.ts): between two steps, with no card, the popup stays with this one
+  const holdEl = document.createElement("div");
+  holdEl.setAttribute("role", "status"); holdEl.hidden = true; holdEl.className = "flex w-full items-center gap-3 text-foreground";
+  holdEl.innerHTML = `<span class="grid h-14 w-14 shrink-0 place-items-center rounded-full border border-accent/30 bg-accent/10 text-accent">${ICON.ai}</span><span class="min-w-0 flex-1"><b class="block truncate text-[16px] font-semibold tracking-tight"></b><span class="mt-2.5 block h-1 overflow-hidden rounded-full bg-foreground/10"><i class="block h-full w-[40%] rounded-full bg-gradient-to-r from-accent/60 to-accent motion-safe:animate-slide"></i></span></span>`;
+  holdEl.querySelector("b")!.textContent = tx("Getting your Reel ready");
+  list.appendChild(holdEl);
+  const why =box.querySelector<HTMLElement>("[data-why]")!, acts = box.querySelector<HTMLElement>("[data-acts]")!;
   // while the AI works: why to stay, one short line after another
   let notes: string[] = [], note = 0, noteTimer: ReturnType<typeof setInterval> | undefined;
   // the screen stays on while the AI works (where the browser allows it)
@@ -101,7 +108,9 @@ export function createTasks(host: HTMLElement) {
     const newest = shown[shown.length - 1]?.[0];
     cards.forEach((c, id) => { c.el.hidden = id !== newest; });
     // the Create flow's work before Generate goes on behind the page (flow.ts): each clip's card says how it goes
-    const was = box.hidden; box.hidden = !shown.length || host.dataset.fquiet === "1";
+    const hold = host.dataset.fhold === "1";
+    holdEl.hidden = !hold || !!shown.length;
+    const was = box.hidden; box.hidden = (!shown.length && !hold) || host.dataset.fquiet === "1";
     if (box.hidden) { stopNotes(); hiddenIds.clear(); hideOk = false; clearTimeout(hideTimer); return; }
     if (was) { hideOk = false; clearTimeout(hideTimer); hideTimer = setTimeout(() => { hideOk = true; refresh(); }, 30_000); }
     head.hidden = steps.hidden = !guard; if (guard) paintSteps();
