@@ -2283,7 +2283,8 @@ let aiHeld = location.pathname.startsWith('/create');
 // …and the API (asleep after a quiet while: 20-30 s to wake) is woken now, so Generate does not wait for it
 if(aiHeld) fetch('/api/health').catch(() => {});
 async function aiRun(){
-  if(!aiOn || aiBusy || !sources.length || aiHeldBack()) return;
+  // keepSaved: a Reel opened with its own edit is not looked at again by itself (a change, Make new Reel or the chat does)
+  if(!aiOn || aiBusy || !sources.length || aiHeldBack() || keepSaved) return;
   if(!aiReelOk()){ aiBusy = true; const go = await aiGate(); aiBusy = false; if(!go) return; }
   sources.forEach(s=>{ if(!s.ai) aiRestore(s); });
   const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
@@ -7793,13 +7794,18 @@ function stateOf(){
     ai: aiSaved() };
 }
 // what Shubix AI already decided for this Reel (its pace, its plan): saved with it, so opening it again never asks again
+// (with what it saw in each clip: the browser's own copy, brs-ai:, may be gone, and the clips were then sent to it again)
 function aiSaved(){
   try{ return JSON.parse(JSON.stringify({ pace: [...paceCache].slice(-6), song: [...songPace].slice(-4),
-    dir: [...dirCache].slice(-6).map(([k, v]) => [k, { key: v.key, slots: v.slots, story: v.story || '' }]) })); }
+    dir: [...dirCache].slice(-6).map(([k, v]) => [k, { key: v.key, slots: v.slots, story: v.story || '' }]),
+    clips: sources.filter(s => s.ai && !s.removed).map(s => [fpOf(s), s.ai]) })); }
   catch(e){ return null; }
 }
-function aiRestore(a){
+// (its own name: as a second aiRestore it replaced the clips' one above, so no clip's labels ever came back and every
+// opened draft had Shubix AI look at its clips again)
+function aiRestoreSaved(a){
   if(!a) return;
+  for(const [k, v] of a.clips || []) if(v && Array.isArray(v.frames)) aiCache.set(k, v);
   for(const [k, v] of a.pace || []) paceCache.set(k, v);
   for(const [k, v] of a.song || []) songPace.set(k, v);
   for(const [k, v] of a.dir || []) dirCache.set(k, v);
@@ -7895,7 +7901,7 @@ async function openProject(id){
     if(st.sec){ sec.len = st.sec.len; sec.auto = st.sec.auto; sec.start = st.sec.start;
       [...$('slen').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.l === (!sec.len ? '0' : [15,30,60].includes(sec.len) ? String(sec.len) : 'c'))));
       if(sec.len && ![15,30,60].includes(sec.len)){ $('slenc').value = sec.len; $('slencw').hidden = false; } $('sauto').hidden = !sec.len; $('lenhint').hidden = !sec.len; $('mwave').classList.toggle('drag', !!sec.len); }
-    aiRestore(st.ai);
+    aiRestoreSaved(st.ai);
     const clips = []; for(const c of st.clips || []){ const f = await getF(c.fp, c.name); if(f) clips.push(f); }
     const sf = st.song ? await getF(st.song.fp, st.song.name) : null;
     if(sf){ let cs = null; try{ cs = await idb('songs', 'readonly', s => s.get(st.song.fp)); }catch(e){} await loadMusic(sf, cs && cs.r ? { r: cs.r, aiDone: cs.aiDone } : null); }
