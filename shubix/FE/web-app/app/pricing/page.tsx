@@ -5,7 +5,7 @@ import { safeNext } from "@shubix/core/lib/access";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage } from "@/lib/api";
 import { useCredits, useList, useMe, useText } from "@/hooks/useApi";
-import { pay } from "@/lib/razorpay";
+import { paidOrder, pay } from "@/lib/cashfree";
 import { cn } from "@/lib/cn";
 import type { Credits } from "@/types/api";
 import { Badge, Button, buttonClass, Card, Icon, Spinner } from "@/components/atoms";
@@ -88,11 +88,11 @@ export default function PricingPage() {
   const mine = credits.data?.enabled ? credits.data : null;
 
   function buy(item: string, label: string) { setNotice(null); setCheckout({ item, label }); }
-  async function payNow(item: string, label: string, coupon?: string) {
+  async function payNow(item: string, label: string, coupon?: string, phone?: string) {
     setNotice(null);
     setBuying(item);
     try {
-      const r = await pay(item, { name: text("checkout.name"), logo: text("checkout.logo"), color: text("checkout.color") }, coupon);
+      const r = await pay(item, coupon, phone);
       if (r.status !== "closed") setCheckout(null);
       if (r.status === "paid") {
         qc.setQueryData(["credits"], r.credits);
@@ -106,6 +106,16 @@ export default function PricingPage() {
       setBuying(null);
     }
   }
+  // back from Cashfree's own page (a phone's in-app browser could not show its window): /pricing?order=…, asked once
+  useEffect(() => {
+    const u = new URL(location.href), order = u.searchParams.get("order");
+    if (!order) return;
+    u.searchParams.delete("order"); history.replaceState(history.state, "", u);
+    void paidOrder(order).then((r) => {
+      if (r.status === "paid") { qc.setQueryData(["credits"], r.credits); setNotice({ ok: true, text: text("pricing.paidBack") }); }
+      else if (r.status === "failed") setNotice({ ok: false, text: r.message });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the page opens
 
   if (q.isLoading) return <Spinner label="Loading plans…" />;
   if (q.error || !q.data) return <ErrorBanner message={errorMessage(q.error ?? new Error("Plans are not available."))} onRetry={() => void q.refetch()} />;
@@ -159,7 +169,7 @@ export default function PricingPage() {
       {offer && <OfferStrip offer={offer} />}
 
       <Checkout item={checkout?.item ?? null} label={checkout?.label ?? ""} busy={!!checkout && buying === checkout.item}
-        onClose={() => setCheckout(null)} onPay={(coupon) => checkout && void payNow(checkout.item, checkout.label, coupon)} />
+        onClose={() => setCheckout(null)} onPay={(coupon, phone) => checkout && void payNow(checkout.item, checkout.label, coupon, phone)} />
 
       {notice && (
         <p role="status" className={cn("m-0 -mt-6 flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-center text-[14px] font-semibold", notice.ok ? "border-success/40 bg-success/10 text-success" : "border-danger/40 bg-danger/10 text-danger")}>
