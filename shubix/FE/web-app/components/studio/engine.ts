@@ -2291,25 +2291,31 @@ async function aiRun(){
   if(!need.length){ aiDone(); return; }
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
   let charged = 0, failed = 0;
+  const stop = aiStopper.signal;   // this run's Stop (Cancel puts a new aiStopper in place: a run reading it again went on)
   try{
     if(!(await serverUp())) throw new Error(TEAM_MSG);   // a down server: said at once (aiDown), never waited for
+    // the song is heard meanwhile (it waited for the clips' answer before: one step after the other)
+    void hearSong();
+    // the clips' pictures for Shubix, a few at once (the same limit as reading them), in the clips' order; each group goes
+    // to Shubix as soon as its pictures are ready, while the next ones are made (it waited for every clip's before)
     const jobs = [];
-    // the clips' pictures for Shubix, a few at once (the same limit as reading them), in the clips' order
-    { let next = 0, done = 0; const got = new Array(need.length);
-      const worker = async () => { for(let i = next++; i < need.length; i = next++){ if(aiStopper.signal.aborted) return; const s = need[i];
-        got[i] = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s)); aiStat('Shubix is looking at your clips: ' + (++done) + ' of ' + need.length + '…'); } };
-      await Promise.all(Array.from({ length: Math.min(READ_AT_ONCE, need.length) }, worker));
-      if(aiStopper.signal.aborted) return;
+    let next = 0, made = 0, sent = 0, framed = false, broke = false, waiters = [];
+    const nudge = () => { const w = waiters; waiters = []; w.forEach(ok => ok()); };
+    const worker = async () => { for(let i = next++; i < need.length; i = next++){ if(stop.aborted || broke) return; const s = need[i];
+      const frames = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s));
       // a clip with no pictures is skipped (aiFailed): the pace and the plan wait for every clip, so one left neither
       // seen nor failed held the Reel for ever after Shubix had answered (aiRun went round again and again)
-      need.forEach((s, i) => { const frames = got[i] || []; if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); else { s.aiFailed = true; failed++; } }); }
-    aiStat('Shubix is choosing the best moments of your clips…');
-    // up to 3 groups of 12 clips asked at once (50 clips: 2 rounds instead of 5)
-    const parts = []; for(let k=0; k<jobs.length; k+=12) parts.push(jobs.slice(k, k+12));
-    let pi = 0;
-    const askPart = async () => { for(let q = pi++; q < parts.length; q = pi++){
-      const part = parts[q];
-      const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
+      if(frames.length) jobs.push({ id: 'c'+i, src: s, frames }); else { s.aiFailed = true; failed++; }
+      aiStat('Shubix is looking at your clips: ' + (++made) + ' of ' + need.length + '…'); nudge(); } };
+    const framing = Promise.all(Array.from({ length: Math.min(READ_AT_ONCE, need.length) }, worker)).finally(() => {
+      framed = true; if(!stop.aborted && !broke) aiStat('Shubix is choosing the best moments of your clips…'); nudge(); });
+    // a group: 3 to 12 clips (fewer only for the last), up to 3 groups asked at once; the AI is asked 40 times a minute at most
+    const askPart = async () => { for(;;){
+      if(stop.aborted || broke) return;
+      const ready = jobs.length - sent;
+      if(!(ready >= 3 || (framed && ready > 0))){ if(framed) return; await new Promise(ok => waiters.push(ok)); continue; }
+      const part = jobs.slice(sent, sent + 12); sent += part.length;
+      const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: stop,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
@@ -2323,7 +2329,9 @@ async function aiRun(){
       // a clip the answer left out: skipped too, never asked again and again (each ask is a new call)
       for(const j of part) if(!j.src.ai && !j.src.aiFailed){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; }
     } };
-    await Promise.all(Array.from({ length: Math.min(3, parts.length) }, askPart));
+    try{ await Promise.all([framing, ...Array.from({ length: 3 }, askPart)]); }
+    catch(e){ broke = true; nudge(); throw e; }   // the pictures still being made stop too
+    if(stop.aborted) return;
     aiBusy = false;
     if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
     aiDone(charged, failed);
@@ -3158,17 +3166,20 @@ function songSample(M, sr, from, secs){
   return new Uint8Array(dv.buffer);
 }
 // Shubix AI hears 30 s of the part the Reel uses, once per song and part; a failure never stands in the way of the Reel
-let songHeard = '', songFeel = null;
-async function hearSong(){
-  if(!song || !song.mono || kind === 'talk') return;
-  const key = song.key + '|' + Math.round(secStart || 0); if(songHeard === key) return;
-  const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return;
+// (started with the clips' look, aiRun: the pace and the plan wait for that same hearing, never ask it twice)
+let songHeard = '', songFeel = null, songHearing = Promise.resolve();
+function hearSong(){
+  if(!song || !song.mono || kind === 'talk') return Promise.resolve();
+  const key = song.key + '|' + Math.round(secStart || 0); if(songHeard === key) return songHearing;
+  const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return Promise.resolve();
   songHeard = key; songFeel = null;
-  const tm = timeoutSignal(20000);
-  try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
-    if(!r.ok) throw new Error('song ' + r.status); songFeel = await r.json(); }
-  catch(e){ songHeard = ''; console.warn('The song was not heard:', e); }
-  finally{ tm.done(); }
+  return songHearing = (async () => {
+    const tm = timeoutSignal(20000);
+    try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
+      if(!r.ok) throw new Error('song ' + r.status); const feel = await r.json(); if(songHeard === key) songFeel = feel; }
+    catch(e){ if(songHeard === key) songHeard = ''; console.warn('The song was not heard:', e); }
+    finally{ tm.done(); }
+  })();
 }
 async function paceRun(key){
   const sm = getSoundMap(); if(!sm){ paceFailedKey = key; return; }
