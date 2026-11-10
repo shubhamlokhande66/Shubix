@@ -1244,6 +1244,10 @@ let previewBatchUi = null, previewBatchCompressed = 0, previewBatchDetected = 0;
 // heavy clips being compressed: in the one popup, on the clips' own card (never a second window; a clip cancelled meanwhile says nothing)
 function previewBatchShow(src, message, progress){
   if(clipsStopped || (src && src.removed)) return;
+  // a smooth copy made behind (bgCopy) says nothing in the popup: once the clips were read, it started "Reading your
+  // clips" again and the popup waited for it for ever ("Smooth copy ready (1/0)", stuck)
+  if(src && src.copyQuiet) return;
+  if(!tasks.has('clips') && !pending) return;   // the clips were all read: a late message never opens "Reading your clips" again
   previewBatchUi = true;
   if(!tasks.has('clips')) tasks.start('clips', 'clips', 'Reading your clips', message);
   tasks.update('clips', progress === undefined ? null : progress, message, 'Preparing your videos for smooth editing');
@@ -1295,7 +1299,8 @@ function whatClip(f){
 // smooth copies made behind the reading (bgCopy), one at a time; the export waits for them (copiesReady)
 const copyJobs = new Set(); let copyChain = Promise.resolve();
 function bgCopy(src, job){
-  const p = copyChain = copyChain.then(() => src.removed ? null : job()).catch(err => console.info('copy not made', err)).then(() => { copyJobs.delete(p); });
+  const p = copyChain = copyChain.then(() => { if(src.removed) return null; src.copyQuiet = true; return job(); })
+    .catch(err => console.info('copy not made', err)).then(() => { src.copyQuiet = false; copyJobs.delete(p); });
   copyJobs.add(p);
 }
 async function copiesReady(){ while(copyJobs.size) await Promise.all([...copyJobs]); }
