@@ -5725,7 +5725,8 @@ async function startPlayback(from, destNode){
           const nr = Math.max(0.0625, Math.min(16, r * (1 + Math.max(-0.2, Math.min(0.2, diff*1.2)))));
           if(Math.abs(e.el.playbackRate - nr) > 0.01) e.el.playbackRate = nr;
         }
-        if(e.el.paused) e.el.play().catch(()=>{}); }
+        if(e.el.paused) e.el.play().catch(()=>{});
+        unstick(e.el, want, tNow); }
       // the shot after next is cued once this one's transition is over (its player may be the one that transition used)
       const n2 = edit[i+2];
       if(n2 && !n2._cued && l > trDur(e) + 0.05){ n2._cued = true; const pv = edit[i-1]?.el; if(pv && pv !== e.el && !pv.paused) pv.pause(); prepare(i+2, n2.start); }
@@ -5751,6 +5752,20 @@ async function startPlayback(from, destNode){
   timer = setInterval(()=>{ if(document.hidden) loop(); }, 33);
 }
 const PREROLL = 0.3;   // seconds
+// a shot's player that stopped moving while it should play (the song goes on, the picture stays on the shot's first
+// frame): a phone's browser sometimes leaves a video without a decoder after the heavy work of making the Reel (a page
+// refresh "fixed" it). After 1.2 s without a new frame it is loaded again where the shot is, at most once in 3 s.
+function unstick(el, want, now){
+  if(el.currentTime !== el.__ct){ el.__ct = el.currentTime; el.__movedAt = now; return; }
+  if(!el.__movedAt || el.seeking || el.ended){ el.__movedAt = el.__movedAt || now; return; }
+  if(now - el.__movedAt < 1200 || now - (el.__kickAt || 0) < 3000) return;
+  el.__kickAt = now; el.__movedAt = now;
+  const url = el.currentSrc || el.src || el._url; if(!url) return;
+  console.info('preview: a player stopped, loading it again');
+  const rate = el.playbackRate; el.removeAttribute('src'); el.load(); el.src = url;
+  const go = () => { el.removeEventListener('loadedmetadata', go); try{ el.currentTime = want; }catch(err){} el.playbackRate = rate; el.play().catch(()=>{}); };
+  el.addEventListener('loadedmetadata', go);
+}
 let onEnd = null;
 $('play').onclick = () => { if(recording) return; if(playing){ pos = curTime(); stopAll(); } else if(starting) stopAll(); else startPlayback(pos >= buf.duration-0.05 ? 0 : pos); };
 
