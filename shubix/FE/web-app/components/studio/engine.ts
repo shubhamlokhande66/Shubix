@@ -798,7 +798,7 @@ async function scanMotion(src, onProgress, faces){
   };
   // a frame every 1/30 s for short clips, sparser for long ones (at most every 0.2 s): about what playing the clip at 2-12x
   // speed on a 60 Hz screen used to sample, which the thresholds below were tuned on
-  const step = Math.max(1/30, Math.min(12, Math.max(2, src.dur/6))/60);
+  const step = Math.max(1/10, Math.min(12, Math.max(2, src.dur/6))/60);   // 10 looks a second at most (every frame of a short clip was read: 30 clips took minutes)
   const ts = [];
   for(let t=0; t<src.dur-0.02; t+=step) ts.push(+t.toFixed(4));
   try{
