@@ -146,6 +146,9 @@ export function initFlow(root: HTMLElement): () => void {
   };
   // Shubix Edit's lines say what Shubix has done: nothing until Generate has started it
   let aiGo = false;
+  // Make Reel's steps running now (the popup stays open while they do), and the wait for the song and clips
+  let going = 0, waitIdle = 0, waitTimer: ReturnType<typeof setInterval> | undefined;
+  ac.signal.addEventListener("abort", () => clearInterval(waitTimer));
   const paintAi = () => {
     const make = made() && !aiWorking();
     for (const li of root.querySelectorAll<HTMLElement>(".faiList li[data-t]")) { // (not the export's list: its own progress ticks it)
@@ -300,7 +303,7 @@ export function initFlow(root: HTMLElement): () => void {
     const stop = !made() && working.size === 0 ? root.dataset.nomake ?? "" : "";
     // Copy a Reel: the copied Reel's song may still be coming while the clips are in (Next waits for it, spinning)
     const songComing = working.has("refsong") || working.has("song");
-    const busy = (ready || (clipsOk() && songComing)) && !stop && (working.size > 0 || shubixBusy() || !made());
+    const busy = (ready || (clipsOk() && songComing)) && !stop && (working.size > 0 || aiRunning() || !made());
     // nothing goes forward while the song or the clips are being worked on, or without both. After a Cancel it only offers to continue
     const paused = (stopped().song || songOk()) && (stopped().clips || clipsOk()) && (stopped().song || stopped().clips);
     // every button forward says what it waits for while it is off (phones: Next on each screen; computers: Generate)
@@ -349,7 +352,20 @@ export function initFlow(root: HTMLElement): () => void {
     const quiet = !revealed && !aiGo && !wantGen && !inEngine ? "1" : "";
     // from Make Reel to the editor the popup stays open, also between two steps with nothing running (it closed there, and
     // Make Reel had to be pressed again)
-    const hold = (wantGen || aiGo) && !revealed && !inEngine ? "1" : "";
+    // (only while Make Reel is really on its way: aiGo stays on after the editor opened and Back, and held it for ever)
+    const hold = (wantGen || going > 0) && !revealed && !inEngine ? "1" : "";
+    // waiting for the song and clips with nothing running for 20 s: on to Shubix if the Reel is made, else said; never a
+    // popup open for ever
+    if (wantGen && !waitTimer) waitTimer = setInterval(() => {
+      waitIdle = working.size > 0 || aiRunning() ? 0 : waitIdle + 1;
+      if (wantGen && waitIdle < 20) return;
+      clearInterval(waitTimer); waitTimer = undefined;
+      if (!wantGen) return;
+      wantGen = false; apply();
+      if (made()) { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }
+      else window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "error", text: tx("Your Reel could not be made from these clips. Press Make Reel to try again.") } }));
+    }, 1000);
+    if (!wantGen) waitIdle = 0;
     if ((root.dataset.fquiet ?? "") !== quiet || (root.dataset.fhold ?? "") !== hold) { root.dataset.fquiet = quiet; root.dataset.fhold = hold; root.dispatchEvent(new Event("studio-quiet")); }
   };
 
@@ -439,10 +455,11 @@ export function initFlow(root: HTMLElement): () => void {
       // too few credits: said at once, before any waiting (Top up, or a free edit)
       if (live()?.aiPrice?.().low) { void live()!.askLow!().then(() => { if (live()?.aiPrice?.().low) return; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }); return; }   // (Free edit goes on; Top up and closing it do not)
       // still being read: the one popup shows it now, and this goes on by itself when it is done
-      if (!stopped().song && !stopped().clips && (working.size > 0 || shubixBusy() || !made())) { wantGen = true; apply(); return; }
+      if (!stopped().song && !stopped().clips && (working.size > 0 || aiRunning() || !made())) { wantGen = true; apply(); return; }
       // Free: first, once per Reel, why Shubix AI is worth it (Upgrade, Create basic Reel, or ✕ to stay here)
       const st = live(), run = ++aiRunNo;
-      void (async () => {
+      going++;
+      void (async () => { try {
         // after a Stop: Continue reads it again and the popup shows it; the Reel is made by itself when it is done
         const nd = await st?.askNotDone?.();
         if (nd === "go") { wantGen = true; apply(); return; }
@@ -486,7 +503,7 @@ export function initFlow(root: HTMLElement): () => void {
             void st?.saveNow?.(); // persist only after the live editor is open
           });
         }
-      })();
+      } finally { going--; apply(); } })();
       return;
     }
     const ft = t.closest<HTMLButtonElement>("#ftabs button");
