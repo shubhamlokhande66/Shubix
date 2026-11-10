@@ -456,7 +456,12 @@ export function initFlow(root: HTMLElement): () => void {
         aiGo = true; apply();
         // the popup shows the work on every screen size; the Reel opens once Shubix is done
         await new Promise((ok) => setTimeout(ok, 400)); apply();
-        for (let t = 0; run === aiRunNo && (aiWorking() || !made()) && t < 600; t++) { await new Promise((ok) => setTimeout(ok, 300)); apply(); }   // the AI's Reel, not the first one (3 min at most)
+        // the AI's Reel, not the first one: as long as work goes on (50 clips may take minutes; a fixed 3 minutes closed the
+        // popup halfway and Make Reel had to be pressed again); given up only after 20 s with nothing working and no Reel
+        for (let idle = 0; run === aiRunNo && (aiWorking() || !made()) && idle < 66; ) {
+          await new Promise((ok) => setTimeout(ok, 300)); apply();
+          idle = aiWorking() || working.size > 0 || shubixBusy() ? 0 : idle + 1;
+        }
         if (run === aiRunNo && !made()) { aiGo = false; wantGen = false; apply(); return; }   // no Reel after all that: never a dead Make Reel
         if (run === aiRunNo && made() && phone()) {   // phones: the finished Reel, with its timeline (also when it is opened again after Back)
           revealed = true; mark(true); apply(); window.scrollTo({ top: 0 });

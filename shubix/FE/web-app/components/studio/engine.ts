@@ -800,7 +800,7 @@ async function scanMotion(src, onProgress, faces){
   };
   // a frame every 1/30 s for short clips, sparser for long ones (at most every 0.2 s): about what playing the clip at 2-12x
   // speed on a 60 Hz screen used to sample, which the thresholds below were tuned on
-  const step = Math.max(1/30, Math.min(12, Math.max(2, src.dur/6))/60);
+  const step = Math.max(1/10, Math.min(12, Math.max(2, src.dur/6))/60);   // 10 looks a second at most (every frame of a short clip was read: 30 clips took minutes)
   const ts = [];
   for(let t=0; t<src.dur-0.02; t+=step) ts.push(+t.toFixed(4));
   try{
@@ -1065,11 +1065,30 @@ function queueClips(jobs){
   if(!pending){ batchN = 0; batchDone = 0; }
   batchN += jobs.length; pending += jobs.length; updateQ();
   tasks.start('clips', 'clips', 'Reading your clips', 'Finding the best moments in ' + batchN + ' clip' + (batchN > 1 ? 's' : ''));
-  jobs.forEach(job=>{ addQueue = addQueue.then(()=>{
-    if(!clipsStopped) return readVideo(job);
-    job.unread = true; const dd = job.card && job.card.querySelector('.dd'); if(dd) dd.textContent = 'Not analysed yet';
-  }).catch(()=>{}).then(()=>{ pending--; batchDone++; updateQ(); }); });
-  addQueue = addQueue.then(()=>{ if(!pending) finishAdding(); });
+  // read a few at once (2 on a phone, 3 on a computer): 30 clips one after another took 5-10 minutes. Each clip still takes
+  // its place in the order it was added (In my order), whichever is read first.
+  if(!readIdle) addQueue = new Promise(r => { readIdle = r; });
+  jobs.forEach(job => { job.seqNo = commitSeq++; readWait.push(job); });
+  pumpReads();
+}
+const READ_AT_ONCE = IOS || /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '') ? 2 : 3;
+let readWait = [], reading = 0, readIdle = null, commitSeq = 0, commitNext = 0;
+const commitWait = new Map();
+function pumpReads(){
+  while(reading < READ_AT_ONCE && readWait.length){
+    const job = readWait.shift(); reading++;
+    Promise.resolve().then(() => {
+      if(!clipsStopped) return readVideo(job);
+      job.unread = true; const dd = job.card && job.card.querySelector('.dd'); if(dd) dd.textContent = 'Not analysed yet';
+    }).catch(()=>{}).then(() => { commitSkip(job); reading--; pending--; batchDone++; updateQ(); pumpReads(); });
+  }
+  if(!reading && !readWait.length && readIdle){ const r = readIdle; readIdle = null; if(!pending) finishAdding(); r(); }
+}
+// a read clip joins the Reel's clips in the order it was added (its place waits for the clips before it)
+function commitSource(src){ if(src.seqNo == null){ sources.push(src); drawSpark(src); return; } commitWait.set(src.seqNo, src); flushCommits(); }
+function commitSkip(src){ if(src.seqNo == null || src.seqNo < commitNext || commitWait.has(src.seqNo)) return; commitWait.set(src.seqNo, null); flushCommits(); }
+function flushCommits(){
+  while(commitWait.has(commitNext)){ const x = commitWait.get(commitNext); commitWait.delete(commitNext); commitNext++; if(x && !x.removed){ sources.push(x); drawSpark(x); } }
 }
 function addVideos(files, restored = false){
   const list = [...files].filter(f=>f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v|3gp|mkv)$/i.test(f.name));
@@ -1273,9 +1292,26 @@ function whatClip(f){
     if(f.fps > 31) k.push(Math.round(f.fps) + ' fps'); if(f.vfr) k.push('changing frame rate'); }
   return k.length ? k.join(' · ') : 'this format';
 }
+// smooth copies made behind the reading (bgCopy), one at a time; the export waits for them (copiesReady)
+const copyJobs = new Set(); let copyChain = Promise.resolve();
+function bgCopy(src, job){
+  const p = copyChain = copyChain.then(() => src.removed ? null : job()).catch(err => console.info('copy not made', err)).then(() => { copyJobs.delete(p); });
+  copyJobs.add(p);
+}
+async function copiesReady(){ while(copyJobs.size) await Promise.all([...copyJobs]); }
+// the clip's players move to its new file (a smooth copy made after they were given the original), where they were
+function swapSrc(src){
+  for(const el of src.els || []){
+    el._url = src.url;
+    if(!el.getAttribute('src')) continue;
+    const t = el.currentTime, was = !el.paused, rate = el.playbackRate;
+    const back = () => { el.removeEventListener('loadedmetadata', back); try{ el.currentTime = t; }catch(e){} el.playbackRate = rate; if(was) el.play().catch(()=>{}); };
+    el.addEventListener('loadedmetadata', back); el.src = src.url;
+  }
+}
 function setEditCopy(src, blob, w, h, how){
   src.edFile = blob; src.edW = w; src.edH = h; src.edAudio = how === 'server' || !/webm/.test(blob.type) || how === 'decoder';
-  const old = src.url; src.url = URL.createObjectURL(blob); try{ if(old && old !== src.url && src.previewProxy) URL.revokeObjectURL(old); }catch(e){}
+  const old = src.url; src.url = URL.createObjectURL(blob); swapSrc(src); try{ if(old && old !== src.url && src.previewProxy) URL.revokeObjectURL(old); }catch(e){}
   src.previewProxy = true; src.proxySize = blob.size; src.proxyW = w; src.proxyH = h; src.proxyMime = blob.type;
   src.proxyStatus = how === 'server' ? 'Converted by Shubix' : 'Success';
   src.proxyReason = 'Smooth copy for the preview and the export (' + w + ' × ' + h + ', 30 fps, normal colours).';
@@ -1361,7 +1397,10 @@ async function compressHighResolutionPreview(src, dd){
     return;
   }
   if(heavy){
-    if(!(await makeEditCopy(src, dd, src.facts, plan, true)) && !src.removed) editCopyFailNote(src, src.facts);
+    // this browser decodes the original: the clip is read and the Reel made from it now, its smooth copy is made behind
+    // (one at a time) and the players move to it when it is there. Else the copy first: nothing can read the clip without it.
+    const job = async () => { if(!(await makeEditCopy(src, dd, src.facts, plan, true)) && !src.removed) editCopyFailNote(src, src.facts); };
+    if(src.facts.decodes) bgCopy(src, job); else await job();
     return;
   }
   if(!plan){
@@ -1372,6 +1411,9 @@ async function compressHighResolutionPreview(src, dd){
   }
   src.proxyStatus='Compressing…'; src.proxyReason='Target preview: '+plan.width+' × '+plan.height+' · '+(plan.bitrate/1e6).toFixed(2)+' Mbps';
   updateClipHoverInfo(src);
+  bgCopy(src, () => lightCopy(src, dd, plan));   // only for a smoother preview: made behind, the clip is read now
+}
+async function lightCopy(src, dd, plan){
   previewBatchDetected++;
   previewBatchShow(src,'High-resolution video detected. Creating a lightweight editing copy…',0);
   try{
@@ -1382,7 +1424,7 @@ async function compressHighResolutionPreview(src, dd){
     }, plan);
     if(src.removed) return;
     if(result && result.blob && result.blob.size<src.file.size){
-      const oldUrl=src.url; src.url=URL.createObjectURL(result.blob); src.previewProxy=true; src.proxySize=result.blob.size; src.proxyW=result.plan.width; src.proxyH=result.plan.height; src.proxyMime=result.blob.type; src.proxyStatus='Success'; src.proxyReason='Downscaled preview generated successfully.';
+      const oldUrl=src.url; src.url=URL.createObjectURL(result.blob); swapSrc(src); src.previewProxy=true; src.proxySize=result.blob.size; src.proxyW=result.plan.width; src.proxyH=result.plan.height; src.proxyMime=result.blob.type; src.proxyStatus='Success'; src.proxyReason='Downscaled preview generated successfully.';
       // Persist the compressed preview separately; export always keeps using the original File.
       await keptPut('p:', src.file, { v: 1, blob: result.blob, width: result.plan.width, height: result.plan.height, mime: result.blob.type || '' });
       try{URL.revokeObjectURL(oldUrl);}catch(e){}
@@ -1481,7 +1523,7 @@ async function readVideo(src){
     dd.textContent = fmt(src.dur).replace(/\.\d+$/, '') + ' · ' + (src.w >= src.h ? 'Landscape' : 'Portrait') + ' · Ready';
     dd.dataset.st = 'ok'; dd.dataset.len = fmt(src.dur).replace(/\.\d+$/, ''); setClipStatus(src,'ready','Video analysed · '+src.w+' × '+src.h+' · '+fmt(src.dur));
     src.els = [lazyPlayer(src.url), lazyPlayer(src.url), lazyPlayer(src.url)];
-    sources.push(src); drawSpark(src);
+    commitSource(src);
   }catch(e){
     if(src.removed) return;
     setClipStatus(src,'failed',e && e.message ? 'Could not read video: '+e.message : 'Could not read video');
@@ -1495,7 +1537,7 @@ async function readVideo(src){
         src.samples = Array.from({ length: count }, (_, i) => ({ t: Math.min(src.dur - 0.01, i * src.dur / count), m: 0, sh: 1 }));
       } else src.samples = src.samples.map((s, i) => ({ ...s, t: Number.isFinite(s.t) ? s.t : i * src.dur / src.samples.length, m: Number.isFinite(s.m) ? s.m : 0, sh: Number.isFinite(s.sh) ? s.sh : 1 }));
       if(!Array.isArray(src.faces)) src.faces = [];
-      src.shMed = 1; src.els = [lazyPlayer(src.url), lazyPlayer(src.url), lazyPlayer(src.url)]; sources.push(src); drawSpark(src);
+      src.shMed = 1; src.els = [lazyPlayer(src.url), lazyPlayer(src.url), lazyPlayer(src.url)]; commitSource(src);
       dd.textContent = src.dur.toFixed(1) + ' s · ' + src.w + '×' + src.h; dd.dataset.st = 'ok'; dd.dataset.len = fmt(src.dur).replace(/\.\d+$/, '');
       return;
     }
@@ -2241,10 +2283,19 @@ async function aiRun(){
   try{
     if(!(await serverUp())) throw new Error(TEAM_MSG);   // a down server: said at once (aiDown), never waited for
     const jobs = [];
-    for(const [i, s] of need.entries()){ if(aiStopper.signal.aborted) return; aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); const frames = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s)); if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
+    // the clips' pictures for Shubix, a few at once (the same limit as reading them), in the clips' order
+    { let next = 0, done = 0; const got = new Array(need.length);
+      const worker = async () => { for(let i = next++; i < need.length; i = next++){ if(aiStopper.signal.aborted) return; const s = need[i];
+        got[i] = s.aiFramesMade || (s.aiFramesMade = await aiFrames(s)); aiStat('Shubix is looking at your clips: ' + (++done) + ' of ' + need.length + '…'); } };
+      await Promise.all(Array.from({ length: Math.min(READ_AT_ONCE, need.length) }, worker));
+      if(aiStopper.signal.aborted) return;
+      need.forEach((s, i) => { const frames = got[i] || []; if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }); }
     aiStat('Shubix is choosing the best moments of your clips…');
-    for(let k=0; k<jobs.length; k+=12){
-      const part = jobs.slice(k, k+12);
+    // up to 3 groups of 12 clips asked at once (50 clips: 2 rounds instead of 5)
+    const parts = []; for(let k=0; k<jobs.length; k+=12) parts.push(jobs.slice(k, k+12));
+    let pi = 0;
+    const askPart = async () => { for(let q = pi++; q < parts.length; q = pi++){
+      const part = parts[q];
       const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: aiStopper.signal,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
@@ -2256,7 +2307,8 @@ async function aiRun(){
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = fpOf(j.src); aiCache.set(fp, j.src.ai);
         try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){} }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; } }
-    }
+    } };
+    await Promise.all(Array.from({ length: Math.min(3, parts.length) }, askPart));
     aiBusy = false;
     if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
     aiDone(charged, failed);
@@ -6282,6 +6334,8 @@ async function runExport(toCloud){
   const fastBg = async () => { for(let k = 0; ; k++){ const seq = bgSeq; try{ return await fastExport(); } catch(err){ if(err && (err.code === 'CANCELLED' || err.code === 'QUALITY_GATE_FAILED')) throw err; if(k >= 2 || !(isReclaimed(err) || isHidden() || bgSeq !== seq)) throw err; console.info('export paused by the background', err); await paused(); } } };
   const recordBg = async () => { for(let k = 0; ; k++){ try{ return await recordExport(); } catch(err){ if(k >= 3 || !(err && err.code === 'BG_PAUSED')) throw err; await paused(); } } };
   try{
+    // the clips' smooth copies still being made behind: the export reads them (the same picture as the preview, faster)
+    if(copyJobs.size){ tasks.update('export', null, 'Finishing the smooth copies of your clips…'); await copiesReady(); }
     let ok = false;
     try{ ok = await fastBg(); }
     catch(err){ if(err && err.code === 'CANCELLED'){ tasks.clear('export'); notify('Export cancelled. Your Reel is still here.'); return; }
