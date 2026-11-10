@@ -4002,7 +4002,9 @@ const playerLoaded = v => !!v.getAttribute('src');
 // A player used in the last 4 s keeps its video: the Reel being made asks for shots all over it in a moment, and letting go
 // and loading again each time sent a new request for the clip's blob, without end. At most PLAYERS_MAX stay loaded (the
 // iPhone's memory): past that the one used longest ago lets go.
-const PLAYERS_MAX = IOS ? 4 : 8, PLAYER_KEEP_MS = 4000;
+// Android phones too: their browser gives out only a few video decoders, and a player left without one stayed on its
+// first frame while the song played on
+const PLAYERS_MAX = IOS || /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '') ? 4 : 8, PLAYER_KEEP_MS = 4000;
 function playersAround(i){
   const c = playing || starting ? curIdx : i, keep = new Set(), now = Date.now();
   for(let k = Math.min(c, i) - 1; k <= Math.max(c, i) + 2; k++) if(edit[k]) keep.add(edit[k].el);
