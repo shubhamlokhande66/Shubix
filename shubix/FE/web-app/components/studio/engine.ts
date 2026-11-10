@@ -299,7 +299,9 @@ function naturalFootage(){
     const F = src.faces || []; if(F.length && F.filter(x => x.n).length/F.length >= 0.3) faces++;
   }
   if(!n || act/n >= 0.4) return false;
-  return life > 0 || faces/n >= 0.3 || period >= 0.45;   // people or places, or a calm song (under ~133 BPM)
+  // family, festival, travel or home clips (the AI's tags), or people on a slow song (100 BPM or less); a beat song
+  // (pop, EDM, Bollywood dance: 100-140 BPM) with people keeps the beat edit
+  return life > 0 || (faces/n >= 0.3 && period >= 0.6) || period >= 0.66;
 }
 function adaptPlan0(){
   if(mode==='copy' && refProfile) return copyPlan();
@@ -3407,6 +3409,7 @@ function seqSlots(n){
 // A clip is never slowed down to fill the song: slow motion only where the style or Shubix AI chose it for a shot; too
 // little good video makes the Reel shorter (Make the Reel as long as my clips), the rest of the song is left out.
 const SEQ_FAST = 0.5, SEQ_MAX = 40;
+let seqFloor = 0.4;   // the slowest a clip plays "In my order" (lower only when the clips are far shorter than the song)
 function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
@@ -3416,7 +3419,7 @@ function seqPick(seq, res, gmax){
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
     // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
     // last picture until the cut ("it stops when the clip ends") or showing a moment of it twice
-    const fit = spare < 0 ? Math.max(0.4, foot/sum(need)*0.98) : 1;
+    const fit = spare < 0 ? Math.max(seqFloor, foot/sum(need)*0.98) : 1;
     const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = 0;
@@ -3465,12 +3468,36 @@ function makeEditNow(){
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
   // one clip always plays forward (its shots out of order jump back and forth in time)
-  let seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null;
+  let seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null; seqFloor = 0.4;
   // In my order, each clip is one shot (1 2 3 4…): the song's cuts that would fall inside a clip are let go, so its
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
   if(seq && seqOn && sources.length > 1){
     for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
+    }
+    // a shot no slower than 0.4x can fill (a 2.5 s clip under a 9 s shot stood still for 3 s, its camera move still
+    // drifting over the stopped picture): its cut moves, its time goes to the clips beside it that have footage to
+    // spare, on a beat where one is near
+    // too little footage in all for the song even at 0.4x: every clip a little slower still (down to 0.25x), evenly
+    const footAll = seq.reduce((a, si) => a + Math.max(0.05, sources[si].dur - TAIL), 0), reelLen = plan[plan.length-1].end - plan[0].start;
+    seqFloor = Math.min(0.4, Math.max(0.25, footAll/reelLen*0.98));
+    const cap = i => Math.max(0.3, (sources[seq[i]].dur - TAIL)/seqFloor), len = i => plan[i].end - plan[i].start;
+    if(plan.some((_, i) => len(i) > cap(i) + 0.02)){
+      // each shot at most what its clip fills; the time over goes to the shots with room, in proportion to it
+      const L = plan.map((_, i) => Math.min(len(i), cap(i)));
+      for(let pass = 0; pass < 6; pass++){
+        const D = reelLen - L.reduce((a, b) => a + b, 0), room = L.map((l, i) => Math.max(0, cap(i) - l)), R = room.reduce((a, b) => a + b, 0);
+        if(D <= 0.01 || R <= 0.01) break;
+        L.forEach((l, i) => { L[i] = l + Math.min(room[i], D*room[i]/R); });
+      }
+      // the cuts again from these lengths, each on a beat when one is near and the shots around it still fit
+      let t = plan[0].start;
+      for(let i = 0; i < plan.length - 1; i++){
+        let c = t + L[i]; const b = beats.reduce((x, y) => Math.abs(y - c) < Math.abs(x - c) ? y : x, Infinity);
+        if(Math.abs(b - c) < 0.3 && b - t <= cap(i) + 1e-6 && b - t >= 0.4) c = b;
+        plan[i] = { ...plan[i], start: t, end: c }; t = c;
+      }
+      plan[plan.length-1] = { ...plan[plan.length-1], start: t };
     }
   }
   const order = plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[plan[a].type]) - (b===0?-1:pr[plan[b].type]) || a-b; });
