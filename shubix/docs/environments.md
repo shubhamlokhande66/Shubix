@@ -23,8 +23,16 @@ From `shubix/`, no code or `.env` edits:
 | `npm run dev:qa` / `dev:uat` / `dev:prod` | the API (localhost:4000) and the website (localhost:3001), the API with that environment's database, bucket and Cashfree mode |
 | `npm run web:qa` / `web:uat` / `web:prod` | only the website (localhost:3001), its `/api` sent to that environment's server (api-qa / api-uat / api.shubix.in) |
 
-The API reads `BE/api/.env`, then `BE/api/.env.qa` (or `.uat`, `.prod`) on top (`SHUBIX_ENV`, `server/core/config.ts`).
-That file is made from `BE/api/.env.qa.example` on the first run, stays out of git, and holds only what differs.
+Each environment has its own folder with its whole settings, like the servers (`SHUBIX_ENV`, `server/core/config.ts`):
+
+```
+BE/api/servers/qa/.env      npm run dev:qa reads only this (database shubix_qa, bucket smgroup-qa, Cashfree test)
+BE/api/servers/uat/.env     npm run dev:uat
+BE/api/servers/prod/.env    npm run dev:prod
+```
+
+The first run makes that `.env` from `BE/api/.env` with the `.env.example` next to it put in (the database name also
+goes into the MongoDB address, `.../shubix_qa`); after that it is that environment's own file. It stays out of git.
 `dev:prod` is the live database and real payments: look, do not try things there.
 
 ## Deploying
