@@ -97,8 +97,8 @@ per environment (`MONGODB_URI`) keeps a test from ever writing to production.
 
 ### Vercel (the same project)
 
-1. Settings → Environment Variables → **Preview**, branch `qa`: `API_URL=https://api-qa.shubix.in`,
-   `PUBLIC_BASE_URL=https://qa.shubix.in`. The same for branch `uat` with `api-uat` / `uat`.
+1. Nothing for `API_URL` / `PUBLIC_BASE_URL`: the deploy workflow sets them to `api-qa.shubix.in` / `qa.shubix.in` (and
+   the `uat` ones) whatever **Preview** has, so a QA site never asks PROD's API.
 2. Settings → Domains: add `qa.shubix.in` and `uat.shubix.in` (the workflow points them at each new deploy), and set the
    DNS records Vercel shows.
 3. Settings → Deployment Protection: with Vercel Authentication on, `qa.` and `uat.` ask for a Vercel login first. Keep it on

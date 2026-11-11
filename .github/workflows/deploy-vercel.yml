@@ -3,8 +3,8 @@ name: Deploy website (Vercel)
 # The website (shubix/FE/web-app) on Vercel, by hand only: Actions, Deploy website (Vercel), Run workflow, pick qa / uat /
 # prod. Vercel's own deploy on a push is off (vercel.json git.deploymentEnabled false). Built here with the Vercel CLI and
 # the project's settings and environment variables from Vercel, then deployed as it was built.
-# prod: Vercel's Production (shubix.in). qa / uat: a Preview build with that branch's variables (Vercel, Settings,
-# Environment Variables, Preview, branch qa or uat: API_URL, PUBLIC_BASE_URL), then given its address (qa.shubix.in,
+# prod: Vercel's Production (shubix.in). qa / uat: a Preview build with Vercel's Preview variables, its API_URL and
+# PUBLIC_BASE_URL set here to api-<target>.shubix.in / <target>.shubix.in, then given its address (qa.shubix.in,
 # uat.shubix.in). Each deploys its own branch (qa, uat, main): docs/environments.md.
 # Secrets (Settings, Secrets and variables, Actions): VERCEL_TOKEN (vercel.com/account/tokens), VERCEL_ORG_ID and
 # VERCEL_PROJECT_ID (the project's Settings, General: Team ID / Project ID).
@@ -57,6 +57,12 @@ jobs:
         if: inputs.target != 'prod'
         run: |
           npx -y vercel@latest pull --yes --environment=preview --git-branch="$TARGET" --token="$VERCEL_TOKEN"
+          # this environment's own API and address, whatever Preview has on Vercel (its API_URL there is PROD's: the QA site
+          # then asked shubix.in's API, and showed "payments soon")
+          f=.vercel/.env.preview.local
+          test -f "$f" || { echo "::error::vercel pull did not write $f"; exit 1; }
+          sed -i '/^\(API_URL\|PUBLIC_BASE_URL\)=/d' "$f"
+          printf 'API_URL="https://api-%s.shubix.in"\nPUBLIC_BASE_URL="https://%s.shubix.in"\n' "$TARGET" "$TARGET" >> "$f"
           npx -y vercel@latest build --token="$VERCEL_TOKEN"
           url=$(npx -y vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN")
           # the address through Vercel's API: `vercel alias set` first loads the token's user, which a team token has not
