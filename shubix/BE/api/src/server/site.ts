@@ -3,7 +3,7 @@ import { db } from "./core/db";
 import { ValidationFailed } from "./core/errors";
 import { site as fromEnv } from "./workspace";
 
-/** The business details (Contact, Privacy, Terms, Refunds; Razorpay asks for a real email and address): the
+/** The business details (Contact, Privacy, Terms, Refunds; Cashfree asks for a real email and address): the
  * administrator's (Admin → Settings → Business details), saved in app_settings, else the server's environment
  * (BUSINESS_NAME, SUPPORT_EMAIL, SUPPORT_PHONE, BUSINESS_ADDRESS, LEGAL_UPDATED). Cached for a few seconds. */
 const ID = "site" as unknown as ObjectId;

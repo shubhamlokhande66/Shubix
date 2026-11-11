@@ -63,6 +63,8 @@ export type Credits =
 export type Quote = {
   item: string; label: string; base: number; final: number; couponError: string;
   offer: { id: string; title: string; percent: number; off: number } | null; coupon: { code: string; off: number; label: string } | null;
+  /** the mobile number kept on the account ("" none yet): Cashfree needs one to pay */
+  phone?: string;
 };
 export type Offer = { id: string; title: string; banner: string; percent: number; appliesTo: "all" | "plans" | "topups"; audience: "all" | "new"; ends: string | null };
 

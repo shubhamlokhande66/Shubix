@@ -33,15 +33,15 @@ vi.mock("@/server/core/db", () => ({ mainDb: async () => ({ collection: coll }),
 vi.mock("@/server/core/auth", () => ({ currentUser: () => st.user, AuthRequired: Error }));
 vi.mock("@/server/ai", () => ({ getProvider: () => ({}) }));
 vi.mock("@/server/ai/config", () => ({ effective: () => ({}) }));
-vi.mock("@/server/core/config", () => ({ settings: { billingEnabled: true, authEnabled: true, razorpayKeyId: "", razorpayKeySecret: "", razorpayWebhookSecret: "whsec", businessName: "Shubix", adminEmails: "" }, env: () => "" }));
+vi.mock("@/server/core/config", () => ({ settings: { billingEnabled: true, authEnabled: true, cashfreeAppId: "", cashfreeSecretKey: "cfsecret", cashfreeEnv: "sandbox", businessName: "Shubix", adminEmails: "" }, env: () => "" }));
 
 beforeEach(() => { st.cols.clear(); st.user = "u1"; });
 
 describe("plans and Shubix AI credits", () => {
   it("a paid order whose plan could not be given goes back, and the webhook's next try gives it, once", async () => {
     const { webhook } = await import("../../src/server/credits"), { createHmac } = await import("node:crypto");
-    const body = JSON.stringify({ event: "order.paid", payload: { payment: { entity: { id: "pay_1", order_id: "order_1" } } } });
-    const hit = () => webhook(new Request("http://x/", { method: "POST", body, headers: { "x-razorpay-signature": createHmac("sha256", "whsec").update(body).digest("hex") } }));
+    const body = JSON.stringify({ type: "PAYMENT_SUCCESS_WEBHOOK", data: { order: { order_id: "order_1" }, payment: { cf_payment_id: 5001, payment_status: "SUCCESS" } } }), ts = "1731250000";
+    const hit = () => webhook(new Request("http://x/", { method: "POST", body, headers: { "x-webhook-timestamp": ts, "x-webhook-signature": createHmac("sha256", "cfsecret").update(ts + body).digest("base64") } }));
     const order = { _id: "order_1", userId: "u1", status: "created", amount: 19900, item: { kind: "plan", plan: "gone", period: "monthly", label: "Editor plan" } };
     st.cols.set("payments", [order]);
     await expect(hit()).rejects.toThrow();
@@ -136,5 +136,23 @@ describe("plans and Shubix AI credits", () => {
     await setPlanByAdmin("u1", "pro", 1);
     for (const id of ["p1", "p2", "p3", "p4", "p5"]) expect((await chatTurn("reelC", id, "studio_chat_small", "chat")).free).toBe(true);
     expect((await chatTurn("reelC", "p6", "studio_chat_small", "chat")).taken).toBe(1);
+  });
+});
+
+describe("Cashfree payments", () => {
+  it("refuses a webhook not signed with the secret key, and gives nothing", async () => {
+    const { webhook } = await import("../../src/server/credits"), { createHmac } = await import("node:crypto");
+    const body = JSON.stringify({ type: "PAYMENT_SUCCESS_WEBHOOK", data: { order: { order_id: "order_2" }, payment: { cf_payment_id: 7, payment_status: "SUCCESS" } } }), ts = "1731250000";
+    const order = { _id: "order_2", userId: "u1", status: "created", amount: 19900, item: { kind: "plan", plan: "creator", period: "monthly", label: "Editor plan" } };
+    st.cols.set("payments", [order]);
+    const forged = createHmac("sha256", "not-the-secret").update(ts + body).digest("base64");
+    await expect(webhook(new Request("http://x/", { method: "POST", body, headers: { "x-webhook-timestamp": ts, "x-webhook-signature": forged } }))).rejects.toThrow();
+    await expect(webhook(new Request("http://x/", { method: "POST", body }))).rejects.toThrow();
+    expect(order.status).toBe("created");
+  });
+  it("takes an Indian mobile number in the ways people write it", async () => {
+    const { cleanPhone } = await import("../../src/server/credits");
+    expect(["9876543210", "+91 98765 43210", "098765-43210", "919876543210"].map(cleanPhone)).toEqual(Array(4).fill("9876543210"));
+    expect(["12345", "5876543210", "", null].map(cleanPhone)).toEqual([null, null, null, null]);
   });
 });

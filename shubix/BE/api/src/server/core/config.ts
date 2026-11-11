@@ -23,7 +23,12 @@ function readDotEnv(file: string): Record<string, string> {
   }
 }
 
-const fileEnv: Record<string, string> = Object.assign({}, ...[".env", "../../.env", "../../../.env"].reverse().map((f) => readDotEnv(path.resolve(REPO_ROOT, f))));
+/** SHUBIX_ENV=qa | uat | prod (npm run dev:qa ...): `.env.<name>` (next to any `.env`) goes on top of the `.env` files, so one
+ * file holds only what that environment does differently (its database, bucket, Cashfree test keys). */
+export const SHUBIX_ENV = (process.env.SHUBIX_ENV ?? "").trim().toLowerCase();
+const dotEnvs = [".env", "../../.env", "../../../.env"].reverse();
+const envFiles = SHUBIX_ENV ? [...dotEnvs, ...dotEnvs.map((f) => `${f}.${SHUBIX_ENV}`)] : dotEnvs;
+const fileEnv: Record<string, string> = Object.assign({}, ...envFiles.map((f) => readDotEnv(path.resolve(REPO_ROOT, f))));
 /** A setting by its .env name (real environment variables win over the file). */
 export const env = (key: string, fallback = ""): string => process.env[key] ?? fileEnv[key] ?? fallback;
 const num = (key: string, fallback: number) => {
@@ -95,9 +100,11 @@ export const settings = {
   smtpFallbackPassword: env("SMTP_FALLBACK_PASSWORD", ""),
   smtpFallbackFrom: env("SMTP_FALLBACK_FROM", ""),
   smtpFallbackSsl: bool("SMTP_FALLBACK_SSL", false),
-  razorpayKeyId: env("RAZORPAY_KEY_ID", ""),
-  razorpayKeySecret: env("RAZORPAY_KEY_SECRET", ""),
-  razorpayWebhookSecret: env("RAZORPAY_WEBHOOK_SECRET", ""),
+  // payments: Cashfree (merchant.cashfree.com → Developers → API keys). The secret key also signs its webhooks.
+  // CASHFREE_ENV "sandbox" takes Cashfree's test payments (QA, UAT); anything else is real money
+  cashfreeAppId: env("CASHFREE_APP_ID", ""),
+  cashfreeSecretKey: env("CASHFREE_SECRET_KEY", ""),
+  cashfreeEnv: env("CASHFREE_ENV", "production") === "sandbox" ? "sandbox" : "production",
   retentionEnabled: bool("RETENTION_ENABLED", false),
   keepUploadsHours: num("KEEP_UPLOADS_HOURS", 2),
   keepProjectsHours: num("KEEP_PROJECTS_HOURS", 24),

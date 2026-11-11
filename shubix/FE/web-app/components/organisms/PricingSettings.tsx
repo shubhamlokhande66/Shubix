@@ -86,7 +86,7 @@ export function PricingSettings() {
           Changes show on the pricing page at once; people who already paid keep what they bought.
         </p>
         {!q.data.billingEnabled && <p className="m-0 text-[12.5px] font-semibold text-warning">Billing is off on this server (BILLING_ENABLED): credits are not counted yet.</p>}
-        {q.data.billingEnabled && !q.data.paymentsOpen && <p className="m-0 text-[12.5px] font-semibold text-warning">Payments are closed: add the Razorpay keys (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET) to open them.</p>}
+        {q.data.billingEnabled && !q.data.paymentsOpen && <p className="m-0 text-[12.5px] font-semibold text-warning">Payments are closed: add the Cashfree keys (CASHFREE_APP_ID / CASHFREE_SECRET_KEY) to open them.</p>}
       </Card>
 
       {/* one card per plan */}

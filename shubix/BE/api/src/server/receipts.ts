@@ -28,7 +28,7 @@ async function receiptNo(orderId: string, at: Date) {
 /** The receipt email's parts (also for the admin's preview). */
 export function receiptLetter(r: {
   no: string; at: Date; email: string; label: string; kind: string; base: number; offer: { title: string; off: number } | null; coupon: { code: string; off: number } | null;
-  total: number; paymentId: string; orderId: string; got: string; balance: number | null;
+  total: number; paymentId: string; orderId: string; got: string; balance: number | null; gateway?: string;
   site: { businessName: string; businessAddress: string; supportEmail: string; supportPhone: string; gstin?: string };
 }) {
   const line = (k: string, v: string, o: { strong?: boolean; color?: string } = {}) => `<tr>
@@ -39,7 +39,7 @@ export function receiptLetter(r: {
 <span style="display:block;padding-top:4px;font-family:${P.SANS};font-size:13.5px;color:${P.INK};word-break:break-all">${esc(v)}</span></td>`;
   const s = r.site, gst = s.gstin ? `GSTIN ${s.gstin}` : "";
   const body = P.eyebrow("Payment receipt") + P.heading("Thank you for your purchase") + P.para(`Your payment was successful. ${r.got}`)
-    + P.row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${meta("Receipt no.", r.no)}${meta("Date", when(r.at))}</tr><tr>${meta("Billed to", r.email)}${meta("Payment method", "Razorpay")}</tr></table>`, "0 0 8px 0")
+    + P.row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${meta("Receipt no.", r.no)}${meta("Date", when(r.at))}</tr><tr>${meta("Billed to", r.email)}${meta("Payment method", r.gateway ?? "Cashfree")}</tr></table>`, "0 0 8px 0")
     + P.row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#faf8fd;border:1px solid ${P.RULE};border-radius:16px;padding:6px 20px">
 ${line(r.label, inr(r.base))}
 ${r.offer ? line(`Offer: ${r.offer.title}`, `− ${inr(r.offer.off)}`, { color: "#15803d" }) : ""}
@@ -81,7 +81,7 @@ export async function sendReceipt(orderId: string) {
       : `${Number(item.credits).toLocaleString("en-IN")} credits were added to your account; they never expire.`;
     const balance = w ? Number(w.monthly ?? 0) + Number(w.extra ?? 0) : null;
     const m = receiptLetter({ no, at, email: String(user.email), label: String(item.label), kind: String(item.kind), base, offer: offer ?? null, coupon: coupon ?? null, total,
-      paymentId: String(pay.paymentId ?? ""), orderId, got, balance, site });
+      paymentId: String(pay.paymentId ?? ""), orderId, got, balance, site, gateway: pay.gateway === "cashfree" ? "Cashfree" : "Razorpay" });   // (payments before 2026-11 went through Razorpay)
     // claimed before sending: the browser and the webhook may both finish the payment
     const claim = await pays.updateOne({ _id: orderId, receiptSentAt: { $exists: false } }, { $set: { receiptSentAt: new Date() } });
     if (!claim.modifiedCount) return false;

@@ -53,7 +53,7 @@ Data is encrypted in transit (https). People can ask for deletion (above).
 |---|---|---|---|---|
 | Personal info → Email address, Name | Yes | No | Account management | No (sign-in) |
 | Financial info → Purchase history | Yes | No | App functionality (plans, credits, receipts) | Yes (only when buying) |
-| Financial info → Payment info | No: Razorpay takes the card/UPI on its own page; the app never sees it | | | |
+| Financial info → Payment info | No: Cashfree takes the card/UPI on its own page; the app never sees it | | | |
 | Photos and videos | Yes, when Shubix AI is used: small frames of the clips go to the server to choose the cuts; also the Reels saved to My Reels | No | App functionality | Yes |
 | Audio → Music files / other audio | Yes, when captions or Shubix AI are used: the song's audio for the words, and a short sample so Shubix AI can match the edit to the song | No | App functionality | Yes |
 | App activity → Other user-generated content | Yes: texts, templates, brands, saved styles | No | App functionality | Yes |
@@ -85,7 +85,7 @@ No button, banner or text in the app may lead to it.
 - [ ] Decide: Google Play Billing, or User Choice Billing (check the current fee and rules in Play Console)
 - [ ] Create the plans and credit packs as products in Play Console
 - [ ] Add billing to `FE/mobile-app` (prices shown from Play, not from our plans)
-- [ ] Server: verify each purchase with Google, then give the plan or credits to the same account as Razorpay does
+- [ ] Server: verify each purchase with Google, then give the plan or credits to the same account as a Cashfree payment does
 - [ ] Server: handle Google refunds and cancelled purchases (take the plan or credits back)
 - [ ] Test with Play's license testers, then update Payments above and in `docs/android-release.md`
 
