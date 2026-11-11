@@ -1,8 +1,10 @@
-// Runs Shubix on this computer as QA, UAT or PROD, no code or .env edits needed:
+// Runs Shubix on this computer as QA, UAT or PROD, no code edits needed:
 //   node scripts/dev.mjs qa          the API (localhost:4000) and the website (localhost:3001), the API with QA's settings
 //   node scripts/dev.mjs qa --web    only the website, sending /api to the QA server (api-qa.shubix.in)
-// The API reads BE/api/.env and then BE/api/.env.<qa|uat|prod> on top (SHUBIX_ENV, server/core/config.ts); that file
-// is made from .env.<name>.example the first time. Logs: logs/api-<name>.log, logs/web-<name>.log (scripts/with-log.mjs).
+// The API reads only BE/api/servers/<qa|uat|prod>/.env (SHUBIX_ENV, server/core/config.ts): each environment its own
+// whole file, like the servers. The first time, that file is made from BE/api/.env with the .env.example next to it put
+// in (its database, also in the MongoDB address, its bucket, Cashfree mode); after that it is yours to change.
+// Logs: logs/api-<name>.log, logs/web-<name>.log (scripts/with-log.mjs).
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -17,18 +19,39 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pnpm = "npx -y pnpm@10.20.0";
 const run = (log, filter, env) => spawn(`node scripts/with-log.mjs ${log} ${pnpm} --filter ${filter} dev`, { cwd: root, shell: true, stdio: "inherit", env: { ...process.env, ...env } });
 
+/** BE/api/.env with the example's KEY=value lines put in (replaced where .env has the key, added at the end where not);
+ * MONGODB_DB also goes into the MongoDB address's path, so the address itself says which database it is. */
+function envFor(base, example) {
+  const set = {};
+  for (const line of example.split(/\r?\n/)) { const m = /^([A-Z_0-9]+)=(.*)$/.exec(line.trim()); if (m) set[m[1]] = m[2]; }
+  const left = new Set(Object.keys(set));
+  const lines = base.split(/\r?\n/).map((line) => {
+    const m = /^\s*([A-Z_0-9]+)\s*=/.exec(line);
+    if (!m) return line;
+    if (m[1] === "MONGODB_URI" && set.MONGODB_DB) return line.replace(/^(\s*MONGODB_URI\s*=\s*["']?mongodb(?:\+srv)?:\/\/[^/?"'\s]+)(\/[^?"'\s]*)?/, `$1/${set.MONGODB_DB}`);
+    if (!(m[1] in set)) return line;
+    left.delete(m[1]);
+    return `${m[1]}=${set[m[1]]}`;
+  });
+  const head = `# ${name.toUpperCase()} on this computer (npm run dev:${name}): its whole settings, read instead of .env. Made from .env on ${new Date().toISOString().slice(0, 10)}; change it here. Kept out of git.`;
+  const extra = left.size ? ["", `# ${name.toUpperCase()}`, ...[...left].map((k) => `${k}=${set[k]}`)] : [];
+  return [head, ...lines, ...extra].join("\n").replace(/\n*$/, "\n");
+}
+
 const children = [];
 if (webOnly) {
   console.log(`[dev] ${name.toUpperCase()}: website on http://localhost:3001, API on ${SERVERS[name]}`);
   children.push(run(`web-${name}`, "@shubix/web-app", { API_URL: SERVERS[name] }));
 } else {
-  const file = path.join(root, "BE/api", `.env.${name}`);
+  const rel = `BE/api/servers/${name}/.env`, file = path.join(root, rel);
   if (!fs.existsSync(file)) {
-    fs.copyFileSync(`${file}.example`, file);
-    console.log(`[dev] made BE/api/.env.${name} from the example; fill in what it asks for and run this again if something is missing`);
+    const base = path.join(root, "BE/api/.env");
+    if (!fs.existsSync(base)) { console.error("[dev] BE/api/.env is missing: copy BE/api/.env.example to it and fill it in first"); process.exit(1); }
+    fs.writeFileSync(file, envFor(fs.readFileSync(base, "utf8"), fs.readFileSync(`${file}.example`, "utf8")));
+    console.log(`[dev] made ${rel} from BE/api/.env with ${name.toUpperCase()}'s database and bucket; ${name.toUpperCase()} reads only that file now`);
   }
   if (name === "prod") console.warn("[dev] PROD: the live database, the live bucket and real payments. Look, don't try things here.");
-  console.log(`[dev] ${name.toUpperCase()}: API on http://localhost:4000 (BE/api/.env + .env.${name}), website on http://localhost:3001`);
+  console.log(`[dev] ${name.toUpperCase()}: API on http://localhost:4000 (${rel}), website on http://localhost:3001`);
   children.push(run(`api-${name}`, "@shubix/api", { SHUBIX_ENV: name }));
   children.push(run(`web-${name}`, "@shubix/web-app", { API_URL: "http://localhost:4000" }));
 }

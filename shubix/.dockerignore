@@ -6,9 +6,9 @@
 .git
 *.log
 # secrets: never sent to a build
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 # your data stays out of the image (on Cloudflare it lives in R2)
 **/storage
 !BE/api/src/server/storage

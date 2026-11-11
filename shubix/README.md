@@ -39,7 +39,7 @@ carries the token in its JSON body, kept in SecureStore and sent as `Authorizati
 
 ```
 npx pnpm@10.20.0 install
-npx pnpm@10.20.0 dev:qa       # BE/api on :4000 with QA's settings (BE/api/.env, then BE/api/.env.qa) and FE/web-app on :3001
+npx pnpm@10.20.0 dev:qa       # BE/api on :4000 with QA's settings (only BE/api/servers/qa/.env) and FE/web-app on :3001
                               # also dev:uat, dev:prod; web:qa / web:uat / web:prod: only the website, against that server
 npx pnpm@10.20.0 dev:mobile   # FE/mobile-app in Expo Go (EXPO_PUBLIC_API_URL): screens only, no studio, export or ads
 npx pnpm@10.20.0 typecheck
