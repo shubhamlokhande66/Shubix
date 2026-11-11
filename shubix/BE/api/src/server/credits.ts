@@ -328,14 +328,16 @@ export async function createOrder(itemKey: string, couponCode?: string | null, p
   const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(2, 14), safe = uid.replace(/[^A-Za-z0-9]/g, "");
   const orderId = `sx_${safe.slice(-8)}_${ts}_${crypto.randomBytes(3).toString("hex")}`;
   // after the payment Cashfree comes back to the plans (a phone's in-app browser that cannot show its window), and tells
-  // the API itself (the website passes /api on to it); without an https address the webhook set on Cashfree is used
+  // the API itself (the website passes /api on to it); without an https address the webhook set on Cashfree is used, and
+  // no return address either: Cashfree refuses an http one (order_meta.return_url_invalid on localhost, 2026-11-11), and
+  // the website's payment window (a modal) does not need it
   const site = settings.publicBaseUrl.replace(/\/+$/, ""), https = site.startsWith("https://");
   let order: Doc;
   try {
     const r = await fetch(`${cashfree()}/orders`, { method: "POST", headers: cfHeaders(), signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({ order_id: orderId, order_amount: Math.trunc(item.rupees), order_currency: "INR", order_note: item.label.slice(0, 200),
         customer_details: { customer_id: `u${safe}`.slice(0, 50), customer_phone: phone, ...(user?.email ? { customer_email: String(user.email) } : {}) },
-        order_meta: { ...(site ? { return_url: `${site}/pricing?order=${orderId}` } : {}), ...(https ? { notify_url: `${site}/api/public/billing/webhook` } : {}) },
+        order_meta: https ? { return_url: `${site}/pricing?order=${orderId}`, notify_url: `${site}/api/public/billing/webhook` } : {},
         order_tags: { userId: uid.slice(0, 64), item: itemKey.slice(0, 64) } }) });
     if (r.status >= 300) { console.warn(`cashfree order failed: ${r.status} ${(await r.text()).slice(0, 200)}`); throw new AppError("The payment could not be started. Try again in a minute.", { code: "PAYMENT_START_FAILED" }); }
     order = (await r.json()) as Doc;
