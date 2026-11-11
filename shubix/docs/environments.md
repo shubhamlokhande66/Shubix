@@ -35,6 +35,15 @@ The first run makes that `.env` from `BE/api/.env` with the `.env.example` next 
 goes into the MongoDB address, `.../shubix_qa`); after that it is that environment's own file. It stays out of git.
 `dev:prod` is the live database and real payments: look, do not try things there.
 
+### Secrets to the servers
+
+`npm run secrets:qa` (`secrets:uat`, `secrets:prod`) sends the secrets in `BE/api/servers/qa/.env` to that Worker: it
+lists what is new and what changes, asks, then sends (values are never printed). Add or change a key in that file, run
+it again, then deploy the API again. Only names ending in KEY, SECRET, TOKEN, PASSWORD, URI, USER or ID go; a name in
+the Worker's vars (`wrangler.jsonc`) never does. `SECRET_KEY` and `CRON_SECRET` go only when the Worker has none (QA
+and UAT get their own); Cashfree keys go to QA/UAT only with `CASHFREE_ENV=sandbox`, and to PROD only when they are not
+the test keys from `.env`.
+
 ## Deploying
 
 By hand, as before (Actions minutes): GitHub → Actions → **Deploy to Cloudflare** (the API) and **Deploy website
