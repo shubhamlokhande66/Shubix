@@ -2,7 +2,8 @@
 //   npm run secrets:qa        (from shubix/; asks before sending, values are never printed)
 // A key added or changed in that file goes up the next time; deploy the API again after, the container reads its
 // secrets when it starts. Only secrets go (names ending in KEY, SECRET, TOKEN, PASSWORD, URI, USER, ID); the other
-// settings are the Worker's vars in infra/cloudflare/wrangler.jsonc, and a name set there is never sent.
+// settings are the Worker's vars in infra/cloudflare/wrangler.jsonc, and a name set there is never sent; a setting in
+// the file that wrangler.jsonc lacks, or has with another value, is shown as a warning.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +23,8 @@ const SECRET = /(_KEY|_SECRET|_TOKEN|_PASSWORD|_URI|_USER|_ID)$|^SECRET_KEY$/;
 const OLD = /^RAZORPAY_/; // Cashfree took its place
 // sent only when the Worker has none yet: a new one signs everyone out (SECRET_KEY) or breaks the scheduler (CRON_SECRET)
 const ONCE = new Set(["SECRET_KEY", "CRON_SECRET"]);
+// settings that are this computer's own (ports, programs, folders): never a warning that the server has them otherwise
+const LOCAL = /^(API_PORT|PORT|NODE_ENV|STORAGE_PATH|PUBLIC_BASE_URL|WEB_ORIGINS|COOKIE_SECURE|CONTAINER_ROLE|SLEEP_AFTER|FFMPEG_BIN|FFPROBE_BIN|SONG_IMPORT_FOLDERS|MEDIA_CACHE_GB|OLLAMA_.*|WHISPER_.*)$/;
 
 function readEnv(file) {
   const out = {};
@@ -55,7 +58,8 @@ if (!fs.existsSync(file)) { console.error(`[secrets] BE/api/servers/${name}/.env
 const env = readEnv(file);
 
 const wrangler = readJsonc(path.join(wranglerDir, "wrangler.jsonc"));
-const vars = new Set(Object.keys((name === "prod" ? wrangler.vars : wrangler.env?.[name]?.vars) ?? {}));
+const varValues = (name === "prod" ? wrangler.vars : wrangler.env?.[name]?.vars) ?? {};
+const vars = new Set(Object.keys(varValues));
 
 // QA and UAT take test payments only
 const testPay = env.CASHFREE_ENV === "sandbox";
@@ -92,6 +96,20 @@ if (name !== "prod") {
     send[k] = fresh; changed = true;
   }
   if (changed) { fs.writeFileSync(file, text); console.log(`[secrets] servers/${name}/.env got its own SECRET_KEY / CRON_SECRET`); }
+}
+
+// the other settings reach the server only through wrangler.jsonc: say which ones this file has that the server won't
+const notThere = [], differs = [];
+for (const [k, v] of Object.entries(env)) {
+  if (!v || SECRET.test(k) || OLD.test(k) || LOCAL.test(k)) continue;
+  if (!vars.has(k)) notThere.push(k);
+  else if (String(varValues[k]) !== v) differs.push(k);
+}
+if (notThere.length || differs.length) {
+  const where = name === "prod" ? `"vars"` : `env.${name}.vars`;
+  console.warn(`[secrets] warning: settings in servers/${name}/.env that ${NAME} does not get from this script (infra/cloudflare/wrangler.jsonc ${where}; deploy after a change):`);
+  for (const k of notThere.sort()) console.warn(`  not on the server   ${k}   (only on this computer; add it to wrangler.jsonc if ${NAME} needs it)`);
+  for (const k of differs.sort()) console.warn(`  server has another  ${k}   (wrangler.jsonc wins on the server)`);
 }
 
 const names = Object.keys(send).sort();
