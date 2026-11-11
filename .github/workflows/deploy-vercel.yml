@@ -59,4 +59,4 @@ jobs:
           npx -y vercel@latest pull --yes --environment=preview --git-branch="$TARGET" --token="$VERCEL_TOKEN"
           npx -y vercel@latest build --token="$VERCEL_TOKEN"
           url=$(npx -y vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN")
-          npx -y vercel@latest alias set "$url" "$TARGET.shubix.in" --token="$VERCEL_TOKEN"
+          npx -y vercel@latest alias set "$url" "$TARGET.shubix.in" --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
