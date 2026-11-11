@@ -20,7 +20,6 @@ From `shubix/`, no code or `.env` edits:
 
 | Command | What runs |
 |---|---|
-| `npm run dev:api` + `npm run dev:web` | your own local setup (`BE/api/.env`) |
 | `npm run dev:qa` / `dev:uat` / `dev:prod` | the API (localhost:4000) and the website (localhost:3001), the API with that environment's database, bucket and Cashfree mode |
 | `npm run web:qa` / `web:uat` / `web:prod` | only the website (localhost:3001), its `/api` sent to that environment's server (api-qa / api-uat / api.shubix.in) |
 

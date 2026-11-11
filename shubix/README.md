@@ -39,14 +39,14 @@ carries the token in its JSON body, kept in SecureStore and sent as `Authorizati
 
 ```
 npx pnpm@10.20.0 install
-npx pnpm@10.20.0 dev:api      # BE/api on :4000 (reads BE/api/.env, then shubix/.env, then the current app's .env)
-npx pnpm@10.20.0 dev:web      # FE/web-app on :3001 (API_URL, default http://localhost:4000)
+npx pnpm@10.20.0 dev:qa       # BE/api on :4000 with QA's settings (BE/api/.env, then BE/api/.env.qa) and FE/web-app on :3001
+                              # also dev:uat, dev:prod; web:qa / web:uat / web:prod: only the website, against that server
 npx pnpm@10.20.0 dev:mobile   # FE/mobile-app in Expo Go (EXPO_PUBLIC_API_URL): screens only, no studio, export or ads
 npx pnpm@10.20.0 typecheck
 npx pnpm@10.20.0 test         # the suites one after another (the UI tests are timing-sensitive)
 ```
 
-The dev servers also write `logs/api.log`, `logs/web.log`, `logs/mobile.log` (every line, timestamped) and
+The dev servers also write `logs/api-qa.log`, `logs/web-qa.log` (`-uat`, `-prod`), `logs/mobile.log` (every line, timestamped) and
 `logs/<name>.err.log` (errors only); the run before is kept as `<name>.prev.log`. `logs/` is not committed.
 Local data: `BE/api/storage` (uploads, saved Reels) and `shubix/.env` (settings) stay on your computer, never in git.
 
