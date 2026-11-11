@@ -14,6 +14,20 @@ Three copies of Shubix, each with its own website, API, database and bucket, so 
 Work goes up one step at a time: a feature branch is merged into `qa`, tested there, `qa` is merged into `uat` for the
 final check, and `uat` into `main` for production.
 
+## On your computer
+
+From `shubix/`, no code or `.env` edits:
+
+| Command | What runs |
+|---|---|
+| `npm run dev:api` + `npm run dev:web` | your own local setup (`BE/api/.env`) |
+| `npm run dev:qa` / `dev:uat` / `dev:prod` | the API (localhost:4000) and the website (localhost:3001), the API with that environment's database, bucket and Cashfree mode |
+| `npm run web:qa` / `web:uat` / `web:prod` | only the website (localhost:3001), its `/api` sent to that environment's server (api-qa / api-uat / api.shubix.in) |
+
+The API reads `BE/api/.env`, then `BE/api/.env.qa` (or `.uat`, `.prod`) on top (`SHUBIX_ENV`, `server/core/config.ts`).
+That file is made from `BE/api/.env.qa.example` on the first run, stays out of git, and holds only what differs.
+`dev:prod` is the live database and real payments: look, do not try things there.
+
 ## Deploying
 
 By hand, as before (Actions minutes): GitHub → Actions → **Deploy to Cloudflare** (the API) and **Deploy website
