@@ -12,6 +12,8 @@ interface Env {
   [key: string]: unknown;
 }
 
+const STUCK_AFTER = 20 * 60_000;
+
 export class ReelApp extends Container<Env> {
   defaultPort = 3000;
   sleepAfter = "30s";
@@ -21,7 +23,21 @@ export class ReelApp extends Container<Env> {
     if (env.CONTAINER_ROLE === "api") this.defaultPort = 4000; // the API alone (the website on Vercel)
     // every setting (vars and secrets) goes to the app as an environment variable; bindings are not strings
     this.envVars = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => typeof e[1] === "string"));
+    // The library never lets the container sleep while it counts a request in flight, and a request lost on the way (a
+    // rollout or a replaced container while it was answering) can stay counted for ever: QA stayed awake, and billed,
+    // with no request at all (2026-11-11). A count with no request for STUCK_AFTER is such a lost one: dropped, so the
+    // container sleeps. Anything still working (an export) is polled well within that.
+    const lib = this as unknown as { inflightRequests: number; isActivityExpired(): boolean };
+    const expired = lib.isActivityExpired.bind(this);
+    lib.isActivityExpired = () => {
+      if (lib.inflightRequests > 0 && Date.now() - this.lastRequest > STUCK_AFTER) {
+        console.warn(`${lib.inflightRequests} request(s) counted in flight with none for ${STUCK_AFTER / 60_000} min: dropped, the container may sleep`);
+        lib.inflightRequests = 0;
+      }
+      return expired();
+    };
   }
+  private lastRequest = Date.now();
   // A cold start (the machine, the R2 mount, the server) takes 20-30 s, more than the library waits by itself (20 s), and
   // its saved state can still say "healthy" from the container before: this object waits for the port itself, once
   // per start (`ready`: the server answered since this object woke or the container last stopped).
@@ -40,6 +56,7 @@ export class ReelApp extends Container<Env> {
     return this.startAndWaitForPorts(this.defaultPort, { portReadyTimeoutMS: 240_000, instanceGetTimeoutMS: 60_000, abort: signal });
   }
   override async fetch(request: Request): Promise<Response> {
+    this.lastRequest = Date.now();
     const again = request.method === "GET" || request.method === "HEAD" ? request.clone() : null;
     if (!this.ready || !this.ctx.container?.running) { await this.wake(request.signal); this.ready = true; }
     const res = await super.fetch(request);
