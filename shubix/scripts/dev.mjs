@@ -52,7 +52,8 @@ if (webOnly) {
   }
   if (name === "prod") console.warn("[dev] PROD: the live database, the live bucket and real payments. Look, don't try things here.");
   console.log(`[dev] ${name.toUpperCase()}: API on http://localhost:4000 (${rel}), website on http://localhost:3001`);
-  children.push(run(`api-${name}`, "@shubix/api", { SHUBIX_ENV: name }));
+  // the website's address here, not the file's: Google sign-in comes back to it (localhost:3001/api/auth/google/callback)
+  children.push(run(`api-${name}`, "@shubix/api", { SHUBIX_ENV: name, PUBLIC_BASE_URL: "http://localhost:3001" }));
   children.push(run(`web-${name}`, "@shubix/web-app", { API_URL: "http://localhost:4000" }));
 }
 // Ctrl+C or one of them stopping stops both
