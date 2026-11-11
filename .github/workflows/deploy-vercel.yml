@@ -59,4 +59,11 @@ jobs:
           npx -y vercel@latest pull --yes --environment=preview --git-branch="$TARGET" --token="$VERCEL_TOKEN"
           npx -y vercel@latest build --token="$VERCEL_TOKEN"
           url=$(npx -y vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN")
-          npx -y vercel@latest alias set "$url" "$TARGET.shubix.in" --scope="$VERCEL_ORG_ID" --token="$VERCEL_TOKEN"
+          # the address through Vercel's API: `vercel alias set` first loads the token's user, which a team token has not
+          # ("User not found"); the deploy itself works with it
+          api() { curl -sS -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" "$@"; }
+          id=$(api "https://api.vercel.com/v13/deployments/${url#https://}?teamId=$VERCEL_ORG_ID" | jq -r '.id // empty')
+          test -n "$id" || { echo "::error::Vercel did not find the deployment $url"; exit 1; }
+          out=$(api -X POST "https://api.vercel.com/v2/deployments/$id/aliases?teamId=$VERCEL_ORG_ID" -d "{\"alias\":\"$TARGET.shubix.in\"}")
+          echo "$out" | jq -e '.alias' >/dev/null || { echo "::error::$TARGET.shubix.in was not set: $(echo "$out" | jq -c '.error // .')"; exit 1; }
+          echo "https://$TARGET.shubix.in -> $url"
