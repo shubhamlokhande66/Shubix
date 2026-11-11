@@ -23,7 +23,12 @@ function readDotEnv(file: string): Record<string, string> {
   }
 }
 
-const fileEnv: Record<string, string> = Object.assign({}, ...[".env", "../../.env", "../../../.env"].reverse().map((f) => readDotEnv(path.resolve(REPO_ROOT, f))));
+/** SHUBIX_ENV=qa | uat | prod (npm run dev:qa ...): `.env.<name>` (next to any `.env`) goes on top of the `.env` files, so one
+ * file holds only what that environment does differently (its database, bucket, Cashfree test keys). */
+export const SHUBIX_ENV = (process.env.SHUBIX_ENV ?? "").trim().toLowerCase();
+const dotEnvs = [".env", "../../.env", "../../../.env"].reverse();
+const envFiles = SHUBIX_ENV ? [...dotEnvs, ...dotEnvs.map((f) => `${f}.${SHUBIX_ENV}`)] : dotEnvs;
+const fileEnv: Record<string, string> = Object.assign({}, ...envFiles.map((f) => readDotEnv(path.resolve(REPO_ROOT, f))));
 /** A setting by its .env name (real environment variables win over the file). */
 export const env = (key: string, fallback = ""): string => process.env[key] ?? fileEnv[key] ?? fallback;
 const num = (key: string, fallback: number) => {
