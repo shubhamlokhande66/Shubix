@@ -100,7 +100,7 @@ export const settings = {
   smtpFallbackFrom: env("SMTP_FALLBACK_FROM", ""),
   smtpFallbackSsl: bool("SMTP_FALLBACK_SSL", false),
   // payments: Cashfree (merchant.cashfree.com → Developers → API keys). The secret key also signs its webhooks.
-  // CASHFREE_ENV "sandbox" takes Cashfree's test payments (QA, UAT); anything else is real money
+  // CASHFREE_ENV "sandbox" takes Cashfree's test payments; anything else is real money (QA, UAT and PROD all take live payments)
   cashfreeAppId: env("CASHFREE_APP_ID", ""),
   cashfreeSecretKey: env("CASHFREE_SECRET_KEY", ""),
   cashfreeEnv: env("CASHFREE_ENV", "production") === "sandbox" ? "sandbox" : "production",

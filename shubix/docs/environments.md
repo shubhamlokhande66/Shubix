@@ -9,7 +9,7 @@ Three copies of Shubix, each with its own website, API, database and bucket, so 
 | API (Cloudflare Worker) | `shubix-api-qa`, `api-qa.shubix.in` | `shubix-api-uat`, `api-uat.shubix.in` | `shubix-api`, `api.shubix.in` |
 | Database (`MONGODB_DB`) | `shubix_qa` | `shubix_uat` | as before |
 | R2 bucket | `smgroup-qa` | `smgroup-uat` | `smgroup` |
-| Payments (Cashfree) | test keys (`CASHFREE_ENV=sandbox`) | test keys (`CASHFREE_ENV=sandbox`) | live keys |
+| Payments (Cashfree) | live keys (real money) | live keys (real money) | live keys |
 
 Work goes up one step at a time: a feature branch is merged into `qa`, tested there, `qa` is merged into `uat` for the
 final check, and `uat` into `main` for production.
@@ -41,8 +41,8 @@ goes into the MongoDB address, `.../shubix_qa`); after that it is that environme
 lists what is new and what changes, asks, then sends (values are never printed). Add or change a key in that file, run
 it again, then deploy the API again. Only names ending in KEY, SECRET, TOKEN, PASSWORD, URI, USER or ID go; a name in
 the Worker's vars (`wrangler.jsonc`) never does. `SECRET_KEY` and `CRON_SECRET` go only when the Worker has none (QA
-and UAT get their own); Cashfree keys go to QA/UAT only with `CASHFREE_ENV=sandbox`, and to PROD only when they are not
-the test keys from `.env`.
+and UAT get their own); Cashfree keys go only when they fit `CASHFREE_ENV` (a test key with `sandbox`, a live key
+with `production`).
 
 ## Deploying
 
@@ -75,7 +75,7 @@ is production).
    npx wrangler secret put R2_ACCESS_KEY_ID --env qa
    npx wrangler secret put R2_SECRET_ACCESS_KEY --env qa
    npx wrangler secret put OPENAI_API_KEY --env qa        # and GEMINI_API_KEY if used
-   npx wrangler secret put CASHFREE_APP_ID --env qa       # Cashfree TEST keys (Test mode on merchant.cashfree.com)
+   npx wrangler secret put CASHFREE_APP_ID --env qa       # Cashfree live keys: QA payments are real money
    npx wrangler secret put CASHFREE_SECRET_KEY --env qa
    npx wrangler secret put GOOGLE_CLIENT_ID --env qa
    npx wrangler secret put GOOGLE_CLIENT_SECRET --env qa
@@ -97,8 +97,8 @@ per environment (`MONGODB_URI`) keeps a test from ever writing to production.
 
 ### Vercel (the same project)
 
-1. Settings → Environment Variables → **Preview**, branch `qa`: `API_URL=https://api-qa.shubix.in`,
-   `PUBLIC_BASE_URL=https://qa.shubix.in`. The same for branch `uat` with `api-uat` / `uat`.
+1. Nothing for `API_URL` / `PUBLIC_BASE_URL`: the deploy workflow sets them to `api-qa.shubix.in` / `qa.shubix.in` (and
+   the `uat` ones) whatever **Preview** has, so a QA site never asks PROD's API.
 2. Settings → Domains: add `qa.shubix.in` and `uat.shubix.in` (the workflow points them at each new deploy), and set the
    DNS records Vercel shows.
 3. Settings → Deployment Protection: with Vercel Authentication on, `qa.` and `uat.` ask for a Vercel login first. Keep it on
