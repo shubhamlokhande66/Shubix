@@ -339,7 +339,10 @@ export interface Song {
 export type { Pricing, Credits } from "@shubix/types";
 export interface CheckoutOrder {
   orderId: string;
-  keyId: string;
+  /** Cashfree's payment_session_id: opens its payment window */
+  sessionId: string;
+  /** "sandbox": Cashfree's test payments */
+  mode: "sandbox" | "production";
   amount: number;
   currency: string;
   label: string;

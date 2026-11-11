@@ -254,7 +254,7 @@ export const api = {
   adminVerify: (code: string) => request<{ ok: boolean; until: string }>("/api/admin/code/verify", { method: "POST", body: JSON.stringify({ code }) }),
   plans: () => viaBoot("plans", () => request<Pricing>("/api/plans")),
   credits: () => viaBoot("credits", () => request<Credits>("/api/credits")),
-  createOrder: (item: string, coupon?: string) => request<CheckoutOrder>("/api/billing/order", { method: "POST", body: JSON.stringify({ item, ...(coupon ? { coupon } : {}) }) }),
+  createOrder: (item: string, coupon?: string, phone?: string) => request<CheckoutOrder>("/api/billing/order", { method: "POST", body: JSON.stringify({ item, ...(coupon ? { coupon } : {}), ...(phone ? { phone } : {}) }) }),
   quote: (item: string, coupon?: string) => request<import("@/lib/marketing").Quote>("/api/billing/quote", { method: "POST", body: JSON.stringify({ item, ...(coupon ? { coupon } : {}) }) }),
   offer: () => viaBoot("offer", () => request<{ offer: import("@/lib/marketing").Offer | null }>("/api/offer")),
   // Invite & earn
@@ -302,8 +302,8 @@ export const api = {
   affiliates: () => request<{ affiliates: import("@/lib/marketing").Affiliate[] }>("/api/admin/affiliates"),
   updateAffiliate: (d: { id: string; status?: string; percent?: number; months?: number; validUntil?: string | null }) => request<{ ok: boolean }>("/api/admin/affiliates", { method: "PUT", body: JSON.stringify(d) }),
   payAffiliate: (id: string, note: string) => request<{ ok: boolean; total: number }>("/api/admin/affiliates", { method: "POST", body: JSON.stringify({ id, note }) }),
-  verifyPayment: (body: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string }) =>
-    request<Credits>("/api/billing/verify", { method: "POST", body: JSON.stringify(body) }),
+  verifyPayment: (orderId: string) =>
+    request<Credits>("/api/billing/verify", { method: "POST", body: JSON.stringify({ orderId }) }),
   templates: () => request<{ templates: import("@shubix/core/lib/studio-templates").StudioTemplate[] }>("/api/templates"),
   adminTemplates: () => request<{ templates: import("@shubix/core/lib/studio-templates").StudioTemplate[]; saved: boolean; updatedAt?: string }>("/api/templates?all=1"),
   setTemplates: (templates: import("@shubix/core/lib/studio-templates").StudioTemplate[]) => request<{ templates: import("@shubix/core/lib/studio-templates").StudioTemplate[]; saved: boolean; updatedAt?: string }>("/api/templates", { method: "PUT", body: JSON.stringify({ templates }) }),

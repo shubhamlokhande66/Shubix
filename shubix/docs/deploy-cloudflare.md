@@ -32,7 +32,7 @@ npx wrangler secret put MONGODB_URI
 npx wrangler secret put SECRET_KEY            # a long random string (openssl rand -base64 48)
 npx wrangler secret put R2_ACCESS_KEY_ID
 npx wrangler secret put R2_SECRET_ACCESS_KEY
-npx wrangler secret put OPENAI_API_KEY        # and/or GEMINI_API_KEY, SMTP_PASSWORD, RAZORPAY_KEY_SECRET ...
+npx wrangler secret put OPENAI_API_KEY        # and/or GEMINI_API_KEY, SMTP_PASSWORD, CASHFREE_APP_ID, CASHFREE_SECRET_KEY ...
 ```
 Any other setting from `BE/api/.env.example` can be added the same way (a secret) or under `vars` (not secret).
 

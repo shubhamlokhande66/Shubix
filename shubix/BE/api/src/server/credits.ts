@@ -12,10 +12,14 @@ import { affiliateCommission, couponUsed, getMarketing, quote, rewardFor, startO
 /** Credits and payments (were services/credits.py and api/billing.py). A wallet (`wallets`, _id = user id) has
  * `monthly` (the plan's credits for this month, replaced when it renews) and `extra` (starter credits and top-ups, never
  * expiring); credits come from monthly first, every change is a `credit_ledger` line. Only active with billing AND
- * accounts on: a local single-person studio never counts credits. Payments: Razorpay Standard Checkout, applied once. */
+ * accounts on: a local single-person studio never counts credits. Payments: Cashfree Payment Gateway, applied once. */
 
 type Doc = Record<string, unknown>;
-const CYCLE = 30 * 86400_000, YEARLY_MONTHS_CHARGED = 10, RAZORPAY = "https://api.razorpay.com/v1";
+const CYCLE = 30 * 86400_000, YEARLY_MONTHS_CHARGED = 10;
+// Cashfree's API (its version is sent with every call; a newer one is a deliberate change here)
+const cashfree = () => (settings.cashfreeEnv === "sandbox" ? "https://sandbox.cashfree.com/pg" : "https://api.cashfree.com/pg");
+const CF_VERSION = "2026-01-01";
+const cfHeaders = () => ({ "x-client-id": settings.cashfreeAppId, "x-client-secret": settings.cashfreeSecretKey, "x-api-version": CF_VERSION, "Content-Type": "application/json" });
 export class NotEnoughCredits extends AppError {
   constructor(message: string, details: unknown) { super(message, { code: "INSUFFICIENT_CREDITS", status: 402, details }); }
 }
@@ -260,9 +264,27 @@ async function describe(item: string) {
 /** What this person pays for an item (the best offer, then a coupon), shown before the payment window opens. */
 export async function quoteItem(itemKey: string, coupon?: string | null) {
   const item = await describe(itemKey), q = await quote(currentUser(), item, coupon);
-  return { item: itemKey, label: item.label, ...q };
+  return { item: itemKey, label: item.label, ...q, phone: String((await userOf(currentUser()))?.phone ?? "") };   // (Cashfree needs it: asked once)
 }
-const hmacHex = (secret: string, data: string | Buffer) => crypto.createHmac("sha256", secret).update(data).digest("hex");
+const userOf = async (uid: string | null) => (uid && ObjectId.isValid(uid) ? await (await col("users")).findOne({ _id: new ObjectId(uid) }) : null);
+/** A mobile number Cashfree accepts: 10 digits (an Indian number, with or without +91 / 0), else null. */
+export function cleanPhone(raw: string | null | undefined) {
+  const d = String(raw ?? "").replace(/[\s-]/g, "").replace(/^(\+?91|0)(?=\d{10}$)/, "");
+  return /^[6-9]\d{9}$/.test(d) ? d : null;
+}
+/** Cashfree's order (its status, PAID once the money is in) and the payment that paid it. */
+async function cashfreeOrder(orderId: string) {
+  const get = async (path: string) => {
+    const r = await fetch(`${cashfree()}/orders/${encodeURIComponent(orderId)}${path}`, { headers: cfHeaders(), signal: AbortSignal.timeout(20_000) });
+    if (r.status >= 300) { console.warn(`cashfree order check failed: ${r.status} ${(await r.text()).slice(0, 200)}`); throw new AppError("The payment could not be checked. If money was taken, it will be credited automatically.", { code: "PAYMENT_CHECK_FAILED" }); }
+    return r.json() as Promise<unknown>;
+  };
+  const order = (await get("")) as Doc;
+  if (order.order_status !== "PAID") return { paid: false, status: String(order.order_status ?? ""), paymentId: "" };
+  const payments = (await get("/payments")) as Doc[];
+  const ok = (Array.isArray(payments) ? payments : []).find((p) => p.payment_status === "SUCCESS");
+  return { paid: true, status: "PAID", paymentId: String(ok?.cf_payment_id ?? "") };
+}
 const same = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 /** Apply a paid order exactly once (the browser and the webhook may both report it). */
 async function fulfil(orderId: string, paymentId: string, via: string) {
@@ -278,7 +300,7 @@ async function fulfil(orderId: string, paymentId: string, via: string) {
   try {
     if (item.kind === "plan") await givePlan(uid, String(item.plan), String(item.period), orderId);
     else await giveExtra(uid, Number(item.credits), `Top-up: ${item.label}`, orderId);
-  } catch (e) { // not given: Razorpay's next try of the webhook applies it
+  } catch (e) { // not given: Cashfree's next try of the webhook applies it
     await payments.updateOne({ _id: orderId }, { $set: { status: "created" }, $unset: { paymentId: "", paidAt: "", via: "" } });
     throw e;
   }
@@ -292,39 +314,59 @@ async function fulfil(orderId: string, paymentId: string, via: string) {
     sendReceipt(orderId), // the receipt by email (server/receipts.ts)
   ]);
 }
-export async function createOrder(itemKey: string, couponCode?: string | null) {
+/** A Cashfree order at this person's price. Cashfree needs a mobile number: the one given here (kept on the account) or
+ * the one kept before. Its payment window opens with `sessionId` (the website, lib/cashfree.ts). */
+export async function createOrder(itemKey: string, couponCode?: string | null, phoneIn?: string | null) {
   if (!paymentsOpen()) throw new ValidationFailed("Online payment is not open yet.", { code: "PAYMENTS_CLOSED" });
   const uid = uidOrThrow(), base = await describe(itemKey), price = await quote(uid, base, couponCode);
   if (couponCode && price.couponError) throw new ValidationFailed(price.couponError, { code: "COUPON_INVALID" });
   const item = { ...base, rupees: price.final };
-  const user = ObjectId.isValid(uid) ? await (await col("users")).findOne({ _id: new ObjectId(uid) }) : null;
-  const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(2, 14);
+  const user = await userOf(uid);
+  const phone = cleanPhone(phoneIn) ?? cleanPhone(user?.phone as string | undefined);
+  if (!phone) throw new ValidationFailed("Enter your 10-digit mobile number to pay.", { code: "PHONE_NEEDED" });
+  if (user && user.phone !== phone) await (await col("users")).updateOne({ _id: user._id }, { $set: { phone } });
+  const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(2, 14), safe = uid.replace(/[^A-Za-z0-9]/g, "");
+  const orderId = `sx_${safe.slice(-8)}_${ts}_${crypto.randomBytes(3).toString("hex")}`;
+  // after the payment Cashfree comes back to the plans (a phone's in-app browser that cannot show its window), and tells
+  // the API itself (the website passes /api on to it); without an https address the webhook set on Cashfree is used
+  const site = settings.publicBaseUrl.replace(/\/+$/, ""), https = site.startsWith("https://");
   let order: Doc;
   try {
-    const r = await fetch(`${RAZORPAY}/orders`, { method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${settings.razorpayKeyId}:${settings.razorpayKeySecret}`).toString("base64")}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: Math.trunc(item.rupees) * 100, currency: "INR", receipt: `u${uid.slice(-8)}_${ts}`, notes: { userId: uid, item: itemKey } }), signal: AbortSignal.timeout(30_000) });
-    if (r.status >= 300) { console.warn(`razorpay order failed: ${r.status} ${(await r.text()).slice(0, 200)}`); throw new AppError("The payment could not be started. Try again in a minute.", { code: "PAYMENT_START_FAILED" }); }
+    const r = await fetch(`${cashfree()}/orders`, { method: "POST", headers: cfHeaders(), signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({ order_id: orderId, order_amount: Math.trunc(item.rupees), order_currency: "INR", order_note: item.label.slice(0, 200),
+        customer_details: { customer_id: `u${safe}`.slice(0, 50), customer_phone: phone, ...(user?.email ? { customer_email: String(user.email) } : {}) },
+        order_meta: { ...(site ? { return_url: `${site}/pricing?order=${orderId}` } : {}), ...(https ? { notify_url: `${site}/api/public/billing/webhook` } : {}) },
+        order_tags: { userId: uid.slice(0, 64), item: itemKey.slice(0, 64) } }) });
+    if (r.status >= 300) { console.warn(`cashfree order failed: ${r.status} ${(await r.text()).slice(0, 200)}`); throw new AppError("The payment could not be started. Try again in a minute.", { code: "PAYMENT_START_FAILED" }); }
     order = (await r.json()) as Doc;
   } catch (e) { if (e instanceof AppError) throw e; throw new AppError("The payment service could not be reached. Try again in a minute.", { code: "PAYMENT_START_FAILED" }); }
-  await (await col("payments")).insertOne({ _id: order.id, userId: uid, item, itemKey, amount: order.amount, currency: "INR", status: "created", createdAt: new Date(),
+  if (!order.payment_session_id) throw new AppError("The payment could not be started. Try again in a minute.", { code: "PAYMENT_START_FAILED" });
+  const amount = Math.trunc(item.rupees) * 100;   // kept in paise, as before (receipts, My payments)
+  await (await col("payments")).insertOne({ _id: orderId, userId: uid, item, itemKey, amount, currency: "INR", status: "created", createdAt: new Date(), gateway: "cashfree",
     price: { base: price.base, offer: price.offer, coupon: price.coupon, final: price.final } }); // the receipt shows the discount
-  return { orderId: order.id, keyId: settings.razorpayKeyId, amount: order.amount, currency: "INR", label: item.label, email: user?.email ?? "" };
+  return { orderId, sessionId: String(order.payment_session_id), mode: settings.cashfreeEnv, amount, currency: "INR", label: item.label, email: user?.email ?? "" };
 }
-export async function verifyPayment(orderId: string, paymentId: string, signature: string) {
+/** The payment window closed (or Cashfree came back to the plans): Cashfree itself says whether this order is paid. */
+export async function verifyPayment(orderId: string) {
   const uid = uidOrThrow(), pay = await (await col("payments")).findOne({ _id: orderId });
   if (!pay || pay.userId !== uid) throw new NotFoundError("Payment not found.", { code: "PAYMENT_NOT_FOUND" });
-  if (!same(hmacHex(settings.razorpayKeySecret, `${orderId}|${paymentId}`), signature)) throw new ValidationFailed("The payment could not be verified. If money was taken, it will be credited automatically.", { code: "PAYMENT_UNVERIFIED" });
-  await fulfil(orderId, paymentId, "checkout");
+  if (pay.status !== "paid") {
+    const cf = await cashfreeOrder(orderId);
+    if (!cf.paid) throw new ValidationFailed("The payment did not go through. No money was taken.", { code: "PAYMENT_NOT_PAID" });
+    await fulfil(orderId, cf.paymentId, "checkout");
+  }
   return summary(uid);
 }
-/** Razorpay's own report (signed with the webhook secret; public: the signature is the proof). */
+/** Cashfree's own report: the timestamp and the raw body, signed with the secret key (public: the signature is the proof). */
 export async function webhook(req: Request) {
-  const secret = settings.razorpayWebhookSecret, body = Buffer.from(await req.arrayBuffer()), sig = req.headers.get("x-razorpay-signature") ?? "";
-  if (!secret || !same(hmacHex(secret, body), sig)) throw new ValidationFailed("Bad signature.", { code: "WEBHOOK_UNVERIFIED" });
-  const event = JSON.parse(body.toString("utf8")) as Doc;
-  if (event.event === "payment.captured" || event.event === "order.paid") {
-    const entity = ((((event.payload as Doc)?.payment as Doc) ?? {}).entity ?? {}) as Doc;
-    if (entity.order_id && entity.id) { try { await fulfil(String(entity.order_id), String(entity.id), "webhook"); } catch (e) { if (!(e instanceof NotFoundError)) throw e; console.warn(`webhook for an unknown order ${entity.order_id}`); } }
+  const secret = settings.cashfreeSecretKey, raw = Buffer.from(await req.arrayBuffer()).toString("utf8");
+  const ts = req.headers.get("x-webhook-timestamp") ?? "", sig = req.headers.get("x-webhook-signature") ?? "";
+  const signed = (data: string) => crypto.createHmac("sha256", secret).update(data).digest("base64");
+  if (!secret || !ts || !(same(signed(ts + raw), sig) || same(signed(`${ts}.${raw}`), sig))) throw new ValidationFailed("Bad signature.", { code: "WEBHOOK_UNVERIFIED" });
+  const event = JSON.parse(raw) as Doc, data = (event.data ?? {}) as Doc, order = (data.order ?? {}) as Doc, payment = (data.payment ?? {}) as Doc;
+  if (event.type === "PAYMENT_SUCCESS_WEBHOOK" && payment.payment_status === "SUCCESS" && order.order_id) {
+    try { await fulfil(String(order.order_id), String(payment.cf_payment_id ?? ""), "webhook"); }
+    catch (e) { if (!(e instanceof NotFoundError)) throw e; console.warn(`webhook for an unknown order ${String(order.order_id)}`); }
   }
   return { ok: true };
 }
