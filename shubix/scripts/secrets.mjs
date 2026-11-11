@@ -61,13 +61,13 @@ const wrangler = readJsonc(path.join(wranglerDir, "wrangler.jsonc"));
 const varValues = (name === "prod" ? wrangler.vars : wrangler.env?.[name]?.vars) ?? {};
 const vars = new Set(Object.keys(varValues));
 
-// QA and UAT take test payments only
-const testPay = env.CASHFREE_ENV === "sandbox";
+// Cashfree's keys must fit CASHFREE_ENV: a test secret key has "_test_" in it, a live one does not
+const keyIsTest = /_test_/.test(env.CASHFREE_SECRET_KEY ?? ""), payFits = keyIsTest === (env.CASHFREE_ENV === "sandbox");
 const skipped = [];
 const send = {};
 for (const [k, v] of Object.entries(env)) {
   if (!v || !SECRET.test(k) || vars.has(k) || OLD.test(k)) continue;
-  if (name !== "prod" && k.startsWith("CASHFREE_") && !testPay) { skipped.push(`${k} (CASHFREE_ENV is not sandbox)`); continue; }
+  if (k.startsWith("CASHFREE_") && !payFits) { skipped.push(`${k} (${keyIsTest ? "a test key" : "a live key"} but CASHFREE_ENV=${env.CASHFREE_ENV ?? ""})`); continue; }
   send[k] = v;
 }
 
@@ -81,10 +81,6 @@ try {
 for (const k of ONCE) if (existing.includes(k)) { delete send[k]; skipped.push(`${k} (already on the Worker, kept)`); }
 
 const local = fs.existsSync(path.join(root, "BE/api/.env")) ? readEnv(path.join(root, "BE/api/.env")) : {};
-// PROD's file is made from .env, whose Cashfree keys are the test ones: those never go to shubix.in
-if (name === "prod") for (const k of ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY"]) {
-  if (send[k] && (send[k] === local[k] || env.CASHFREE_ENV !== "production")) { delete send[k]; skipped.push(`${k} (still the test key from .env: put the live one in servers/prod/.env)`); }
-}
 // a QA/UAT file made from .env still has the computer's SECRET_KEY / CRON_SECRET: that environment gets its own
 if (name !== "prod") {
   let text = fs.readFileSync(file, "utf8"), changed = false;
@@ -117,7 +113,7 @@ if (!names.length) { console.log(`[secrets] ${NAME}: nothing to send`); process.
 console.log(`[secrets] ${NAME} Worker, from BE/api/servers/${name}/.env:`);
 for (const k of names) console.log(`  ${existing.includes(k) ? "update" : "new   "}  ${k}`);
 for (const s of skipped) console.log(`  skip    ${s}`);
-if (name === "prod") console.warn("[secrets] PROD: these replace what shubix.in uses now (Cashfree here must be the LIVE keys).");
+if (name === "prod") console.warn("[secrets] PROD: these replace what shubix.in uses now.");
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ok = /^y(es)?$/i.test((await rl.question(`Send ${names.length} to ${NAME}? (y/N) `)).trim());
