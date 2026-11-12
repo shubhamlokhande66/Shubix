@@ -1,8 +1,10 @@
 /** The guides (app/guides): practical articles on making short vertical videos, written by the Shubix team. The body is
  * RichText: "## " a heading, "- " a list, a blank line a new paragraph, **bold** and [links](/pricing). */
+import { MORE_GUIDES } from "./guides-more";
+
 export type Guide = { slug: string; title: string; description: string; minutes: number; body: string };
 
-export const GUIDES: Guide[] = [
+const FIRST_GUIDES: Guide[] = [
   {
     slug: "beat-synced-reel",
     title: "How to make a beat-synced Reel",
@@ -309,5 +311,7 @@ Watch your Reel as a stranger would: on your phone, scrolling into it from anoth
 Shubix treats the first cut as the hook: it chooses a striking, clear moment for it and lands it on the beat. You can drag any clip to the front, add a short title, or ask for another version. A hook text can also be added from the editor, in a style that fits the Reel.`,
   },
 ];
+
+export const GUIDES: Guide[] = [...FIRST_GUIDES, ...MORE_GUIDES];
 
 export const guide = (slug: string) => GUIDES.find((g) => g.slug === slug);
