@@ -221,6 +221,18 @@ export function initFlow(root: HTMLElement): () => void {
       if (fold && tick && id === "s1") setText(head.querySelector<HTMLElement>(".fsh")!, ($("mname").textContent ?? "").replace(/\.[^.]+$/, ""));
     }
   };
+  // the one popup: quiet before Make Reel, held open from Make Reel until the Reel opens. Also when the flow is closed (the
+  // Reel made and open): it returned before this, the popup kept "Getting your Reel ready" over the editor for ever
+  // (2026-11-11)
+  const syncPopup = () => {
+    // no popup until Generate: the work goes on behind the page
+    const quiet = !revealed && !aiGo && !wantGen && !inEngine ? "1" : "";
+    // from Make Reel to the editor the popup stays open, also between two steps with nothing running (it closed there, and
+    // Make Reel had to be pressed again)
+    // (only while Make Reel is really on its way: aiGo stays on after the editor opened and Back, and held it for ever)
+    const hold = (wantGen || going > 0) && !revealed && !inEngine ? "1" : "";
+    if ((root.dataset.fquiet ?? "") !== quiet || (root.dataset.fhold ?? "") !== hold) { root.dataset.fquiet = quiet; root.dataset.fhold = hold; root.dispatchEvent(new Event("studio-quiet")); }
+  };
   const apply = () => {
     live()?.guard?.(!revealed);   // the popup's Cancel, while the Reel is being made
     const on = (chosen() || !!urlKind()) && !revealed && !has("autoing");
@@ -235,7 +247,7 @@ export function initFlow(root: HTMLElement): () => void {
       steps(4);
     }
     crumbs(on);
-    if (!on) { sections(false); setFlag($("fintro"), "hidden", true); setFlag($("s1"), "hidden", false); setFlag($("s2"), "hidden", false); if (root.hasAttribute("data-fstep")) root.removeAttribute("data-fstep"); place(false); return; }
+    if (!on) { sections(false); setFlag($("fintro"), "hidden", true); setFlag($("s1"), "hidden", false); setFlag($("s2"), "hidden", false); if (root.hasAttribute("data-fstep")) root.removeAttribute("data-fstep"); place(false); syncPopup(); return; }
     const k = readKind();
     if (k !== kind || !$("ftitle").dataset.k) {
       kind = k;
@@ -348,12 +360,6 @@ export function initFlow(root: HTMLElement): () => void {
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
     if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
-    // no popup until Generate: the work goes on behind the page
-    const quiet = !revealed && !aiGo && !wantGen && !inEngine ? "1" : "";
-    // from Make Reel to the editor the popup stays open, also between two steps with nothing running (it closed there, and
-    // Make Reel had to be pressed again)
-    // (only while Make Reel is really on its way: aiGo stays on after the editor opened and Back, and held it for ever)
-    const hold = (wantGen || going > 0) && !revealed && !inEngine ? "1" : "";
     // waiting for the song and clips with nothing running for 20 s: on to Shubix if the Reel is made, else said; never a
     // popup open for ever
     if (wantGen && !waitTimer) waitTimer = setInterval(() => {
@@ -366,7 +372,7 @@ export function initFlow(root: HTMLElement): () => void {
       else window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "error", text: tx("Your Reel could not be made from these clips. Press Make Reel to try again.") } }));
     }, 1000);
     if (!wantGen) waitIdle = 0;
-    if ((root.dataset.fquiet ?? "") !== quiet || (root.dataset.fhold ?? "") !== hold) { root.dataset.fquiet = quiet; root.dataset.fhold = hold; root.dispatchEvent(new Event("studio-quiet")); }
+    syncPopup();
   };
 
   const go = (s: Step, push = true) => {
