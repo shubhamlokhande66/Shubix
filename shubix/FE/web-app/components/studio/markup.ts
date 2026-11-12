@@ -408,7 +408,7 @@ export const STUDIO_HTML = `
             <span class="zoomValue" id="tlz">100%</span>
             <button type="button" id="tlzi" aria-label="Zoom in">+</button>
             <button type="button" class="${Button.small}" id="tlfit">Fit</button>
-            <button class="${Button.small} feditdone" id="feditdone" type="button" hidden>${IC.check} Done</button>
+            <button class="${Button.small} feditdone" id="feditdone" type="button" title="Hide the timeline and the tools">${IC.check} Done editing</button>
           </div>
         </header>
         <div class="timelineScroll">
