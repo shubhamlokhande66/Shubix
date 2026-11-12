@@ -5347,19 +5347,20 @@ const GL = (()=>{
     init();
     c.addEventListener('webglcontextlost', e=>{ e.preventDefault(); lost = true; });
     c.addEventListener('webglcontextrestored', ()=>{ try{ init(); lost = false; shown.length = 0; }catch(err){ console.warn('WebGL could not be restored:', err && err.message); } });
-    // iPhone: a 4K video is not made a 4K texture each frame (33 MB, two during a transition); it is drawn into a copy of
-    // at most 1920 px first, and while the preview plays no bigger than it covers the canvas. The shader reads the texture in
-    // 0-1 coordinates, so the picture is the same.
+    // a 4K video is not made a 4K texture each frame (33 MB, two during a transition); it is drawn into a copy of at most
+    // 1920 px first (every phone and computer), and on an iPhone, while the preview plays, no bigger than it covers the
+    // canvas. The shader reads the texture in 0-1 coordinates, so the picture is the same.
     const small = [], fitIOS = (k, v) => {
-      const W = v.videoWidth, H = v.videoHeight, most = 1920/Math.max(W, H), live = playing && !recording && !exporting ? Math.max(out.width/W, out.height/H) : 1;
-      const sc = Math.min(most, live); if(!IOS || !(sc < 1)) return v;
+      const W = v.videoWidth, H = v.videoHeight, most = 1920/Math.max(W, H), live = IOS && playing && !recording && !exporting ? Math.max(out.width/W, out.height/H) : 1;
+      const sc = Math.min(most, live); if(!(sc < 1)) return v;
       const c2 = small[k] || (small[k] = document.createElement('canvas')), w = Math.round(W*sc), h = Math.round(H*sc);
       if(c2.width !== w || c2.height !== h){ c2.width = w; c2.height = h; }
       c2.getContext('2d').drawImage(v, 0, 0, w, h); return c2; };
-    // iPhone: a video frame goes to the GPU once: the screen is redrawn more often than a clip has new frames, and Safari's copy is slow
+    // a video frame goes to the GPU once while the preview plays: the screen is redrawn more often than a clip has new frames
+    // (60-120 a second against 24-30), and each copy is a full picture (Safari's is slow; an Android phone's costs too)
     const shown = [], frameNo = v => { if(!v.requestVideoFrameCallback) return null;
       if(v.__frames === undefined){ v.__frames = 0; const cb = () => { v.__frames++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); } return v.__frames; };
-    const sameFrame = (k, v) => { if(!IOS || !playing || recording || exporting) { shown[k] = null; return false; } const n = frameNo(v), was = shown[k];
+    const sameFrame = (k, v) => { if(!playing || recording || exporting) { shown[k] = null; return false; } const n = frameNo(v), was = shown[k];
       if(n === null || !n) { shown[k] = null; return false; } shown[k] = { v, n }; return !!was && was.v === v && was.n === n; };
     const upload = (k, src) => { if(!src) return; if(src.readyState!==undefined && src.readyState<2) return; if(src.readyState!==undefined){ if(sameFrame(k, src)) return; src = fitIOS(k, src); } else shown[k] = null; gl.activeTexture(gl.TEXTURE0+k); gl.bindTexture(gl.TEXTURE_2D,tex[k]);
       try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src); }catch(e){} };
@@ -5777,6 +5778,7 @@ function setPlayLabel(on){ $('play').innerHTML = (on ? PAUSE_SVG : PLAY_SVG) + '
 function stopAll(){ playGen++; starting = false; stopPart(); stopLayers(); playing=false; if(src){ const s=src; src=null; try{s.stop();}catch(e){} } clearInterval(timer); cancelAnimationFrame(rafId); edit.forEach(e=>e.el.pause()); setPlayLabel(false); }
 let rafId=0;
 let liveShot = -1, liveDrawn = 0;
+const PHONE = IOS || (typeof matchMedia !== 'undefined' && matchMedia('(pointer:coarse)').matches);
 // how the preview runs on an iPhone, once for each page: there is no other way to see it (Admin -> Errors, as "perf")
 const LP = { at: 0, n: 0, ms: 0, sent: false };
 function livePerf(t0, ms, e){ if(LP.sent) return; if(!LP.at || t0 - LP.last > 1000){ LP.at = t0; LP.n = 0; LP.ms = 0; } LP.last = t0; LP.n++; LP.ms += ms; if(t0 - LP.at < 8000) return;
@@ -5850,8 +5852,10 @@ async function startPlayback(from, destNode){
           if(Math.abs(e.el.playbackRate - nr) > 0.03 && tNow - (e.el.__rateAt || 0) > 400){ e.el.__rateAt = tNow; e.el.playbackRate = nr; }
         } else {
           if(Math.abs(diff) > 0.45) e.el.currentTime = want;
-          const nr = Math.max(0.0625, Math.min(16, r * (1 + Math.max(-0.2, Math.min(0.2, diff*1.2)))));
-          if(Math.abs(e.el.playbackRate - nr) > 0.01) e.el.playbackRate = nr;
+          // a speed set almost every frame (the nudge followed each tiny drift) made the browser re-time the video each
+          // time: a small drift is left alone, and the speed changes at most 4 times a second
+          const nr = Math.max(0.0625, Math.min(16, Math.abs(diff) > 0.06 ? r * (1 + Math.max(-0.2, Math.min(0.2, diff*1.2))) : r));
+          if(Math.abs(e.el.playbackRate - nr) > 0.02 && (tNow - (e.el.__rateAt || 0) > 250 || Math.abs(e.el.playbackRate - r) > 0.25)){ e.el.__rateAt = tNow; e.el.playbackRate = nr; }
         }
         if(e.el.paused) e.el.play().catch(()=>{});
         unstick(e.el, want, tNow); }
@@ -5868,9 +5872,10 @@ async function startPlayback(from, destNode){
       }
     }
     if(layers.length) syncLayers(t);
-    // iPhone: 30 pictures a second are enough for a Reel, and leave the phone time to decode; a new shot is drawn at once
+    // a phone: 30 pictures a second are enough for a Reel (its clips have 24-30), and leave the phone time to decode; a
+    // 60-120 Hz screen drew every picture two to four times. A new shot is drawn at once.
     const t0 = performance.now();
-    if(!IOS || recording || i !== liveShot || t0 - liveDrawn >= 30){
+    if(!PHONE || recording || i !== liveShot || t0 - liveDrawn >= 30){
       liveShot = i; liveDrawn = t0; drawFrame(t);
       if(IOS) livePerf(t0, performance.now() - t0, edit[i]);
     }
@@ -6469,11 +6474,19 @@ function sheetPaint(){
 }
 // the export sheet's picture: the preview's own picture, copied while the sheet is open (it plays the Reel as the
 // editor does, with its song); closing the sheet stops it
+// One loop at a time (each opening started another), and while the Reel stands still a copy twice a second only:
+// copying the picture every screen refresh while it stood still competed with the preview itself.
+let xprevOn = false, xprevAt = 0;
 function xprevLoop(){
-  if($('xsheet').hidden) return;
-  const c = $('xprevc'); if(c.width !== out.width || c.height !== out.height){ c.width = out.width; c.height = out.height; }
-  try{ c.getContext('2d').drawImage(out, 0, 0); }catch(e){}
-  $('xprevplay').hidden = playing || starting;
+  if($('xsheet').hidden){ xprevOn = false; return; }
+  xprevOn = true;
+  const live = playing || starting, now = performance.now();
+  if(now - xprevAt >= (live ? (PHONE ? 30 : 0) : 500)){
+    xprevAt = now;
+    const c = $('xprevc'); if(c.width !== out.width || c.height !== out.height){ c.width = out.width; c.height = out.height; }
+    try{ c.getContext('2d').drawImage(out, 0, 0); }catch(e){}
+  }
+  $('xprevplay').hidden = live;
   requestAnimationFrame(xprevLoop);
 }
 $('xprev').addEventListener('click', () => { if(!exporting) $('play').click(); }, SIG);
@@ -6481,7 +6494,7 @@ function sheetOpen(open){
   $('xsheet').hidden = !open;
   if(!open){ if(playing && !recording){ pos = curTime(); stopAll(); } return; }
   // the Reel beside the settings (the design's frame 8)
-  if(edit.length){ $('xprev').setAttribute('src', 'live'); requestAnimationFrame(xprevLoop); }
+  if(edit.length){ $('xprev').setAttribute('src', 'live'); xprevAt = 0; if(!xprevOn){ xprevOn = true; requestAnimationFrame(xprevLoop); } }
   sheetPaint();
   $('xgo').focus();
   if(can4k === null) loadMediabunny().then(mb => { const [W0,H0] = SIZES[aspect]; return mb.getFirstEncodableVideoCodec(['avc','vp9','av1'], {width: W0*2, height: H0*2}); })
@@ -7467,7 +7480,7 @@ function applyVo(){   // (the name stays: everything that changes the sound call
   for(const ev of fxEv){ const y = sfxSynth(ev.kind, sr), a = Math.round((ev.kind === 'riser' ? ev.at - y.length/sr : ev.at)*sr); for(let i=0;i<y.length;i++){ const j = a + i; if(j >= 0 && j < N) fxa[j] += y[i]*au.sfxv; } }
   let mg = null;
   if(musShots){ mg = new Float32Array(N); const k = Math.exp(-1/(0.12*sr)); let g = 1;
-    for(let i=0;i<N;i++){ const e = edit[segAt(i/sr)], tg = e && e.cs && e.cs.mus !== undefined ? e.cs.mus : 1; g = tg + (g - tg)*k; mg[i] = g; } }
+    let tg = 1; for(let i=0;i<N;i++){ if(!(i & 255)){ const e = edit[segAt(i/sr)]; tg = e && e.cs && e.cs.mus !== undefined ? e.cs.mus : 1; } g = tg + (g - tg)*k; mg[i] = g; } }
   let env = 1, lv = 0;
   for(let c=0;c<2;c++){ const src = B.getChannelData(Math.min(c, B.numberOfChannels-1)), d = mix.getChannelData(c); env = 1; lv = 0;
     for(let i=0;i<N;i++){
@@ -7866,6 +7879,14 @@ setInterval(() => {
   if(IOS && (playing || starting)) return;
   const st = stateOf(), sig = JSON.stringify(st); if(sig !== lastSig) saveProject(st, sig);
 }, 3000);
+// the sound mix (the clips' own sound, effects, voice, music volume) made while nobody touches the editor: made at Play it
+// held the page 0.2 s on a laptop and 1-2 s on a phone just as the Reel started (2026-11-12). Play then finds it ready.
+let touchedAt = 0;
+['pointerdown', 'keydown', 'wheel'].forEach(t => addEventListener(t, () => { touchedAt = Date.now(); }, { ...SIG, passive: true, capture: true }));
+{ const t = setInterval(() => {
+  if(playing || starting || recording || exporting || exportBusy || pending || aiBusy || document.hidden || !edit.length || Date.now() - touchedAt < 1500) return;
+  ensureMix().catch(() => {});
+}, 2000); ac.signal.addEventListener('abort', () => clearInterval(t)); }
 // leaving or reloading while Shubix is still working, or before the last change is kept: the browser asks first
 window.addEventListener('beforeunload', e => {
   if(leavingOk) return;   // the person chose to leave (Keep old Reel, Discard Reel): nothing to warn about
