@@ -2218,7 +2218,7 @@ async function upsell(){
 const aiCache = new Map();
 const fpOf = src => [src.name, src.file ? src.file.size : 0, src.file ? src.file.lastModified : 0].join('|');
 function aiStat(t, err){ const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
-  if(!t) tasks.clear('ai'); else if(/…$/.test(t)) tasks.start('ai', 'ai', 'Shubix at work', t.replace(/…$/, '')); else if(err) tasks.fail('ai', t); else if(tasks.has('ai')) tasks.done('ai', t); el.style.color = err ? 'var(--drop)' : ''; }
+  if(!t) tasks.clear('ai'); else if(/…$/.test(t)){ tasks.start('ai', 'ai', 'Shubix at work', t.replace(/…$/, '')); tasks.units('ai', sources.filter(x => !x.removed).length); } else if(err) tasks.fail('ai', t); else if(tasks.has('ai')) tasks.done('ai', t); el.style.color = err ? 'var(--drop)' : ''; }
 // The AI's view of footage [a,b]: frames nearby (same scene only), weighted by distance
 // what a clip is about: the vision AI's subjects seen in at least a third of its frames (one stray frame says little)
 function aiTags(src){
