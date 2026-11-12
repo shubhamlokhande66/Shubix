@@ -371,10 +371,10 @@ export const STUDIO_HTML = `
             <button class="${Button.icon} size-11 ml-1.5" id="pvfull" type="button" aria-label="Full screen" title="Full screen">${I('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>')}</button>
           </div>
           <div class="previewProgress bar"><i id="prog" style="width:0%"></i></div>
-          <div class="feditbar" hidden><button type="button" class="${Button.primaryLarge}" id="fedit">${IC.pen}<span>Edit</span></button><small>Change shots, effects, text, music and more on the timeline</small></div>
+          <div class="feditbar"><button type="button" class="${Button.primaryLarge}" id="fedit">${IC.pen}<span>Edit</span></button><small>Change shots, effects, text, music and more on the timeline</small></div>
           <label class="tog safe" hidden><input type="checkbox" id="safe" checked> Instagram safe zones (preview only)</label>
           <div class="msg" id="xmsg" hidden></div>
-          <div class="row hidden!" id="saverow" hidden><button class="${Button.primary}" id="savevid">Save to Photos / Share</button><a class="${Button.secondary}" id="dlvid">Download</a></div>
+          <div class="row hidden!" id="saverow" hidden><button class="${Button.primary}" id="savevid">Share</button><a class="${Button.secondary}" id="dlvid">Download</a></div>
           <div class="postcap [:not(#fdcap)>&]:hidden!" id="postcap" hidden>
             <label class="fname" for="postcapt">Caption for your post</label>
             <textarea id="postcapt" rows="4" spellcheck="true"></textarea>
@@ -635,7 +635,6 @@ export const STUDIO_HTML = `
   <div class="fdvid"><video id="fdvideo" playsinline controls preload="metadata"></video></div>
   <p class="fdsaved"><b>Saved to your phone</b><small id="fdsize"></small></p>
   <button type="button" class="${Button.primaryLarge}" data-fd="share">${IC.upload}Share</button>
-  <button type="button" class="${Button.large}" data-fd="save">${IC.save}Save to Photos</button>
   <button type="button" class="${Button.large}" data-fd="download">${IC.save}Download</button>
   <div class="fdcap" id="fdcap"><b>Caption for your Post</b></div>
 </section>

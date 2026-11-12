@@ -5979,11 +5979,10 @@ function saveFile(blob, name){
   $('dlvid').href = savedUrl; $('dlvid').download = name;   // the made file, also for the Create flow's "Reel Exported" screen (flow.ts)
   if(canShare){
     $('saverow').hidden = false;
-    $('savevid').textContent = /^image\//.test(blob.type) ? 'Save to Photos / Share' : 'Save video to Photos / Share';
+    $('savevid').textContent = 'Share';
     $('savevid').onclick = async () => {
-      // the caption goes along (WhatsApp puts it under the video) and to the clipboard (Instagram: paste it)
+      // the caption goes along with the video (WhatsApp puts it under it); nothing is copied by itself: "Copy caption" does that
       const isVid = /^video\//.test(blob.type), text = isVid ? $('postcapt').value.trim() : '';
-      if(text){ copyCaption(text, true); }
       const data = text ? { files: [file], title: name, text } : { files: [file], title: name };
       try{ await navigator.share(data); }
       catch(err){
@@ -8070,6 +8069,10 @@ root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ re
   exportLocked: () => lockedUsed().map(x => ({ name: x.name, need: PLAN_NAME[x.need] })),
   exportFix: () => { lockedUsed().forEach(x => x.fix()); renderEDL(true); renderOvList(); sheetPaint(); }, caption: () => captionOf(),
   copies: () => sources.map((s, i) => ({ i, name: s.name, blob: s.edFile || null, w: s.edW || 0, h: s.edH || 0 })) };   // read by tests
+// the preview stops (the page or the screen is left); an export going on is never stopped by it
+root.__studio.stopPreview = () => { if(!recording && !exporting && !exportBusy && (playing || starting)) stopAll(); };
+// another page of the website (a link, Back): nothing of the Reel goes on playing there
+{ const off = () => root.__studio.stopPreview(); addEventListener('pagehide', off, SIG); }
 
   return () => {
     try{ stopAll(); }catch(err){}

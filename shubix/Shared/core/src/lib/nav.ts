@@ -61,7 +61,7 @@ export const TABS: NavTab[] = [
 ];
 
 /** Pages shown on their own (no bars). Which pages are open before signing in: lib/access.ts (the administrator's rules). */
-export const AUTH_PAGES = ["/login", "/forgot", "/reset", "/verify"];
+export const AUTH_PAGES = ["/login", "/forgot", "/reset", "/verify", "/signed-in"];
 
 export function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
