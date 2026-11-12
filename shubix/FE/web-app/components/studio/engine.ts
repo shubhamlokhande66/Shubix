@@ -618,15 +618,16 @@ async function useSection(token = musicToken){
   if(capsOn){ if(capAll && (secStart < capAll.from || secStart + buf.duration > capAll.from + 180)) loadCaptions(); else shiftCaptions(); }
   if(sources.length && !recording) makeEdit();
 }
+// resolves once the song's part is cut and the Reel made again at this length
 function setLen(L){
   remakeOk();
-  if(recording) return;
+  if(recording) return Promise.resolve();
   sec.len = L; sec.auto = true;
   [...$('slen').children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.l === (L === 0 ? '0' : [15,30,60].includes(L) ? String(L) : 'c'))));
   $('slencw').hidden = $('slen').querySelector('[data-l="c"]').getAttribute('aria-pressed') !== 'true';
   $('sauto').hidden = !L; $('lenhint').hidden = !L; $('mwave').classList.toggle('drag', !!L);
   if(playing) stopAll();
-  useSection();
+  return useSection();
 }
 $('slen').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return;
   setLen(b.dataset.l === 'c' ? Math.max(5, Math.min(180, +$('slenc').value || 45)) : +b.dataset.l); }, SIG);
@@ -3420,7 +3421,8 @@ $('fitclips').addEventListener('change', () => { lenLock(); footCheckSoon(); }, 
 lenLock();
 /* Generate, before Shubix AI and before any credits: a clip that could not be read, too little good video. 'go', 'stop', or
  * 'again' (the Reel is now as long as the clips: Generate goes on once it is made). */
-let badTold = 0, longOk = '';   // longOk: 'Shubix picks the best' was chosen for these clips and this song
+// longOk: 'Shubix picks the best' was chosen for these clips and this song; shortOk: 'Make a 7s Reel' was chosen for them
+let badTold = 0, longOk = '', shortOk = '';
 async function askShort(){
   const bad = [...$('clips').children].filter(c => c.dataset.bad).length;
   if(bad && badTold !== bad){
@@ -3441,13 +3443,18 @@ async function askShort(){
       longOk = key;
     }
     const target = have < full * 0.95 ? have : 0;
-    if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len){ setLen(target); return 'again'; }   // as long as the clips: no question
+    // as long as the clips: no question. Make Reel goes on once the shorter Reel is made (it went on at once, found the old
+    // length still there and asked again)
+    if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len){ await setLen(target); return 'again'; }
     return 'go';
   }
   if(have >= need * 0.95) return 'go';
+  // 'Make a 7s Reel' already chosen for these clips and this song: asked once, not at every Make Reel (2026-11-12)
+  const sk = Math.round(have*10) + ':' + (song ? song.key : '');
+  if(shortOk === sk && sec.len && Math.abs(sec.len - Math.max(5, Math.floor(have))) < 0.01) return 'go';
   const v = await askCredits({ title: 'Not enough clips', text: 'Your clips have ' + fmtS(have) + ' of good video. Your Reel is ' + fmtS(need) + '. No credits were used.', ok: 'Add clips', ...(have >= 5 ? { no: 'Make a ' + fmtS(have) + ' Reel' } : {}) });
   if(v === true){ $('vfile').click(); return 'stop'; }
-  if(v === false){ setLen(Math.max(5, have)); return 'again'; }
+  if(v === false){ shortOk = sk; await setLen(Math.max(5, Math.floor(have))); return 'again'; }
   return 'stop';
 }
 function clipFlaw(src){
@@ -3562,6 +3569,9 @@ function makeEditNow(){
   if(!buf || !sources.length) return;
   const keptUk = ukKeep();
   stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode, downbeats)))), pc.secs); } styleEdit(); const dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
+  // no shot in the plan (the song's beats not known yet): no Reel yet. It threw here, and with it the song's reading
+  // stopped: "Reading the song…" for ever (2026-11-12)
+  if(!plan || !plan.length) return;
   const gmax = Math.max(1e-6, ...sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = sources.map(()=>[]);
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
