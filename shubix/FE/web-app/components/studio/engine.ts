@@ -5875,10 +5875,13 @@ async function startPlayback(from, destNode){
       // the next shot's player starts a moment before its cut (a paused video needs 0.1-0.3 s to show a moving picture
       // again on a phone): while recording, that wait was a still picture at every cut of the saved video
       const nx = edit[i+1], left = e.end - t;
-      if(recording && nx && !nx._rolled && nx.el !== e.el && left <= PREROLL && l > trDur(e) + 0.05 && !(nx.cs && nx.cs.rev)){
-        nx._rolled = true;
-        const r0 = rateAt(nx, 0), w = srcPos(nx, 0) - left*r0;
-        if(r0 > 0 && rawRate(nx, 0) <= PLAY_MAX && w >= 0.02){ nx.el.currentTime = w; nx.el.playbackRate = r0; nx.el.play().catch(()=>{}); }
+      // A shot from its clip's very start (most of Shubix's shots) cannot start earlier in its clip: it starts at the clip's
+      // start up to 0.1 s early (a little ahead at the cut, under the 0.12 s that would seek it again). It was not started at
+      // all, so on Android (real time when the decoders are taken back) nearly every cut stood still (2026-11-12).
+      if(recording && nx && !nx._rolled && nx.el !== e.el && l > trDur(e) + 0.05 && !(nx.cs && nx.cs.rev)){
+        const r0 = rateAt(nx, 0), from = srcPos(nx, 0), lim = r0 > 0 ? Math.max(0.1/r0, Math.min(PREROLL, from/r0)) : 0;
+        if(left <= lim){ nx._rolled = true;
+          if(r0 > 0 && rawRate(nx, 0) <= PLAY_MAX){ nx.el.currentTime = Math.max(0, from - left*r0); nx.el.playbackRate = r0; nx.el.play().catch(()=>{}); } }
       }
     }
     if(layers.length) syncLayers(t);
@@ -5979,11 +5982,10 @@ function saveFile(blob, name){
   $('dlvid').href = savedUrl; $('dlvid').download = name;   // the made file, also for the Create flow's "Reel Exported" screen (flow.ts)
   if(canShare){
     $('saverow').hidden = false;
-    $('savevid').textContent = /^image\//.test(blob.type) ? 'Save to Photos / Share' : 'Save video to Photos / Share';
+    $('savevid').textContent = 'Share';
     $('savevid').onclick = async () => {
-      // the caption goes along (WhatsApp puts it under the video) and to the clipboard (Instagram: paste it)
+      // the caption goes along with the video (WhatsApp puts it under it); nothing is copied by itself: "Copy caption" does that
       const isVid = /^video\//.test(blob.type), text = isVid ? $('postcapt').value.trim() : '';
-      if(text){ copyCaption(text, true); }
       const data = text ? { files: [file], title: name, text } : { files: [file], title: name };
       try{ await navigator.share(data); }
       catch(err){
@@ -6397,7 +6399,9 @@ async function runExport(toCloud){
     let ok = false;
     try{ ok = await fastBg(); }
     catch(err){ if(err && err.code === 'CANCELLED'){ tasks.clear('export'); notify('Export cancelled. Your Reel is still here.'); return; }
-      if(err && err.code === 'QUALITY_GATE_FAILED'){ tasks.fail('export', err.message); showMsg(err.message, true); throw err; } console.warn('fast export failed', err); tasks.update('export', null, 'Switching to a slower way to save on this phone…'); showMsg('Switching to a slower way to save on this phone. Please keep this screen open…'); }
+      if(err && err.code === 'QUALITY_GATE_FAILED'){ tasks.fail('export', err.message); showMsg(err.message, true); throw err; } console.warn('fast export failed', err);
+      // why the fast way was left (a phone's decoders taken back, a missing frame…): Admin → Errors, to make it stay fast
+      try{ window.__shubixReport && window.__shubixReport('export', 'Fast export fell back to real time: ' + String(err && err.message || err).slice(0, 240), JSON.stringify({ ua: navigator.userAgent.slice(0, 160), mem: navigator.deviceMemory || null, clips: sources.length, shots: edit.length, res: xq.res, fps: xq.fps })); }catch(x){} tasks.update('export', null, 'Switching to a slower way to save on this phone…'); showMsg('Switching to a slower way to save on this phone. Please keep this screen open…'); }
     if(!ok){
       try{
         ok = await recordBg();
@@ -8070,6 +8074,10 @@ root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ re
   exportLocked: () => lockedUsed().map(x => ({ name: x.name, need: PLAN_NAME[x.need] })),
   exportFix: () => { lockedUsed().forEach(x => x.fix()); renderEDL(true); renderOvList(); sheetPaint(); }, caption: () => captionOf(),
   copies: () => sources.map((s, i) => ({ i, name: s.name, blob: s.edFile || null, w: s.edW || 0, h: s.edH || 0 })) };   // read by tests
+// the preview stops (the page or the screen is left); an export going on is never stopped by it
+root.__studio.stopPreview = () => { if(!recording && !exporting && !exportBusy && (playing || starting)) stopAll(); };
+// another page of the website (a link, Back): nothing of the Reel goes on playing there
+{ const off = () => root.__studio.stopPreview(); addEventListener('pagehide', off, SIG); }
 
   return () => {
     try{ stopAll(); }catch(err){}

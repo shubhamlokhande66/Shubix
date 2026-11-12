@@ -65,7 +65,7 @@ export function NotificationBell() {
         onClick={toggle}
         aria-label={fresh ? text("bell.new", { n: fresh }) : text("bell.title")}
         aria-expanded={open}
-        className="relative grid h-10 w-10 place-items-center rounded-full text-foreground transition-colors hover:bg-surface-2"
+        className="relative grid size-9 place-items-center rounded-full text-foreground transition-colors hover:bg-surface-2 md:size-10"
       >
         <Icon name="bell" size={24} stroke={1.9} />
         {fresh > 0 && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--bar)] bg-[#ff3b5c]" />}

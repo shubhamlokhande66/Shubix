@@ -138,7 +138,7 @@ function SignIn({ program, onIn }: { program: PartnerMe["program"]; onIn: () => 
           </fieldset></form>
         )}
       </Card>
-      <p className="m-0 text-center text-[12.5px] text-muted">{text("aff.haveShubix")} <Link href="/login" className="font-bold text-accent">{text("aff.signInShubix")}</Link></p>
+      <p className="m-0 text-center text-[12.5px] text-muted">{text("aff.haveShubix")} <Link href="/login?next=%2Faffiliate" className="font-bold text-accent">{text("aff.signInShubix")}</Link></p>
     </Narrow>
   );
 }

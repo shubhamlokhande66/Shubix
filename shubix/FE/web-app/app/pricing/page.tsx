@@ -14,7 +14,6 @@ import { SectionHeading } from "@/components/molecules/SectionHeading";
 import { PlanAction, PlanCard, rupees } from "@/components/organisms/pricing/PlanCard";
 import { Checkout } from "@/components/organisms/pricing/Checkout";
 import { OfferStrip } from "@/components/molecules/OfferStrip";
-import { PlanCompare } from "@/components/organisms/pricing/PlanCompare";
 import { UpgradeReason } from "@/components/organisms/pricing/UpgradeReason";
 
 const day = (d: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "");
@@ -207,8 +206,6 @@ export default function PricingPage() {
           );
         })}
       </section>
-
-      <PlanCompare text={text} plans={p.plans.filter((x) => !x.hidden).map((x) => x.id)} />
 
       {/* your credits and top-ups */}
       <section aria-label="Credits" className={cn("grid gap-5", mine && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]")}>
