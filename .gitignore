@@ -41,7 +41,6 @@ tests/server/manual/out/
 # misc
 .DS_Store
 *.pem
-.vercel
 
 # local test songs and reference analyses (copyrighted audio)
 /TestFile/

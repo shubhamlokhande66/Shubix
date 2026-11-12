@@ -1,0 +1,14 @@
+diff --git a/dist/overrides/proxyExternalRequest/fetch.js b/dist/overrides/proxyExternalRequest/fetch.js
+index d9160646bf5e78869d719c6be6c191144f3f737a..2144b48b16a000c94849e7a0e9a7396e2a378eb9 100644
+--- a/dist/overrides/proxyExternalRequest/fetch.js
++++ b/dist/overrides/proxyExternalRequest/fetch.js
+@@ -13,6 +13,9 @@ const fetchProxy = {
+             method,
+             headers,
+             body: body,
++            // Shubix: a redirect from the proxied API goes to the browser as it is (with its Set-Cookie), as on Vercel.
++            // Followed here, Google sign-in broke: its page showed at /api/auth/google without the state cookie.
++            redirect: "manual",
+         });
+         const responseHeaders = {};
+         response.headers.forEach((value, key) => {

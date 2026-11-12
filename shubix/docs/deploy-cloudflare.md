@@ -1,6 +1,6 @@
 # Deploying to Cloudflare (Workers + Containers + R2)
 
-> Live today: the website on Vercel and only the API on Cloudflare (`docs/deploy-vercel-cloudflare.md`). This page is the
+> Live today: the website on its own Cloudflare Worker and the API in a Cloudflare container (`docs/deploy-website-cloudflare.md`). This page is the
 > setup shared by both (the account, R2, MongoDB, the secrets) and the older way of running everything in one container.
 
 The whole app (website, API, FFmpeg) runs in **one Cloudflare Container**, built from

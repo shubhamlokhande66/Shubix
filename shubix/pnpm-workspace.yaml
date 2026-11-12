@@ -11,3 +11,5 @@ onlyBuiltDependencies:
   - sharp
 overrides:
   multer: "^2.5.0"
+patchedDependencies:
+  "@opennextjs/aws@4.1.16": patches/@opennextjs__aws@4.1.16.patch

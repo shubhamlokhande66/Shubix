@@ -2219,13 +2219,13 @@ async function upsell(){
     if(go){ aiRun(); return 'skip'; }   // Use: the AI starts on this Reel
     return 'close';                      // ✕: back, nothing generated
   }
-  // Make Reel runs in one popup: no Shubix AI offer in between (the plans are shown on the screen), the basic Reel is made
-  if(location.pathname.startsWith('/create')) return 'skip';
-  const id = reelIdNow(); if(upsold === id || IN_APP) return 'skip';   // never an upgrade offer in the app
+  // Free (no Shubix AI in the plan), Make Reel (the Create flow too, 2026-11-12): once per Reel, two ways to make it.
+  // Shubix Brain: the plans (Shubix AI edits it); Shubix: the phone's own smart edit, free. Never in the app (it sells nothing).
+  const id = reelIdNow(); if(upsold === id || IN_APP) return 'skip';
   const cost = aiCostOf('reel');
-  const v = await askCredits({ upsell: true, title: 'Make it perfect with Shubix AI', text: 'Your Reel is ready. With the Editor or Pro plan, Shubix AI edits it like a pro' + (cost ? ' (' + creditWord(cost) + ' per Reel)' : '') + ':' + (aiInfo && aiInfo.creditsOpen ? ' Or invite friends on Invite & earn: your credits pay for AI Reels on Free too.' : ''),
-    list: ['The best moments of every clip, picked for you', 'Trendy transitions and effects, right on the beat', 'Ask Shubix: change anything in your own words', 'Captions and pro colour, automatically'],
-    bal: null, ok: 'Upgrade to Shubix AI', no: 'Create basic Reel' });
+  const v = await askCredits({ upsell: true, title: 'How should we make your Reel?', text: 'Shubix Brain is our AI editor on the Editor and Pro plans' + (cost ? ' (' + creditWord(cost) + ' per Reel)' : '') + '. Shubix makes it free, with the smart edit on your phone.' + (aiInfo && aiInfo.creditsOpen ? ' Or invite friends on Invite & earn: your credits pay for AI Reels on Free too.' : ''),
+    list: ['Shubix Brain picks the best moments of every clip', 'Trendy transitions and effects, right on the beat', 'Ask Shubix: change anything in your own words', 'Captions and pro colour, automatically'],
+    bal: null, ok: 'Shubix Brain', no: 'Shubix' });
   if(v !== null) upsold = id;
   if(v === true){ void toPricing('?feature=ai'); return 'upgrade'; }
   return v === false ? 'basic' : 'close';
@@ -6441,6 +6441,8 @@ async function runExport(toCloud){
     }
     rlog('export', lastVideo ? 'Reel saved · ' + mb2(lastVideo.size) + ' MB · ' + ((performance.now() - expT0)/1000).toFixed(1) + ' s in all' : 'Export ended without a video', lastVideo ? { mb: mb2(lastVideo.size), type: lastVideo.type } : null, lastVideo ? 'info' : 'error', performance.now() - expT0);
     if(toCloud && lastVideo) await saveToMyReels(lastVideo);
+    // the review pop-up (components/organisms/ReviewPrompt.tsx): once per Reel, after it is exported
+    if(lastVideo) try{ window.dispatchEvent(new CustomEvent('shubix:reel-exported', { detail: { reelId: proj ? proj.id : '' } })); }catch(e){}
     if(lastVideo) void notifyDone('Your Reel is ready', fileTitle() + ' is saved · tap to open Shubix', 'shubix-export');
     else void notifyDone('Your export stopped', 'Open Shubix to try again', 'shubix-export');
   } finally {

@@ -20,6 +20,10 @@ const INDEXES: [collection: string, keys: Record<string, 1 | -1>, options?: { un
   ["studio_reels", { [OWNER]: 1, status: 1, createdAt: -1 }],
   ["studio_reels", { shareToken: 1 }],
   ["presence", { uid: 1, at: -1 }],
+  // reviews (server/reviews.ts): one per person per Reel, Home's approved ones, Admin's newest first
+  ["reviews", { userId: 1, reelId: 1 }, { unique: true }],
+  ["reviews", { status: 1, approvedAt: -1 }],
+  ["reviews", { updatedAt: -1 }],
   // one Reel's log (server/reelLogs.ts, Admin → Logs): its lines in order, the latest Reels, gone after 30 days
   ["reel_logs", { reelId: 1, at: 1, seq: 1 }],
   ["reel_logs", { at: -1 }],

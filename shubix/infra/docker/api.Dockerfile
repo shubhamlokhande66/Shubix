@@ -1,4 +1,4 @@
-# The API alone (BE/api), for Cloudflare with the website on Vercel (docs/deploy-vercel-cloudflare.md): no website
+# The API alone (BE/api), for Cloudflare with the website on its own Worker (docs/deploy-website-cloudflare.md): no website
 # build or server in it, so the image is smaller, builds faster and wakes faster (a container is billed while awake).
 # Build from the monorepo root: docker build -f infra/docker/api.Dockerfile .
 FROM node:22-trixie-slim AS build

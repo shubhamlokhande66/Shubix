@@ -2026,8 +2026,9 @@
 .brs .cconf.upsell .cconfi{width:56px;height:56px;background:var(--gold-gradient);color:var(--on-accent);box-shadow:0 12px 28px -10px color-mix(in srgb,var(--accent) 80%,transparent)}
 .brs .cconf.upsell .cconfa{flex-direction:column-reverse;width:100%;align-items:stretch}
 .brs .cconf.upsell #cconfok{min-height:48px;font-size:15px;background:var(--gold-gradient);color:var(--on-accent);border:0}
-.brs .cconf.upsell #cconfno{min-height:36px;border:0;background:transparent;color:var(--muted);font-weight:500;font-size:13px}
-.brs .cconf.upsell #cconfno:hover{color:var(--ink)}
+/* the free way ("Shubix": the phone's own edit) is a real second button too, under Shubix Brain */
+.brs .cconf.upsell #cconfno{min-height:44px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px}
+.brs .cconf.upsell #cconfno:hover{background:var(--surface-2)}
 
 .brs .cconfbal{font:600 12.5px var(--body) !important;color:var(--muted) !important;background:var(--surface-2);padding:5px 10px;border-radius:999px}
 .brs .cconfbal:empty{display:none}

@@ -1,12 +1,12 @@
 ```
 .github/workflows/
 ├── shubix-ci.yml               # checks for every PR into main: types, API + web tests, web build, Android debug build
-├── deploy-cloudflare.yml       # main → the API on Cloudflare (the website deploys itself on Vercel)
+├── deploy-cloudflare.yml       # by hand → the API on Cloudflare (deploy-cloudflare-web.yml: the website)
 └── android-apk.yml             # by hand: a test APK to install on a phone (Actions → Android test APK → Run workflow)
 
 shubix/                         # the monorepo (pnpm workspaces)
 ├── FE/
-│   ├── web-app/                # Next.js 16 + Tailwind v4: shubix.in, on Vercel
+│   ├── web-app/                # Next.js 16 + Tailwind v4: shubix.in, on Cloudflare Workers (OpenNext)
 │   │   ├── app/                # pages (App Router), icons, robots.ts, sitemap.ts
 │   │   ├── components/         # atoms, molecules, organisms, templates; studio/ = Fast Studio (the editor)
 │   │   ├── lib/  hooks/        # API client, drafts, background work, error reports

@@ -10,6 +10,7 @@ import { applyTheme } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { ThemeToggle } from "@/components/molecules/ThemeToggle";
 import { ConfirmHost } from "@/components/molecules/ConfirmDialog";
+import { ReviewPrompt } from "@/components/organisms/ReviewPrompt";
 import { Icon } from "@/components/atoms/Icon";
 import { Logo } from "@/components/atoms/Logo";
 import { GlobalActivity } from "@/components/molecules/GlobalActivity";
@@ -211,7 +212,7 @@ function Drawer({ open, onClose, groups, pathname, admin, email, credits, onSign
 const tabsFor = (f: Parameters<typeof linkOn>[1]) => TABS.filter((t) => linkOn(t.href, f));
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  // Vercel renders Home again on its server as "/index": the same page as "/" (else it is not public, only a spinner)
+  // a server may render Home as "/index" (Vercel did): the same page as "/" (else it is not public, only a spinner)
   const at = usePathname() ?? "/", pathname = at === "/index" ? "/" : at;
   const { admin, otp, loading } = useAdmin();
   const adminLink = admin || otp; // an admin account whose daily code is due: its button leads to the code
@@ -365,6 +366,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="rm min-h-screen md:flex">
       <GlobalActivity />
       <ConfirmHost />
+      <ReviewPrompt />
       <HelpChat raised={tabs} />
 
       {/* phones: the top bar */}

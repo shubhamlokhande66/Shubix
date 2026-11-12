@@ -466,7 +466,7 @@ export function initFlow(root: HTMLElement): () => void {
       if (live()?.aiPrice?.().low) { void live()!.askLow!().then(() => { if (live()?.aiPrice?.().low) return; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }); return; }   // (Free edit goes on; Top up and closing it do not)
       // still being read: the one popup shows it now, and this goes on by itself when it is done
       if (!stopped().song && !stopped().clips && (working.size > 0 || aiRunning() || !made())) { wantGen = true; apply(); return; }
-      // Free: first, once per Reel, why Shubix AI is worth it (Upgrade, Create basic Reel, or ✕ to stay here)
+      // Free: first, once per Reel, Shubix Brain (the plans) or Shubix (the phone's own edit, free), or ✕ to stay here
       const st = live(), run = ++aiRunNo;
       going++;
       void (async () => { try {
