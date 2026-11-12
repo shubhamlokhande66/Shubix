@@ -15,7 +15,7 @@ import { Button } from "./ui";
 export type TaskEvent = { id: string; kind?: TaskKind; state: "start" | "progress" | "done" | "fail" | "clear"; p: number | null; title?: string; detail?: string };
 
 export type TaskKind = "music" | "clips" | "ai" | "export" | "cloud" | "voice";
-type Card = { el: HTMLElement; kind: TaskKind; t0: number; p: number | null; timer?: ReturnType<typeof setTimeout> };
+type Card = { el: HTMLElement; kind: TaskKind; t0: number; p: number | null; timer?: ReturnType<typeof setTimeout>; units?: number };
 
 const ICON: Record<TaskKind, string> = {
   // equaliser bars, moving like music
@@ -37,6 +37,24 @@ const TICK = `<svg class="motion-safe:animate-pop" width="22" height="22" viewBo
 
 // what the Create flow's popup lists, in order (a task's id, its line)
 const STEPS: [string, string][] = [["song", "Reading your song"], ["beats", "Checking every beat"], ["clips", "Preparing and analysing your clips"], ["ai", "Shubix AI editing your Reel"]];
+
+// Shubix AI's time: what it says how far it is (a server's answer has no percent), so the card shows the time so far and,
+// from this phone's own last AI Reels, how long it usually takes for this many clips (2026-11-12)
+const AI_TIMES = "shubix-ai-times";
+const AI_RATE_GUESS = 10;   // seconds per clip before this phone has made one (a guess, wide: replaced by its own times)
+type AiTime = { units: number; secs: number };
+const aiTimes = (): AiTime[] => { try { const v = JSON.parse(localStorage.getItem(AI_TIMES) ?? "[]"); return Array.isArray(v) ? v.filter((x) => x && x.units > 0 && x.secs > 0) : []; } catch { return []; } };
+const aiTimeKept = (t: AiTime) => { try { localStorage.setItem(AI_TIMES, JSON.stringify([...aiTimes(), t].slice(-8))); } catch { /* private mode: the guess stays */ } };
+/** [low, high] seconds for `units` clips: the median of this phone's seconds per clip, or the first guess (wider). */
+function aiEstimate(units: number): [number, number] {
+  const rates = aiTimes().map((t) => t.secs / t.units).sort((a, b) => a - b);
+  const known = rates.length > 0, rate = known ? rates[Math.floor(rates.length / 2)] : AI_RATE_GUESS, mid = Math.max(20, rate * units);
+  return known ? [mid * 0.8, mid * 1.3] : [mid * 0.6, mid * 1.8];
+}
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const span = ([a, b]: [number, number]) => (b < 60 ? `${Math.max(5, Math.round(a / 5) * 5)}–${Math.round(b / 5) * 5} s` : `${Math.max(1, Math.round(a / 60))}–${Math.max(2, Math.round(b / 60))} min`);
+// "clip 2 of 10" in the AI's own words: how far that step is
+const ofN = (t: string) => { const m = /(\d+) of (\d+)/.exec(t); return m && +m[2] > 0 ? Math.min(1, +m[1] / +m[2]) : null; };
 
 const left = (s: number) => (s < 1.5 ? "almost done" : s < 60 ? `about ${Math.ceil(s)} s left` : `about ${Math.ceil(s / 60)} min left`);
 
@@ -126,6 +144,7 @@ export function createTasks(host: HTMLElement) {
     else if (guard) { const g = guard; button(Button.secondary, tx("Stop"), g.onCancel); button(Button.danger, tx("Discard Reel"), g.onCancelReel); }
     else if (hideOk) button(Button.secondary, tx("Hide"), () => { cards.forEach((_, id) => hiddenIds.add(id)); refresh(); });
   }
+  const tick = setInterval(() => { cards.forEach((c) => { if (c.kind === "ai" && !c.timer && !c.el.hidden && !box.hidden) paint(c); }); }, 1000);
   const emit = (e: TaskEvent) => host.dispatchEvent(new CustomEvent<TaskEvent>("studio-task", { detail: e }));
 
   function paint(c: Card, title?: string, detail?: string) {
@@ -133,6 +152,15 @@ export function createTasks(host: HTMLElement) {
     if (title !== undefined) q("[data-t]").textContent = title;
     if (detail !== undefined) q("[data-d]").textContent = detail;
     const bar = q<HTMLElement>("[data-bar]"), info = q("[data-i]");
+    if (c.kind === "ai" && c.p !== 1) {
+      // the time so far, and how long it usually takes; the bar fills only where the AI says "2 of 10"
+      const el = (performance.now() - c.t0) / 1000, est = c.units ? aiEstimate(c.units) : null;
+      info.textContent = clock(el) + (est ? (el > est[1] ? ` · ${tx("taking longer than usual")}` : ` · ${tx("usually")} ${span(est)}`) : "");
+      const p = ofN(q("[data-d]").textContent ?? "");
+      bar.classList.toggle("motion-safe:animate-slide", p === null);
+      bar.style.width = p === null ? "40%" : `${(p * 100).toFixed(1)}%`;
+      return;
+    }
     if (c.p === null) {
       bar.style.width = "40%";
       bar.classList.add("motion-safe:animate-slide");
@@ -168,7 +196,7 @@ export function createTasks(host: HTMLElement) {
       c = { el, kind, t0: performance.now(), p: null };
       cards.set(id, c);
     } else {
-      c.t0 = performance.now();
+      if (!(kind === "ai" && !c.timer)) c.t0 = performance.now();   // the AI's next step: the same work, its time goes on
       c.p = null;
       c.el.classList.remove("opacity-0", "translate-y-2");
       c.el.querySelector("[data-ic]")!.innerHTML = ICON[kind];
@@ -199,6 +227,7 @@ export function createTasks(host: HTMLElement) {
       window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "error", text } }));
       return;
     }
+    if (c.kind === "ai" && c.units && !c.timer) { const secs = (performance.now() - c.t0) / 1000; if (secs > 3) aiTimeKept({ units: c.units, secs: Math.round(secs) }); }
     doneSteps.add(id); if (guard) paintSteps();
     const ic = c.el.querySelector<HTMLElement>("[data-ic]")!;
     ic.innerHTML = TICK;
@@ -238,7 +267,9 @@ export function createTasks(host: HTMLElement) {
       refresh();
     },
     has: (id: string) => cards.has(id),
-    dispose: () => box.remove(),
+    /** How many clips the AI works on (its usual time is for that many). */
+    units: (id: string, n: number) => { const c = cards.get(id); if (c) { c.units = n; paint(c); } },
+    dispose: () => { clearInterval(tick); box.remove(); },
   };
 }
 
