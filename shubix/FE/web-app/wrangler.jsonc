@@ -10,7 +10,9 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  // html_handling none: a file is served at its own name, as on Vercel (/offline.html answered 307 to /offline, which broke
+  // the service worker's offline page). Headers for these files: public/_headers.
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS", "html_handling": "none" },
   "observability": { "enabled": true },
   "workers_dev": true,
   // production (no --env): shubix.in and www.shubix.in, moved from Vercel after QA and UAT were checked here
