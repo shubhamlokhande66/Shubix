@@ -2033,6 +2033,9 @@
 html:has(.brs .cconf:not([hidden])),html:has(.brs .xsheet:not([hidden])){overflow:hidden}
 html:has(.brs .cconf:not([hidden])) body,html:has(.brs .xsheet:not([hidden])) body{overflow:hidden;overscroll-behavior:none}
 .brs .cconf,.brs .xsheet{overscroll-behavior:contain;touch-action:none}
+/* the export settings are a page of their own on phones, taller than the screen: they scroll with a finger (touch-action
+   none above stopped that, 2026-11-12); the page behind stays still (overscroll-behavior, html overflow) */
+.brs .xsheet{overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
 .brs .cconfb,.brs .xsh{touch-action:auto}
 
 /* recent songs: a play / pause button in place of the ♪ tile, to listen before choosing (the row still chooses) */
