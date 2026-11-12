@@ -23,6 +23,16 @@ export function ProPill({ plan, planId, compact = false }: { plan?: string | nul
   const tier: "free" | "editor" | "pro" | "none" = !plan ? "none" : id === "free" ? "free" : id === "pro" || id === "business" ? "pro" : "editor";
   const title = tier === "free" ? text("common.planHint") : tier === "none" ? text("nav.pricing") : text("nav.planSuffix", { plan: plan ?? "" });
   const base = cn("group inline-flex h-10 shrink-0 items-center rounded-full border text-[13.5px] font-semibold transition-[transform,box-shadow] hover:-translate-y-px", compact ? "gap-1.5 pl-1.5 pr-3" : "gap-2 pl-1.5 pr-3.5");
+  // compact (the phone's top bar on inner pages): the crown alone, the plan's name in its title, so the bar never crowds
+  if (compact)
+    return (
+      <Link href="/pricing" title={title} aria-label={title} className={cn("grid size-9 shrink-0 place-items-center rounded-full border transition-transform hover:-translate-y-px",
+        tier === "free" || tier === "none" ? "border-border bg-surface" : cn("border-transparent", RING[tier]))}>
+        <span className={cn("grid size-7 place-items-center rounded-full", tier === "pro" ? "bg-[linear-gradient(135deg,#fde68a,#f5c84c_45%,#c98a1f)] text-[#3a2604]" : "bg-gold text-on-accent")}>
+          <Icon name={tier === "editor" ? "sparkle" : "crown"} size={14} stroke={2.3} />
+        </span>
+      </Link>
+    );
 
   if (tier === "free" || tier === "none")
     return (

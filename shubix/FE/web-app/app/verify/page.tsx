@@ -53,7 +53,7 @@ function ByCode({ justSent }: { justSent: boolean }) {
   const user = me.data?.user, pending = me.data?.pending, codeWait = user?.codeWait ?? pending?.codeWait, startWait = wait.start;
   useEffect(() => { if (codeWait) startWait(codeWait); }, [codeWait]); // eslint-disable-line react-hooks/exhaustive-deps -- how long the server still wants, on any way here
   if (me.isLoading) return <Spinner />;
-  if (!user && !pending) return <p className="m-0 text-[13px]">{text("auth.signInToVerify")} <Link href="/login" className="font-bold text-accent">{text("auth.signIn")}</Link></p>;
+  if (!user && !pending) return <p className="m-0 text-[13px]">{text("auth.signInToVerify")} <Link href="/login?next=%2Fverify" className="font-bold text-accent">{text("auth.signIn")}</Link></p>;
   if (done || (user && user.emailVerified !== false)) return <Done email={done ?? user!.email} />;
   const email = user?.email ?? pending!.email;
 
