@@ -9,6 +9,7 @@ import { DurationTag, Photo, Skeleton } from "@/components/atoms";
 import { ProBanner, Scroller, SectionHeader, TipsBanner } from "@/components/molecules";
 import { HomeHero } from "@/components/organisms/home/HomeHero";
 import { ContinueSection, CreateSection, TemplatesSection, TipsSection } from "@/components/organisms/home/HomeSections";
+import { ReviewsSection } from "@/components/organisms/home/ReviewsSection";
 import { useCredits, useFeatures, useMe, useText } from "@/hooks/useApi";
 import { useSafeQuery as useQuery } from "@/lib/useSafeQuery";
 import { listCloudReels, type CloudReel } from "@/lib/cloudReels";
@@ -72,6 +73,7 @@ export default function Home() {
       <SavedSection reels={saved} />
       <AdSlot place="homeEnd" />
       <TipsSection />
+      <ReviewsSection />
       <GetAppSection />
       <section aria-label="About Shubix" className="max-w-3xl text-[14px] leading-relaxed text-muted"><RichText text={text("home.aboutBody")} /><p className="mt-3 mb-0">{text("home.softwareNote")}</p></section>
       {!paid && <ProBanner />}

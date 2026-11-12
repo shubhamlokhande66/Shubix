@@ -6,6 +6,8 @@ export type AccessRules = Access & { googleReady: boolean };
 import { clickBusy, tracked } from "./activity";
 
 /** Admin → Messages: a message to a group, in their bell and (email) by email */
+/** A Reel's review in Admin → Reviews (server/reviews.ts). */
+export interface AdminReview { id: string; reelId: string; name: string; email: string | null; rating: number; comment: string; improvement: string; status: "pending" | "approved" | "hidden"; at: string }
 export type Audience = "all" | "paying" | "free" | "affiliates";
 export interface BroadcastInput { title: string; body: string; link: string; button: string; audience: Audience; email: boolean }
 export interface Broadcast extends BroadcastInput { id: string; people: number; emailed: number; emailFailed: number; at: string }
@@ -318,6 +320,12 @@ export const api = {
   adminReelLogs: (q = "") => request<{ reels: { reelId: string; first: string; last: string; lines: number; errors: number; warns: number; user: string | null; ua: string | null }[] }>(`/api/admin/reel-logs${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   adminReelLog: (reelId: string) => request<{ lines: { id: string; at: string; source: "browser" | "server"; step: string; msg: string; level: "info" | "warn" | "error"; ms: number | null; data: unknown; ua: string | null }[] }>(`/api/admin/reel-logs?reel=${encodeURIComponent(reelId)}`),
   deleteAdminReelLog: (reelId: string) => request<{ ok: boolean }>("/api/admin/reel-logs", { method: "DELETE", body: JSON.stringify({ reelId }) }),
+  // reviews after an export (server/reviews.ts): sent by ReviewPrompt, approved ones on Home, all in Admin → Reviews
+  sendReview: (d: { reelId: string; rating: number; comment: string; improvement: string }) => request<{ ok: boolean }>("/api/reviews", { method: "POST", body: JSON.stringify(d) }),
+  publicReviews: () => request<{ reviews: { id: string; name: string; rating: number; comment: string }[] }>("/api/public/reviews"),
+  adminReviews: (status?: AdminReview["status"]) => request<{ reviews: AdminReview[]; counts: Partial<Record<AdminReview["status"], number>> }>(`/api/admin/reviews${status ? `?status=${status}` : ""}`),
+  setAdminReview: (id: string, status: AdminReview["status"]) => request<{ ok: boolean }>("/api/admin/reviews", { method: "PATCH", body: JSON.stringify({ id, status }) }),
+  deleteAdminReview: (id: string) => request<{ ok: boolean }>(`/api/admin/reviews?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
   setPricing: (body: { plans: { id: string; name?: string; monthly: number; credits: number; freeChats?: number; highlight?: boolean; ai?: boolean; ads?: boolean; hidden?: boolean; features?: string[] }[]; topUps: { id: string; credits: number; price: number }[]; costs: Record<string, number> }) =>
     request<Pricing>("/api/admin/pricing", { method: "PUT", body: JSON.stringify(body) }),
   /** The administrator's texts (Admin → CMS; lib/texts.ts has the defaults). */

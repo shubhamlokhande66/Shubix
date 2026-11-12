@@ -10,6 +10,7 @@ import { applyTheme } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { ThemeToggle } from "@/components/molecules/ThemeToggle";
 import { ConfirmHost } from "@/components/molecules/ConfirmDialog";
+import { ReviewPrompt } from "@/components/organisms/ReviewPrompt";
 import { Icon } from "@/components/atoms/Icon";
 import { Logo } from "@/components/atoms/Logo";
 import { GlobalActivity } from "@/components/molecules/GlobalActivity";
@@ -365,6 +366,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="rm min-h-screen md:flex">
       <GlobalActivity />
       <ConfirmHost />
+      <ReviewPrompt />
       <HelpChat raised={tabs} />
 
       {/* phones: the top bar */}
