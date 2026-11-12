@@ -53,6 +53,9 @@ const EXPORT_FRAME_POOL = LOW_MEMORY_DEVICE ? 2 : 4;
  * from this phone when it was saved (the clips' reading is kept, so the second time is fast). */
 const LIFE_KEY = 'brs-life';
 let lifeNote = {}, lifeOver = false;
+// one Reel's log (Admin → Logs, lib/reelLog.ts): each step with its time and data, under this Reel's id
+const rlog = (step, msg, data, level, ms) => { try{ window.__shubixReelLog && window.__shubixReelLog(step, msg, data, level, ms); }catch(e){} };
+const mb2 = n => +((n || 0) / 1e6).toFixed(2);
 function life(p){ if(lifeOver) return; lifeNote = { ...lifeNote, ...p, at: Date.now() }; try{ sessionStorage.setItem(LIFE_KEY, JSON.stringify(lifeNote)); }catch(e){} }
 // the studio was left in the normal way: work still finishing must not write again, or the next studio takes it for a crash
 const lifeEnd = () => { lifeOver = true; try{ sessionStorage.removeItem(LIFE_KEY); }catch(e){} };
@@ -416,12 +419,13 @@ let lastSong = null, songCancelled = false, clipsStopped = false;   // what the 
 async function loadMusic(file, cached = null){
   remakeOk(); wipKeep(file); wipNote({ song: fileFp(file) }); lastSong = file; songCancelled = false;
   const name = file.name, token = ++musicToken;   // a newer song wins over anything still running for an older one
+  const songT0 = performance.now(); rlog('song', 'Song added: ' + name, { name, type: file.type, mb: mb2(file.size), fromBefore: !!cached });
   stopAll(); songBusy(true);
   $('s1st').textContent = 'Analysing the song… (you can keep using the page)'; $('mname').textContent = name; $('s1').classList.remove('done');
   tasks.start('song', 'music', 'Adding your song', 'Reading the sound of ' + name.replace(/\.[^.]+$/, ''));
   let whole;
   try{ whole = await decodeAnyAudio(file); }
-  catch(e){ if(token !== musicToken) return; songBusy(false); console.warn('song not readable', e); tasks.fail('song', 'This file has no sound we can read. Try an MP3, M4A or WAV.'); $('s1st').textContent = 'Could not read the sound of this file. Use MP3, M4A, WAV or a video with sound. (Songs in the Apple Music app are protected and cannot be opened by websites.)'; return; }
+  catch(e){ if(token !== musicToken) return; songBusy(false); console.warn('song not readable', e); rlog('song', 'Song could not be read: ' + String(e && e.message || e), { name }, 'error'); tasks.fail('song', 'This file has no sound we can read. Try an MP3, M4A or WAV.'); $('s1st').textContent = 'Could not read the sound of this file. Use MP3, M4A, WAV or a video with sound. (Songs in the Apple Music app are protected and cannot be opened by websites.)'; return; }
   if(token !== musicToken) return;
   const m = new Float32Array(whole.length);
   { const ch = whole.numberOfChannels; for(let c=0;c<ch;c++){ const d = whole.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ch; } }
@@ -436,6 +440,9 @@ async function loadMusic(file, cached = null){
   }
   if(token !== musicToken) return;   // another song was chosen meanwhile
   song.r = r; song.source = r.beatSource || 'own';
+  rlog('beats', 'Song analysed · ' + (60/r.period).toFixed(1) + ' BPM · ' + (r.beats || []).length + ' beats · ' + (r.cuts || []).length + ' cut points', {
+    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
+    downbeats: (r.downbeats || []).length, parts: r.parts || [], beats: (r.beats || []).slice(0, 200).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
   await useSection(token);
   if(token !== musicToken) return;
   songBusy(false); $('s1st').textContent = 'Ready'; $('s1').classList.add('done'); $('s2').classList.remove('locked'); $('lenrow').hidden = kind === 'talk';
@@ -704,13 +711,14 @@ async function checkBeatsInner(token){
   try{ bt = await aiBeats(m, sr, (stage, p) => { say(base + (stage === 'download' ? ' · getting the Shubix beat tracker (once) ' : ' · Shubix beat check ') + Math.round(p*100) + '%'); if(token !== musicToken) return;
       if(stage !== beatStage){ beatStage = stage; tasks.start('beats', 'ai', stage === 'download' ? 'Getting the Shubix beat tracker' : 'Checking the beats', stage === 'download' ? 'Only the first time · kept on this phone' : 'Shubix listens to your song on this phone'); }
       tasks.update('beats', p, stage === 'download' && p >= 1 ? 'Downloaded · starting Shubix' : undefined); }); }
-  catch(err){ beatInfo = { source: 'own', note: String(err && err.message || err) }; say(base); tasks.clear('beats'); console.info('on-device beat tracker not used:', beatInfo.note); return; }
+  catch(err){ beatInfo = { source: 'own', note: String(err && err.message || err) }; say(base); tasks.clear('beats'); console.info('on-device beat tracker not used:', beatInfo.note); rlog('beats', 'On-device beat check (Beat This!) not used: ' + beatInfo.note, null, 'warn'); return; }
   if(token !== musicToken) return;
   let r;
   const bo = { beats: bt.beats, downbeats: bt.downbeats || [] };
   try{ r = await analyseInWorker(m, sr, bo); } catch(err){ r = songAnalysis(m, sr, bo); }
   if(token !== musicToken) return;
   beatInfo = { source: r.beatSource, note: '', ms: bt.ms, judge: r.beatJudge, ai: bt };
+  rlog('beats', 'Beat check done · kept ' + (r.beatSource === 'ai' ? 'Beat This! beats' : 'own beats') + ' · ' + (60/r.period).toFixed(1) + ' BPM · ' + (r.beats || []).length + ' beats', { kept: r.beatSource, judge: r.beatJudge, trackerBeats: (bt.beats || []).length, trackerDownbeats: (bt.downbeats || []).length, beats: (r.beats || []).slice(0, 200).map(b => +b.toFixed(3)) }, 'info', bt.ms);
   while(exportBusy) await new Promise(rr=>setTimeout(rr, 500));   // the video being made keeps its edit; the better beats come after
   if(token !== musicToken) return;
   song.r = r; song.source = r.beatSource; rememberSong(song.file, r, true);
@@ -1325,7 +1333,8 @@ function setEditCopy(src, blob, w, h, how){
   updateClipHoverInfo(src);
 }
 async function makeEditCopy(src, dd, facts, plan, playable){
-  const label = whatClip(facts);
+  const label = whatClip(facts), copyT0 = performance.now();
+  rlog('compress', 'Making a smooth copy of ' + src.name + ' (' + label + ')', { mb: mb2(src.file.size), w: facts && facts.width, h: facts && facts.height, fps: facts && facts.fps, codec: facts && facts.codec, plan });
   previewBatchDetected++;
   previewBatchShow(src, label[0].toUpperCase() + label.slice(1) + ' video found. Making a smooth copy so it plays without lag…', 0);
   life({ stage: 'making an edit copy', size: Math.round(src.file.size/1e6) + ' MB', res: (facts && facts.width) + 'x' + (facts && facts.height), what: label });
@@ -1362,11 +1371,13 @@ async function makeEditCopy(src, dd, facts, plan, playable){
       setEditCopy(src, blob, w, h, 'server');
     }catch(e){
       src.proxyStatus = 'Could not convert'; src.edFail = e && e.code === 'UNAUTHORIZED' || (e && e.status === 401) ? 'signin' : e && e.code === 'OFFLINE' ? 'offline' : e && (e.code === 'CORRUPTED_MEDIA' || e.code === 'CONVERT_NO_VIDEO') ? 'broken' : e && (e.code === 'CONVERT_TOO_BIG' || e.code === 'CONVERT_TOO_LONG') ? 'big' : e && (e.code === 'RATE_LIMITED' || e.code === 'CONVERT_BUSY') ? 'limit' : 'server'; src.edErr = e && e.message;
-      updateClipHoverInfo(src); console.info('edit copy by Shubix failed', e); titleDone('copy');
+      updateClipHoverInfo(src); console.info('edit copy by Shubix failed', e); titleDone('copy'); rlog('compress', 'Smooth copy failed: ' + src.name + ' · ' + String(e && e.message || e), { code: e && e.code, why: src.edFail }, 'warn');
       return false;
     }
   }
   titleDone('copy');
+  { const was = src.file.size, now = src.edFile ? src.edFile.size : 0;
+    rlog('compress', 'Smooth copy ready: ' + src.name + ' · ' + mb2(was) + ' MB → ' + mb2(now) + ' MB' + (was ? ' (' + Math.round((1 - now/was)*100) + '% smaller)' : ''), { beforeMb: mb2(was), afterMb: mb2(now), w: src.edW, h: src.edH, how: src.edHow || (r ? 'this device' : 'server') }, 'info', performance.now() - copyT0); }
   previewBatchCompressed++;
   previewBatchShow(src, 'Smooth copy ready (' + previewBatchCompressed + '/' + previewBatchDetected + '). Reading your videos…', 1);
   try{ await keptPut('p:', src.file, { v: 2, edit: true, audio: !!src.edAudio, blob: src.edFile, width: src.edW, height: src.edH, mime: src.edFile.type || '' }); }catch(e){}
@@ -1533,8 +1544,11 @@ async function readVideo(src){
     dd.dataset.st = 'ok'; dd.dataset.len = fmt(src.dur).replace(/\.\d+$/, ''); setClipStatus(src,'ready','Video analysed · '+src.w+' × '+src.h+' · '+fmt(src.dur));
     src.els = [lazyPlayer(src.url), lazyPlayer(src.url), lazyPlayer(src.url)];
     commitSource(src);
+    rlog('clip', 'Clip read: ' + src.name + ' · ' + src.w + '×' + src.h + ' · ' + (+src.dur).toFixed(1) + ' s', { name: src.name, type: src.file && src.file.type, mb: mb2(src.file && src.file.size), w: src.w, h: src.h, seconds: +(+src.dur).toFixed(2),
+      scenes: (src.scenes || []).length, faces: nf, samples: (src.samples || []).length, sharpness: +(+src.shMed).toFixed(3), readMs: src.readMs }, 'info', performance.now() - tq);
   }catch(e){
     if(src.removed) return;
+    rlog('clip', 'Clip could not be read: ' + src.name + ' · ' + String(e && e.message || e), { stage, type: src.file && src.file.type, mb: mb2(src.file && src.file.size) }, 'error');
     setClipStatus(src,'failed',e && e.message ? 'Could not read video: '+e.message : 'Could not read video');
     console.warn('clip not readable:', src.name, e && e.message || e);
     // Reopening a saved edit should not fail just because optional motion/face analysis could not run again.
@@ -3553,9 +3567,21 @@ function setSeq(on, remake = true){
 $('seq').addEventListener('click', e => { const b = e.target.closest('button'); if(b && !recording) remakeOk(); if(b && !recording) setSeq(b.dataset.q === 'order'); }, SIG);
 // The Reel is made again (a clip finished reading, the AI's plan came, a setting changed). If it was playing, it goes on
 // playing from the same moment instead of stopping: Play pressed while clips are read keeps playing when they are done.
+// the edit as the log shows it: each shot's place, clip, transition, effect, and how far its cut is from the nearest beat
+// (a cut is made one frame, 1/30 s, before its beat on purpose: buildPlan; that frame is not counted as off the beat)
+function shotsForLog(){
+  const near = t0 => { const t = t0 + 1/30; let d = Infinity; for(const b of beats){ const x = Math.abs(b - t); if(x < d) d = x; } return d === Infinity ? null : Math.round(d*1000); };
+  const prim = v => typeof v === 'number' ? +v.toFixed(3) : (typeof v === 'string' || typeof v === 'boolean') ? v : Array.isArray(v) ? '[' + v.length + ']' : undefined;
+  const shots = edit.map((e, i) => { const o = { i, clip: sources[e.src] ? sources[e.src].name : e.src, offBeatMs: i ? near(e.start) : 0 };
+    for(const k of Object.keys(e)){ if(k === 'el' || k === 'fc' || k === 'fcLast' || k === 'tail') continue; const v = prim(e[k]); if(v !== undefined) o[k] = v; }
+    if(e.kf) o.keyframes = Array.isArray(e.kf) ? e.kf.length : Object.keys(e.kf).length; if(e.sp && e.sp.name) o.speed = e.sp.name; return o; });
+  const offs = shots.slice(1).map(x => x.offBeatMs).filter(x => x != null);
+  return { shots: shots.length, onBeat: offs.filter(x => x <= 30).length, cuts: offs.length, worstOffBeatMs: offs.length ? Math.max(...offs) : 0, mode, style: typeof look !== 'undefined' ? look : null, sectionStart: +secStart.toFixed(3), list: shots };
+}
 function makeEdit(){
   const was = (playing || starting) && !recording && !exportBusy && kind !== 'talk', at = playing ? curTime() : pos, gen = editGen;
   makeEditNow();
+  if(edit.length && editGen !== gen){ try{ const L = shotsForLog(); rlog('edit', 'Reel made · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat (±30 ms)', L, L.cuts && L.onBeat < L.cuts ? 'warn' : 'info'); }catch(e){} }
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
@@ -6383,6 +6409,8 @@ async function runExport(toCloud){
   if(recording || exportBusy) return;
   if(root.classList.contains('aineed') && !$('aiaskgo').dataset.change){ $('aiaskgo').click(); return; }   // no Reel without its Shubix AI (the creator closed the question)
   exportBusy = true; $('saverow').hidden = true; lastVideo = null;
+  const expT0 = performance.now();
+  try{ const L = shotsForLog(); rlog('export', 'Export started · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat', { ...L, clips: sources.length, toCloud: !!toCloud, mem: navigator.deviceMemory || null, ua: navigator.userAgent.slice(0, 200) }); }catch(e){}
   tasks.start('export', 'export', 'Exporting your Reel', 'Getting ready');   // in view at once, whatever comes next
   askToNotify();   // once: a notification when the Reel is ready while the person is in another app
   const awake = holdAwake();
@@ -6397,17 +6425,21 @@ async function runExport(toCloud){
     // the clips' smooth copies still being made behind: the export reads them (the same picture as the preview, faster)
     if(copyJobs.size){ tasks.update('export', null, 'Finishing the smooth copies of your clips…'); await copiesReady(); }
     let ok = false;
-    try{ ok = await fastBg(); }
-    catch(err){ if(err && err.code === 'CANCELLED'){ tasks.clear('export'); notify('Export cancelled. Your Reel is still here.'); return; }
+    try{ ok = await fastBg(); rlog('export', ok ? 'Fast export done' : 'Fast export not possible in this browser', { prof: root.__prof || null }, ok ? 'info' : 'warn', performance.now() - expT0); }
+    catch(err){ if(err && err.code === 'CANCELLED'){ tasks.clear('export'); notify('Export cancelled. Your Reel is still here.'); rlog('export', 'Export cancelled', null, 'warn', performance.now() - expT0); return; }
+      rlog('export', 'Fast export failed: ' + String(err && err.message || err).slice(0, 300), { code: err && err.code, prof: root.__prof || null }, 'error', performance.now() - expT0);
       if(err && err.code === 'QUALITY_GATE_FAILED'){ tasks.fail('export', err.message); showMsg(err.message, true); throw err; } console.warn('fast export failed', err);
       // why the fast way was left (a phone's decoders taken back, a missing frame…): Admin → Errors, to make it stay fast
       try{ window.__shubixReport && window.__shubixReport('export', 'Fast export fell back to real time: ' + String(err && err.message || err).slice(0, 240), JSON.stringify({ ua: navigator.userAgent.slice(0, 160), mem: navigator.deviceMemory || null, clips: sources.length, shots: edit.length, res: xq.res, fps: xq.fps })); }catch(x){} tasks.update('export', null, 'Switching to a slower way to save on this phone…'); showMsg('Switching to a slower way to save on this phone. Please keep this screen open…'); }
     if(!ok){
       try{
+        const recT0 = performance.now(); rlog('export', 'Real-time export started (the slower way)');
         ok = await recordBg();
+        rlog('export', ok ? 'Real-time export done' : 'This browser cannot export video', null, ok ? 'info' : 'error', performance.now() - recT0);
         if(!ok){ tasks.fail('export', 'This browser cannot export video. Open Fast Studio in Chrome or Safari.'); showMsg('This browser cannot export video. Please open Fast Studio in Chrome or Safari.', true); }
-      } catch(err){ console.error('real-time export failed', err); tasks.fail('export', 'Export failed. Please retry with the screen open.'); showMsg('Export failed: ' + (err && err.message ? err.message : 'Please retry in Chrome or Safari.'), true); }
+      } catch(err){ console.error('real-time export failed', err); rlog('export', 'Real-time export failed: ' + String(err && err.message || err).slice(0, 300), { code: err && err.code }, 'error'); tasks.fail('export', 'Export failed. Please retry with the screen open.'); showMsg('Export failed: ' + (err && err.message ? err.message : 'Please retry in Chrome or Safari.'), true); }
     }
+    rlog('export', lastVideo ? 'Reel saved · ' + mb2(lastVideo.size) + ' MB · ' + ((performance.now() - expT0)/1000).toFixed(1) + ' s in all' : 'Export ended without a video', lastVideo ? { mb: mb2(lastVideo.size), type: lastVideo.type } : null, lastVideo ? 'info' : 'error', performance.now() - expT0);
     if(toCloud && lastVideo) await saveToMyReels(lastVideo);
     if(lastVideo) void notifyDone('Your Reel is ready', fileTitle() + ' is saved · tap to open Shubix', 'shubix-export');
     else void notifyDone('Your export stopped', 'Open Shubix to try again', 'shubix-export');
@@ -7807,6 +7839,7 @@ function setReelTitle(t){
   reelTitle = v; const el = $('tbname'); if(el) el.textContent = v; return true;
 }
 let proj = null, lastSig = '', restoring = false, capKeyNow = '';
+window.__shubixReelId = () => proj ? proj.id : '';   // this Reel's log (lib/reelLog.ts, Admin → Logs)
 // a new Reel in Create has its own id from the start: it is a draft in My Reels from its first song or clip, kept as it
 // changes (the address stays the Create steps' until Generate opens the editor)
 const projNewId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

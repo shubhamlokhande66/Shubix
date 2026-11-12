@@ -314,6 +314,10 @@ export const api = {
   setPlanLocks: (body: import("@shubix/core/lib/plan-locks").LockOverrides) => request<import("@shubix/core/lib/plan-locks").PlanLocks>("/api/plan-locks", { method: "PUT", body: JSON.stringify(body) }),
   adminErrors: () => request<{ errors: { id: string; kind: string; message: string; where: string; count: number; firstAt: string; lastAt: string; path: string; ua: string; stack: string }[] }>("/api/admin/errors"),
   clearAdminError: (id: string) => request<{ ok: boolean }>("/api/admin/errors", { method: "DELETE", body: JSON.stringify({ id }) }),
+  // one Reel's log (Admin → Logs, server/reelLogs.ts)
+  adminReelLogs: (q = "") => request<{ reels: { reelId: string; first: string; last: string; lines: number; errors: number; warns: number; user: string | null; ua: string | null }[] }>(`/api/admin/reel-logs${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  adminReelLog: (reelId: string) => request<{ lines: { id: string; at: string; source: "browser" | "server"; step: string; msg: string; level: "info" | "warn" | "error"; ms: number | null; data: unknown; ua: string | null }[] }>(`/api/admin/reel-logs?reel=${encodeURIComponent(reelId)}`),
+  deleteAdminReelLog: (reelId: string) => request<{ ok: boolean }>("/api/admin/reel-logs", { method: "DELETE", body: JSON.stringify({ reelId }) }),
   setPricing: (body: { plans: { id: string; name?: string; monthly: number; credits: number; freeChats?: number; highlight?: boolean; ai?: boolean; ads?: boolean; hidden?: boolean; features?: string[] }[]; topUps: { id: string; credits: number; price: number }[]; costs: Record<string, number> }) =>
     request<Pricing>("/api/admin/pricing", { method: "PUT", body: JSON.stringify(body) }),
   /** The administrator's texts (Admin → CMS; lib/texts.ts has the defaults). */

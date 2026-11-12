@@ -53,7 +53,7 @@ export function ConfirmHost() {
   }, [ask]);
   if (!ask) return null;
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-end bg-[var(--overlay)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:place-items-center" onClick={() => close(false)}>
+    <div data-popup className="fixed inset-0 z-[100] grid place-items-end bg-[var(--overlay)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:place-items-center" onClick={() => close(false)}>
       <div
         role="alertdialog"
         aria-modal="true"
