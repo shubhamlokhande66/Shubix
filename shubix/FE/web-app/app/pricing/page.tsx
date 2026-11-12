@@ -85,6 +85,8 @@ export default function PricingPage() {
   const offer = useQuery({ queryKey: ["offer"], queryFn: api.offer, staleTime: 60_000 }).data?.offer ?? null;
   const signedIn = !!me.data?.user || me.data?.authEnabled === false;
   const mine = credits.data?.enabled ? credits.data : null;
+  // a paid plan still running (its end date from the server; the wallet itself goes back to free when it ends)
+  const activePaid = !!mine && mine.plan !== "free" && !!mine.planEnds;
 
   function buy(item: string, label: string) { setNotice(null); setCheckout({ item, label }); }
   async function payNow(item: string, label: string, coupon?: string, phone?: string) {
@@ -183,6 +185,8 @@ export default function PricingPage() {
         {p.plans.filter((x) => !x.hidden).map((plan) => {
           const item = `plan:${plan.id}:${period}`;
           const current = !!mine && mine.plan === plan.id && plan.id !== "free";
+          // one paid plan at a time: the others open when it ends (the server says the same); top-ups stay open
+          const locked = activePaid && !current && plan.monthly > 0;
           return (
             <PlanCard
               key={plan.id}
@@ -200,6 +204,7 @@ export default function PricingPage() {
                   busy={buying === item}
                   selected={plan.id === selectedId}
                   onBuy={() => void buy(item, `${plan.name} (${yearly ? "1 year" : "1 month"})`)}
+                  lockedUntil={locked ? day(mine?.planEnds ?? null) : undefined}
                 />
               }
             />

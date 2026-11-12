@@ -11,7 +11,9 @@
     "start": "next start -p 3001",
     "lint": "eslint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cf:build": "node scripts/copy-ort.mjs && opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare preview"
   },
   "dependencies": {
     "@mediabunny/aac-encoder": "1.60.0",
@@ -20,17 +22,18 @@
     "@shubix/types": "workspace:*",
     "@shubix/utils": "workspace:*",
     "@shubix/validations": "workspace:*",
+    "@shubix/video-engine": "workspace:*",
     "@tanstack/react-query": "^5.103.1",
     "@techstark/opencv-js": "^4.10.0-release.1",
     "mediabunny": "1.60.0",
-    "next": "^16.4.3",
+    "next": "^16.4.6",
     "onnxruntime-web": "1.29.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.7.0",
-    "@shubix/video-engine": "workspace:*"
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.17",
     "@shubix/ui-web": "workspace:*",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
@@ -46,6 +49,7 @@
     "sharp": "^0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "wrangler": "^4.160.1"
   }
 }
