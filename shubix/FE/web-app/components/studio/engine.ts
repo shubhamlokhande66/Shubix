@@ -6441,6 +6441,8 @@ async function runExport(toCloud){
     }
     rlog('export', lastVideo ? 'Reel saved · ' + mb2(lastVideo.size) + ' MB · ' + ((performance.now() - expT0)/1000).toFixed(1) + ' s in all' : 'Export ended without a video', lastVideo ? { mb: mb2(lastVideo.size), type: lastVideo.type } : null, lastVideo ? 'info' : 'error', performance.now() - expT0);
     if(toCloud && lastVideo) await saveToMyReels(lastVideo);
+    // the review pop-up (components/organisms/ReviewPrompt.tsx): once per Reel, after it is exported
+    if(lastVideo) try{ window.dispatchEvent(new CustomEvent('shubix:reel-exported', { detail: { reelId: proj ? proj.id : '' } })); }catch(e){}
     if(lastVideo) void notifyDone('Your Reel is ready', fileTitle() + ' is saved · tap to open Shubix', 'shubix-export');
     else void notifyDone('Your export stopped', 'Open Shubix to try again', 'shubix-export');
   } finally {
