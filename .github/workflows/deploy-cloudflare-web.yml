@@ -1,7 +1,7 @@
 name: Deploy website (Cloudflare Workers)
 
 # The website (shubix/FE/web-app) on Cloudflare Workers through OpenNext, by hand: Actions, Deploy website (Cloudflare
-# Workers), Run workflow, pick qa / uat. Built here (OpenNext on Linux), deployed with wrangler to shubix-web-<target>
+# Workers), Run workflow, pick qa / uat / prod. Built here (OpenNext on Linux), deployed with wrangler to shubix-web-<target>
 # (shubix/FE/web-app/wrangler.jsonc). Each deploys its own branch (qa, uat). The same Cloudflare secrets as the API's
 # workflow: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. Production stays on Vercel until QA and UAT are checked here.
 on:
@@ -10,10 +10,10 @@ on:
       target:
         description: "Where to deploy the website"
         type: choice
-        options: [qa, uat]
+        options: [qa, uat, prod]
         default: qa
       move_domain:
-        description: "Move <target>.shubix.in here: delete its old DNS record that points at Vercel first (only that one)"
+        description: "Move the address here (qa/uat.shubix.in; prod: shubix.in and www): delete its old DNS records that point at Vercel first (only those)"
         type: boolean
         default: false
 
@@ -24,12 +24,13 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.target }}
+    # production can ask for an approval first (Settings, Environments, production)
+    environment: ${{ inputs.target == 'prod' && 'production' || inputs.target }}
     env:
       TARGET: ${{ inputs.target }}
       # the build bakes these in (next.config.ts's /api rewrite, the pages' address)
-      API_URL: https://api-${{ inputs.target }}.shubix.in
-      PUBLIC_BASE_URL: https://${{ inputs.target }}.shubix.in
+      API_URL: ${{ inputs.target == 'prod' && 'https://api.shubix.in' || format('https://api-{0}.shubix.in', inputs.target) }}
+      PUBLIC_BASE_URL: ${{ inputs.target == 'prod' && 'https://shubix.in' || format('https://{0}.shubix.in', inputs.target) }}
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - name: The Cloudflare secrets are there
@@ -39,7 +40,7 @@ jobs:
         run: test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to the repo secrets first."; exit 1; }
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target }}
+          ref: ${{ inputs.target == 'prod' && 'main' || inputs.target }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
@@ -59,16 +60,19 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          host="$TARGET.shubix.in"
+          if [ "$TARGET" = prod ]; then hosts="shubix.in www.shubix.in"; else hosts="$TARGET.shubix.in"; fi
           cf() { curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" "$@"; }
           zone=$(cf "https://api.cloudflare.com/client/v4/zones?name=shubix.in" | jq -r '.result[0].id // empty')
           test -n "$zone" || { echo "::error::The token cannot see the shubix.in zone (it needs Zone, DNS, Edit)"; exit 1; }
-          recs=$(cf "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?name=$host")
-          echo "$recs" | jq -r '.result[] | "\(.type) \(.name) -> \(.content)"'
-          # only a record that points at Vercel: anything else is left as it is
-          for id in $(echo "$recs" | jq -r '.result[] | select(.content | test("vercel"; "i")) | .id'); do
-            cf -X DELETE "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$id" | jq -e '.success' >/dev/null || { echo "::error::Could not delete the record $id"; exit 1; }
-            echo "Deleted the Vercel record $id for $host"
+          for host in $hosts; do
+            recs=$(cf "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?name=$host")
+            echo "$recs" | jq -e '.success' >/dev/null || { echo "::error::The token cannot read the DNS records (add Zone, DNS, Edit to it): $(echo "$recs" | jq -c '.errors')"; exit 1; }
+            echo "$recs" | jq -r '.result[] | "\(.type) \(.name) -> \(.content)"'
+            # only a record that points at Vercel (its CNAME, or its A address 76.76.21.21): anything else is left as it is
+            for id in $(echo "$recs" | jq -r '.result[] | select((.content | test("vercel"; "i")) or .content == "76.76.21.21") | .id'); do
+              cf -X DELETE "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$id" | jq -e '.success' >/dev/null || { echo "::error::Could not delete the record $id"; exit 1; }
+              echo "Deleted the Vercel record $id for $host"
+            done
           done
       - name: Deploy (wrangler)
         working-directory: shubix/FE/web-app
@@ -77,9 +81,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail   # a wrangler error (e.g. the custom domain not set) fails the deploy instead of hiding behind tee
-          npx wrangler deploy --env "$TARGET" | tee deploy.log
+          if [ "$TARGET" = prod ]; then npx wrangler deploy | tee deploy.log; else npx wrangler deploy --env "$TARGET" | tee deploy.log; fi
           # the site's own address (a new workers.dev address can take a minute to answer: tried for up to 2 minutes)
-          url="https://$TARGET.shubix.in"
+          if [ "$TARGET" = prod ]; then url="https://shubix.in"; else url="https://$TARGET.shubix.in"; fi
           code=000; for i in $(seq 1 12); do code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 "$url/"); [ "$code" = 200 ] && break; sleep 10; done
           echo "Home page $url: $code"; test "$code" = 200 || { echo "::error::$url answered $code"; exit 1; }
           api=$(curl -s -m 30 "$url/api/health"); echo "API through the site: $api"; echo "$api" | grep -q '"ok"' || { echo "::error::$url/api/health did not reach the API"; exit 1; }
