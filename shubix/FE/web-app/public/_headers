@@ -1,0 +1,36 @@
+# Headers for the static files on Cloudflare Workers (https://developers.cloudflare.com/workers/static-assets/headers).
+# Static files never reach Next.js there, so next.config.ts's headers() do not apply to them: these repeat its rules.
+# Without them the studio's worker scripts lost their cross-origin isolation (no WebAssembly threads: clip analysis and
+# the beat tracker ran on one core, much slower, 2026-11-12), and every chunk was asked again on each visit (max-age=0).
+
+# every file, as next.config.ts's "/:path*" rule (no MIME guessing, no framing by other sites)
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+
+/vendor/ort/*
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+
+/brand/*
+  Cross-Origin-Resource-Policy: same-origin
+
+/icon-192.png
+  Cross-Origin-Resource-Policy: same-origin
+
+/icon-512.png
+  Cross-Origin-Resource-Policy: same-origin
+
+/icon-maskable-512.png
+  Cross-Origin-Resource-Policy: same-origin
+
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /

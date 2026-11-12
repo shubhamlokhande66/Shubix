@@ -221,6 +221,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const access = useAccess();
   const text = useText();
   const [drawer, setDrawer] = useState(false);
+  // Leaving the studio (/create/…, cross-origin isolated: next.config.ts) by an in-app link keeps the page isolated, and an
+  // isolated page cannot load other sites' scripts: Cashfree's checkout (the payment window broke on phones, 2026-11-12),
+  // Google's ads. Any other page loads afresh once, without the isolation.
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.crossOriginIsolated && !/^\/create\/[^/]+\/?$/.test(pathname)) window.location.reload();
+  }, [pathname]);
   // an administrator who chose "Continue without admin powers" is not asked again in this tab
   const [adminLater, setAdminLater] = useState(() => { try { return sessionStorage.getItem("admin-later") === "1"; } catch { return false; } });
   const creditsQ = useCredits();
