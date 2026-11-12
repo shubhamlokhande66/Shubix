@@ -7,6 +7,11 @@ settings:
 overrides:
   multer: ^2.5.0
 
+patchedDependencies:
+  '@opennextjs/aws@4.1.16':
+    hash: 2e08724af17ca056d50a1310158a56ba84da87eccb4e0b42012acb22b577b183
+    path: patches/@opennextjs__aws@4.1.16.patch
+
 importers:
 
   .: {}
@@ -10348,7 +10353,7 @@ snapshots:
   '@noxcturnal/noxcturnal-win32-x64-msvc@0.1.11':
     optional: true
 
-  '@opennextjs/aws@4.1.16(next@16.4.6(@babel/core@7.29.7)(@types/node@24.19.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))':
+  '@opennextjs/aws@4.1.16(patch_hash=2e08724af17ca056d50a1310158a56ba84da87eccb4e0b42012acb22b577b183)(next@16.4.6(@babel/core@7.29.7)(@types/node@24.19.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))':
     dependencies:
       '@ast-grep/napi': 0.45.3
       '@aws-sdk/client-cloudfront': 3.984.0
@@ -10375,7 +10380,7 @@ snapshots:
     dependencies:
       '@ast-grep/napi': 0.45.3
       '@dotenvx/dotenvx': 2.38.2
-      '@opennextjs/aws': 4.1.16(next@16.4.6(@babel/core@7.29.7)(@types/node@24.19.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))
+      '@opennextjs/aws': 4.1.16(patch_hash=2e08724af17ca056d50a1310158a56ba84da87eccb4e0b42012acb22b577b183)(next@16.4.6(@babel/core@7.29.7)(@types/node@24.19.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))
       ci-info: 4.5.0
       cloudflare: 4.5.0
       comment-json: 4.6.2
