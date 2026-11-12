@@ -84,6 +84,6 @@ jobs:
           if [ "$TARGET" = prod ]; then npx wrangler deploy | tee deploy.log; else npx wrangler deploy --env "$TARGET" | tee deploy.log; fi
           # the site's own address (a new workers.dev address can take a minute to answer: tried for up to 2 minutes)
           if [ "$TARGET" = prod ]; then url="https://shubix.in"; else url="https://$TARGET.shubix.in"; fi
-          code=000; for i in $(seq 1 12); do code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 "$url/"); [ "$code" = 200 ] && break; sleep 10; done
+          code=000; for i in $(seq 1 24); do code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 "$url/" || true); [ "$code" = 200 ] && break; sleep 10; done   # a new address: its DNS may take a minute
           echo "Home page $url: $code"; test "$code" = 200 || { echo "::error::$url answered $code"; exit 1; }
-          api=$(curl -s -m 30 "$url/api/health"); echo "API through the site: $api"; echo "$api" | grep -q '"ok"' || { echo "::error::$url/api/health did not reach the API"; exit 1; }
+          api=$(curl -s -m 30 "$url/api/health" || true); echo "API through the site: $api"; echo "$api" | grep -q '"ok"' || { echo "::error::$url/api/health did not reach the API"; exit 1; }
