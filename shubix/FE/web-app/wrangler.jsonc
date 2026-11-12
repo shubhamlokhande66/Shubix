@@ -15,10 +15,11 @@
   "workers_dev": true,
   "vars": { "API_URL": "https://api.shubix.in", "PUBLIC_BASE_URL": "https://shubix.in" },
   "env": {
-    // QA: first on its workers.dev address to test; qa.shubix.in moves here once it is checked (its DNS points at Vercel now)
+    // QA: qa.shubix.in (moved from Vercel, 2026-11-12), also on its workers.dev address
     "qa": {
       "name": "shubix-web-qa",
       "workers_dev": true,
+      "routes": [{ "pattern": "qa.shubix.in", "custom_domain": true }],
       "vars": { "API_URL": "https://api-qa.shubix.in", "PUBLIC_BASE_URL": "https://qa.shubix.in" }
     },
     "uat": {

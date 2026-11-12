@@ -57,6 +57,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npx wrangler deploy --env "$TARGET" | tee deploy.log
-          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
-          echo "Website on Workers ($TARGET): ${url:-see the log above}"
-          if [ -n "$url" ]; then code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 "$url/"); echo "Home page: $code"; test "$code" = 200 || { echo "::error::$url answered $code"; exit 1; }; fi
+          # the site's own address (a new workers.dev address can take a minute to answer: tried for up to 2 minutes)
+          url="https://$TARGET.shubix.in"
+          code=000; for i in $(seq 1 12); do code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 "$url/"); [ "$code" = 200 ] && break; sleep 10; done
+          echo "Home page $url: $code"; test "$code" = 200 || { echo "::error::$url answered $code"; exit 1; }
+          api=$(curl -s -m 30 "$url/api/health"); echo "API through the site: $api"; echo "$api" | grep -q '"ok"' || { echo "::error::$url/api/health did not reach the API"; exit 1; }
