@@ -370,8 +370,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <span className={cn("min-w-0", meta.left || pathname === "/" ? "text-left" : "text-center")}>
           {pathname === "/" ? <Logo height={42} /> : (
             <span className={cn("mx-auto grid min-w-0 max-w-full leading-tight", meta.left || pathname === "/" ? "justify-items-start" : "justify-items-center")}>
-              <span className="mb-1 text-[10px] font-extrabold uppercase tracking-[.2em] text-accent">{text("nav.eyebrow")}</span>
-              <span className="max-w-full truncate whitespace-nowrap font-[family-name:var(--font-display)] text-[14px] font-semibold tracking-[-.015em] text-foreground">{title}</span>
+              <span className="mb-0.5 max-w-full truncate whitespace-nowrap text-[9px] font-extrabold uppercase tracking-[.16em] text-accent max-[359px]:hidden">{text("nav.eyebrow")}</span>
+              <span className="max-w-full truncate whitespace-nowrap font-[family-name:var(--font-display)] text-[15px] font-semibold tracking-[-.015em] text-foreground">{title}</span>
             </span>
           )}
         </span>

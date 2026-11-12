@@ -34,7 +34,7 @@ export function DesktopHeader({ email, credits, admin, onSignOut }: { email?: st
       </div>
       <form
         role="search"
-        className="flex h-11 min-w-0 w-full max-w-[min(36vw,440px)] items-center gap-2.5 rounded-[14px] border border-[color-mix(in_srgb,var(--accent)_16%,var(--line))] bg-[color-mix(in_srgb,var(--surface)_86%,transparent)] px-3.5 text-muted shadow-[0_1px_0_rgba(255,255,255,.04)_inset] transition-[border-color,box-shadow,background] duration-200 focus-within:border-accent/60 focus-within:bg-surface focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_14%,transparent)]"
+        className="hidden h-11 min-w-0 w-full max-w-[min(36vw,440px)] lg:flex items-center gap-2.5 rounded-[14px] border border-[color-mix(in_srgb,var(--accent)_16%,var(--line))] bg-[color-mix(in_srgb,var(--surface)_86%,transparent)] px-3.5 text-muted shadow-[0_1px_0_rgba(255,255,255,.04)_inset] transition-[border-color,box-shadow,background] duration-200 focus-within:border-accent/60 focus-within:bg-surface focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_14%,transparent)]"
         onSubmit={(e) => {
           e.preventDefault();
           router.push(q.trim() ? `/templates?q=${encodeURIComponent(q.trim())}` : "/templates");
@@ -44,8 +44,11 @@ export function DesktopHeader({ email, credits, admin, onSignOut }: { email?: st
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={text("templates.headerSearch")} aria-label={text("templates.search")} className="h-full min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted" />
       </form>
       <div className="ml-auto flex shrink-0 items-center gap-1.5 lg:gap-2.5">
-        <InstallBanner />
-        <ProPill plan={credits?.planName} planId={credits?.plan} />
+        {/* a narrow window (a tablet): search is an icon, the install pill waits for more room, the plan pill is its crown */}
+        <a href="/templates" aria-label={text("templates.search")} title={text("templates.search")} className="grid h-10 w-10 place-items-center rounded-full text-foreground transition-colors hover:bg-surface-2 lg:hidden"><Icon name="search" size={19} /></a>
+        <span className="hidden lg:contents"><InstallBanner /></span>
+        <span className="contents xl:hidden"><ProPill plan={credits?.planName} planId={credits?.plan} compact /></span>
+        <span className="hidden xl:contents"><ProPill plan={credits?.planName} planId={credits?.plan} /></span>
         {credits && (
           <a href="/pricing" title={text("nav.creditsHint")} className="inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-[14px] border border-[color-mix(in_srgb,var(--accent)_18%,var(--line))] bg-[color-mix(in_srgb,var(--surface)_82%,transparent)] px-3 text-[13px] font-bold shadow-[0_1px_0_rgba(255,255,255,.035)_inset] transition-[border-color,background,transform] duration-200 hover:-translate-y-px hover:border-accent/50 hover:bg-surface">
             <span className="grid h-6 w-6 place-items-center rounded-full bg-accent/12"><Icon name="bolt" size={14} stroke={2} color="var(--accent)" /></span>

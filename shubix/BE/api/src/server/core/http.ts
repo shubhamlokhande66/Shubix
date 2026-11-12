@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { Readable } from "node:stream";
 import { resolveUser, withUser } from "./auth";
 import { errorResponse } from "./errors";
+import { withReel } from "../reelLogs";
 
 type Ctx<P> = { params: Promise<P> };
 
@@ -10,7 +11,7 @@ export function route<P = Record<string, string>>(fn: (req: Request, params: P) 
   return async (req: Request, ctx: Ctx<P>): Promise<Response> => {
     try {
       const uid = await resolveUser(req); // accounts on: the signed-in user for this request and the jobs it starts
-      const out = await withUser(uid, async () => fn(req, await ctx.params));
+      const out = await withUser(uid, () => withReel(req, async () => fn(req, await ctx.params))); // x-reel-id: its AI calls go to that Reel's log
       if (out instanceof Response) return out;
       return out === undefined ? new Response(null, { status: 204 }) : Response.json(out);
     } catch (e) {

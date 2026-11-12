@@ -44,10 +44,10 @@ function Invite({ m }: { m: MyMarketing }) {
   const shareText = text("rewards.shareText", { link });
   const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); toast.success(text("rewards.copied")); setTimeout(() => setCopied(false), 1800); } catch { /* the field can be selected by hand */ } };
   return (
-    <Card className="relative flex flex-col gap-4 overflow-hidden p-5 md:p-6">
+    <Card className="relative flex flex-col gap-4 overflow-hidden p-4 sm:p-5 md:p-6">
       <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-[radial-gradient(closest-side,color-mix(in_srgb,var(--accent)_22%,transparent),transparent)]" />
       <div className="flex items-start gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gold text-on-accent shadow-[0_10px_24px_-12px_var(--accent)]"><Icon name="gift" size={22} /></span>
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gold text-on-accent shadow-[0_10px_24px_-12px_var(--accent)] sm:h-11 sm:w-11"><Icon name="gift" size={20} /></span>
         <div className="min-w-0">
           <Heading size="title" as="h2">{text("rewards.inviteTitle")}</Heading>
           <p className="m-0 mt-1 text-[13px] text-muted">{r.on ? text("rewards.inviteLine2", { you: r.inviterCredits, friend: r.inviteeCredits, friendWhen: step(r.inviteeOn), youWhen: step(r.inviterOn) }) : text("rewards.inviteOff")}</p>
@@ -63,14 +63,14 @@ function Invite({ m }: { m: MyMarketing }) {
         <>
           <Field label={text("rewards.yourLink")}>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Input readOnly value={link} onFocus={(e) => e.currentTarget.select()} className="min-w-0 font-mono text-[13px] sm:flex-1" />
+              <Input readOnly value={link} onFocus={(e) => e.currentTarget.select()} className="min-w-0 truncate text-[14px] sm:flex-1 sm:font-mono sm:text-[13px]" />
               <div className="flex gap-2">
                 <Button icon={copied ? "check" : "copy"} onClick={copy} className="flex-1 sm:flex-none">{copied ? text("rewards.copied") : text("rewards.copy")}</Button>
                 <Button variant="secondary" icon="share" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} className="flex-1 sm:flex-none">{text("rewards.whatsapp")}</Button>
               </div>
             </div>
           </Field>
-          <div className="grid gap-2.5 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
             <StatTile value={r.invited} label={text("rewards.invited")} />
             <StatTile value={r.rewarded} label={text("rewards.rewarded")} />
             <StatTile value={r.earned} label={text("rewards.earned")} />
@@ -97,7 +97,7 @@ function SendCredits({ m }: { m: MyMarketing }) {
     } catch (err) { setMsg({ ok: false, text: errorMessage(err) }); } finally { setBusy(false); }
   }
   return (
-    <Card className="flex flex-col gap-4 p-5">
+    <Card className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="send" size={19} /></span>
         <div className="min-w-0">
@@ -129,7 +129,7 @@ function Username({ m }: { m: MyMarketing }) {
     catch (err) { setMsg({ ok: false, text: errorMessage(err) }); } finally { setBusy(false); }
   }
   return (
-    <Card className="flex flex-col gap-4 p-5">
+    <Card className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="user" size={19} /></span>
         <div className="min-w-0">
@@ -155,10 +155,10 @@ function Affiliate({ m }: { m: MyMarketing }) {
   const apply = async () => { setBusy(true); setErr(null); try { await api.applyAffiliate(); void qc.invalidateQueries({ queryKey: ["my-marketing"] }); } catch (e) { setErr(errorMessage(e)); } finally { setBusy(false); } };
   const rupee = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
   return (
-    <Card className="flex flex-col gap-4 p-5 md:p-6">
+    <Card className="flex flex-col gap-4 p-4 sm:p-5 md:p-6">
       <div className="flex flex-wrap items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="coins" size={19} /></span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[13rem] flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Heading size="title" as="h2">{text("rewards.affTitle")}</Heading>
             {me && <Badge tone={me.status === "active" ? "success" : me.status === "pending" ? "warning" : "neutral"}>{me.status === "active" ? `${me.percent}%` : me.status}</Badge>}
@@ -168,7 +168,7 @@ function Affiliate({ m }: { m: MyMarketing }) {
             <p className="m-0 mt-1 text-[12px] font-semibold text-accent">{text("rewards.affUntil", { date: new Date(me.validUntil).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) })}</p>
           )}
         </div>
-        {!me && a.applyOpen && <Button onClick={apply} loading={busy} icon="sparkle">{text("rewards.affApply")}</Button>}
+        {!me && a.applyOpen && <Button onClick={apply} loading={busy} icon="sparkle" className="w-full sm:w-auto">{text("rewards.affApply")}</Button>}
       </div>
       {err && <p className="m-0 text-[12.5px] text-danger">{err}</p>}
       {!me && !a.applyOpen && <p className="m-0 text-[12.5px] text-muted">{text("rewards.affClosed")}</p>}
@@ -176,7 +176,7 @@ function Affiliate({ m }: { m: MyMarketing }) {
       {me?.status === "paused" && <p className="m-0 rounded-xl bg-surface-2 px-3 py-2.5 text-[12.5px] text-muted">{text("rewards.affPaused")}</p>}
       {me?.status === "active" && (
         <>
-          <div className="grid gap-2.5 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
             <StatTile value={rupee(me.due)} label={text("rewards.affDue")} />
             <StatTile value={rupee(me.paid)} label={text("rewards.affPaid")} />
             <StatTile value={me.sales} label={text("rewards.affSales")} />

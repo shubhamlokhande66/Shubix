@@ -89,7 +89,7 @@ export function initFlow(root: HTMLElement): () => void {
   const aiWork = () => (root as unknown as { __studio?: { work?: { ai?: boolean; dir?: boolean; pace?: boolean; aiWait?: boolean } } }).__studio?.work;
   const aiWorking = () => { const w = aiWork(); return !!w && (!!w.ai || !!w.dir || !!w.pace || !!w.aiWait); };   // (aiWait: agreed to, its plan not here yet, also between its steps)
   const aiRunning = () => { const w = aiWork(); return !!w && (!!w.ai || !!w.dir || !!w.pace); };   // a step of it is running right now
-  type Live = { aiRetry?: () => boolean; aiKick?: () => void; aiStalled?: () => void; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void };
+  type Live = { aiRetry?: () => boolean; aiKick?: () => void; aiStalled?: () => void; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void; stopPreview?: () => void };
   const live = () => (root as unknown as { __studio?: Live }).__studio;
   const stopped = () => live()?.cancelled?.() ?? { song: false, clips: false };
   let aiRunNo = 0;   // the wait for the Reel that the popup's Cancel ended
@@ -233,7 +233,11 @@ export function initFlow(root: HTMLElement): () => void {
     const hold = (wantGen || going > 0) && !revealed && !inEngine ? "1" : "";
     if ((root.dataset.fquiet ?? "") !== quiet || (root.dataset.fhold ?? "") !== hold) { root.dataset.fquiet = quiet; root.dataset.fhold = hold; root.dispatchEvent(new Event("studio-quiet")); }
   };
+  // leaving the finished Reel (Back to the clips, the song…): its preview stops, the song does not play on under another screen
+  let wasRevealed = revealed;
   const apply = () => {
+    if (wasRevealed && !revealed) live()?.stopPreview?.();
+    wasRevealed = revealed;
     live()?.guard?.(!revealed);   // the popup's Cancel, while the Reel is being made
     const on = (chosen() || !!urlKind()) && !revealed && !has("autoing");
     setClass(root, "fopen", on);
@@ -498,16 +502,13 @@ export function initFlow(root: HTMLElement): () => void {
         if (run === aiRunNo && !made()) { aiGo = false; wantGen = false; apply(); return; }   // no Reel after all that: never a dead Make Reel
         if (run === aiRunNo && made() && phone()) {   // phones: the finished Reel, with its timeline (also when it is opened again after Back)
           revealed = true; mark(true); apply(); window.scrollTo({ top: 0 });
-          requestAnimationFrame(() => { if (!has("editing")) $<HTMLButtonElement>("fedit").click(); void st?.saveNow?.(); });
+          requestAnimationFrame(() => { void st?.saveNow?.(); });   // the review first: Edit opens the timeline and the tools
           return;
         }
         if (run === aiRunNo && made()) {
           revealed = true; mark(true); apply(); window.scrollTo({ top: 0 }); // the editor from its top: the breadcrumb, the Reel's name and Export
           setAddress("/editor?session=1"); // show this live Reel at /editor without reloading or saving it first
-          requestAnimationFrame(() => {
-            $<HTMLButtonElement>("fedit").click(); // open the real timeline editor; playback stays attached to this Reel
-            void st?.saveNow?.(); // persist only after the live editor is open
-          });
+          requestAnimationFrame(() => { void st?.saveNow?.(); }); // the review first: Edit opens the timeline and the tools
         }
       } finally { going--; apply(); } })();
       return;

@@ -57,10 +57,9 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
   const q = new URLSearchParams(location.search).get("tool");
   // The made Reel opens as a review: the preview big, Change Reel, Export and Edit. Edit opens the timeline and the tools
   // (✓ Done editing goes back). A saved Reel opened again (?p=) or a tool asked for (?tool=) opens in the editor.
-  // The new design shows the preview, Clip Controls, the timeline and the tools together, on phones too: the made Reel
-  // always opens in the editor (the older "review" screen hid the timeline behind an Edit button the design no longer has,
-  // so a phone coming from Generate had no timeline at all)
-  let editing = true;
+  // The made Reel opens as the review (the preview, Export and Edit) on phones and computers; the timeline and every
+  // tool show after Edit (2026-11-12). A tool asked for by the address (?tool=) opens the editor straight away.
+  let editing = !!q;
   const reviewNow = () => made() && !root.classList.contains("fopen") && !editing;
   const setEditing = (on: boolean) => { editing = on; if (!on && !wide()) tool = ""; apply(); if (on) requestAnimationFrame(() => $("lanes").scrollIntoView({ block: "nearest" })); };
 

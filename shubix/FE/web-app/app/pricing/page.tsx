@@ -14,7 +14,6 @@ import { SectionHeading } from "@/components/molecules/SectionHeading";
 import { PlanAction, PlanCard, rupees } from "@/components/organisms/pricing/PlanCard";
 import { Checkout } from "@/components/organisms/pricing/Checkout";
 import { OfferStrip } from "@/components/molecules/OfferStrip";
-import { PlanCompare } from "@/components/organisms/pricing/PlanCompare";
 import { UpgradeReason } from "@/components/organisms/pricing/UpgradeReason";
 
 const day = (d: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "");
@@ -86,6 +85,8 @@ export default function PricingPage() {
   const offer = useQuery({ queryKey: ["offer"], queryFn: api.offer, staleTime: 60_000 }).data?.offer ?? null;
   const signedIn = !!me.data?.user || me.data?.authEnabled === false;
   const mine = credits.data?.enabled ? credits.data : null;
+  // a paid plan still running (its end date from the server; the wallet itself goes back to free when it ends)
+  const activePaid = !!mine && mine.plan !== "free" && !!mine.planEnds;
 
   function buy(item: string, label: string) { setNotice(null); setCheckout({ item, label }); }
   async function payNow(item: string, label: string, coupon?: string, phone?: string) {
@@ -184,6 +185,8 @@ export default function PricingPage() {
         {p.plans.filter((x) => !x.hidden).map((plan) => {
           const item = `plan:${plan.id}:${period}`;
           const current = !!mine && mine.plan === plan.id && plan.id !== "free";
+          // one paid plan at a time: the others open when it ends (the server says the same); top-ups stay open
+          const locked = activePaid && !current && plan.monthly > 0;
           return (
             <PlanCard
               key={plan.id}
@@ -201,14 +204,13 @@ export default function PricingPage() {
                   busy={buying === item}
                   selected={plan.id === selectedId}
                   onBuy={() => void buy(item, `${plan.name} (${yearly ? "1 year" : "1 month"})`)}
+                  lockedUntil={locked ? day(mine?.planEnds ?? null) : undefined}
                 />
               }
             />
           );
         })}
       </section>
-
-      <PlanCompare text={text} plans={p.plans.filter((x) => !x.hidden).map((x) => x.id)} />
 
       {/* your credits and top-ups */}
       <section aria-label="Credits" className={cn("grid gap-5", mine && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]")}>
