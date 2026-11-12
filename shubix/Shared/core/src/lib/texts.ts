@@ -208,7 +208,7 @@ export const TEXT_GROUPS: TextGroup[] = [
         T("pricing.freeForever", "Under the Free price", "Free forever"), T("pricing.billedMonthly", "Under a monthly price", "Billed monthly · nothing renews by itself"),
         T("pricing.billedYearly", "Under a yearly price ({price}: a month)", "{price} a month, billed yearly"), T("pricing.credits", "Credits (“250 credits …”)", "credits")),
       C("Card buttons", T("pricing.makeReel", "Free plan (signed in)", "Make a Reel"), T("pricing.startFree", "Free plan (signed out)", "Start free"),
-        T("pricing.choose", "Paid plan ({plan})", "Choose {plan}"), T("pricing.extend", "Your plan ({plan})", "Extend {plan}"), T("pricing.signInFor", "Paid plan, signed out ({plan})", "Sign in to choose {plan}"),
+        T("pricing.choose", "Paid plan ({plan})", "Choose {plan}"), T("pricing.extend", "Your plan ({plan})", "Extend {plan}"), T("pricing.afterPlan", "Another plan active (date it ends)", "Available after {date}"), T("pricing.signInFor", "Paid plan, signed out ({plan})", "Sign in to choose {plan}"),
         T("pricing.opensSoon", "Payments closed", "Opens soon"), T("pricing.currentPlan", "Your plan, payments closed", "Your current plan"), T("pricing.opening", "While the payment opens", "Opening payment…"))),
     S("Credits",
       C("Your credits card", T("pricing.yourCredits", "Title", "Your credits"), T("pricing.planBadge", "Plan badge ({plan})", "{plan} plan"),

@@ -38,6 +38,8 @@ export const limits = {
   account: (req: Request) => limit(`account:${currentUser() ?? clientIp(req)}`, 10, 15 * MIN),
   ping: (req: Request, visitor: string) => limit(`ping:${visitor}:${clientIp(req)}`, 8, MIN, "Too many pings."),
   clientError: (req: Request) => limit(`clienterr:${clientIp(req)}`, 10, MIN, "Too many error reports."),
+  // a Reel's log lines (server/reelLogs.ts): batches of up to 60, a busy studio sends a few a minute
+  reelLog: (req: Request) => limit(`reellog:${clientIp(req)}`, 60, MIN, "Too many log lines."),
   contact: (req: Request, email: string) => { limit(`contact:ip:${clientIp(req)}`, 5, 60 * MIN, "Too many messages from here."); limit(`contact:email:${email.trim().toLowerCase()}`, 3, 60 * MIN, "We already have your messages: we'll reply soon."); },
   helpChat: (req: Request) => { limit(`help:${currentUser() ?? clientIp(req)}`, 20, 10 * MIN, "Too many questions at once. Wait a moment."); limit(`help:day:${clientIp(req)}`, 150, 24 * 60 * MIN, "That's a lot of questions today. Use the Contact page for more help."); },
   // a clip converted on the server costs CPU: only for what a phone cannot do, so a few per hour is plenty

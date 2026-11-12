@@ -9,22 +9,38 @@ type CashfreeResult = { error?: { message?: string }; redirect?: boolean; paymen
 type CashfreeCtor = (o: { mode: "sandbox" | "production" }) => { checkout: (o: { paymentSessionId: string; redirectTarget: "_modal" | HTMLElement }) => Promise<CashfreeResult> };
 
 const SCRIPT = "https://sdk.cashfree.com/js/v3/cashfree.js";
-let loading: Promise<void> | null = null;
+let loading: Promise<boolean> | null = null;
 
-function loadScript(): Promise<void> {
-  if (typeof window !== "undefined" && (window as unknown as { Cashfree?: CashfreeCtor }).Cashfree) return Promise.resolve();
-  loading ??= new Promise<void>((resolve, reject) => {
+/** One try at Cashfree's script; `ms` is how long before it counts as failed (a slow phone network). */
+function tryScript(ms: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const s = document.createElement("script");
     s.src = SCRIPT;
     s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => {
-      loading = null;
-      reject(new Error("The payment window could not be loaded. Check your connection and try again."));
-    };
+    const t = window.setTimeout(() => { s.remove(); reject(new Error("timeout")); }, ms);
+    s.onload = () => { window.clearTimeout(t); resolve(); };
+    s.onerror = () => { window.clearTimeout(t); s.remove(); reject(new Error("blocked")); };
     document.body.appendChild(s);
   });
+}
+
+/** Cashfree's script, tried twice: an ad blocker, Brave, a private DNS or some in-app browsers block sdk.cashfree.com
+ * (QA, 2026-11-12); then `false` and the payment goes on Cashfree's own page instead. */
+function loadScript(): Promise<boolean> {
+  if (typeof window !== "undefined" && (window as unknown as { Cashfree?: CashfreeCtor }).Cashfree) return Promise.resolve(true);
+  loading ??= tryScript(12000)
+    .catch(() => tryScript(15000))
+    .then(() => !!(window as unknown as { Cashfree?: CashfreeCtor }).Cashfree)
+    .catch(() => false)
+    .then((ok) => { if (!ok) loading = null; return ok; });
   return loading;
+}
+
+/** Cashfree's own checkout page for an order: used when its script cannot load here. It comes back to
+ * /pricing?order=… (the order's return address) and that page asks the server whether it is paid. */
+function hostedCheckout(sessionId: string, mode: "sandbox" | "production") {
+  const host = mode === "sandbox" ? "https://payments-test.cashfree.com" : "https://payments.cashfree.com";
+  window.location.assign(`${host}/order/#${encodeURIComponent(sessionId)}`);
 }
 
 export type PayResult = { status: "paid"; credits: Credits } | { status: "closed" } | { status: "failed"; message: string };
@@ -49,6 +65,7 @@ function paymentWindow() {
   const box = el("div", "min-h-0 flex-1 overflow-auto bg-white");
   head.append(title, x);
   panel.append(head, box);
+  overlay.setAttribute("data-popup", ""); // the page behind stays still (globals.css)
   overlay.append(panel);
   const scroll = document.body.style.overflow;
   document.body.style.overflow = "hidden";
@@ -67,7 +84,11 @@ function paymentWindow() {
 /** Pay for "plan:creator:monthly", "plan:pro:yearly", "topup:topup_30" ... with the mobile number Cashfree needs (kept on
  * the account after the first payment). Resolves when the window closes. */
 export async function pay(item: string, coupon?: string, phone?: string): Promise<PayResult> {
-  const [order] = await Promise.all([api.createOrder(item, coupon, phone), loadScript()]); // the server prices it (offer, coupon)
+  const [order, ready] = await Promise.all([api.createOrder(item, coupon, phone), loadScript()]); // the server prices it (offer, coupon)
+  if (!ready) {
+    hostedCheckout(order.sessionId, order.mode);
+    return new Promise<PayResult>(() => {}); // the page goes to Cashfree and comes back to /pricing?order=…
+  }
   const Cashfree = (window as unknown as { Cashfree: CashfreeCtor }).Cashfree;
   const win = paymentWindow();
   let r: CashfreeResult;
