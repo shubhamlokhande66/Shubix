@@ -5875,9 +5875,14 @@ async function startPlayback(from, destNode){
       if(IOS) livePerf(t0, performance.now() - t0, edit[i]);
     }
   };
-  const raf = () => { loop(); if(playing) rafId = requestAnimationFrame(raf); };
+  // one picture that fails (a video not ready, the graphics busy right after the Reel was made) must not stop the preview:
+  // the loop stopped for good, the song went on and the picture and time stood at 0:00 (2026-11-12). The next picture is
+  // tried again; what failed is told once (Admin -> Errors).
+  let failed = 0;
+  const safeLoop = () => { try{ loop(); failed = 0; }catch(err){ if(++failed === 1 || failed === 60){ console.error('preview frame failed', err); try{ window.__shubixReport && window.__shubixReport('preview', 'Preview frame failed (' + failed + ' in a row): ' + String(err && err.stack || err).slice(0, 400)); }catch(e2){} } } };
+  const raf = () => { safeLoop(); if(playing) rafId = requestAnimationFrame(raf); };
   rafId = requestAnimationFrame(raf);
-  timer = setInterval(()=>{ if(document.hidden) loop(); }, 33);
+  timer = setInterval(()=>{ if(document.hidden) safeLoop(); }, 33);
 }
 const PREROLL = 0.3;   // seconds
 // a shot's player that stopped moving while it should play (the song goes on, the picture stays on the shot's first
