@@ -1,0 +1,30 @@
+// The website (this Next.js app) on Cloudflare Workers through OpenNext: no container, from the Cloudflare server nearest
+// the person. Built by `pnpm cf:build` (.open-next/), deployed by .github/workflows/deploy-cloudflare-web.yml for one
+// environment (--env qa / uat; prod later). The API stays where it is (shubix/infra/cloudflare: its container); /api is
+// passed on to it by next.config.ts's rewrite, so the session cookie stays on this site's own address.
+// API_URL and PUBLIC_BASE_URL are also given to the build (the rewrite is made then); here they are for the pages that read
+// them while running (lib/adsFile.ts, the sitemap).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shubix-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  "workers_dev": true,
+  "vars": { "API_URL": "https://api.shubix.in", "PUBLIC_BASE_URL": "https://shubix.in" },
+  "env": {
+    // QA: first on its workers.dev address to test; qa.shubix.in moves here once it is checked (its DNS points at Vercel now)
+    "qa": {
+      "name": "shubix-web-qa",
+      "workers_dev": true,
+      "vars": { "API_URL": "https://api-qa.shubix.in", "PUBLIC_BASE_URL": "https://qa.shubix.in" }
+    },
+    "uat": {
+      "name": "shubix-web-uat",
+      "workers_dev": true,
+      "vars": { "API_URL": "https://api-uat.shubix.in", "PUBLIC_BASE_URL": "https://uat.shubix.in" }
+    }
+  }
+}
