@@ -13,6 +13,8 @@
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "observability": { "enabled": true },
   "workers_dev": true,
+  // production (no --env): shubix.in and www.shubix.in, moved from Vercel after QA and UAT were checked here
+  "routes": [{ "pattern": "shubix.in", "custom_domain": true }, { "pattern": "www.shubix.in", "custom_domain": true }],
   "vars": { "API_URL": "https://api.shubix.in", "PUBLIC_BASE_URL": "https://shubix.in" },
   "env": {
     // QA: qa.shubix.in (moved from Vercel, 2026-11-12), also on its workers.dev address
@@ -25,6 +27,7 @@
     "uat": {
       "name": "shubix-web-uat",
       "workers_dev": true,
+      "routes": [{ "pattern": "uat.shubix.in", "custom_domain": true }],
       "vars": { "API_URL": "https://api-uat.shubix.in", "PUBLIC_BASE_URL": "https://uat.shubix.in" }
     }
   }
