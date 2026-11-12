@@ -1,7 +1,7 @@
 import { Container, getContainer } from "@cloudflare/containers";
 
 /** Reel Maker on Cloudflare: this Worker passes every request to ONE app container (the Next.js server, FFmpeg included;
- * with CONTAINER_ROLE "api" the API alone, the website being on Vercel: docs/deploy-vercel-cloudflare.md).
+ * with CONTAINER_ROLE "api" the API alone, the website being its own Worker: docs/deploy-website-cloudflare.md).
  * The container sleeps after SLEEP_AFTER without requests. Reels saved to My Reels are kept in R2: docker/start.sh mounts
  * the bucket in the container. */
 
@@ -20,7 +20,7 @@ export class ReelApp extends Container<Env> {
   constructor(ctx: ConstructorParameters<typeof Container<Env>>[0], env: Env) {
     super(ctx, env);
     if (typeof env.SLEEP_AFTER === "string" && env.SLEEP_AFTER) this.sleepAfter = env.SLEEP_AFTER;
-    if (env.CONTAINER_ROLE === "api") this.defaultPort = 4000; // the API alone (the website on Vercel)
+    if (env.CONTAINER_ROLE === "api") this.defaultPort = 4000; // the API alone (the website is its own Worker)
     // every setting (vars and secrets) goes to the app as an environment variable; bindings are not strings
     this.envVars = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => typeof e[1] === "string"));
     // The library never lets the container sleep while it counts a request in flight, and a request lost on the way (a

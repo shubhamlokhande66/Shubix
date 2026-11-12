@@ -212,7 +212,7 @@ function Drawer({ open, onClose, groups, pathname, admin, email, credits, onSign
 const tabsFor = (f: Parameters<typeof linkOn>[1]) => TABS.filter((t) => linkOn(t.href, f));
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  // Vercel renders Home again on its server as "/index": the same page as "/" (else it is not public, only a spinner)
+  // a server may render Home as "/index" (Vercel did): the same page as "/" (else it is not public, only a spinner)
   const at = usePathname() ?? "/", pathname = at === "/index" ? "/" : at;
   const { admin, otp, loading } = useAdmin();
   const adminLink = admin || otp; // an admin account whose daily code is due: its button leads to the code

@@ -4,16 +4,14 @@ import type { NextConfig } from "next";
 // the API's address, with or without its https:// (a rewrite needs it, or the whole build stops)
 const API_HOST = (process.env.API_URL?.trim() || "http://localhost:4000").replace(/\/+$/, "");
 const API_URL = /^https?:\/\//i.test(API_HOST) ? API_HOST : `https://${API_HOST}`;
-// a wrong address must stop the build: a site that deployed with one cannot reach its API at all (a Sensitive variable on
-// Vercel reaches a CLI build as the text [SENSITIVE]; this address is not secret, keep it a plain variable)
-if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?(\/|$)/i.test(API_URL)) throw new Error("API_URL is not a web address. Set it on Vercel as a plain (not Sensitive) variable: https://api.shubix.in");
+// a wrong address must stop the build: a site that deployed with one cannot reach its API at all
+if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?(\/|$)/i.test(API_URL)) throw new Error("API_URL is not a web address. e.g. https://api.shubix.in");
 
 const nextConfig: NextConfig = {
-  // Self-contained server output, used by docker/Dockerfile (Vercel builds its own: VERCEL is set there)
-  output: process.env.VERCEL ? undefined : "standalone",
+  // Self-contained server output (docker/Dockerfile; OpenNext builds the Cloudflare Worker from it too)
+  output: "standalone",
   // a pnpm monorepo: trace the shared packages (Shared/*) into the standalone server too
-  // the checkout's root on Vercel (its CLI runs from there and joins this path to it), the workspace elsewhere
-  outputFileTracingRoot: path.resolve(process.cwd(), process.env.VERCEL ? "../../.." : "../.."),
+  outputFileTracingRoot: path.resolve(process.cwd(), "../.."),
   // Phone mode: let a phone on the same Wi-Fi load the dev server through this computer's private address.
   // (Only matters when the dev server is started with -H 0.0.0.0.)
   // and a cloudflared tunnel to this computer, to open it from anywhere while testing
