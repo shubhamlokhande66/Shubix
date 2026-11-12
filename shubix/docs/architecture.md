@@ -1,7 +1,7 @@
 # Architecture
 
 ```
-browser ──> shubix.in (Vercel, FE/web-app) ──/api/*──> api.shubix.in (Cloudflare Worker ──> container: BE/api)
+browser ──> shubix.in (Cloudflare Worker, FE/web-app) ──/api/*──> api.shubix.in (Cloudflare Worker ──> container: BE/api)
 phone app (FE/mobile-app) ─────────────────────────────> api.shubix.in                     └─> MongoDB Atlas + R2
 ```
 

@@ -1,6 +1,6 @@
 // The website (this Next.js app) on Cloudflare Workers through OpenNext: no container, from the Cloudflare server nearest
 // the person. Built by `pnpm cf:build` (.open-next/), deployed by .github/workflows/deploy-cloudflare-web.yml for one
-// environment (--env qa / uat; prod later). The API stays where it is (shubix/infra/cloudflare: its container); /api is
+// environment (--env qa / uat; no --env: production). The API stays where it is (shubix/infra/cloudflare: its container); /api is
 // passed on to it by next.config.ts's rewrite, so the session cookie stays on this site's own address.
 // API_URL and PUBLIC_BASE_URL are also given to the build (the rewrite is made then); here they are for the pages that read
 // them while running (lib/adsFile.ts, the sitemap).

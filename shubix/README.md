@@ -56,13 +56,13 @@ app's `storage/` to keep using the same local files.
 
 ## Deploy
 
-- **Website**: Vercel builds `FE/web-app` from `main` (shubix.in). Its `/api` goes to the API (`API_URL`).
+- **Website**: `FE/web-app` on Cloudflare Workers (OpenNext), by hand: Actions → Deploy website (Cloudflare Workers) (shubix.in). Its `/api` goes to the API (`API_URL`).
 - **API**: `.github/workflows/deploy-cloudflare.yml` deploys `BE/api` on every push to `main` (api.shubix.in, a Cloudflare
   container: `infra/cloudflare`). Secrets live only in Cloudflare. Check `https://api.shubix.in/api/health` after a deploy.
 - **Android app**: a test APK by hand (Actions → Android test APK → Run workflow, then the run's Artifacts); the Play
   Store build with EAS (`docs/android-release.md`).
 
-Details: `docs/deploy-vercel-cloudflare.md`.
+Details: `docs/deploy-website-cloudflare.md`.
 
 ## Icons and logo
 

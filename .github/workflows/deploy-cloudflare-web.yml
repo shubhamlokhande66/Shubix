@@ -3,7 +3,7 @@ name: Deploy website (Cloudflare Workers)
 # The website (shubix/FE/web-app) on Cloudflare Workers through OpenNext, by hand: Actions, Deploy website (Cloudflare
 # Workers), Run workflow, pick qa / uat / prod. Built here (OpenNext on Linux), deployed with wrangler to shubix-web-<target>
 # (shubix/FE/web-app/wrangler.jsonc). Each deploys its own branch (qa, uat). The same Cloudflare secrets as the API's
-# workflow: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. Production stays on Vercel until QA and UAT are checked here.
+# workflow: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. All three websites run here (Vercel is no longer used, 2026-11-12).
 on:
   workflow_dispatch:
     inputs:
@@ -12,10 +12,6 @@ on:
         type: choice
         options: [qa, uat, prod]
         default: qa
-      move_domain:
-        description: "Move the address here (qa/uat.shubix.in; prod: shubix.in and www): delete its old DNS records that point at Vercel first (only those)"
-        type: boolean
-        default: false
 
 concurrency:
   group: deploy-cloudflare-web-${{ inputs.target }}
@@ -55,25 +51,6 @@ jobs:
       - name: Build (OpenNext)
         working-directory: shubix/FE/web-app
         run: pnpm cf:build
-      - name: Move the address from Vercel
-        if: inputs.move_domain
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          if [ "$TARGET" = prod ]; then hosts="shubix.in www.shubix.in"; else hosts="$TARGET.shubix.in"; fi
-          cf() { curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" "$@"; }
-          zone=$(cf "https://api.cloudflare.com/client/v4/zones?name=shubix.in" | jq -r '.result[0].id // empty')
-          test -n "$zone" || { echo "::error::The token cannot see the shubix.in zone (it needs Zone, DNS, Edit)"; exit 1; }
-          for host in $hosts; do
-            recs=$(cf "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?name=$host")
-            echo "$recs" | jq -e '.success' >/dev/null || { echo "::error::The token cannot read the DNS records (add Zone, DNS, Edit to it): $(echo "$recs" | jq -c '.errors')"; exit 1; }
-            echo "$recs" | jq -r '.result[] | "\(.type) \(.name) -> \(.content)"'
-            # only a record that points at Vercel (its CNAME, or its A address 76.76.21.21): anything else is left as it is
-            for id in $(echo "$recs" | jq -r '.result[] | select((.content | test("vercel"; "i")) or .content == "76.76.21.21") | .id'); do
-              cf -X DELETE "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$id" | jq -e '.success' >/dev/null || { echo "::error::Could not delete the record $id"; exit 1; }
-              echo "Deleted the Vercel record $id for $host"
-            done
-          done
       - name: Deploy (wrangler)
         working-directory: shubix/FE/web-app
         env:

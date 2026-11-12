@@ -17,16 +17,18 @@ import { UserPanel } from "./UserPanel";
 import { UsersTab } from "./UsersTab";
 import { MarketingTab } from "./MarketingTab";
 import { MessagesTab } from "./MessagesTab";
+import { ReviewsTab } from "./ReviewsTab";
 import { SupportTab } from "./SupportTab";
 
 /** The admin panel (like the shop's): a grouped sidebar, a header with who is online and Refresh, then the open tab. */
-type Tab = "overview" | "users" | "messages" | "marketing" | "support" | "templates" | "settings" | "errors" | "logs" | "ai" | "trends";
+type Tab = "overview" | "users" | "messages" | "marketing" | "support" | "templates" | "settings" | "errors" | "logs" | "reviews" | "ai" | "trends";
 const NAV: { title: string; items: { id: Tab; label: string; icon: string; hint: string }[] }[] = [
   { title: "Overview", items: [{ id: "overview", label: "Dashboard", icon: "home", hint: "Visitors, sign-ups, revenue and credits at a glance" }] },
   { title: "People", items: [{ id: "users", label: "Users", icon: "user", hint: "Everyone who signed up: logins, purchases, credits left" },
     { id: "messages", label: "Messages", icon: "bell", hint: "Tell everyone (or the paying, free or affiliates) something: in their bell, on the site and the app, and by email" },
     { id: "marketing", label: "Marketing", icon: "gift", hint: "Invite rewards, sending credits, affiliates, coupon codes and sales" },
-    { id: "support", label: "Support", icon: "mail", hint: "Messages from the Contact page, and what people ask the Help chat" }] },
+    { id: "support", label: "Support", icon: "mail", hint: "Messages from the Contact page, and what people ask the Help chat" },
+    { id: "reviews", label: "Reviews", icon: "star", hint: "What people said after exporting a Reel: approve the ones to show on Home, read what to improve" }] },
   { title: "Content", items: [{ id: "templates", label: "Templates", icon: "grid", hint: "Every template of the studio: add, change, hide, order, its times and its days" }] },
   { title: "System", items: [{ id: "settings", label: "Settings", icon: "gear", hint: "Every setting of the studio, managed here" }, { id: "errors", label: "Errors", icon: "key", hint: "What broke in people's browsers, newest first" },
     { id: "logs", label: "Logs", icon: "history", hint: "Each Reel's whole log by its Reel ID: song, clips, compression, AI calls with their JSON, export, with date and time" }] },
@@ -165,6 +167,7 @@ export function AdminDashboard() {
             {tab === "templates" && <TemplatesTab />}
             {tab === "errors" && <ErrorsTab />}
             {tab === "logs" && <LogsTab />}
+            {tab === "reviews" && <ReviewsTab />}
             {tab === "ai" && <AiSettingsPanel />}
             {tab === "trends" && <TrendLibrary embedded />}
           </div>

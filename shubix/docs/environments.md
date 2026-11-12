@@ -5,7 +5,7 @@ Three copies of Shubix, each with its own website, API, database and bucket, so 
 | | QA | UAT | Production |
 |---|---|---|---|
 | Branch | `qa` | `uat` | `main` |
-| Website (Vercel) | `qa.shubix.in` (Preview, branch `qa`) | `uat.shubix.in` (Preview, branch `uat`) | `shubix.in` (Production) |
+| Website (Cloudflare Worker) | `shubix-web-qa`, `qa.shubix.in` | `shubix-web-uat`, `uat.shubix.in` | `shubix-web`, `shubix.in` + `www` |
 | API (Cloudflare Worker) | `shubix-api-qa`, `api-qa.shubix.in` | `shubix-api-uat`, `api-uat.shubix.in` | `shubix-api`, `api.shubix.in` |
 | Database (`MONGODB_DB`) | `shubix_qa` | `shubix_uat` | as before |
 | R2 bucket | `smgroup-qa` | `smgroup-uat` | `smgroup` |
@@ -47,7 +47,7 @@ with `production`).
 ## Deploying
 
 By hand, as before (Actions minutes): GitHub → Actions → **Deploy to Cloudflare** (the API) and **Deploy website
-(Vercel)** → Run workflow → pick `qa`, `uat` or `prod`. Each deploys its own branch (`qa`, `uat`, `main`), whatever
+(Cloudflare Workers)** → Run workflow → pick `qa`, `uat` or `prod`. Each deploys its own branch (`qa`, `uat`, `main`), whatever
 branch the workflow is started from. Deploy the API first when both changed.
 
 From a computer with Docker: `cd shubix/infra/cloudflare && npx wrangler deploy --env qa` (or `--env uat`; no `--env`
@@ -59,7 +59,7 @@ is production).
 
 1. Create the branches from `main`: `git push origin main:qa main:uat`.
 2. Settings → Environments: add `qa`, `uat` and `production`. On `production`, turn on **Required reviewers** (you) so a
-   production deploy waits for your approval. The existing repo secrets (`CLOUDFLARE_*`, `VERCEL_*`) work in all three.
+   production deploy waits for your approval. The existing repo secrets (`CLOUDFLARE_*`) work in all three.
 
 ### Cloudflare
 
@@ -95,14 +95,11 @@ Wrangler does not copy `vars` into an environment.
 Nothing to create: `shubix_qa` and `shubix_uat` are made on first use. One cluster can hold all three. A separate Atlas user
 per environment (`MONGODB_URI`) keeps a test from ever writing to production.
 
-### Vercel (the same project)
+### The website (Cloudflare Workers)
 
-1. Nothing for `API_URL` / `PUBLIC_BASE_URL`: the deploy workflow sets them to `api-qa.shubix.in` / `qa.shubix.in` (and
-   the `uat` ones) whatever **Preview** has, so a QA site never asks PROD's API.
-2. Settings → Domains: add `qa.shubix.in` and `uat.shubix.in` (the workflow points them at each new deploy), and set the
-   DNS records Vercel shows.
-3. Settings → Deployment Protection: with Vercel Authentication on, `qa.` and `uat.` ask for a Vercel login first. Keep it on
-   to keep them private, or turn it off for testers without a Vercel account.
+1. Nothing for `API_URL` / `PUBLIC_BASE_URL`: the deploy workflow sets them per environment, and `FE/web-app/wrangler.jsonc`
+   holds each Worker's name and address.
+2. A custom domain needs its name free in Cloudflare DNS: delete an old record for it first (else error 100117), then deploy.
 
 ### Google sign-in
 
