@@ -29,3 +29,6 @@ keystore.properties
 *.jks
 upload_certificate.pem
 FE/mobile-app/keys/
+
+# Cloudflare Workers build (OpenNext)
+.open-next/

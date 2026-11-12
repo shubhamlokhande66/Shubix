@@ -318,7 +318,17 @@ async function fulfil(orderId: string, paymentId: string, via: string) {
  * the one kept before. Its payment window opens with `sessionId` (the website, lib/cashfree.ts). */
 export async function createOrder(itemKey: string, couponCode?: string | null, phoneIn?: string | null) {
   if (!paymentsOpen()) throw new ValidationFailed("Online payment is not open yet.", { code: "PAYMENTS_CLOSED" });
-  const uid = uidOrThrow(), base = await describe(itemKey), price = await quote(uid, base, couponCode);
+  const uid = uidOrThrow(), base = await describe(itemKey);
+  // one paid plan at a time: another plan only after this one ends (the same plan renews it, top-ups any time)
+  if (base.kind === "plan") {
+    const w = await wallet(uid), ends = w.planEnds ? new Date(w.planEnds as Date) : null;
+    if (w.plan !== "free" && ends && ends.getTime() > Date.now() && String(w.plan) !== base.plan) {
+      const name = (await getPricing()).plans.find((x) => x.id === w.plan)?.name ?? String(w.plan);
+      const day = ends.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+      throw new ValidationFailed(`Your ${name} plan is active till ${day}. You can change plans after it ends; top-ups can be bought any time.`, { code: "PLAN_ACTIVE" });
+    }
+  }
+  const price = await quote(uid, base, couponCode);
   if (couponCode && price.couponError) throw new ValidationFailed(price.couponError, { code: "COUPON_INVALID" });
   const item = { ...base, rupees: price.final };
   const user = await userOf(uid);

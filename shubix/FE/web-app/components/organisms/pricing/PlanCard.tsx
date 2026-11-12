@@ -88,12 +88,14 @@ export function PlanCard({ plan, yearly, action, selected, onSelect, offer }: { 
 }
 
 /** The plan's button, as far as this person and this studio allow (sign in, payments not open yet, your plan…). */
-export function PlanAction({ plan, signedIn, paymentsOpen, current, busy, selected, onBuy }: { plan: Plan; signedIn: boolean; paymentsOpen: boolean; current: boolean; busy: boolean; selected: boolean; onBuy: () => void }) {
+/** `lockedUntil`: another paid plan is active (one at a time), so this one opens after that date. */
+export function PlanAction({ plan, signedIn, paymentsOpen, current, busy, selected, onBuy, lockedUntil }: { plan: Plan; signedIn: boolean; paymentsOpen: boolean; current: boolean; busy: boolean; selected: boolean; onBuy: () => void; lockedUntil?: string }) {
   const text = useText();
   const variant = selected ? "primary" : "secondary";
-  if (plan.monthly === 0) return <Button href={signedIn ? "/" : "/login"} variant="secondary" full>{text(signedIn ? "pricing.makeReel" : "pricing.startFree")}</Button>;
+  if (plan.monthly === 0) return <Button href={signedIn ? "/" : "/login?next=%2Fpricing"} variant="secondary" full>{text(signedIn ? "pricing.makeReel" : "pricing.startFree")}</Button>;
   if (!paymentsOpen) return <Button variant={variant} full disabled title={text("pricing.soon")}>{text(current ? "pricing.currentPlan" : "pricing.opensSoon")}</Button>;
-  if (!signedIn) return <Button href="/login" variant={variant} full>{text("pricing.signInFor", { plan: plan.name })}</Button>;
+  if (!signedIn) return <Button href="/login?next=%2Fpricing" variant={variant} full>{text("pricing.signInFor", { plan: plan.name })}</Button>;
+  if (lockedUntil) return <Button variant="secondary" full disabled>{text("pricing.afterPlan", { date: lockedUntil })}</Button>;
   return (
     <Button variant={variant} full loading={busy} onClick={onBuy} iconRight={busy ? undefined : "send"}>
       {busy ? text("pricing.opening") : text(current ? "pricing.extend" : "pricing.choose", { plan: plan.name })}

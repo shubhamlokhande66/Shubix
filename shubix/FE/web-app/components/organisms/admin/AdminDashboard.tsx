@@ -10,6 +10,7 @@ import { TrendLibrary } from "@/components/organisms/TrendLibrary";
 import { useMe } from "@/hooks/useApi";
 import { LiveDot, OverviewTab, useOverview } from "./OverviewTab";
 import { ErrorsTab } from "./ErrorsTab";
+import { LogsTab } from "./LogsTab";
 import { TemplatesTab } from "./TemplatesTab";
 import { SettingsTab } from "./SettingsTab";
 import { UserPanel } from "./UserPanel";
@@ -19,7 +20,7 @@ import { MessagesTab } from "./MessagesTab";
 import { SupportTab } from "./SupportTab";
 
 /** The admin panel (like the shop's): a grouped sidebar, a header with who is online and Refresh, then the open tab. */
-type Tab = "overview" | "users" | "messages" | "marketing" | "support" | "templates" | "settings" | "errors" | "ai" | "trends";
+type Tab = "overview" | "users" | "messages" | "marketing" | "support" | "templates" | "settings" | "errors" | "logs" | "ai" | "trends";
 const NAV: { title: string; items: { id: Tab; label: string; icon: string; hint: string }[] }[] = [
   { title: "Overview", items: [{ id: "overview", label: "Dashboard", icon: "home", hint: "Visitors, sign-ups, revenue and credits at a glance" }] },
   { title: "People", items: [{ id: "users", label: "Users", icon: "user", hint: "Everyone who signed up: logins, purchases, credits left" },
@@ -27,7 +28,8 @@ const NAV: { title: string; items: { id: Tab; label: string; icon: string; hint:
     { id: "marketing", label: "Marketing", icon: "gift", hint: "Invite rewards, sending credits, affiliates, coupon codes and sales" },
     { id: "support", label: "Support", icon: "mail", hint: "Messages from the Contact page, and what people ask the Help chat" }] },
   { title: "Content", items: [{ id: "templates", label: "Templates", icon: "grid", hint: "Every template of the studio: add, change, hide, order, its times and its days" }] },
-  { title: "System", items: [{ id: "settings", label: "Settings", icon: "gear", hint: "Every setting of the studio, managed here" }, { id: "errors", label: "Errors", icon: "key", hint: "What broke in people's browsers, newest first" }] },
+  { title: "System", items: [{ id: "settings", label: "Settings", icon: "gear", hint: "Every setting of the studio, managed here" }, { id: "errors", label: "Errors", icon: "key", hint: "What broke in people's browsers, newest first" },
+    { id: "logs", label: "Logs", icon: "history", hint: "Each Reel's whole log by its Reel ID: song, clips, compression, AI calls with their JSON, export, with date and time" }] },
   // the AI's tools open here too (before, they were links that left the dashboard)
   { title: "Tools", items: [{ id: "ai", label: "AI settings", icon: "wand", hint: "Which AI does each job, and how the AI director did. Changes apply to new Reels." },
     { id: "trends", label: "My trends", icon: "trend", hint: "Give a trending Reel; its cuts, pace and look are learned." }] },
@@ -162,6 +164,7 @@ export function AdminDashboard() {
             {tab === "settings" && <SettingsTab />}
             {tab === "templates" && <TemplatesTab />}
             {tab === "errors" && <ErrorsTab />}
+            {tab === "logs" && <LogsTab />}
             {tab === "ai" && <AiSettingsPanel />}
             {tab === "trends" && <TrendLibrary embedded />}
           </div>

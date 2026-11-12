@@ -45,7 +45,7 @@ export function InstallBanner({ className = "", compact = false }: { className?:
   return (
     <div role="region" aria-label={text("install.sidebar")} className={cn("relative", className)}>
       {compact ? (
-        <IconButton icon="download" label={text("install.button")} title={text("install.title")} onClick={go} className="border-accent/50 text-accent" />
+        <IconButton icon="download" size={36} iconSize={17} label={text("install.button")} title={text("install.title")} onClick={go} className="border-accent/50 text-accent" />
       ) : (
         <div className="flex h-10 items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-1 pl-3 pr-1" title={`${text("install.title")} · ${text("install.sub")}`}>
           <Icon name="download" size={16} className="shrink-0 text-accent" />

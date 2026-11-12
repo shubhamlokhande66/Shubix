@@ -4,6 +4,16 @@ import { AIUnavailable } from "../core/errors";
 import { budgetState, effective, PROVIDERS, providerFor, recordCall, type EffectiveAIConfig } from "./config";
 import { ClaudeProvider, GeminiProvider, OllamaProvider, OpenAIProvider, Provider, type Health } from "./providers";
 import { AIProviderError, AIResponseError, getTask, runStructured, type AIRequest, type AIResult, type Message } from "./types";
+import { currentReel, reelLog } from "../reelLogs";
+
+/** What an AI call was asked, for the Reel's log: the prompt in full, the pictures and sound by size only. */
+function askedOf(req: AIRequest) {
+  const size = (x: Buffer | string) => (typeof x === "string" ? Math.round(x.length * 0.75) : x.length);
+  return { task: req.task, system: req.system, user: req.user ?? null, temperature: req.temperature ?? null, json: Boolean(req.jsonMode || req.schema),
+    images: req.images?.length ? req.images.map((x, i) => `picture ${i + 1}: ${Math.round(size(x) / 1024)} KB`) : undefined,
+    audio: req.audio ? `${req.audio.mime}, ${Math.round(req.audio.data.length / 1024)} KB` : undefined,
+    messages: req.messages?.map((m) => ({ role: m.role, content: m.content, images: m.images?.length ? `${m.images.length} picture(s)` : undefined })) ?? undefined };
+}
 
 /** The provider the app talks to (was ai/managed.py + factory.py + provider.py helpers): budget check -> retries ->
  * optional fallback -> usage log; plus the familiar chat helpers. */
@@ -51,6 +61,21 @@ export class ManagedProvider {
   }
   async generate(reqIn: AIRequest): Promise<AIResult> {
     const req = { ...reqIn, task: !reqIn.task || reqIn.task === "general" ? this.task : reqIn.task };
+    if (!currentReel()) return this.generateOnce(req);
+    const started = Date.now();
+    await reelLog({ step: "ai", msg: `AI asked (${req.task}) · ${this.primary.name} ${this.primary.modelFor(req) || ""}`.trim(), data: askedOf(req) });
+    try {
+      const res = await this.generateOnce(req);
+      await reelLog({ step: "ai", msg: `AI answered (${res.task}) · ${res.provider} ${res.model} · ${res.latencyMs} ms${res.fallbackUsed ? " · fallback" : ""}`, ms: Date.now() - started,
+        data: { answer: res.parsed ?? res.text, tokensIn: res.inputTokens, tokensOut: res.outputTokens, cost: res.cost, warnings: res.warnings.length ? res.warnings : undefined } });
+      return res;
+    } catch (e) {
+      await reelLog({ step: "ai", level: "error", msg: `AI failed (${req.task}): ${(e as Error).message}`.slice(0, 500), ms: Date.now() - started,
+        data: { code: (e as { code?: string }).code ?? null, kind: (e as { kind?: string }).kind ?? null, details: (e as { details?: unknown }).details ?? null } });
+      throw e;
+    }
+  }
+  private async generateOnce(req: AIRequest & { task: string }): Promise<AIResult> {
     await this.checkBudget(req.task);
     let res: AIResult;
     try {
