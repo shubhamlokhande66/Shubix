@@ -1959,7 +1959,8 @@ const TR_NAME = {hard:'Hard cut', fadein:'Fade-in', flash:'Exposure flash', whip
   slideleft:'Push left', slideright:'Push right', slideup:'Push up', slidedown:'Push down', swipeup:'Swipe up (feed scroll)', zoomout:'Zoom out', blur:'Blur through', flip:'Card flip',
   luma:'Light fade (by brightness)', pixelate:'Pixelate', clock:'Clock wipe', doors:'Doors open', ripple:'Ripple', burn:'Film burn', dropin:'Drop in (bounce)',
   stripes:'Stripes', blinds:'Blinds', checker:'Checkerboard', dots:'Dots', noise:'Noise dissolve', splith:'Split open', wave:'Wave wipe', dipwhite:'Dip to white', chroma:'Colour split', tiles:'Random tiles',
-  zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in'};
+  zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
+  cube:'3D cube', cubeup:'3D cube (up)', flip3d:'3D card flip', swing:'3D door swing'};
 const FX_NAME = {jump:'Punch-in (jump cut)', 'punch-soft':'Soft zoom', 'pan-soft':'Ken Burns (soft)', snap:'Photo snap (freeze + flash)', hook:'Hook zoom + RGB', none:'—', pan:'Ken Burns + beat bounce', zoomburst:'Zoom burst + RGB', drift:'Slow drift + vignette', punch:'Zoom punch', tilt:'Tilt punch', shake:'Shake', bounce:'Beat bounce',
   boxgrow:'Shape: box grows on the beat', grid:'Shape: grid opens on the beat', strips:'Shape: strips on the beat', circle:'Shape: circle pulse', heartbeat:'Shape: heart pulse', starbeat:'Shape: star pulse',
   frame:'Frame in frame', mirror:'Mirror', kaleido:'Kaleidoscope', triple:'Triple split', vhs:'VHS retro', strobe:'Strobe on the beat', rgbpulse:'RGB split on the beat', blurpulse:'Blur pulse on the beat',
@@ -5375,7 +5376,7 @@ function drawFrame2D(t){
         if(p<0.5){ drawShot(og, pe, pl); og.fillStyle=`rgba(0,0,0,${EASE.inOut(p*2)})`; og.fillRect(0,0,W,H); }
         else { drawShot(og, e, local); og.fillStyle=`rgba(0,0,0,${1-EASE.inOut((p-0.5)*2)})`; og.fillRect(0,0,W,H); }
         break;
-      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein':   // the 2D renderer: a dissolve
+      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing':   // the 2D renderer: a dissolve
       case 'dissolve': drawShot(og, pe, pl, {noFx:true}); drawShot(og, e, local, {alpha:EASE.inOut(p)}); break;
       case 'fadein': drawShot(og, e, local, {alpha:q}); break;
       case 'flash': {   // exposure flash: picture blows out to white, then settles
@@ -5497,9 +5498,23 @@ const GRADES = { natural:{con:1.06,sat:1.04,bri:1.0,teal:0,mono:0,grain:0}, vivi
   matte:{con:0.92,sat:0.92,bri:1.0,teal:0,mono:0,grain:0.03,lift:0.1},
   punchy:{con:1.26,sat:1.3,bri:1.02,teal:0,mono:0,grain:0.02},
   forest:{con:1.08,sat:0.95,bri:0.98,teal:0,mono:0,grain:0.04,tsh:[0.44,0.58,0.46,0.45],thi:[0.56,0.56,0.46,0.2]},
-  rose:{con:1.0,sat:1.0,bri:1.03,teal:0,mono:0,grain:0.02,lift:0.04,tsh:[0.6,0.44,0.5,0.4],thi:[0.6,0.5,0.52,0.25]} };
+  rose:{con:1.0,sat:1.0,bri:1.03,teal:0,mono:0,grain:0.02,lift:0.04,tsh:[0.6,0.44,0.5,0.4],thi:[0.6,0.5,0.52,0.25]},
+  /* the pro film and mood looks */
+  kodak:{con:1.08,sat:1.08,bri:1.0,teal:0,mono:0,grain:0.06,warm:0.35,lift:0.04,tsh:[0.46,0.55,0.5,0.3],thi:[0.6,0.54,0.44,0.3]},
+  fuji:{con:1.05,sat:1.0,bri:1.0,teal:0,mono:0,grain:0.05,warm:-0.15,tsh:[0.42,0.56,0.55,0.35],thi:[0.56,0.56,0.5,0.15]},
+  film90:{con:0.96,sat:0.9,bri:1.0,teal:0,mono:0,grain:0.12,warm:0.25,lift:0.1,vig:0.35,tsh:[0.5,0.48,0.56,0.3]},
+  chrome:{con:1.1,sat:0.75,bri:1.0,teal:0,mono:0,grain:0.04,warm:0.05,tsh:[0.44,0.5,0.54,0.3]},
+  bolly:{con:1.12,sat:1.25,bri:1.03,teal:0,mono:0,grain:0.02,warm:0.45,thi:[0.62,0.52,0.42,0.3]},
+  sunglow:{con:1.08,sat:1.15,bri:1.0,teal:0,mono:0,grain:0.03,warm:0.6,tsh:[0.56,0.42,0.56,0.35],thi:[0.64,0.5,0.38,0.4]},
+  neon:{con:1.15,sat:1.25,bri:1.0,teal:0,mono:0,grain:0.03,tsh:[0.62,0.36,0.62,0.55],thi:[0.38,0.62,0.66,0.45]},
+  moon:{con:1.12,sat:0.7,bri:0.9,teal:0,mono:0,grain:0.05,warm:-0.6,vig:0.45,tsh:[0.36,0.44,0.66,0.55]},
+  ice:{con:1.05,sat:0.85,bri:1.05,teal:0,mono:0,grain:0,warm:-0.7,lift:0.05},
+  desert:{con:1.06,sat:0.9,bri:1.0,teal:0,mono:0,grain:0.04,warm:0.6,lift:0.06,thi:[0.62,0.54,0.4,0.35]},
+  silver:{con:0.95,sat:1,bri:1.02,teal:0,mono:1,grain:0.05,lift:0.08},
+  clean:{con:1.04,sat:1.06,bri:1.06,teal:0,mono:0,grain:0,lift:0.02} };
 const LOOK_EXTRA = { warmfilm:'Warm film', cool:'Cool', retro:'Retro', moody:'Moody', wedding:'Wedding', golden:'Golden hour', tealorange:'Teal & orange', faded:'Faded', noir:'Noir', sepia:'Sepia',
-  cyber:'Cyber', pastel:'Pastel', dramatic:'Dramatic', summer:'Summer', night:'Night', vintage:'Vintage', matte:'Matte', punchy:'Punchy', forest:'Forest', rose:'Rose' };
+  cyber:'Cyber', pastel:'Pastel', dramatic:'Dramatic', summer:'Summer', night:'Night', vintage:'Vintage', matte:'Matte', punchy:'Punchy', forest:'Forest', rose:'Rose',
+  kodak:'Kodak film', fuji:'Fuji film', film90:'90s film', chrome:'Classic chrome', bolly:'Bollywood', sunglow:'Sunset glow', neon:'Neon nights', moon:'Moonlight', ice:'Ice', desert:'Desert', silver:'Silver B&W', clean:'Clean bright' };
 for(const [k, n] of Object.entries(LOOK_EXTRA)){ const G = GRADES[k];   // the 2D renderer's version of each filter, and its button in Look
   LOOKS[k] = { name: n, filter: (G.mono ? 'grayscale(1) ' : '') + 'contrast(' + G.con + ') saturate(' + G.sat + ') brightness(' + G.bri + ')' + (G.warm > 0.2 ? ' sepia(' + (G.warm*0.3).toFixed(2) + ')' : ''), grain: G.grain || 0 };
   const lb = $('look'), cp = lb && lb.querySelector('[data-l="copy"]'); if(lb && !lb.querySelector('[data-l="' + k + '"]')){ const b = document.createElement('button'); b.dataset.l = k; b.setAttribute('aria-pressed', 'false'); b.textContent = n; lb.insertBefore(b, cp); } }
@@ -5821,6 +5836,7 @@ function drawFrameGL(t){
       case 'shake': { const j = Math.sin(Math.PI*p)*0.05*W, sx = Math.sin(p*90)*j, sy = Math.cos(p*70)*j; S.A = layerOf(pe, pl, {dx:sx, dy:sy, noFx:true}); S.B = layerOf(e, local, {dx:-sx, dy:-sy}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'squeeze': { const k = EASE.inOut(p), a = layerOf(pe, pl, {noFx:true}), [ax, ay, aw, ah] = a.rect, [bx, by, bw, bh] = S.B.rect;
         a.rect = [ax*(1-k), ay, Math.max(1, aw*(1-k)), ah]; a.clip = 1; S.A = a; S.B.rect = [W*(1-k) + bx*k, by, Math.max(1, bw*k), bh]; S.B.clip = 1; S.mode = 3; break; }
+      case 'cube': case 'cubeup': case 'flip3d': case 'swing': S.mode = {cube:27, cubeup:28, flip3d:29, swing:30}[e.tr]; S.prog = EASE.inOut(p); break;
       case 'rotatein': S.A = layerOf(pe, pl, {scale:1-0.3*p, zb:0.6*p, noFx:true}); S.B = layerOf(e, local, {rot:-180*(1-q)*(1-q), scale:0.4+0.6*q}); S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'dissolve': S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'fadein': S.mode = 1; S.mix = q; if(!pe) S.A = null; break;

@@ -202,6 +202,7 @@ private fun stateOf(id: String, p: Double, W: Float, H: Float, hasA: Boolean, re
     "shake" -> { val j = sin(PI * p) * 0.05 * W; val sx = sin(p * 90) * j; val sy = cos(p * 70) * j; set(L(dx = sx, dy = sy), L(dx = -sx, dy = -sy), 1, inOut(p)) }
     "squeeze" -> { val k = inOut(p); val a = L(); a.rect = floatArrayOf(0f, 0f, max(1.0, W * (1 - k)).toFloat(), H); a.clip = 1f
       val b = L(); b.rect = floatArrayOf((W * (1 - k)).toFloat(), 0f, max(1.0, W * k).toFloat(), H); b.clip = 1f; set(a, b, 3) }
+    "cube", "cubeup", "flip3d", "swing" -> { s.mode = mapOf("cube" to 27f, "cubeup" to 28f, "flip3d" to 29f, "swing" to 30f).getValue(id); s.prog = inOut(p).toFloat() }   // 3D: the shader turns the faces
     "rotatein" -> set(L(scale = 1 - 0.3 * p, zb = 0.6 * p), L(rot = -180 * (1 - q) * (1 - q), scale = 0.4 + 0.6 * q), 1, inOut(p))
     "dissolve" -> { s.mode = 1f; s.mix = inOut(p).toFloat() }
     "fadein" -> { s.mode = 1f; s.mix = q.toFloat() }
