@@ -2110,6 +2110,17 @@ let gateNo = '', lowAsked = '';   // lowAsked: the Reel whose too-few-credits qu
 // the Reel is not shown, played or exported; the preview says so and its button asks again (or opens the top-ups)
 /* To the plans or a top-up from the studio: the Reel is saved on this device first, and the pricing page offers "Back to
  * your Reel" (?back=), which opens it again where it was (a Reel still in the Create steps: its clips step). */
+// Shubix AI asked for in the chat without the plan (Free) or the credits for it: one popup that says the AI is ready and
+// waiting, and opens the plans (or the credits) on the website
+async function aiSell(low, cost, bal){
+  if(IN_APP) return;
+  const v = await askCredits({ upsell: true, title: low ? 'Shubix AI is ready, add credits' : 'Shubix AI is ready to make a professional Reel',
+    text: low ? 'This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '. Add credits or move to a bigger plan, and Shubix AI makes it right away. It is waiting for you.'
+      : 'Shubix AI edits your Reel from your own words, like a pro editor. It needs the Editor or Pro plan (or credits). Get one now and it starts right away. It is waiting for you.',
+    list: ['Changes anything you ask, in your own words', 'Picks the best moments of every clip', 'Trendy transitions and effects, right on the beat', 'Captions and pro colour, automatically'],
+    bal: null, ok: low ? 'Add credits' : 'Get a plan', no: 'Not now' });
+  if(v === true) void toPricing(low ? '?feature=credits#credits' : '?feature=chat');
+}
 async function toPricing(where){
   if(IN_APP) return;
   let id = ''; try{ id = await saveNow(); }catch(e){}
@@ -2654,6 +2665,9 @@ async function chatSend(text){
   if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
   chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
   $('chatin').value = ''; chatFit();
+  // Free (no Shubix AI in the plan), on the website: whatever is typed, Shubix AI says it is ready and waits for a plan
+  // (2026-11-13: the chat sells the plans; nothing is changed for free from it). The app sells nothing: as before.
+  if(aiLocked && !IN_APP){ chatAnswer("I'm ready to make this a professional Reel, the way you asked. Get a plan or add credits and I'll start right away. I'm waiting!"); void aiSell(false); return; }
   const ready = buf && sources.length && edit.length && !recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
   // a model round-trip, a credit check or a server upload; verify the full scope before replying.
@@ -2697,7 +2711,7 @@ async function chatSend(text){
     const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (cost ? 'It uses ' + creditWord(cost) + '.' : 'Included in your plan.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
   } else if(cost && bal !== null){
-    if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '.'); if(!IN_APP) $('chatlog').appendChild(pricingLink('Top up')); return; }
+    if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + ". Add credits and I'll do it right away."); if(!IN_APP){ $('chatlog').appendChild(pricingLink('Top up')); void aiSell(true, cost, bal); } return; }
     const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed and no credits used.'); return; }
   }

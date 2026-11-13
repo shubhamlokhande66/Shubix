@@ -23,7 +23,7 @@ export const DEFAULT_LOCKS: PlanLocks = {
     // whole pages: on a lower plan the Home card carries the plan's tag, and the page itself asks to upgrade (PlanGate)
     { id: "page", name: "Pages", items: [...I("creator", [["copy", "Match a Reel's Style"], ["templates", "Templates"], ["story", "Story Maker"]]), ...I("pro", [["brand", "Brand kit"], ["voices", "Voice profiles"]])] },
     // the tool bar's tools (components/studio/views.ts): on a lower plan they carry their plan's tag and open /pricing
-    { id: "studio", name: "Studio tools", items: I("pro", [["motion", "Motion (keyframes)"], ["layers", "Layers (overlay, green screen, blend, GIF)"], ["bg", "Background"], ["voice", "Voice"]]) },
+    { id: "studio", name: "Studio tools", items: I("pro", [["edit", "Edit (the full editor: timeline and every tool)"], ["motion", "Motion (keyframes)"], ["layers", "Layers (overlay, green screen, blend, GIF)"], ["bg", "Background"], ["voice", "Voice"]]) },
     { id: "fx", name: "Effects", items: [
       ...I("free", [["hook", "Hook zoom"], ["zoomburst", "Zoom burst"], ["punch", "Zoom punch"], ["punch-soft", "Soft zoom"], ["tilt", "Tilt punch"], ["shake", "Shake"], ["bounce", "Beat bounce"], ["pan", "Ken Burns"], ["pan-soft", "Ken Burns soft"], ["drift", "Slow drift"], ["snap", "Photo snap"],
         ["boxgrow", "Box grows on the beat"], ["frame", "Frame in frame"], ["circle", "Circle pulse"]]),
