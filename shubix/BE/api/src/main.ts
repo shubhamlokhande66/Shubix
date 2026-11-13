@@ -26,6 +26,9 @@ async function bootstrap() {
   // process.exit after closing: in the container node is PID 1, which ignores the SIGTERM Nest re-sends to itself by
   // default, so Cloudflare's stop left a "running" container with no server and every wake after it hung
   app.enableShutdownHooks(undefined, { useProcessExit: true });
+  // ...and if closing hangs (a request that never ends keeps the HTTP server open), exit anyway: a server that does not
+  // stop keeps its container awake and billed
+  process.once("SIGTERM", () => { setTimeout(() => { console.warn("shutdown took too long: exit"); process.exit(0); }, 8_000).unref(); });
   // the database indexes, once per server start (was instrumentation.ts)
   void import("./server/core/indexes").then((m) => m.ensureIndexes()).catch((e) => console.warn("database indexes:", e));
   const port = Number(env("API_PORT", "4000"));
