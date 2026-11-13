@@ -37,7 +37,7 @@
       "package": "in.shubix.reelmaker",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#10100f"
       },
       "versionCode": 4,
       "blockedPermissions": [

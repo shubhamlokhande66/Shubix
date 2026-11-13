@@ -6,7 +6,8 @@
 //   app (public/icon-*.png), the iPhone home screen (app/apple-icon.png), the phone app (FE/mobile-app/assets) and Google
 //   Play (docs/play-store/icon-512.png)
 // Both are used whole, as designed; only the empty clear edges around them are left out. The icons keep a clear background,
-// except where the system needs one (iPhone, the web app's maskable icon): white there.
+// except where the system needs one (iPhone, the web app's maskable icon, Android's adaptive icon): the brand's dark there
+// (#10100f; the gold and purple emblem was designed on black).
 import { readdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import sharp from "sharp";
@@ -29,14 +30,15 @@ const clear = { r: 0, g: 0, b: 0, alpha: 0 };
 // the emblem whole, filling `fill` of a px square, on a clear (or white) background
 async function square(px, fill = 1, white = false) {
   const n = Math.round(px * fill), mark = await sharp(emblem).resize({ width: n, height: n, fit: "contain", background: clear }).toBuffer();
-  const pic = sharp({ create: { width: px, height: px, channels: 4, background: white ? "#ffffff" : clear } }).composite([{ input: mark, gravity: "center" }]);
-  return (white ? pic.flatten({ background: "#ffffff" }) : pic).png({ compressionLevel: 9 }).toBuffer();
+  const pic = sharp({ create: { width: px, height: px, channels: 4, background: white ? "#10100f" : clear } }).composite([{ input: mark, gravity: "center" }]);
+  return (white ? pic.flatten({ background: "#10100f" }) : pic).png({ compressionLevel: 9 }).toBuffer();
 }
 const mobile = join(root, "../mobile-app/assets");
 
-for (const [h, name] of [[360, "shubix-gold.webp"], [200, "shubix-gold-sm.webp"]]) {
+for (const [h, name] of [[360, "shubix-studio.webp"], [200, "shubix-studio-sm.webp"]]) {
   const pic = await sharp(logo).resize({ height: h }).webp({ quality: 90 }).toBuffer();
   await put(pic, join(root, "public/brand", name)); await put(pic, join(mobile, "brand", name));
+  if (h === 200) await put(pic, join(root, "../mobile-app/modules/shubix-video/android/src/main/assets/shubix-watermark.webp")); // the Android export's watermark (StudioWatermark.kt)
 }
 await put(await square(512), join(root, "app/icon.png"));
 await put(await ico([await square(16), await square(32), await square(48)]), join(root, "app/favicon.ico"));
@@ -45,7 +47,7 @@ await put(await square(192, 0.96), join(root, "public/icon-192.png"));
 await put(await square(512, 0.96), join(root, "public/icon-512.png"));
 await put(await square(512, 0.74, true), join(root, "public/icon-maskable-512.png")); // kept inside the safe circle
 await put(await square(1024, 0.96), join(mobile, "icon.png"));
-await put(await square(1024, 0.62), join(mobile, "adaptive-icon.png")); // Android crops the edges (app.json: the white behind it)
+await put(await square(1024, 0.62), join(mobile, "adaptive-icon.png")); // Android crops the edges (app.json: the dark behind it)
 await put(await square(512, 0.96), join(root, "../../docs/play-store/icon-512.png"));
 
 // an .ico holding PNG pictures (every browser and Windows read these)

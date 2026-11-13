@@ -11,11 +11,11 @@ import androidx.media3.effect.BitmapOverlay
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** The Shubix watermark on an exported Reel, placed as the website's drawWatermark() (engine.ts): bottom right, at 85%. */
+/** The Shubix watermark on an exported Reel (the logo in this module's assets: scripts/brand-assets.mjs writes it), placed as the website's drawWatermark() (engine.ts): bottom right, at 85%. */
 @UnstableApi
 internal class StudioWatermark(context: Context, w: Int, h: Int) : BitmapOverlay() {
   private val frame: Bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { out ->
-    val mark = context.assets.open("engine/brand/shubix-gold-sm.webp").use { BitmapFactory.decodeStream(it) }
+    val mark = context.assets.open("shubix-watermark.webp").use { BitmapFactory.decodeStream(it) }
       ?: throw IllegalStateException("The watermark could not be read.")
     val width = (min(w.toFloat(), h * 0.5625f) * 0.24f).roundToInt()
     val height = (width.toFloat() * mark.height / mark.width).roundToInt()
