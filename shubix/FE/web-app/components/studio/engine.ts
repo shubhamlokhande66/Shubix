@@ -1742,7 +1742,7 @@ async function buildTalk(){
     e.kf = keyframesFor(e); e.beatsIn = [];
     return e;
   });
-  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, black: e.black }));
+  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, trRev: e.trRev, black: e.black }));
   setCanvas(); edit.forEach(e=>camAt(e, 0)); renderEDL(); drawMusic();
   $('s3').classList.remove('locked'); $('s3').classList.add('done');
   const total = sources.reduce((q,s)=>q + s.dur, 0), how = sources.some(s => s.voice.how === 'level') ? ' (by loudness)' : '';
@@ -2882,7 +2882,7 @@ function tasteFx(e, i, t){
 // the next, the cut becomes a whip in that direction (the movement carries on through the cut); a whip or push the rules
 // chose goes the way the camera moves, not against it. The AI's and the copied Reel's own transitions are kept.
 function motionMatch(){
-  if(mode === 'smooth' || edit.length < 2) return;
+  if(mode === 'smooth' || edit.length < 2 || copyExact()) return;   // a copied Reel: its own cuts, hard ones too
   const gxIn = (src, a, b) => { const S = (src.samples || []).filter(x => x.t >= a && x.t <= b && x.gx !== undefined); return S.length ? S.reduce((q, x) => q + x.gx, 0)/S.length : 0; };
   const span = e => { const used = e.sp.pos(e.end - e.start)*(e.scaleR || 1); return [e.in, e.in + used]; };
   let whips = Math.max(1, Math.round(2*Math.max(1, buf.duration/30))) - edit.filter(e => e.tr === 'whip').length, lastWhip = -9;
@@ -3155,6 +3155,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     if(['rising','falling','steady'].includes(m.trend)) o.trend = m.trend;
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
+    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
       if(['lin','inOut','outCubic','outExpo','outBack'].includes(m.ease)) o.ease = m.ease; }
     return o; });
@@ -6816,6 +6817,28 @@ async function frameCuts(fs, dur, onP){
   return { cuts, flicker };
 }
 const refKeyOf = f => f ? f.name + '|' + f.size + '|' + (f.lastModified || 0) : '';
+// A reference shot's speed, read from how much its picture moves over time (a speed ramp is the same footage moving 3x
+// faster or slower): five speeds (start, 1/4, middle, 3/4, end) when the shot clearly speeds up or slows down, and a
+// freeze (the share of the shot played before the picture stops) when it moved and then stood still. Short or quiet
+// shots, and motion that goes up and down with the action, are not read as speed.
+function refSpeedOf(smp, a, b, mMax, freeze){
+  const a0 = a + 0.35, b0 = b - 0.1, L = b0 - a0, out = {}; if(L < 0.8) return out;   // the first 0.35 s after a cut reads low (the scan damps it)
+  const S = smp.filter(q => q.t >= a0 && q.t < b0 && !q.cut); if(S.length < 8) return out;
+  const at = f => { const c = a0 + f*L, w = 0.15*L; const W = S.filter(q => Math.abs(q.t - c) <= w); return W.length ? W.reduce((x, q) => x + q.m, 0)/W.length : null; };
+  const mk = [0, 0.25, 0.5, 0.75, 1].map(at);
+  if(freeze !== null && freeze >= 0.15 && freeze <= 0.9){
+    const before = S.filter(q => q.t < a + freeze*(b - a)), after = S.filter(q => q.t > a + (freeze + 0.05)*(b - a)), avg = x => x.length ? x.reduce((u, q) => u + q.m, 0)/x.length : 0;
+    if(after.length >= 2 && avg(before) >= 0.2*mMax && avg(after) <= 0.03*mMax) { out.frz = +freeze.toFixed(2); return out; }
+  }
+  if(mk.some(x => x === null)) return out;
+  const hi = Math.max(...mk), mean = mk.reduce((x, y) => x + y, 0)/5; if(mean < 0.15*mMax) return out;
+  const lo = Math.max(0.05*hi, Math.min(...mk)); if(hi/lo < 5) return out;   // a ramp is 3x against 0.5x (6x) or more; the action alone varies less
+  const d = mk.slice(1).map((x, k) => Math.sign(Math.round((x - mk[k])/hi*10))), turns = d.filter((x, k) => k && x && d[k-1] && x !== d[k-1]).length;
+  if(turns > 1) return out;   // up, down, up: the action, not a ramp
+  const g = Math.exp(mk.reduce((x, y) => x + Math.log(Math.max(lo, y)), 0)/5);
+  out.spd = mk.map(x => +Math.min(2.5, Math.max(0.35, Math.pow(Math.max(lo, x)/g, 0.8))).toFixed(2));
+  return out;
+}
 async function analyzeReference(file, onP){
   const url = URL.createObjectURL(file);
   try{
@@ -6945,7 +6968,8 @@ async function analyzeReference(file, onP){
     const moments = shots.slice(0, 200).map((s,i)=>{
       const mm = { beats: shotBeats[i] || 0, sec: +shotSec[i].toFixed(3), at: +s.a.toFixed(3), tr: i ? (cuts[i-1] ? cuts[i-1].kind : 'hard') : 'start', zoom: s.zoom > 1.03 ? 'in' : s.zoom < 0.97 ? 'out' : 'none' };
       if(s.flick) mm.flick = true;
-      if(shotStat[i] && !s.flick){ mm.mo = +(shotStat[i].m/mMax).toFixed(3); mm.br = +shotStat[i].b.toFixed(3); }
+      if(shotStat[i] && !s.flick){ mm.mo = +(shotStat[i].m/mMax).toFixed(3); mm.br = +shotStat[i].b.toFixed(3);
+        const sp = refSpeedOf(smp, s.a, s.b, mMax, s.move ? s.move.freeze : null); if(sp.spd) mm.spd = sp.spd; if(sp.frz !== undefined) mm.frz = sp.frz; }
       // the Reel ends on black (an end card: a logo on black): the copy ends on black too
       if(i === shots.length - 1 && i > 0 && cuts[i-1] && cuts[i-1].after < 0.06 && s.b - s.a >= 0.8) mm.black = true;
       if(s.move){ if(s.move.keys.length >= 2 && (s.move.zoom !== 'none' || s.move.keys.some(k=>Math.abs(k.x) > 0.02 || Math.abs(k.y) > 0.02 || Math.abs(k.r) >= 2))){ mm.move = s.move.keys; mm.ease = s.move.ease; }
@@ -7084,6 +7108,9 @@ function copyShots(){
       s.ak = m.move.map(k=>({ t: +(clip(k.f, 0, 1)*len).toFixed(3), s: clip(k.s, 0.4, 2.5), x: clip(k.x, -0.6, 0.6), y: clip(k.y, -0.6, 0.6), r: clip(k.r, -60, 60), o: 1, ez }));
     } else if(m.zoom === 'in' || m.zoom === 'out') s.efx = len > 1.2 ? 'pan' : 'punch-soft';
     if(m.shake && !s.ak.length) s.efx = 'shake';
+    // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
+    const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
+    if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
   });
 }
 // How close the new Reel is to the one copied, shot by shot (shown under it, and read by the checks): each shot's
@@ -7925,7 +7952,7 @@ function pdb(){ return new Promise((res, rej) => { const r = indexedDB.open(PDB,
 function idb(store, mode, fn){ return pdb().then(d => new Promise((res, rej) => { const t = d.transaction(store, mode), req = fn(t.objectStore(store));
   t.oncomplete = () => { d.close(); res(req && 'result' in req ? req.result : undefined); }; t.onerror = () => { d.close(); rej(t.error); }; t.onabort = () => { d.close(); rej(t.error || new Error('storage full')); }; })); }
 function editOf(){
-  return kind === 'talk' ? [] : edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, black: e.black || undefined }));
+  return kind === 'talk' ? [] : edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
 function stateOf(){
   return { kind, song: song && song.file ? { fp: fileFp(song.file), name: song.name } : null, sec: { len: sec.len, auto: sec.auto, start: sec.start },
@@ -8087,7 +8114,7 @@ function restoreEdit(list){
   if(!list.every(x => sources[x.src])) return false;
   stopAll(); const uc = sources.map(() => 0);
   edit = list.map(x => { const e = { ...x, el: sources[x.src].els[(uc[x.src]++) % 3], dirWhy: '', why: '' }; e.sp = speedFor(x.sp, e); e.kf = keyframesFor(e); e.beatsIn = beats.filter(b => b > e.start + 0.12 && b < e.end - 0.05).map(b => b - e.start); return e; });
-  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, black: e.black }));
+  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, trRev: e.trRev, black: e.black }));
   setCanvas(); edit.forEach(e => camAt(e, 0)); renderEDL(); drawMusic(); captureLoop(); editGen++;
   flickBuild();   // a saved flicker montage: its stills again
   return true;
