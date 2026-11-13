@@ -12,7 +12,7 @@ interface Env {
   [key: string]: unknown;
 }
 
-const STUCK_AFTER = 20 * 60_000;
+const STUCK_AFTER = 20 * 60_000, QUIET_AFTER = 2 * 60_000, KILL_AFTER = 15_000;
 
 export class ReelApp extends Container<Env> {
   defaultPort = 3000;
@@ -25,17 +25,37 @@ export class ReelApp extends Container<Env> {
     this.envVars = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => typeof e[1] === "string"));
     // The library never lets the container sleep while it counts a request in flight, and a request lost on the way (a
     // rollout or a replaced container while it was answering) can stay counted for ever: QA stayed awake, and billed,
-    // with no request at all (2026-11-11). A count with no request for STUCK_AFTER is such a lost one: dropped, so the
-    // container sleeps. Anything still working (an export) is polled well within that.
+    // with no request at all (2026-11-11). A count that never went back to 0 for STUCK_AFTER, with no new request for
+    // QUIET_AFTER, is such a lost one: dropped, so the container sleeps. (Measured from the last request alone, as before,
+    // the open tabs' 5-minute pings kept a lost count alive all day: 2026-11-13.)
     const lib = this as unknown as { inflightRequests: number; isActivityExpired(): boolean };
     const expired = lib.isActivityExpired.bind(this);
     lib.isActivityExpired = () => {
-      if (lib.inflightRequests > 0 && Date.now() - this.lastRequest > STUCK_AFTER) {
-        console.warn(`${lib.inflightRequests} request(s) counted in flight with none for ${STUCK_AFTER / 60_000} min: dropped, the container may sleep`);
-        lib.inflightRequests = 0;
+      const now = Date.now();
+      if (lib.inflightRequests === 0) this.busySince = 0;
+      else if (!this.busySince) this.busySince = now;
+      else if (now - this.busySince > STUCK_AFTER && now - this.lastRequest > QUIET_AFTER) {
+        console.warn(`${lib.inflightRequests} request(s) counted in flight for ${STUCK_AFTER / 60_000}+ min: dropped, the container may sleep`);
+        lib.inflightRequests = 0; this.busySince = 0;
       }
       return expired();
     };
+  }
+  private busySince = 0;
+  // The library only sends SIGTERM when the container should sleep. If the server does not exit (a request that never
+  // ends keeps it closing for ever), the container stays up and billed, SIGTERM after SIGTERM. Asked once and still
+  // running at the next check (SLEEP_AFTER later): killed.
+  private stopAskedAt = 0;
+  override async onActivityExpired() {
+    if (!this.ctx.container?.running) { this.stopAskedAt = 0; return; }
+    if (this.stopAskedAt && Date.now() - this.stopAskedAt > KILL_AFTER) {
+      console.warn("container did not stop after SIGTERM: killed");
+      this.stopAskedAt = 0; this.ready = false;
+      try { await this.destroy(); } catch { /* already gone */ }
+      return;
+    }
+    if (!this.stopAskedAt) { this.stopAskedAt = Date.now(); console.log("idle: asking the container to stop"); }
+    await this.stop();
   }
   private lastRequest = Date.now();
   // A cold start (the machine, the R2 mount, the server) takes 20-30 s, more than the library waits by itself (20 s), and
@@ -44,7 +64,7 @@ export class ReelApp extends Container<Env> {
   // If the container stopped without this object hearing it (a new version rolled out), the answer is "not running":
   // the container is let go, started again and the request asked once more (a request with a body: the next one is).
   private ready = false;
-  override onStop() { this.ready = false; }
+  override onStop() { this.ready = false; this.stopAskedAt = 0; }
   private async wake(signal?: AbortSignal) {
     // "running" but not yet confirmed by this object: a live server answers within seconds; one that does not is a
     // stuck container (it never really stopped) and is replaced, never waited on for minutes
@@ -56,7 +76,7 @@ export class ReelApp extends Container<Env> {
     return this.startAndWaitForPorts(this.defaultPort, { portReadyTimeoutMS: 240_000, instanceGetTimeoutMS: 60_000, abort: signal });
   }
   override async fetch(request: Request): Promise<Response> {
-    this.lastRequest = Date.now();
+    this.lastRequest = Date.now(); this.stopAskedAt = 0;
     const again = request.method === "GET" || request.method === "HEAD" ? request.clone() : null;
     if (!this.ready || !this.ctx.container?.running) { await this.wake(request.signal); this.ready = true; }
     const res = await super.fetch(request);

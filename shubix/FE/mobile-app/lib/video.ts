@@ -25,7 +25,7 @@ export const isNativeEffectSupported = isAndroidEffectSupported;
 
 
 // the studio's beat effects: the native export draws them with the studio's own shader (BeatFx, StudioTransitions.kt)
-const LAYER_BLENDS = new Set(["source-over", "multiply", "screen", "overlay", "lighter", "darken", "lighten", "soft-light", "hard-light", "color-dodge", "color-burn", "difference", "exclusion"]);
+const LAYER_BLENDS = new Set(["source-over", "multiply", "screen", "overlay", "lighter", "darken", "lighten", "soft-light", "hard-light", "color-dodge", "color-burn", "difference", "exclusion", "matte", "matte-inv"]);
 const BEAT_FX = new Set(["boxgrow", "grid", "strips", "circle", "heartbeat", "starbeat", "frame", "mirror", "kaleido", "triple", "vhs", "strobe", "rgbpulse", "blurpulse"]);
 /** What the native export cannot make yet for this Reel, so it stays on the studio's export (docs/native-engine.md). */
 export function nativeExportGaps(p: ReelProject, layers: NativeLayerRow[]): string[] {
