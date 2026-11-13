@@ -23,7 +23,7 @@ const SORTS: { key: SortKey; label: string; desc: boolean }[] = [
   { key: "reels", label: "Most Reels", desc: true }, { key: "logins", label: "Most logins", desc: true },
 ];
 
-export const useAdminUsers = () => useQuery({ queryKey: ["admin", "users"], queryFn: api.adminUsers, refetchInterval: 60_000 });
+export const useAdminUsers = () => useQuery({ queryKey: ["admin", "users"], queryFn: api.adminUsers });
 
 const sortValue = (u: AdminUserRow, k: SortKey): string | number => {
   const v = u[k];

@@ -12,7 +12,13 @@ interface Env {
   [key: string]: unknown;
 }
 
-const STUCK_AFTER = 20 * 60_000, QUIET_AFTER = 2 * 60_000, KILL_AFTER = 15_000;
+const HUNG_AFTER = 3 * 60_000, KILL_AFTER = 15_000, PROBE_EVERY = 10_000;
+/** "30s", "2m", "1h" (the library's sleepAfter form) in milliseconds */
+const toMs = (t: string | number) => {
+  if (typeof t === "number") return t * 1000;
+  const m = /^(\d+)\s*(s|m|h)?$/.exec(t.trim());
+  return m ? Number(m[1]) * ({ s: 1000, m: 60_000, h: 3_600_000 }[(m[2] ?? "s") as "s" | "m" | "h"]) : 30_000;
+};
 
 export class ReelApp extends Container<Env> {
   defaultPort = 3000;
@@ -23,25 +29,34 @@ export class ReelApp extends Container<Env> {
     if (env.CONTAINER_ROLE === "api") this.defaultPort = 4000; // the API alone (the website is its own Worker)
     // every setting (vars and secrets) goes to the app as an environment variable; bindings are not strings
     this.envVars = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => typeof e[1] === "string"));
-    // The library never lets the container sleep while it counts a request in flight, and a request lost on the way (a
-    // rollout or a replaced container while it was answering) can stay counted for ever: QA stayed awake, and billed,
-    // with no request at all (2026-11-11). A count that never went back to 0 for STUCK_AFTER, with no new request for
-    // QUIET_AFTER, is such a lost one: dropped, so the container sleeps. (Measured from the last request alone, as before,
-    // the open tabs' 5-minute pings kept a lost count alive all day: 2026-11-13.)
+    // The library never lets the container sleep while it counts a request in flight. A request that hangs (the container
+    // replaced or rolled out while answering) stays counted for ever: the container stayed awake, and billed, 20+ min
+    // with no request at all (QA 2026-11-13, 18:17 -> 18:36). A live request moves bytes or ends; one counted with no new
+    // request and no byte up or down: the server is asked whether it is still answering (alarm, below). HUNG_AFTER is the
+    // last resort when the server cannot be asked.
     const lib = this as unknown as { inflightRequests: number; isActivityExpired(): boolean };
     const expired = lib.isActivityExpired.bind(this);
     lib.isActivityExpired = () => {
-      const now = Date.now();
-      if (lib.inflightRequests === 0) this.busySince = 0;
-      else if (!this.busySince) this.busySince = now;
-      else if (now - this.busySince > STUCK_AFTER && now - this.lastRequest > QUIET_AFTER) {
-        console.warn(`${lib.inflightRequests} request(s) counted in flight for ${STUCK_AFTER / 60_000}+ min: dropped, the container may sleep`);
-        lib.inflightRequests = 0; this.busySince = 0;
+      if (lib.inflightRequests > 0) {
+        if (Date.now() - this.lastActivity > HUNG_AFTER) {
+          console.warn(`${lib.inflightRequests} request(s) counted in flight with nothing moving for ${HUNG_AFTER / 60_000} min: dropped, the container may sleep`);
+          lib.inflightRequests = 0;
+          return expired();
+        }
+        // next look: SLEEP_AFTER after the last activity (not "SLEEP_AFTER from now" as the library would), then the
+        // server is asked (alarm); while it says busy, again every PROBE_EVERY
+        (lib as unknown as { sleepAfterMs: number }).sleepAfterMs = Math.max(Date.now() + 1000, this.lastActivity + toMs(this.sleepAfter), this.nextProbe);
+        return false;
       }
       return expired();
     };
   }
-  private busySince = 0;
+  private nextProbe = 0;
+  // the last request, or the last bytes of an upload or a download through this object
+  private lastActivity = Date.now();
+  private meter() {
+    return new TransformStream<Uint8Array, Uint8Array>({ transform: (chunk, out) => { this.lastActivity = Date.now(); out.enqueue(chunk); } });
+  }
   // The library only sends SIGTERM when the container should sleep. If the server does not exit (a request that never
   // ends keeps it closing for ever), the container stays up and billed, SIGTERM after SIGTERM. Asked once and still
   // running at the next check (SLEEP_AFTER later): killed.
@@ -64,7 +79,38 @@ export class ReelApp extends Container<Env> {
   // If the container stopped without this object hearing it (a new version rolled out), the answer is "not running":
   // the container is let go, started again and the request asked once more (a request with a body: the next one is).
   private ready = false;
-  override onStop() { this.ready = false; this.stopAskedAt = 0; }
+  // A request still counted but with nothing moving for SLEEP_AFTER: the API server itself is asked how many requests
+  // it is really answering (a Shubix AI call waits up to 2 min with no byte moving, and is real). None: the count is a
+  // hung one, dropped, and the container sleeps SLEEP_AFTER after the last activity like any idle container.
+  override async alarm(props?: { retryCount: number; isRetry: boolean }) {
+    const lib = this as unknown as { inflightRequests: number; sleepAfterMs: number };
+    const idleFor = Date.now() - this.lastActivity, sleepMs = toMs(this.sleepAfter);
+    if (lib.inflightRequests > 0 && this.ctx.container?.running && idleFor >= sleepMs - 1000 && Date.now() >= this.nextProbe) {
+      const active = await this.serverActive();
+      this.nextProbe = Date.now() + PROBE_EVERY;
+      if (active === 0) {
+        this.nextProbe = 0;
+        console.warn(`${lib.inflightRequests} request(s) counted but none answered by the server: dropped, the container may sleep`);
+        lib.inflightRequests = 0;
+        lib.sleepAfterMs = this.lastActivity + sleepMs;
+      }
+    }
+    return super.alarm(props as never);
+  }
+  /** Requests the API server is answering right now (-1: could not ask). Asked on the container's port directly, so the
+   * question itself does not count as activity. */
+  private async serverActive(): Promise<number> {
+    try {
+      const r = await this.ctx.container!.getTcpPort(this.defaultPort).fetch("http://container/__active", { signal: AbortSignal.timeout(3000) });
+      const n = Number(((await r.json()) as { active?: unknown }).active);
+      return Number.isFinite(n) ? n : -1;
+    } catch { return -1; }
+  }
+  override onStop() {
+    this.ready = false; this.stopAskedAt = 0;
+    // the container is gone: nothing can still be answering, a count left over would keep the next one awake
+    (this as unknown as { inflightRequests: number }).inflightRequests = 0;
+  }
   private async wake(signal?: AbortSignal) {
     // "running" but not yet confirmed by this object: a live server answers within seconds; one that does not is a
     // stuck container (it never really stopped) and is replaced, never waited on for minutes
@@ -76,16 +122,28 @@ export class ReelApp extends Container<Env> {
     return this.startAndWaitForPorts(this.defaultPort, { portReadyTimeoutMS: 240_000, instanceGetTimeoutMS: 60_000, abort: signal });
   }
   override async fetch(request: Request): Promise<Response> {
-    this.lastRequest = Date.now(); this.stopAskedAt = 0;
+    this.lastRequest = this.lastActivity = Date.now(); this.stopAskedAt = 0;
+    // an upload counts as activity while its bytes come in (a slow phone sending a big clip is not a hung request)
+    if (request.body) {
+      const len = Number(request.headers.get("content-length"));
+      let body = request.body.pipeThrough(this.meter());
+      if (Number.isFinite(len) && len >= 0 && request.headers.has("content-length")) body = body.pipeThrough(new FixedLengthStream(len));
+      request = new Request(request, { body });
+    }
     const again = request.method === "GET" || request.method === "HEAD" ? request.clone() : null;
     if (!this.ready || !this.ctx.container?.running) { await this.wake(request.signal); this.ready = true; }
-    const res = await super.fetch(request);
-    if (res.status < 500 || !/^(Error proxying request to container|Failed to start container)/.test(await res.clone().text())) return res;
-    this.ready = false;
-    try { await this.destroy(); } catch { /* already gone */ }
-    if (!again) return res;
-    await this.wake(again.signal); this.ready = true;
-    return super.fetch(again);
+    let res = await super.fetch(request);
+    if (res.status >= 500 && /^(Error proxying request to container|Failed to start container)/.test(await res.clone().text())) {
+      this.ready = false;
+      try { await this.destroy(); } catch { /* already gone */ }
+      if (!again) return res;
+      await this.wake(again.signal); this.ready = true;
+      res = await super.fetch(again);
+    }
+    this.lastActivity = Date.now();
+    // a download counts as activity while its bytes go out
+    if (!res.body || res.webSocket) return res;
+    return new Response(res.body.pipeThrough(this.meter()), res);
   }
   override onError(error: unknown) {
     console.error("app container error", error);
@@ -111,12 +169,28 @@ const API_PATHS = /^\/(api\/|ads\.txt$|app-ads\.txt$)/;
 // with a dot or ends like that
 const PROBE = /\/\.|\.(env|php|asp|aspx|jsp|cgi|bak|sql|ini|log|ya?ml)$/i;
 
+// ads.txt / app-ads.txt: asked often (ad crawlers, the website's own server, sometimes 20 at once) and they hardly
+// change: kept in Cloudflare's cache for an hour, so they do not wake the container each time
+const CACHED = /^\/(ads|app-ads)\.txt$/;
+const cachedFetch = async (request: Request, env: Env, ctx: ExecutionContext) => {
+  const cache = (caches as unknown as { default: Cache }).default, key = new Request(new URL(request.url).toString());
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const res = await app(env).fetch(request);
+  if (res.status !== 200 && res.status !== 404) return res;
+  const keep = new Response(res.body, res);
+  keep.headers.set("Cache-Control", "public, max-age=3600");
+  ctx.waitUntil(cache.put(key, keep.clone()));
+  return keep;
+};
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const path = new URL(request.url).pathname;
     if ((env.CONTAINER_ROLE === "api" && !API_PATHS.test(path)) || PROBE.test(path)) return new Response("Not found", { status: 404 });
     if (request.method === "POST" && path === PING && !(await awake(env)))
       return Response.json({ ok: true, asleep: true });
+    if (request.method === "GET" && CACHED.test(path)) return cachedFetch(request, env, ctx);
     return app(env).fetch(request);
   },
 } satisfies ExportedHandler<Env>;

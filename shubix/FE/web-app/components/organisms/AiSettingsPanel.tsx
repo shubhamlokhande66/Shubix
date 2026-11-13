@@ -77,7 +77,7 @@ type Id = "provider" | "ollama" | "usage" | "director";
 export function AiSettingsPanel() {
   const health = useHealth();
   const cfg = useQuery({ queryKey: ["ai-config"], queryFn: api.aiConfig });
-  const usage = useQuery({ queryKey: ["ai-usage"], queryFn: api.aiUsage, refetchInterval: 60_000 });
+  const usage = useQuery({ queryKey: ["ai-usage"], queryFn: api.aiUsage });
   const report = useQuery({ queryKey: ["ai-director-report"], queryFn: api.aiDirectorReport });
   const [open, setOpen] = useState<Id | null>(null);
 
