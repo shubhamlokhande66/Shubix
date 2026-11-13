@@ -13,6 +13,8 @@ interface Env {
 }
 
 const STUCK_AFTER = 20 * 60_000;
+// marks the scheduled check's request (scheduled() below); removed from anything that comes from outside
+const CHECK = "x-shubix-sleep-check";
 
 export class ReelApp extends Container<Env> {
   defaultPort = 3000;
@@ -56,7 +58,8 @@ export class ReelApp extends Container<Env> {
     return this.startAndWaitForPorts(this.defaultPort, { portReadyTimeoutMS: 240_000, instanceGetTimeoutMS: 60_000, abort: signal });
   }
   override async fetch(request: Request): Promise<Response> {
-    this.lastRequest = Date.now();
+    // the scheduled check's request is not a user's: it must not hold off the STUCK_AFTER drop above
+    if (!request.headers.has(CHECK)) this.lastRequest = Date.now();
     const again = request.method === "GET" || request.method === "HEAD" ? request.clone() : null;
     if (!this.ready || !this.ctx.container?.running) { await this.wake(request.signal); this.ready = true; }
     const res = await super.fetch(request);
@@ -97,6 +100,7 @@ export default {
     if ((env.CONTAINER_ROLE === "api" && !API_PATHS.test(path)) || PROBE.test(path)) return new Response("Not found", { status: 404 });
     if (request.method === "POST" && path === PING && !(await awake(env)))
       return Response.json({ ok: true, asleep: true });
+    if (request.headers.has(CHECK)) { request = new Request(request); request.headers.delete(CHECK); }
     return app(env).fetch(request);
   },
   // The object that puts the container to sleep starts counting only when a request comes: a container started without
@@ -107,7 +111,7 @@ export default {
     ctx.waitUntil((async () => {
       try { const s = await app(env).getState(); if (s.status !== "running" && s.status !== "healthy") return; }
       catch { return; }
-      try { await app(env).fetch(new Request("http://app/api/health")); } catch (e) { console.error("wake-to-sleep health check", e); }
+      try { await app(env).fetch(new Request("http://app/api/health", { headers: { [CHECK]: "1" } })); } catch (e) { console.error("wake-to-sleep health check", e); }
     })());
   },
 } satisfies ExportedHandler<Env>;
