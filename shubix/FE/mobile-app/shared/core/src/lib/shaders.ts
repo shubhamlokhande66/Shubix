@@ -8,7 +8,7 @@ export const PIC_FX: Record<string, number> = { grain: 1, leak: 2, rainbow: 3, n
 /** each transition's usual length in seconds (a shot may have a shorter one of its own) */
 export const TR_DUR: Record<string, number> = {hard:0, fadein:0.35, flash:0.22, whip:0.16, zoom:0.18, glitch:0.14, dip:0.26, dissolve:0.35, iris:0.24, wipe:0.22, bars:0.26, spin:0.2, diamond:0.36, heart:0.42, star:0.4,
   slideleft:0.24, slideright:0.24, slideup:0.24, slidedown:0.24, swipeup:0.2, zoomout:0.3, blur:0.35, flip:0.3, luma:0.45, pixelate:0.4, clock:0.4, doors:0.35, ripple:0.45, burn:0.4, dropin:0.32,
-  stripes:0.4, blinds:0.4, checker:0.45, dots:0.45, noise:0.4, splith:0.35, wave:0.4, dipwhite:0.3, chroma:0.35, tiles:0.45, zoomblur:0.3, shake:0.3, squeeze:0.35, rotatein:0.35};
+  stripes:0.4, blinds:0.4, checker:0.45, dots:0.45, noise:0.4, splith:0.35, wave:0.4, dipwhite:0.3, chroma:0.35, tiles:0.45, zoomblur:0.3, shake:0.3, squeeze:0.35, rotatein:0.35, cube:0.45, cubeup:0.45, flip3d:0.5, swing:0.45};
 
 /** the studio renderer: a full-frame quad */
 export const MAIN_VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a,0.,1.); }`;
@@ -107,6 +107,20 @@ float shMask(vec2 p0, out float rim){
   if(k>9.5 && k<10.5){ float h = res.y/3.; float idx = floor(p0.y/h); float e = abs(mod(p0.y,h)); rim = 0.; return step(idx+0.5, lv)*step(1.5, e)*step(e, h-1.5); }
   return 1.;
 }
+/* the 3D transitions: where a screen pixel lands on a turning face (a cube side, a card, a door); z: its light, 0 = missed.
+   ph: the face's turn, vt: about the horizontal axis, P: the turning point, a: face out from P, b: face along it, zm: camera pulled back */
+vec3 face3(vec2 q, float ph, float vt, vec3 P, float a, float b, float zm){
+  vec2 uv = (q/res*2.-1.)*zm; float u = vt>0.5 ? uv.y : uv.x; float w = vt>0.5 ? uv.x : uv.y;
+  float C = 3.2; vec3 O = vec3(0.,0.,C); vec3 d = vec3(u, 0., 1.-C);
+  vec3 n = vec3(sin(ph), 0., cos(ph)); vec3 ax = vec3(cos(ph), 0., -sin(ph));
+  vec3 c = P + n*a + ax*b; float dn = dot(n, d);
+  if(dn > -1e-4) return vec3(q, 0.);
+  float l = dot(n, c-O)/dn; if(l <= 0.) return vec3(q, 0.);
+  vec3 X = O + l*d; float s = dot(X-c, ax); float t = l*w;
+  if(abs(s) > 1. || abs(t) > 1.) return vec3(q, 0.);
+  vec2 m = vt>0.5 ? vec2(t, s) : vec2(s, t);
+  return vec3((m+1.)*0.5*res, mix(0.42, 1., clamp(-dn/length(d), 0., 1.)));
+}
 void main(){
   vec2 p0 = vec2(gl_FragCoord.x, res.y-gl_FragCoord.y);
   // mosaic (blocks) and magnifier (a round lens) of the shot, on screen
@@ -116,6 +130,12 @@ void main(){
   if(mode>12.5 && mode<13.5){ float blk = max(1., res.x*0.07*sin(3.14159*prog)); p0 = (floor(p0/blk)+0.5)*blk; }
   if(mode>15.5 && mode<16.5){ vec2 dd = p0-res*0.5; float rr = length(dd); p0 += (dd/(rr+1e-3))*sin(rr*0.06-prog*20.)*res.x*0.02*sin(3.14159*prog); }
   vec2 p = p0 - offB, pA = p0 - offA;   // the creator's keyframed move of each layer
+  float s3A = 1., s3B = 1.;
+  if(mode>26.5 && mode<30.5){ vec3 fa; vec3 fb; float th = prog*1.5708;   /* cube, cube up, 3D card flip, door swing */
+    if(mode<28.5){ float vt = mode>27.5 ? 1. : 0.; float z = 1.+0.32*sin(3.14159*prog); fa = face3(p0, -th, vt, vec3(0.), 1., 0., z); fb = face3(p0, 1.5708-th, vt, vec3(0.), 1., 0., z); }
+    else if(mode<29.5){ float ph = prog*3.14159; float z = 1.+0.5*sin(3.14159*prog); fa = face3(p0, ph, 0., vec3(0.,0.,1.), 0., 0., z); fb = face3(p0, ph-3.14159, 0., vec3(0.,0.,1.), 0., 0., z); }
+    else { fa = face3(p0, prog*1.62, 0., vec3(-1.,0.,1.), 0., 1., 1.); fb = vec3(p0, 0.5+0.5*prog); }
+    pA = fa.xy - offA; p = fb.xy - offB; s3A = fa.z; s3B = fb.z; }
   float inA=0., inB=0.;
   vec3 A = vec3(0.);
   if(hasA>0.5){ A = shotL(tA,pA,rA,rotA,zbA,dbA,rgbA,tfA,bgA,bgrA,bdA,adA,ad2A,beA,inA); A = (A + A*exA)*brA*alA*mix(1.,inA,clA); }
@@ -147,6 +167,7 @@ void main(){
   }
   else if(mode<6.5){ float q=1.-pow(1.-prog,3.); vec2 far=max(irisC,res-irisC); float R=length(far)*q*1.05; float f=max(1.,R*0.18); float mk=1.-smoothstep(R-f,R,distance(p0,irisC)); col=mix(A,B,mk); }
   else if(mode<7.5){ float q=1.-pow(1.-prog,3.); float s=(p0.x+p0.y*0.6)/(res.x+res.y*0.6); float e=-0.15+q*1.3; float mk=1.-smoothstep(e-0.08,e,s); col=mix(A,B,mk); }
+  else if(mode>26.5 && mode<30.5){ col = mode>29.5 ? (s3A>0.001 ? A*s3A : B*s3B) : A*s3A*step(0.001,s3A) + B*s3B*step(0.001,s3B); }
   else if(mode>16.5){ float mk = 0.;   /* the pattern transitions: where the next shot shows */
     if(mode<17.5) mk = step(fract(p0.y/(res.y/12.)), prog);                                   /* stripes */
     else if(mode<18.5) mk = step(fract(p0.x/(res.x/8.)), prog);                               /* blinds */
