@@ -5,7 +5,7 @@ export const LOGO_RATIO = 2.65;   // width / height of the logo picture
 export function Logo({ height = 40, className = "" }: { height?: number; className?: string }) {
   return (
     <img
-      src={height > 60 ? "/brand/shubix-gold.webp" : "/brand/shubix-gold-sm.webp"}
+      src={height > 60 ? "/brand/shubix-studio.webp" : "/brand/shubix-studio-sm.webp"}
       alt="Shubix · Reels video studio"
       height={height}
       width={Math.round(height * LOGO_RATIO)}

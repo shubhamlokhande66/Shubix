@@ -35,7 +35,7 @@ async function square(px, fill = 1, white = false) {
 }
 const mobile = join(root, "../mobile-app/assets");
 
-for (const [h, name] of [[360, "shubix-gold.webp"], [200, "shubix-gold-sm.webp"]]) {
+for (const [h, name] of [[360, "shubix-studio.webp"], [200, "shubix-studio-sm.webp"]]) {
   const pic = await sharp(logo).resize({ height: h }).webp({ quality: 90 }).toBuffer();
   await put(pic, join(root, "public/brand", name)); await put(pic, join(mobile, "brand", name));
 }
