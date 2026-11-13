@@ -4,6 +4,6 @@ import { Image } from "react-native";
 export function Logo({ height = 40 }: { height?: number }) {
   return (
     <Image source={height > 60 ? require("../../assets/brand/shubix-gold.webp") : require("../../assets/brand/shubix-gold-sm.webp")}
-      accessibilityLabel="Shubix · Reels video studio" resizeMode="contain" style={{ height, width: Math.round(height * 1.36) }} />
+      accessibilityLabel="Shubix · Reels video studio" resizeMode="contain" style={{ height, width: Math.round(height * 2.65), maxWidth: "100%" }} />
   );
 }

@@ -1,5 +1,6 @@
-// The Shubix logo with its name (logo/ → public/brand, scripts/brand-assets.mjs): the gold S with the play button and the
-// brain, SHUBIX and "Brain reels maker" under it, as designed, on its clear ground. The browser tab uses the emblem alone.
+// The Shubix logo with its name (Shared/ui-core/assets → public/brand, scripts/brand-assets.mjs): SHUBIX STUDIO in gold
+// with the purple swoosh and play button (2026-11-13), as designed, on its clear ground. The browser tab uses the S emblem alone.
+export const LOGO_RATIO = 2.65;   // width / height of the logo picture
 /* eslint-disable @next/next/no-img-element -- a small static picture; no image optimisation needed */
 export function Logo({ height = 40, className = "" }: { height?: number; className?: string }) {
   return (
@@ -7,9 +8,9 @@ export function Logo({ height = 40, className = "" }: { height?: number; classNa
       src={height > 60 ? "/brand/shubix-gold.webp" : "/brand/shubix-gold-sm.webp"}
       alt="Shubix · Reels video studio"
       height={height}
-      width={Math.round(height * 1.36)}
+      width={Math.round(height * LOGO_RATIO)}
       className={`block select-none ${className}`}
-      style={{ height, width: "auto" }}
+      style={{ height, width: "auto", maxWidth: "100%", objectFit: "contain" }}
       draggable={false}
     />
   );
