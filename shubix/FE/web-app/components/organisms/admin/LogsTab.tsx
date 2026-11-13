@@ -21,7 +21,7 @@ const when = (iso: string) => {
 
 export function LogsTab() {
   const [q, setQ] = useState(""), [search, setSearch] = useState(""), [open, setOpen] = useState<string | null>(null);
-  const list = useQuery({ queryKey: ["admin-reel-logs", search], queryFn: () => api.adminReelLogs(search), refetchInterval: open ? false : 30_000 });
+  const list = useQuery({ queryKey: ["admin-reel-logs", search], queryFn: () => api.adminReelLogs(search) });
   if (open) return <ReelLog reelId={open} onBack={() => setOpen(null)} />;
   const rows = list.data?.reels ?? [];
   return (
@@ -60,7 +60,7 @@ export function LogsTab() {
 function ReelLog({ reelId, onBack }: { reelId: string; onBack: () => void }) {
   const qc = useQueryClient();
   const [only, setOnly] = useState<string>("all"), [all, setAll] = useState(false);
-  const q = useQuery({ queryKey: ["admin-reel-log", reelId], queryFn: () => api.adminReelLog(reelId), refetchInterval: 15_000 });
+  const q = useQuery({ queryKey: ["admin-reel-log", reelId], queryFn: () => api.adminReelLog(reelId) });
   const del = useMutation({ meta: { success: "Log deleted" }, mutationFn: () => api.deleteAdminReelLog(reelId), onSuccess: () => { void qc.invalidateQueries({ queryKey: ["admin-reel-logs"] }); onBack(); } });
   const lines = q.data?.lines ?? [];
   const steps = [...new Set(lines.map((l) => l.step))];
