@@ -44,7 +44,7 @@ export function useAdmin(): { admin: boolean; required: boolean; otp: boolean; l
 }
 
 export function useHealth() {
-  return useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 60_000, retry: false }); // the admin's AI settings page only
+  return useQuery({ queryKey: ["health"], queryFn: api.health, retry: false }); // the admin's AI settings page only; no timer: every request wakes the API container (Cloudflare)
 }
 
 /** Which parts of the app are on; everything counts as on until the answer arrives (nothing flickers away for most people). */

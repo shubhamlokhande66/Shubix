@@ -11,7 +11,7 @@ import { ago } from "./format";
 const KIND: Record<string, string> = { error: "Error", rejection: "Error (async)", studio: "Studio did not start", webgl: "WebGL off (slower renderer)", clip: "A clip could not be read", audio: "Sound did not start (Play)", crash: "Phone reloaded the studio (memory)", perf: "Clip reading speed", export: "Export fell back to real time" };
 export function ErrorsTab() {
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["admin-errors"], queryFn: api.adminErrors, refetchInterval: 60_000 });
+  const q = useQuery({ queryKey: ["admin-errors"], queryFn: api.adminErrors });
   const fix = useMutation({ meta: { success: "Marked as fixed" }, mutationFn: api.clearAdminError, onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-errors"] }) });
   if (q.error) return <ErrorBanner message={errorMessage(q.error)} onRetry={() => q.refetch()} />;
   const rows = q.data?.errors ?? [];
