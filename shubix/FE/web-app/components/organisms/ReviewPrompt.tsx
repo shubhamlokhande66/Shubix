@@ -13,7 +13,11 @@ import { cn } from "@/lib/cn";
 export const REEL_EXPORTED = "shubix:reel-exported";
 const KEY = (id: string) => `review-asked:${id}`;
 const asked = (id: string) => { try { return localStorage.getItem(KEY(id)) === "1"; } catch { return false; } };
-const markAsked = (id: string) => { try { localStorage.setItem(KEY(id), "1"); } catch { /* private mode: asked again next time */ } };
+const markAsked = (id: string) => { try { localStorage.setItem(KEY(id), "1"); if (localStorage.getItem(PENDING) === id) localStorage.removeItem(PENDING); } catch { /* private mode: asked again next time */ } };
+// the Reel exported but not asked about yet (downloaded, then the tab or the app closed): asked on the next visit
+const PENDING = "review-pending";
+const setPending = (id: string) => { try { localStorage.setItem(PENDING, id); } catch { /* private mode */ } };
+const pending = () => { try { return localStorage.getItem(PENDING) ?? ""; } catch { return ""; } };
 const LABEL = ["", "Bad", "Not great", "Okay", "Good", "Loved it"];
 
 export function Stars({ value, size = 18 }: { value: number; size?: number }) {
@@ -45,11 +49,17 @@ export function ReviewPrompt() {
       const id = String((e as CustomEvent<{ reelId?: string }>).detail?.reelId ?? "");
       // the phone app's hidden studio (/engine) is never seen: no pop-up there
       if (!/^[A-Za-z0-9_-]{4,40}$/.test(id) || asked(id) || window.location.pathname.startsWith("/engine")) return;
+      setPending(id);
       window.clearTimeout(timer.current);
       // a moment first: the finished Reel and its download/share come up before this
       timer.current = window.setTimeout(() => { setRating(0); setComment(""); setImprovement(""); setDone(false); setError(""); setReelId(id); }, 2500);
     };
     window.addEventListener(REEL_EXPORTED, onDone);
+    // a Reel exported last time and never asked about (the page closed before the question came): asked now, after a
+    // moment, on any page but the studio's own engine
+    const left = pending();
+    if (left && /^[A-Za-z0-9_-]{4,40}$/.test(left) && !asked(left) && !window.location.pathname.startsWith("/engine"))
+      timer.current = window.setTimeout(() => { setRating(0); setComment(""); setImprovement(""); setDone(false); setError(""); setReelId(left); }, 2500);
     return () => { window.removeEventListener(REEL_EXPORTED, onDone); window.clearTimeout(timer.current); };
   }, [signedIn]);
 
