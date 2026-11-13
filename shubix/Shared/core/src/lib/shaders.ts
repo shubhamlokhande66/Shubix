@@ -3,7 +3,8 @@
  * put a // comment in MAIN_FRAG (the website joins it into one line). */
 
 /** the picture effects' numbers in PIC_FRAG (kind): the studio's effect id -> its kind */
-export const PIC_FX: Record<string, number> = { grain: 1, leak: 2, rainbow: 3, negative: 4, halftone: 5, pixel8: 6, crt: 7, fisheye: 8, swirl: 9, sketch: 10, duotone: 11, zoom3d: 12 };
+export const PIC_FX: Record<string, number> = { grain: 1, leak: 2, rainbow: 3, negative: 4, halftone: 5, pixel8: 6, crt: 7, fisheye: 8, swirl: 9, sketch: 10, duotone: 11, zoom3d: 12,
+  glow: 13, shine: 14, chromatic: 15, glitchfx: 16, sparkle: 17, bokeh: 18, snow: 19, rain: 20, tiltshift: 21, thermal: 22, xray: 23, comic: 24, radialblur: 25, quad: 26 };
 
 /** each transition's usual length in seconds (a shot may have a shorter one of its own) */
 export const TR_DUR: Record<string, number> = {hard:0, fadein:0.35, flash:0.22, whip:0.16, zoom:0.18, glitch:0.14, dip:0.26, dissolve:0.35, iris:0.24, wipe:0.22, bars:0.26, spin:0.2, diamond:0.36, heart:0.42, star:0.4,
@@ -241,7 +242,9 @@ export const PIC_FRAG = `precision mediump float; varying vec2 v; uniform sample
         if(kind > 8.5 && kind < 9.5){ float r = length(d), a = amt*3.0*max(0.0, 0.5 - r)*sin(time*1.5); float s = sin(a), c = cos(a); uv = 0.5 + vec2(c*d.x - s*d.y, s*d.x + c*d.y); }
         // 3D zoom (time = the shot's progress 0-1): a depth guessed from the picture (the middle and the bottom near, the top and
         // edges far); the camera moves in, so the near part grows faster than the far part and slides across it
-        if(kind > 11.5){ float p = smoothstep(0.0, 1.0, time); vec2 q = d*vec2(res.x/res.y, 1.0);
+        if(kind > 25.5 && kind < 26.5 && amt > 0.01) uv = fract(uv*2.0);   /* four split */
+        if(kind > 15.5 && kind < 16.5){ float bl = floor(uv.y*24.0), tk = floor(time*14.0); if(hash(vec2(bl, tk)) > 0.8) uv.x += (hash(vec2(bl, tk + 3.0)) - 0.5)*0.12*amt; }   /* digital glitch: blocks slide */
+        if(kind > 11.5 && kind < 12.5){ float p = smoothstep(0.0, 1.0, time); vec2 q = d*vec2(res.x/res.y, 1.0);
           float nr = 0.65*(1.0 - smoothstep(0.08, 0.45, length(q*vec2(1.25, 0.9) - vec2(0.0, 0.06)))) + 0.35*smoothstep(0.1, 1.0, uv.y);
           uv = 0.5 + d/(1.0 + p*amt*(0.05 + 0.22*nr)) + vec2(0.018*sin(p*3.14159)*(nr - 0.5)*amt, -0.02*p*amt*nr); }
         if(kind > 5.5 && kind < 6.5){ float n = 64.0 - 40.0*amt; vec2 N = vec2(n, n*res.y/res.x); uv = (floor(uv*N)+0.5)/N; }
@@ -257,6 +260,33 @@ export const PIC_FRAG = `precision mediump float; varying vec2 v; uniform sample
         else if(kind > 9.5 && kind < 10.5){ float gx = lum(texture2D(T, uv + vec2(px.x, 0.0)).rgb) - lum(texture2D(T, uv - vec2(px.x, 0.0)).rgb), gy = lum(texture2D(T, uv + vec2(0.0, px.y)).rgb) - lum(texture2D(T, uv - vec2(0.0, px.y)).rgb);
           float e = clamp(length(vec2(gx, gy))*4.0, 0.0, 1.0); col = mix(col, vec3(1.0 - e)*vec3(0.98, 0.96, 0.92), amt); }
         else if(kind > 10.5 && kind < 11.5){ float l = lum(col); col = mix(col, mix(vec3(0.22, 0.05, 0.42), vec3(1.0, 0.62, 0.25), smoothstep(0.1, 0.9, l)), amt); }
+        /* the pro effects (13-26) */
+        if(kind > 12.5 && kind < 13.5){ vec3 b = vec3(0.0); for(int i = 0; i < 36; i++){ float fi = float(i), r = 4.0 + mod(fi*7.0, 36.0)*0.9; float a = fi*2.39996; vec2 o = vec2(cos(a), sin(a))*px*r; b += max(texture2D(T, clamp(uv + o, 0.0, 1.0)).rgb - 0.5, 0.0)*(1.2 - r/40.0); }
+          col = 1.0 - (1.0 - col)*(1.0 - clamp(b/36.0*3.2*amt, 0.0, 1.0)); }
+        else if(kind > 13.5 && kind < 14.5){ float s = (uv.x + uv.y*0.6) - mod(time*0.8, 2.2) + 0.3; col += exp(-s*s*60.0)*0.55*amt; }
+        else if(kind > 14.5 && kind < 15.5){ vec2 o = (uv - 0.5)*0.03*amt; col = vec3(texture2D(T, clamp(uv + o, 0.0, 1.0)).r, col.g, texture2D(T, clamp(uv - o, 0.0, 1.0)).b); }
+        else if(kind > 15.5 && kind < 16.5){ col.r = texture2D(T, clamp(uv + vec2(0.012*amt, 0.0), 0.0, 1.0)).r; col.b = texture2D(T, clamp(uv - vec2(0.008*amt, 0.0), 0.0, 1.0)).b;
+          col += (hash(uv*res + time) - 0.5)*0.08*amt; if(hash(vec2(floor(uv.y*40.0), floor(time*10.0))) > 0.97) col = mix(col, 1.0 - col, amt); }
+        else if(kind > 16.5 && kind < 17.5){ vec2 g = uv*res/26.0, id = floor(g), f = fract(g) - 0.5; float h = hash(id); float l = lum(texture2D(T, (id + 0.5)*26.0/res).rgb);
+          float st = (h > 0.82 && l > 0.55) ? 0.5 + 0.5*sin(time*6.0 + h*40.0) : 0.0;
+          float gl = max(0.0, 1.0 - length(f)*6.0) + max(0.0, 1.0 - abs(f.x)*30.0)*max(0.0, 1.0 - abs(f.y)*2.2) + max(0.0, 1.0 - abs(f.y)*30.0)*max(0.0, 1.0 - abs(f.x)*2.2);
+          col += vec3(1.0, 0.95, 0.85)*gl*st*amt; }
+        else if(kind > 17.5 && kind < 18.5){ for(int i = 0; i < 10; i++){ float fi = float(i); vec2 c = vec2(hash(vec2(fi, 1.0)), fract(hash(vec2(fi, 2.0)) - time*0.03*(0.5 + hash(vec2(fi, 3.0)))));
+            vec2 q = (uv - c)*vec2(res.x/res.y, 1.0); float r = 0.04 + 0.05*hash(vec2(fi, 4.0)); float k = smoothstep(r, r*0.8, length(q));
+            vec3 bc = mix(vec3(1.0, 0.75, 0.4), vec3(0.6, 0.8, 1.0), hash(vec2(fi, 5.0))); col = 1.0 - (1.0 - col)*(1.0 - bc*k*0.4*amt); } }
+        else if(kind > 18.5 && kind < 19.5){ for(int L = 0; L < 3; L++){ float fl = float(L), s = 7.0 + fl*5.0; vec2 g = vec2(uv.x*s*res.x/res.y, uv.y*s - time*(1.4 + fl*0.7)); g.x += sin(g.y*0.7 + fl)*0.4;
+            vec2 id = floor(g), f = fract(g) - 0.5, o = vec2(hash(id + 3.0), hash(id + 5.0)) - 0.5; float k = hash(id + fl*7.0) > 0.5 ? smoothstep(0.1 - fl*0.02, 0.03, length(f - o*0.6)) : 0.0;
+            col = mix(col, vec3(1.0), k*0.9*amt); } }
+        else if(kind > 19.5 && kind < 20.5){ vec3 rc = col*mix(1.0, 0.8, amt); for(int L = 0; L < 2; L++){ float fl = float(L); vec2 g = vec2((uv.x + uv.y*0.08)*(55.0 - fl*20.0), uv.y*(2.2 + fl) - time*(6.0 - fl*2.0)); float h = hash(floor(g) + fl*9.0), f = fract(g.y);
+          float k = h > 0.72 ? smoothstep(0.0, 0.04, f)*smoothstep(0.45, 0.12, f)*(1.0 - smoothstep(0.05, 0.22, abs(fract(g.x) - 0.5))) : 0.0; rc = mix(rc, vec3(0.88, 0.93, 1.0), k*(0.75 - fl*0.25)*amt); }
+          col = rc; }
+        else if(kind > 20.5 && kind < 21.5){ float bw = smoothstep(0.1, 0.4, abs(uv.y - 0.5))*amt; vec3 acc = col; for(int i = 0; i < 24; i++){ float fi = float(i), a = fi*2.39996, r = (2.0 + mod(fi*5.0, 24.0)*0.6)*bw; acc += texture2D(T, clamp(uv + vec2(cos(a), sin(a))*px*r, 0.0, 1.0)).rgb; }
+          col = mix(col, acc/25.0, bw); col = mix(vec3(lum(col)), col, 1.0 + 0.3*amt); }
+        else if(kind > 21.5 && kind < 22.5){ float l = lum(col); vec3 h = l < 0.33 ? mix(vec3(0.05, 0.0, 0.4), vec3(0.9, 0.0, 0.6), l*3.0) : l < 0.66 ? mix(vec3(0.9, 0.0, 0.6), vec3(1.0, 0.6, 0.0), (l - 0.33)*3.0) : mix(vec3(1.0, 0.6, 0.0), vec3(1.0, 1.0, 0.7), (l - 0.66)*3.0); col = mix(col, h, amt); }
+        else if(kind > 22.5 && kind < 23.5){ col = mix(col, vec3(0.75, 0.9, 1.0)*pow(1.0 - lum(col), 1.4)*1.15, amt); }
+        else if(kind > 23.5 && kind < 24.5){ float gx = lum(texture2D(T, uv + vec2(px.x, 0.0)).rgb) - lum(texture2D(T, uv - vec2(px.x, 0.0)).rgb), gy = lum(texture2D(T, uv + vec2(0.0, px.y)).rgb) - lum(texture2D(T, uv - vec2(0.0, px.y)).rgb);
+          float e = smoothstep(0.08, 0.2, length(vec2(gx, gy))); vec3 pc = floor(col*4.0 + 0.5)/4.0; pc = mix(vec3(lum(pc)), pc, 1.3); col = mix(col, pc*(1.0 - e), amt); }
+        else if(kind > 24.5 && kind < 25.5){ vec2 dd = uv - 0.5; vec3 acc = vec3(0.0); for(int i = 0; i < 12; i++) acc += texture2D(T, clamp(0.5 + dd*(1.0 - float(i)*0.014*amt), 0.0, 1.0)).rgb; col = acc/12.0; }
         gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0); }`;
 
 /** a shot's Adjust on its own, for the native engine (the website does it inside MAIN_FRAG, with these same two
