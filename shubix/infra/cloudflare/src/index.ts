@@ -13,8 +13,6 @@ interface Env {
 }
 
 const STUCK_AFTER = 20 * 60_000;
-// marks the scheduled check's request (scheduled() below); removed from anything that comes from outside
-const CHECK = "x-shubix-sleep-check";
 
 export class ReelApp extends Container<Env> {
   defaultPort = 3000;
@@ -25,21 +23,33 @@ export class ReelApp extends Container<Env> {
     if (env.CONTAINER_ROLE === "api") this.defaultPort = 4000; // the API alone (the website is its own Worker)
     // every setting (vars and secrets) goes to the app as an environment variable; bindings are not strings
     this.envVars = Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => typeof e[1] === "string"));
-    // The library never lets the container sleep while it counts a request in flight, and a request lost on the way (a
-    // rollout or a replaced container while it was answering) can stay counted for ever: QA stayed awake, and billed,
-    // with no request at all (2026-11-11). A count with no request for STUCK_AFTER is such a lost one: dropped, so the
-    // container sleeps. Anything still working (an export) is polled well within that.
+    // The library never lets the container sleep while it counts a request in flight, until the answer has been read to
+    // the end, and a request lost on the way (a rollout, a replaced container, a browser that stopped reading a video)
+    // can stay counted for ever: QA stayed awake, and billed, with no request at all (2026-11-11), and production with a
+    // tab's ping every 5 minutes holding off a "no request for 20 min" rule (2026-11-13). So this object keeps its own
+    // list of the answers not yet read to the end: one open longer than STUCK_AFTER is a lost one, whatever else comes
+    // in, and the library's count is cut to the ones still young, so the container sleeps. Anything still working (an
+    // export) is polled, each poll a short request of its own.
     const lib = this as unknown as { inflightRequests: number; isActivityExpired(): boolean };
     const expired = lib.isActivityExpired.bind(this);
     lib.isActivityExpired = () => {
-      if (lib.inflightRequests > 0 && Date.now() - this.lastRequest > STUCK_AFTER) {
-        console.warn(`${lib.inflightRequests} request(s) counted in flight with none for ${STUCK_AFTER / 60_000} min: dropped, the container may sleep`);
-        lib.inflightRequests = 0;
+      const now = Date.now();
+      for (const [id, at] of this.open) if (now - at > STUCK_AFTER) this.open.delete(id);
+      if (lib.inflightRequests > this.open.size) {
+        console.warn(`${lib.inflightRequests - this.open.size} request(s) counted in flight for more than ${STUCK_AFTER / 60_000} min: dropped, the container may sleep`);
+        lib.inflightRequests = this.open.size;
       }
       return expired();
     };
   }
-  private lastRequest = Date.now();
+  // the requests whose answer is not yet read to the end, with when each began
+  private open = new Map<number, number>();
+  private nextId = 0;
+  private track(res: Response, id: number): Response {
+    if (!res.body || (res as Response & { webSocket?: unknown }).webSocket) { this.open.delete(id); return res; }
+    const done = () => { this.open.delete(id); };
+    return new Response(res.body.pipeThrough(new TransformStream({ flush: done })), res);
+  }
   // A cold start (the machine, the R2 mount, the server) takes 20-30 s, more than the library waits by itself (20 s), and
   // its saved state can still say "healthy" from the container before: this object waits for the port itself, once
   // per start (`ready`: the server answered since this object woke or the container last stopped).
@@ -58,17 +68,20 @@ export class ReelApp extends Container<Env> {
     return this.startAndWaitForPorts(this.defaultPort, { portReadyTimeoutMS: 240_000, instanceGetTimeoutMS: 60_000, abort: signal });
   }
   override async fetch(request: Request): Promise<Response> {
-    // the scheduled check's request is not a user's: it must not hold off the STUCK_AFTER drop above
-    if (!request.headers.has(CHECK)) this.lastRequest = Date.now();
-    const again = request.method === "GET" || request.method === "HEAD" ? request.clone() : null;
-    if (!this.ready || !this.ctx.container?.running) { await this.wake(request.signal); this.ready = true; }
-    const res = await super.fetch(request);
-    if (res.status < 500 || !/^(Error proxying request to container|Failed to start container)/.test(await res.clone().text())) return res;
-    this.ready = false;
-    try { await this.destroy(); } catch { /* already gone */ }
-    if (!again) return res;
-    await this.wake(again.signal); this.ready = true;
-    return super.fetch(again);
+    const id = this.nextId++;
+    this.open.set(id, Date.now());
+    try {
+      const again = request.method === "GET" || request.method === "HEAD" ? request.clone() : null;
+      if (!this.ready || !this.ctx.container?.running) { await this.wake(request.signal); this.ready = true; }
+      const res = await super.fetch(request);
+      if (res.status < 500 || !/^(Error proxying request to container|Failed to start container)/.test(await res.clone().text())) return this.track(res, id);
+      this.ready = false;
+      try { await this.destroy(); } catch { /* already gone */ }
+      if (!again) return this.track(res, id);
+      await res.body?.cancel(); // unread, the library would count it in flight
+      await this.wake(again.signal); this.ready = true;
+      return this.track(await super.fetch(again), id);
+    } catch (e) { this.open.delete(id); throw e; }
   }
   override onError(error: unknown) {
     console.error("app container error", error);
@@ -100,7 +113,6 @@ export default {
     if ((env.CONTAINER_ROLE === "api" && !API_PATHS.test(path)) || PROBE.test(path)) return new Response("Not found", { status: 404 });
     if (request.method === "POST" && path === PING && !(await awake(env)))
       return Response.json({ ok: true, asleep: true });
-    if (request.headers.has(CHECK)) { request = new Request(request); request.headers.delete(CHECK); }
     return app(env).fetch(request);
   },
   // The object that puts the container to sleep starts counting only when a request comes: a container started without
@@ -111,7 +123,8 @@ export default {
     ctx.waitUntil((async () => {
       try { const s = await app(env).getState(); if (s.status !== "running" && s.status !== "healthy") return; }
       catch { return; }
-      try { await app(env).fetch(new Request("http://app/api/health", { headers: { [CHECK]: "1" } })); } catch (e) { console.error("wake-to-sleep health check", e); }
+      // read to the end: an unread answer stays counted in flight (the container would not sleep)
+      try { await (await app(env).fetch(new Request("http://app/api/health"))).arrayBuffer(); } catch (e) { console.error("wake-to-sleep health check", e); }
     })());
   },
 } satisfies ExportedHandler<Env>;
