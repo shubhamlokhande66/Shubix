@@ -371,7 +371,7 @@ export const STUDIO_HTML = `
             <button class="${Button.icon} size-11 ml-1.5" id="pvfull" type="button" aria-label="Full screen" title="Full screen">${I('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>')}</button>
           </div>
           <div class="previewProgress bar"><i id="prog" style="width:0%"></i></div>
-          <div class="feditbar"><button type="button" class="${Button.primaryLarge}" id="fedit">${IC.pen}<span>Edit</span></button><small>Change shots, effects, text, music and more on the timeline</small></div>
+          <div class="feditbar"><button type="button" class="group ${Button.primaryLarge}" id="fedit" data-locked="false">${IC.pen}<span>Edit</span><em class="protag proTag hidden group-data-[locked=true]:inline-flex"><b>PRO</b></em></button><small>Change shots, effects, text, music and more on the timeline</small></div>
           <label class="tog safe" hidden><input type="checkbox" id="safe" checked> Instagram safe zones (preview only)</label>
           <div class="msg" id="xmsg" hidden></div>
           <div class="row hidden!" id="saverow" hidden><button class="${Button.primary}" id="savevid">Share</button><a class="${Button.secondary}" id="dlvid">Download</a></div>

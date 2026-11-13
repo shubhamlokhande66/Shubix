@@ -37,7 +37,7 @@ export function ReviewsTab() {
             </button>
           ))}
         </div>
-        <p className="m-0 mt-2 text-xs text-muted">Asked once after each exported Reel. Approve a review to show it on Home with its stars and the person&apos;s first name. &ldquo;Improve&rdquo; is never shown publicly.</p>
+        <p className="m-0 mt-2 text-xs text-muted">Asked after every export (until that Reel is reviewed). Approve a review to show it on Home with its stars and the person&apos;s first name. &ldquo;Improve&rdquo; is never shown publicly.</p>
       </Card>
       {(q.error || set.error) && <ErrorBanner message={errorMessage(q.error ?? set.error)} onRetry={() => q.refetch()} />}
       {!q.error && <Card><p className="m-0 text-sm">{q.isLoading ? "Loading…" : rows.length ? `${rows.length} review${rows.length === 1 ? "" : "s"}.` : "No reviews here yet."}</p></Card>}

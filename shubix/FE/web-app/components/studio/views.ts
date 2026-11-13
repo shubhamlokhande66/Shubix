@@ -61,7 +61,8 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
   // tool show after Edit (2026-11-12). A tool asked for by the address (?tool=) opens the editor straight away.
   let editing = !!q;
   const reviewNow = () => made() && !root.classList.contains("fopen") && !editing;
-  const setEditing = (on: boolean) => { editing = on; if (!on && !wide()) tool = ""; apply(); if (on) requestAnimationFrame(() => $("lanes").scrollIntoView({ block: "nearest" })); };
+  // Edit (the full editor) is a plan's tool too ("studio:edit", Pro unless the administrator sets another): on a lower plan it opens the plans
+  const setEditing = (on: boolean) => { if (on && locked("edit")) { location.assign("/pricing?feature=edit"); return; } editing = on; if (!on && !wide()) tool = ""; apply(); if (on) requestAnimationFrame(() => $("lanes").scrollIntoView({ block: "nearest" })); };
 
   const made = () => !$("s3").classList.contains("locked");
   // computers keep a tool open beside the preview (the shot first); phones show the Reel, a tool opens over it
@@ -73,11 +74,12 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
   try { const c = JSON.parse(localStorage.getItem("brs-plan") || "null"); if (c && Date.now() - c.at < 7 * 864e5) { plan = c.plan || "free"; open = !!c.open; if (c.need) need = c.need; } } catch {}
   try { if (localStorage.getItem("brs-asfree") === "1") root.classList.add("asfree"); } catch {}
   const asFree = () => root.classList.contains("admin") && root.classList.contains("asfree");
-  const needOf = (k: string) => (need["studio:" + k] || "free") as PlanId;
+  const needDefault = needMap(DEFAULT_LOCKS);   // a lock the server does not list yet (a newer one): its default plan
+  const needOf = (k: string) => (need["studio:" + k] || needDefault["studio:" + k] || "free") as PlanId;
   const locked = (k: string) => PLAN_TOOLS.has(k) && (asFree() ? planRank(needOf(k)) > 0 : !open && !root.classList.contains("planadmin") && planRank(needOf(k)) > planRank(plan));
   // each plan's tool: locked or not, and its tag says the plan it needs
-  const paintLocks = () => root.querySelectorAll<HTMLButtonElement>(".tool").forEach((b) => {
-    const k = b.dataset.tool!, lock = String(locked(k)), tag = b.querySelector(".protag b");
+  const paintLocks = () => root.querySelectorAll<HTMLButtonElement>(".tool, #fedit").forEach((b) => {
+    const k = b.id === "fedit" ? "edit" : b.dataset.tool!, lock = String(locked(k)), tag = b.querySelector(".protag b");
     if (b.dataset.locked !== lock) b.dataset.locked = lock;
     const name = PLAN_NAME[needOf(k)] ?? "Pro", title = lock === "true" ? name + " plan: tap to see the plans" : "";
     if (tag && tag.textContent !== name.toUpperCase()) tag.textContent = name.toUpperCase();
@@ -104,7 +106,7 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
   const apply = () => {
     root.classList.remove("v-simple", "v-editor", "v-pro", "v-one", "v-all");
     root.classList.add("v-" + view);
-    if (tool && !wide() && !editing) editing = true; // a phone: a tool opened means editing
+    if (tool && !wide() && !editing) { if (locked("edit")) tool = ""; else editing = true; } // a phone: a tool opened means editing (Edit's plan only)
     root.dataset.tool = tool;
     toolTurn();
     root.classList.toggle("made", made());

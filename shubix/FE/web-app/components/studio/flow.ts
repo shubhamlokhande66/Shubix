@@ -66,7 +66,9 @@ export function initFlow(root: HTMLElement): () => void {
   const inEngine = location.pathname === "/engine";
   // whether someone is signed in, asked as the page opens (the server may need 20-30 s to wake): Generate is then at once.
   // (checking, above: Generate pressed while it is still being asked; its button shows a spinner, never a silent wait)
-  if (!inEngine) void needsSignIn().then((need) => { if (!need) signInOk = true; }).catch(() => {});
+  // signInNeed: known to be signed out, so Make Reel opens sign-in at once (no question first)
+  let signInNeed = false;
+  if (!inEngine) void needsSignIn().then((need) => { if (!need) signInOk = true; else signInNeed = true; }).catch(() => {});
   const setAddress = (url: string) => { if (!inEngine) history.replaceState(history.state, "", url); };
   // a tool open on the phones' Reel (Edit Options) is a screen of its own too: Back closes it
   let toolMarked = "";
@@ -89,7 +91,7 @@ export function initFlow(root: HTMLElement): () => void {
   const aiWork = () => (root as unknown as { __studio?: { work?: { ai?: boolean; dir?: boolean; pace?: boolean; aiWait?: boolean } } }).__studio?.work;
   const aiWorking = () => { const w = aiWork(); return !!w && (!!w.ai || !!w.dir || !!w.pace || !!w.aiWait); };   // (aiWait: agreed to, its plan not here yet, also between its steps)
   const aiRunning = () => { const w = aiWork(); return !!w && (!!w.ai || !!w.dir || !!w.pace); };   // a step of it is running right now
-  type Live = { aiRetry?: () => boolean; aiKick?: () => void; aiStalled?: () => void; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void; stopPreview?: () => void };
+  type Live = { aiRetry?: () => boolean; aiKick?: () => void; aiStalled?: () => void; aiPrice?: () => { on: boolean; cost: number; balance: number | null; low: boolean }; askLow?: () => Promise<unknown>; askShort?: () => Promise<"go" | "stop" | "again">; upsell?: () => Promise<string>; account?: () => Promise<void>; changeGate?: () => Promise<string>; keepOldReel?: () => void; saveNow?: () => Promise<string>; askNotDone?: () => Promise<"" | "go" | "stay">; cancelled?: () => { song: boolean; clips: boolean }; guard?: (on: boolean) => void; stopPreview?: () => void };
   const live = () => (root as unknown as { __studio?: Live }).__studio;
   const stopped = () => live()?.cancelled?.() ?? { song: false, clips: false };
   let aiRunNo = 0;   // the wait for the Reel that the popup's Cancel ended
@@ -453,11 +455,18 @@ export function initFlow(root: HTMLElement): () => void {
       // and this Reel is generated when it is done (signInBeside). The phone app's hidden studio (/engine) is signed in by
       // the app itself.
       if (!signInOk && !inEngine) {
+        // known signed out: the sign-in screen opens straight away, in this same click (a browser lets a window open only then)
+        if (signInNeed) { const done = () => { signInNeed = false; signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; checking = true; apply();
+            void Promise.resolve(live()?.account?.()).catch(() => {}).finally(() => { checking = false; apply(); g.click(); }); };
+          signInBeside(done, true); return; }
         void (async () => {
           const go = () => { signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); };
+          // just signed in: the studio learns the plan first (it asked while nobody was signed in), so a Free account gets
+          // the Shubix Brain / Shubix choice like one signed in from the start
+          const fresh = async () => { checking = true; apply(); try { await live()?.account?.(); } catch { /* the edit goes on */ } finally { checking = false; apply(); } go(); };
           checking = true; apply();
           const need = await needsSignIn().finally(() => { checking = false; apply(); });
-          if (need) return signInBeside(go);   // in a new tab: this one keeps the Reel (no save and reload: an iPhone ran out of memory)
+          if (need) return signInBeside(() => void fresh());   // in a new tab: this one keeps the Reel (no save and reload: an iPhone ran out of memory)
           go();
         })();
         return;

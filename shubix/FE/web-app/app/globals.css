@@ -16,4 +16,8 @@ button:disabled *, button[aria-disabled=true] *, [role=button][aria-disabled=tru
 /* (one spinner only: not on a button that shows its own, the Button atom's `loading` or a spinner inside, nor the studio's steps) */
 :is(button, [role="button"], a.btn)[aria-busy="true"]:not([data-loading], .fgen, .fnext, :has(.animate-spin))::after { content: ""; display: inline-block; width: 14px; height: 14px; margin-inline-start: 8px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: busyspin .8s linear infinite; }
 @keyframes busyspin { to { transform: rotate(360deg); } }
+/* the Help chat: a sheet rising from the bottom of the screen (phones), its card rising from the corner (computers) */
+@keyframes helpsheet { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes helpcard { from { opacity: 0; transform: translateY(24px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes helpfade { from { opacity: 0; } to { opacity: 1; } }
 
