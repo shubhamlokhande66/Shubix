@@ -11,6 +11,9 @@
   // the API's own address (the shubix.in zone is on Cloudflare: its record is made on deploy)
   "routes": [{ "pattern": "api.shubix.in", "custom_domain": true }],
   "workers_dev": true,
+  // every 10 minutes: a container left awake with no request (a deploy starts the new one, and nothing puts it to sleep
+  // until a request comes: production stayed awake 6 h after a deploy, 2026-11-13) is sent one, and sleeps after it
+  "triggers": { "crons": ["*/10 * * * *"] },
   "containers": [
     {
       "class_name": "ReelApp",
@@ -71,6 +74,7 @@
   "env": {
     "qa": {
       "routes": [{ "pattern": "api-qa.shubix.in", "custom_domain": true }],
+      "triggers": { "crons": ["*/10 * * * *"] },
       "containers": [{ "class_name": "ReelApp", "image": "../docker/api.Dockerfile", "image_build_context": "../..", "instance_type": "basic", "max_instances": 1 }],
       "durable_objects": { "bindings": [{ "name": "APP", "class_name": "ReelApp" }] },
       "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReelApp"] }],
@@ -106,6 +110,7 @@
     },
     "uat": {
       "routes": [{ "pattern": "api-uat.shubix.in", "custom_domain": true }],
+      "triggers": { "crons": ["*/10 * * * *"] },
       "containers": [{ "class_name": "ReelApp", "image": "../docker/api.Dockerfile", "image_build_context": "../..", "instance_type": "basic", "max_instances": 1 }],
       "durable_objects": { "bindings": [{ "name": "APP", "class_name": "ReelApp" }] },
       "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReelApp"] }],

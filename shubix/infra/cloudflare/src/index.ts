@@ -99,4 +99,15 @@ export default {
       return Response.json({ ok: true, asleep: true });
     return app(env).fetch(request);
   },
+  // The object that puts the container to sleep starts counting only when a request comes: a container started without
+  // one (a deploy rolls out a new one) stays awake, and billed, until somebody uses the API (production: 6 h,
+  // 2026-11-13). Every 10 minutes (wrangler.jsonc triggers): an awake container is sent one request, the health check,
+  // and sleeps SLEEP_AFTER after it; one in use is kept awake by its own requests anyway.
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil((async () => {
+      try { const s = await app(env).getState(); if (s.status !== "running" && s.status !== "healthy") return; }
+      catch { return; }
+      try { await app(env).fetch(new Request("http://app/api/health")); } catch (e) { console.error("wake-to-sleep health check", e); }
+    })());
+  },
 } satisfies ExportedHandler<Env>;
