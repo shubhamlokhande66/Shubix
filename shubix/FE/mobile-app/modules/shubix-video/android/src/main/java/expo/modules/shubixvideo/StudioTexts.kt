@@ -158,8 +158,8 @@ internal class StudioTextRenderer(texts: JSONArray, private val w: Int, private 
     val contrast = if (dark(color)) Color.WHITE else Color.rgb(17, 17, 17)
     when {
       stk != null -> { val k = fs * 1.1f / 100f; g.scale(k, k); g.translate(-50f, -50f)   // as the website: a white border (dark on a white sticker), then the shape
-        val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 9f; strokeJoin = Paint.Join.ROUND; this.color = if (color == Color.WHITE) Color.rgb(17, 17, 17) else Color.WHITE; setShadowLayer(fs * 0.12f / k, 0f, 0f, Color.argb(89, 0, 0, 0)) }
-        g.drawPath(stk, sp); g.drawPath(stk, Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; this.color = color }) }
+        val sp = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style = Paint.Style.STROKE; strokeWidth = 9f; strokeJoin = Paint.Join.ROUND; this.color = if (color == Color.WHITE) Color.rgb(17, 17, 17) else Color.WHITE; setShadowLayer(fs * 0.12f / k, 0f, 0f, Color.argb(89, 0, 0, 0)) }
+        g.drawPath(stk, sp); g.drawPath(stk, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style = Paint.Style.FILL; this.color = color }) }
       emoji -> fill(color, 0f, 0f)
       style == "box" || style == "tag" -> { val tag = style == "tag"; val pw = tw + fs * (if (tag) 1.05f else 0.6f); val ph = th + fs * 0.36f; val r = if (tag) fs * 0.5f else fs * 0.2f
         val bp = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }; g.drawRoundRect(RectF(-pw / 2, -ph / 2, pw / 2, ph / 2), r, r, bp)
