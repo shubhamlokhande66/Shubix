@@ -54,13 +54,13 @@ function styleEdit(){
   let h = ES.mixNo + 1; for(const c of EH.reelIdNow()) h = (h*31 + c.charCodeAt(0)) >>> 0;
   const pick = () => { h = (h*16807 + 1) % 2147483647; return h / 2147483647; };
   const mixed = a => { const o = [...a]; for(let i = o.length-1; i > 0; i--){ const j = Math.floor(pick()*(i+1)); [o[i], o[j]] = [o[j], o[i]]; } return o; };
-  const HIT_TR = mixed(['whip','iris','zoom','glitch','swipeup','spin','dropin','bars','pixelate'].filter(k => !EH.isLocked('tr', k)));   // only what the plan opens
+  const HIT_TR = mixed(['whip','iris','zoom','glitch','swipeup','spin','dropin','bars','pixelate','cube','flip3d','cubeup'].filter(k => !EH.isLocked('tr', k)));   // only what the plan opens (the 3D ones: Pro)
   const CUT_TR = mixed(['hard','wipe','hard','iris','slideleft','hard','bars','blur','hard','luma','doors'].filter(k => k === 'hard' || !EH.isLocked('tr', k)));
   const HIT_FX = mixed(['punch','tilt','punch','shake']);
   let lastTr = '', lastFx = '', hk = 0, ck = 0, fk = 0, dk = 0;
   const beatsRel = (s) => ES.beats.filter(b=>b>s.start+0.15 && b<s.end-0.1).map(b=>b-s.start);
   // restraint: fancy transitions are rationed (whip pans 1-2 per reel), the rest are clean hard cuts
-  const per = Math.max(1, ES.buf.duration/30), budget = {snap:Math.round(2*per), whip:Math.round(2*per), spin:Math.round(1*per), glitch:Math.round(2*per), bars:Math.round(2*per), iris:Math.round(3*per), zoom:Math.round(3*per), wipe:Math.round(2*per), dissolve:Math.round(2*per)};
+  const per = Math.max(1, ES.buf.duration/30), budget = {snap:Math.round(2*per), whip:Math.round(2*per), spin:Math.round(1*per), glitch:Math.round(2*per), bars:Math.round(2*per), iris:Math.round(3*per), zoom:Math.round(3*per), wipe:Math.round(2*per), dissolve:Math.round(2*per), cube:Math.round(1*per), flip3d:Math.round(1*per), cubeup:Math.round(1*per)};
   const take = k => { if(budget[k]===undefined) return k; if(budget[k]>0){ budget[k]--; return k; } return 'hard'; };
   // beat shapes on a few longer shots and some drops: a different set and order with each seed / mix, never one twice in a row
   const SH_ROT = ['boxgrow','frame','grid','circle','strips','triple','heartbeat','starbeat'].filter(k => !EH.isLocked('fx', k)), SH_DROP = ['kaleido','strobe','triple','rgbpulse','mirror','vhs'].filter(k => !EH.isLocked('fx', k));
