@@ -27,7 +27,8 @@ export const DEFAULT_LOCKS: PlanLocks = {
     { id: "fx", name: "Effects", items: [
       ...I("free", [["hook", "Hook zoom"], ["zoomburst", "Zoom burst"], ["punch", "Zoom punch"], ["punch-soft", "Soft zoom"], ["tilt", "Tilt punch"], ["shake", "Shake"], ["bounce", "Beat bounce"], ["pan", "Ken Burns"], ["pan-soft", "Ken Burns soft"], ["drift", "Slow drift"], ["snap", "Photo snap"],
         ["boxgrow", "Box grows on the beat"], ["frame", "Frame in frame"], ["circle", "Circle pulse"]]),
-      ...I("creator", [["grid", "Grid opens"], ["strips", "Strips"], ["heartbeat", "Heart pulse"], ["starbeat", "Star pulse"], ["mirror", "Mirror"], ["kaleido", "Kaleidoscope"], ["triple", "Triple split"], ["vhs", "VHS retro"], ["strobe", "Strobe"], ["rgbpulse", "RGB split"], ["blurpulse", "Blur pulse"]]) ] },
+      ...I("creator", [["grid", "Grid opens"], ["strips", "Strips"], ["heartbeat", "Heart pulse"], ["starbeat", "Star pulse"], ["mirror", "Mirror"], ["kaleido", "Kaleidoscope"], ["triple", "Triple split"], ["vhs", "VHS retro"], ["strobe", "Strobe"], ["rgbpulse", "RGB split"], ["blurpulse", "Blur pulse"]]),
+      ...I("pro", [["glow", "Soft glow"], ["shine", "Light sweep"], ["chromatic", "Chromatic"], ["glitchfx", "Digital glitch"], ["sparkle", "Sparkles"], ["bokeh", "Bokeh lights"], ["snow", "Snow"], ["rain", "Rain"], ["tiltshift", "Tilt-shift"], ["thermal", "Thermal"], ["xray", "X-ray"], ["comic", "Comic"], ["radialblur", "Radial blur"], ["quad", "Four split"]]) ] },
     { id: "tr", name: "Transitions", items: [
       ...I("free", [["fadein", "Fade-in"], ["flash", "Flash"], ["whip", "Whip pan"], ["zoom", "Zoom-through"], ["glitch", "Glitch"], ["dip", "Dip to black"], ["dissolve", "Dissolve"], ["iris", "Iris"], ["wipe", "Wipe"], ["bars", "Bars"], ["spin", "Spin"], ["diamond", "Diamond"], ["heart", "Heart"], ["star", "Star"],
         ["slideleft", "Push left"], ["slideright", "Push right"]]),

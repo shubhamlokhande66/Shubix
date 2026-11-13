@@ -101,7 +101,7 @@ internal fun studioPasses(sh: StudioShaders?, clip: JSONObject, offset: Double, 
   }
   val f = clip.optJSONObject("pic")
   val kind = f?.optInt("kind", 0) ?: 0
-  if (kind in 1..12) {
+  if (kind in 1..26) {
     val amt = f!!.optDouble("amt", 1.0).coerceIn(0.0, 1.0)
     out += StudioPass(sh.vert, sh.pic) { p, w, h, t ->
       val local = offset + t
@@ -195,7 +195,7 @@ private fun kxAt(base: Map<String, Double>, keys: List<JSONObject>, l: Double): 
   return base.mapValues { (n, d) -> val x = if (a.has(n)) a.optDouble(n, d) else d; val y = if (b.has(n)) b.optDouble(n, d) else d; (x + (y - x) * p).toFloat() }
 }
 
-internal val BLEND_MODE = mapOf("multiply" to 1, "screen" to 2, "overlay" to 3, "lighter" to 4, "darken" to 5, "lighten" to 6, "soft-light" to 7, "hard-light" to 8, "color-dodge" to 9, "color-burn" to 10, "difference" to 11, "exclusion" to 12)
+internal val BLEND_MODE = mapOf("multiply" to 1, "screen" to 2, "overlay" to 3, "lighter" to 4, "darken" to 5, "lighten" to 6, "soft-light" to 7, "hard-light" to 8, "color-dodge" to 9, "color-burn" to 10, "difference" to 11, "exclusion" to 12, "matte" to 13, "matte-inv" to 14)
 private const val BLEND_FRAG = """precision mediump float; varying vec2 v; uniform sampler2D T, L; uniform float mode;
 vec3 hard(vec3 b, vec3 s){ return mix(2.*b*s, 1.-2.*(1.-b)*(1.-s), step(.5, s)); }
 vec3 soft(vec3 b, vec3 s){ vec3 d = mix(((16.*b-12.)*b+4.)*b, sqrt(b), step(.25, b)); return mix(b-(1.-2.*s)*b*(1.-b), b+(2.*s-1.)*(d-b), step(.5, s)); }
@@ -204,6 +204,7 @@ vec3 blendOf(vec3 b, vec3 s){
   if(mode<7.5) return soft(b,s); if(mode<8.5) return hard(b,s); if(mode<9.5) return min(vec3(1.), b/max(vec3(.001),1.-s)); if(mode<10.5) return 1.-min(vec3(1.),(1.-b)/max(vec3(.001),s));
   if(mode<11.5) return abs(b-s); return b+s-2.*b*s; }
 void main(){ vec3 b = texture2D(T, vec2(v.x, 1.-v.y)).rgb; vec4 l = texture2D(L, v);
+  if(mode>12.5){ gl_FragColor = vec4(b*(mode<13.5 ? l.a : 1.-l.a), 1.); return; }   /* a matte: the picture only through (or around) the layer */
   if(l.a<.002){ gl_FragColor = vec4(b,1.); return; }
   vec3 s = l.rgb/l.a;
   gl_FragColor = vec4(mode>3.5&&mode<4.5 ? min(vec3(1.), b+l.rgb) : mix(b, clamp(blendOf(b,s),0.,1.), l.a), 1.); }"""

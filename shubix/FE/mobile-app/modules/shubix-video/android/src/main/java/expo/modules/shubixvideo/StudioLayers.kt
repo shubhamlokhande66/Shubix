@@ -20,6 +20,10 @@ import java.io.File
 import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.pow
+import kotlin.math.sin
 
 /** The studio's overlay layers in the live player: photos and videos placed on the frame as the website's drawLayers()
  * (engine.ts): place, size, turn, flip, crop, fades, round corners and the masks. In the export
@@ -146,6 +150,15 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
     } finally { out.recycle(); mask.recycle() }
   }
 
+  /** the shape masks as points around the middle (-0.5..0.5 of the mask's size): the website's MASK_PTS (engine.ts) */
+  private fun maskPts(kind: String): List<FloatArray> = when (kind) {
+    "triangle" -> listOf(floatArrayOf(0f, -0.5f), floatArrayOf(0.5f, 0.5f), floatArrayOf(-0.5f, 0.5f))
+    "diamond" -> listOf(floatArrayOf(0f, -0.5f), floatArrayOf(0.5f, 0f), floatArrayOf(0f, 0.5f), floatArrayOf(-0.5f, 0f))
+    "hexagon" -> (0 until 6).map { i -> floatArrayOf((0.5 * cos(PI / 3 * i)).toFloat(), (0.5 * sin(PI / 3 * i)).toFloat()) }
+    "star" -> (0 until 10).map { i -> val a = -PI / 2 + PI / 5 * i; val r = if (i % 2 == 1) 0.2 else 0.5; floatArrayOf((r * cos(a)).toFloat(), (r * sin(a)).toFloat()) }
+    else -> (0 until 48).map { i -> val t = 2 * PI * i / 48; floatArrayOf((16 * sin(t).pow(3) / 34).toFloat(), (-(13 * cos(t) - 5 * cos(2 * t) - 2 * cos(3 * t) - cos(4 * t)) / 34 - 0.075).toFloat()) }   // heart
+  }
+
   /** the layer's mask as a path around its centre, and whether its inside is what shows */
   private fun shape(L: JSONObject, dw: Float, dh: Float, inset: Float = 0f): Pair<Path, Boolean>? {
     val m = L.optJSONObject("mk") ?: JSONObject()
@@ -156,6 +169,7 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
       "rect", "rectangle" -> path.addRect(box, Path.Direction.CW)
       "line" -> { val R = Math.hypot(dw.toDouble(), dh.toDouble()).toFloat(); path.addRect(RectF(-R, -R, R, (m.optDouble("h", 0.8).toFloat() - 0.5f) * dh), Path.Direction.CW) }
       "mirror" -> { val R = Math.hypot(dw.toDouble(), dh.toDouble()).toFloat(); path.addRect(RectF(-R, -mh / 2, R, mh / 2), Path.Direction.CW) }
+      "triangle", "diamond", "hexagon", "star", "heart" -> { maskPts(L.optString("mask")).forEachIndexed { i, p -> val x = p[0] * mw; val y = p[1] * mh; if (i == 0) path.moveTo(x, y) else path.lineTo(x, y) }; path.close() }
       "polygon" -> {
         val pts = m.optJSONArray("points") ?: return null
         for (i in 0 until pts.length()) {
