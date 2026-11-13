@@ -914,7 +914,7 @@
 .brs .protag b{font:inherit}   /* its plan (or the administrator): the tool is simply there */
 /* Edit (the full editor) on a plan below its own: the big button carries the plan's tag at its corner, and opens the plans */
 .brs #fedit{position:relative}
-.brs #fedit .protag{top:-8px;right:-6px;padding:2px 7px;font-size:10px;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.brs #fedit .protag{position:static;margin-left:2px;padding:3px 8px;border-radius:999px;font-size:11px;line-height:1.2;letter-spacing:.06em;background:#10100f;color:#e8cf8f;box-shadow:inset 0 0 0 1px rgba(232,207,143,.45)}   /* inside the button, after "Edit" (the button clips its edges) */
 .brs.v-one:not(.fopen) #out{max-height:min(52vh,520px)}
 .brs.v-one label.safe{display:none}
 
