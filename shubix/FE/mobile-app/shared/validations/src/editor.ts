@@ -13,6 +13,8 @@ export const clipSchema = z.object({
   id: z.string(), uri: z.string(), name: z.string(), kind: mediaKindSchema, duration: z.number().positive(),
   sourceDuration: z.number().positive(), start: z.number().min(0), end: z.number().positive(), speed: z.number().min(0.25).max(4),
   reverse: z.boolean(), muted: z.boolean(), volume: z.number().min(0).max(2), filter: z.string(), transition: z.string(),
+  // the whip goes right (with a camera panning left): the studio matched it to the camera move
+  trRev: z.boolean().optional(),
   rotation: z.number(), mirror: z.boolean(), flip: z.boolean(), fit: z.enum(["cover", "contain"]),
   // the studio's effect during the shot (its name: punch, shake, glow…) when the website's engine made the Reel
   effect: z.string().optional(),

@@ -21,6 +21,7 @@ import { DEFAULT_TEMPLATES, liveTemplates, edgeAt } from '@shubix/core/lib/studi
 import { songAnalysis } from '@shubix/core/engine/studio/song';
 import { soundMap, describeCut, sectionsOf, repace } from './soundmap';
 import { revealShape, motionBetween, shotMove, shapeInside, SHAPE_REACH } from './refread';
+import { onsetCurve, alignInSong, refineAlign } from './songAlign';
 import { Button, Chip } from "./ui";
 import { createPreviewProxy, previewProxyPlan, probeVideo, editCopyPlan, convertOnServer, SERVER_CONVERT_MAX_BYTES, hasPicture } from '../../lib/previewProxy';
 import { isHidden, whenVisible, isReclaimed, titleProgress, titleDone, askToNotify, notifyDone, holdAwake } from '../../lib/background';
@@ -586,11 +587,15 @@ async function useSection(token = musicToken){
   const run = ++secBusy, W = song.buf, D = W.duration, sr = W.sampleRate;
   let r;
   const parts = partsOfSong();
-  if(!sec.len || sec.len >= D - 0.3){
+  // copying a Reel on its own song (found in it: refAlign): the part the Reel used, as long as the Reel (the whole song
+  // too, unless a length was chosen), so each cut is at its own moment
+  const ra = sec.auto && mode === 'copy' ? refAlign() : null, refL = ra && refProfile.dur ? Math.min(D, refProfile.dur) : 0;
+  const wantL = sec.len || (ra && refL >= 4 && refL < D - 1 ? refL : 0);
+  if(!wantL || wantL >= D - 0.3){
     buf = W; mono = song.mono; secStart = 0; r = applyParts(song.r, parts, 0, D);
   } else {
-    const pb = partBeats(sec.len), L = Math.min(pb.len, D);
-    let st = sec.auto ? bestPart(L) : snapToBeat(sec.start);
+    const pb = partBeats(wantL), L = Math.min(ra && !sec.len ? wantL : pb.len, D);
+    let st = ra ? ra.at : sec.auto ? bestPart(L) : snapToBeat(sec.start);
     st = Math.max(0, Math.min(st, D - L)); sec.start = st;
     const a = Math.round(st*sr), n = Math.min(W.length - a, Math.round(L*sr));
     const part = getCtx().createBuffer(W.numberOfChannels, n, sr), fi = Math.round(0.006*sr), fo = Math.round(Math.min(0.35, L*0.05)*sr);
@@ -1737,7 +1742,7 @@ async function buildTalk(){
     e.kf = keyframesFor(e); e.beatsIn = [];
     return e;
   });
-  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, black: e.black }));
+  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, trRev: e.trRev, black: e.black }));
   setCanvas(); edit.forEach(e=>camAt(e, 0)); renderEDL(); drawMusic();
   $('s3').classList.remove('locked'); $('s3').classList.add('done');
   const total = sources.reduce((q,s)=>q + s.dur, 0), how = sources.some(s => s.voice.how === 'level') ? ' (by loudness)' : '';
@@ -2105,6 +2110,17 @@ let gateNo = '', lowAsked = '';   // lowAsked: the Reel whose too-few-credits qu
 // the Reel is not shown, played or exported; the preview says so and its button asks again (or opens the top-ups)
 /* To the plans or a top-up from the studio: the Reel is saved on this device first, and the pricing page offers "Back to
  * your Reel" (?back=), which opens it again where it was (a Reel still in the Create steps: its clips step). */
+// Shubix AI asked for in the chat without the plan (Free) or the credits for it: one popup that says the AI is ready and
+// waiting, and opens the plans (or the credits) on the website
+async function aiSell(low, cost, bal){
+  if(IN_APP) return;
+  const v = await askCredits({ upsell: true, title: low ? 'Shubix AI is ready, add credits' : 'Shubix AI is ready to make a professional Reel',
+    text: low ? 'This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '. Add credits or move to a bigger plan, and Shubix AI makes it right away. It is waiting for you.'
+      : 'Shubix AI edits your Reel from your own words, like a pro editor. It needs the Editor or Pro plan (or credits). Get one now and it starts right away. It is waiting for you.',
+    list: ['Changes anything you ask, in your own words', 'Picks the best moments of every clip', 'Trendy transitions and effects, right on the beat', 'Captions and pro colour, automatically'],
+    bal: null, ok: low ? 'Add credits' : 'Get a plan', no: 'Not now' });
+  if(v === true) void toPricing(low ? '?feature=credits#credits' : '?feature=chat');
+}
 async function toPricing(where){
   if(IN_APP) return;
   let id = ''; try{ id = await saveNow(); }catch(e){}
@@ -2212,6 +2228,9 @@ async function askNotDone(){
 }
 async function upsell(){
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
+  // the plan not known yet (nobody was signed in when the studio opened, or its answer is still coming): asked now,
+  // so a Free account always gets its choice
+  if(!aiInfo) await aiCheck();
   if(!aiLocked){
     if(!aiOn) return 'skip';
     if(aiReelOk()){ aiRun(); return 'skip'; }   // already agreed for this Reel: the AI starts (it was held)
@@ -2646,6 +2665,9 @@ async function chatSend(text){
   if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
   chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
   $('chatin').value = ''; chatFit();
+  // Free (no Shubix AI in the plan), on the website: whatever is typed, Shubix AI says it is ready and waits for a plan
+  // (2026-11-13: the chat sells the plans; nothing is changed for free from it). The app sells nothing: as before.
+  if(aiLocked && !IN_APP){ chatAnswer("I'm ready to make this a professional Reel, the way you asked. Get a plan or add credits and I'll start right away. I'm waiting!"); void aiSell(false); return; }
   const ready = buf && sources.length && edit.length && !recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
   // a model round-trip, a credit check or a server upload; verify the full scope before replying.
@@ -2689,7 +2711,7 @@ async function chatSend(text){
     const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (cost ? 'It uses ' + creditWord(cost) + '.' : 'Included in your plan.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
   } else if(cost && bal !== null){
-    if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + '.'); if(!IN_APP) $('chatlog').appendChild(pricingLink('Top up')); return; }
+    if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + ". Add credits and I'll do it right away."); if(!IN_APP){ $('chatlog').appendChild(pricingLink('Top up')); void aiSell(true, cost, bal); } return; }
     const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed and no credits used.'); return; }
   }
@@ -2872,6 +2894,29 @@ function tasteFx(e, i, t){
   if(photo && e.efx === 'none') e.efx = 'pan-soft';   // a photo always moves a little (Ken Burns); a still one looks stuck
   t.prevZoom = ZOOM_FX.has(e.efx) || e.efx === 'hook';
   if(t.prevZoom) t.lastZoom = e.start;
+}
+// Motion-matched cuts, as an editor makes them: where the camera pans the same way at the end of one shot and the start of
+// the next, the cut becomes a whip in that direction (the movement carries on through the cut); a whip or push the rules
+// chose goes the way the camera moves, not against it. The AI's and the copied Reel's own transitions are kept.
+function motionMatch(){
+  if(mode === 'smooth' || edit.length < 2 || copyExact()) return;   // a copied Reel: its own cuts, hard ones too
+  const gxIn = (src, a, b) => { const S = (src.samples || []).filter(x => x.t >= a && x.t <= b && x.gx !== undefined); return S.length ? S.reduce((q, x) => q + x.gx, 0)/S.length : 0; };
+  const span = e => { const used = e.sp.pos(e.end - e.start)*(e.scaleR || 1); return [e.in, e.in + used]; };
+  let whips = Math.max(1, Math.round(2*Math.max(1, buf.duration/30))) - edit.filter(e => e.tr === 'whip').length, lastWhip = -9;
+  edit.forEach((e, i) => {
+    if(!i || e.trByDir || e.trByRef) return;
+    const pe = edit[i-1], src = sources[e.src], psrc = sources[pe.src]; if(!src || !psrc) return;
+    const [, pb] = span(pe), [ea] = span(e);
+    const out = gxIn(psrc, pb - 0.45, pb), inn = gxIn(src, ea, ea + 0.45), len = e.end - e.start, plen = pe.end - pe.start;
+    const sameWay = Math.abs(out) >= 0.5 && Math.abs(inn) >= 0.5 && Math.sign(out) === Math.sign(inn);
+    const dir = Math.abs(inn) >= 0.35 ? inn : Math.abs(out) >= 0.5 ? out : 0;
+    if(e.tr === 'whip'){ if(dir) e.trRev = dir > 0; lastWhip = i; return; }
+    if(e.tr === 'slideleft' || e.tr === 'slideright'){ if(dir) e.tr = dir > 0 ? 'slideright' : 'slideleft'; return; }
+    // a pan carried through the cut: only on a plain cut or a rotating mask/push, never on the song's flashes and dips
+    if(sameWay && whips > 0 && i - lastWhip >= 3 && len >= 0.35 && plen >= 0.35 && !['flash','dip','dissolve','fadein','dipwhite'].includes(e.tr)){
+      e.tr = 'whip'; e.trRev = out > 0; e.trd = undefined; e.why = (e.why ? e.why + ' · ' : '') + 'whip with the camera move'; whips--; lastWhip = i;
+    }
+  });
 }
 function finishTransitions(){
   const per = Math.max(1, buf.duration/30), left = {snap:Math.round(2*per), whip:Math.round(2*per), spin:Math.round(1*per), glitch:Math.round(2*per), bars:Math.round(2*per), iris:Math.round(3*per), zoom:Math.round(3*per), wipe:Math.round(2*per), dissolve:Math.round(2*per) + (mode==='smooth' ? 99 : 0), flash:Math.round(6*per) + (mode==='fast' ? 99 : 0)};
@@ -3127,6 +3172,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     if(['rising','falling','steady'].includes(m.trend)) o.trend = m.trend;
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
+    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
       if(['lin','inOut','outCubic','outExpo','outBack'].includes(m.ease)) o.ease = m.ease; }
     return o; });
@@ -3494,6 +3540,10 @@ function scoreWindow(i, src, a, need, gmax){
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
   const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1);
+  // Copy a Reel: the moment most like the reference's shot here (a calm shot for a calm one, action for action, as bright)
+  const rm = mode === 'copy' && refProfile && !refProfile.learned && refProfile.moments ? refProfile.moments[s.ref ?? i] : null;
+  if(rm && rm.mo !== undefined){ sc += 1.4*(1 - Math.min(1, 1.6*Math.abs(m - rm.mo))) - 0.7;
+    if(rm.br !== undefined) sc += 0.5*(1 - Math.min(1, 3*Math.abs(st.b - rm.br))) - 0.25; }
   return {sc, st, m, ai};
 }
 // the creator's keyframes stay on their shots when the edit is made again (the AI's scores or the director arriving,
@@ -3606,7 +3656,8 @@ function makeEditNow(){
   let seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null; seqFloor = 0.4;
   // In my order, each clip is one shot (1 2 3 4…): the song's cuts that would fall inside a clip are let go, so its
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
-  if(seq && seqOn && sources.length > 1){
+  // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
+  if(seq && seqOn && sources.length > 1 && !copyExact()){
     for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
     }
@@ -3760,6 +3811,7 @@ function makeEditNow(){
     e.kf = keyframesFor(e);
     e.beatsIn = beats.filter(b=>b>e.start+0.12 && b<e.end-0.05).map(b=>b-e.start);
   });
+  if(!natural) motionMatch();
   ukRestore(keptUk);
   setCanvas(); edit.forEach(e=>camAt(e, 0)); renderEDL();
   autoTools(); speechScan();
@@ -5305,8 +5357,9 @@ function drawFrame2D(t){
     const q = EASE.outCubic(p);
     switch(e.tr){
       case 'whip': {   // slide with motion blur trails
-        for(let k=4;k>=0;k--){ const a = k ? 0.18 : 1; drawShot(og, pe, pl, {alpha:a, dx:-q*W - k*0.05*W, noFx:true}); }
-        for(let k=4;k>=0;k--){ const a = k ? 0.18 : 1; drawShot(og, e, local, {alpha:a, dx:(1-q)*W + k*0.05*W, noFx:!!k}); }
+        const sg = e.trRev ? -1 : 1;   // trRev: the whip goes right, with a camera panning left
+        for(let k=4;k>=0;k--){ const a = k ? 0.18 : 1; drawShot(og, pe, pl, {alpha:a, dx:sg*(-q*W - k*0.05*W), noFx:true}); }
+        for(let k=4;k>=0;k--){ const a = k ? 0.18 : 1; drawShot(og, e, local, {alpha:a, dx:sg*((1-q)*W + k*0.05*W), noFx:!!k}); }
         break; }
       case 'zoom': drawShot(og, pe, pl, {scale:1+0.9*EASE.inQuad(p), zblur:1, noFx:false}); drawShot(og, e, local, {alpha:q, scale:1.6-0.6*q, zblur:1-q}); break;
       case 'spin': drawShot(og, pe, pl, {rot:90*EASE.inQuad(p), scale:1+0.5*p, alpha:1-q}); drawShot(og, e, local, {rot:-90*(1-q), scale:1.5-0.5*q, alpha:q, zblur:1-q}); break;
@@ -5739,7 +5792,7 @@ function drawFrameGL(t){
   if(e.efx === 'strobe'){ const bts = shotBeats(e).filter(b => local >= b), d = bts.length ? local - bts[bts.length-1] : 9; if(d < 0.1){ S.grade.mono = 1; S.flash = Math.max(S.flash||0, 0.3*(1 - d/0.1)); S.grade.con *= 1.25; } }
   if(inTr){
     switch(e.tr){
-      case 'whip': { const blur = 0.09*W*Math.sin(Math.PI*q); S.A = layerOf(pe, pl, {dx:-q*W, db:[blur,0], noFx:true}); S.B = layerOf(e, local, {dx:(1-q)*W, db:[blur,0]}); S.mode = 3; break; }
+      case 'whip': { const blur = 0.09*W*Math.sin(Math.PI*q); const sg = e.trRev ? -1 : 1; S.A = layerOf(pe, pl, {dx:-sg*q*W, db:[blur,0], noFx:true}); S.B = layerOf(e, local, {dx:sg*(1-q)*W, db:[blur,0]}); S.mode = 3; break; }
       case 'zoom': S.A = layerOf(pe, pl, {scale:1+0.9*p*p, zb:1.2, noFx:true}); S.B = layerOf(e, local, {scale:1.6-0.6*q, zb:1-q}); S.mode = 1; S.mix = q; break;
       case 'spin': S.A = layerOf(pe, pl, {rot:90*p*p, scale:1+0.5*p, zb:0.8, noFx:true}); S.B = layerOf(e, local, {rot:-90*(1-q), scale:1.5-0.5*q, zb:1-q}); S.mode = 1; S.mix = q; break;
       case 'glitch': S.B = layerOf(e, local, {rgb:22*(1-p)}); S.mode = 5; break;
@@ -6095,7 +6148,7 @@ async function recordExport(){
     const sh = saveFile(blob, name);
     tasks.done('export', 'Your Reel is ready · ' + (blob.size/1e6).toFixed(1) + ' MB');
     notify('Your Reel is ready', 'ok');
-    showMsg(savedMsg(sh, 'Video') + ': '+name+' ('+(blob.size/1e6).toFixed(1)+' MB). Ready for Instagram, TikTok and Shorts.');
+    $('xmsg').hidden = true;   // the export sheet shows the saved video and its buttons: no note left on the editor after it
   } finally {
     onEnd = null; if(recCleanup){ recCleanup(); recCleanup = null; }
     if(tick) clearInterval(tick);
@@ -6369,8 +6422,8 @@ async function fastExport(){
     const name = fileTitle() + '.' + (mp4 ? 'mp4' : 'webm');   // the Reel's own name (Untitled 1, or what it was renamed to)
     const sh = saveFile(blob, name);
     tasks.done('export', 'Your Reel is ready · ' + (blob.size/1e6).toFixed(1) + ' MB');
-    if(noSong){ notify('Your Reel is ready', 'ok'); showMsg(savedMsg(sh, 'Video') + ' without the song: ' + noSongTip()); return true; }
-    notify('Your Reel is ready', 'ok'); showMsg(savedMsg(sh, 'Video') + ': ' + name + ' (' + (blob.size/1e6).toFixed(1) + ' MB). Ready for Instagram, TikTok and Shorts.');
+    if(noSong){ notify('Your Reel is ready', 'ok'); $('xmsg').hidden = true; return true; }
+    notify('Your Reel is ready', 'ok'); $('xmsg').hidden = true;   // the export sheet says it; nothing stays on the editor
     return true;
   } finally {
     exporting = false; edit.forEach(e=>{ e.fc = null; e.fcLast = null; if(e.tail){ e.tail.forEach(c => { c.width = c.height = 0; }); e.tail = null; } }); layers.forEach(L => { L.fc = null; });
@@ -6781,6 +6834,28 @@ async function frameCuts(fs, dur, onP){
   return { cuts, flicker };
 }
 const refKeyOf = f => f ? f.name + '|' + f.size + '|' + (f.lastModified || 0) : '';
+// A reference shot's speed, read from how much its picture moves over time (a speed ramp is the same footage moving 3x
+// faster or slower): five speeds (start, 1/4, middle, 3/4, end) when the shot clearly speeds up or slows down, and a
+// freeze (the share of the shot played before the picture stops) when it moved and then stood still. Short or quiet
+// shots, and motion that goes up and down with the action, are not read as speed.
+function refSpeedOf(smp, a, b, mMax, freeze){
+  const a0 = a + 0.35, b0 = b - 0.1, L = b0 - a0, out = {}; if(L < 0.8) return out;   // the first 0.35 s after a cut reads low (the scan damps it)
+  const S = smp.filter(q => q.t >= a0 && q.t < b0 && !q.cut); if(S.length < 8) return out;
+  const at = f => { const c = a0 + f*L, w = 0.15*L; const W = S.filter(q => Math.abs(q.t - c) <= w); return W.length ? W.reduce((x, q) => x + q.m, 0)/W.length : null; };
+  const mk = [0, 0.25, 0.5, 0.75, 1].map(at);
+  if(freeze !== null && freeze >= 0.15 && freeze <= 0.9){
+    const before = S.filter(q => q.t < a + freeze*(b - a)), after = S.filter(q => q.t > a + (freeze + 0.05)*(b - a)), avg = x => x.length ? x.reduce((u, q) => u + q.m, 0)/x.length : 0;
+    if(after.length >= 2 && avg(before) >= 0.2*mMax && avg(after) <= 0.03*mMax) { out.frz = +freeze.toFixed(2); return out; }
+  }
+  if(mk.some(x => x === null)) return out;
+  const hi = Math.max(...mk), mean = mk.reduce((x, y) => x + y, 0)/5; if(mean < 0.15*mMax) return out;
+  const lo = Math.max(0.05*hi, Math.min(...mk)); if(hi/lo < 5) return out;   // a ramp is 3x against 0.5x (6x) or more; the action alone varies less
+  const d = mk.slice(1).map((x, k) => Math.sign(Math.round((x - mk[k])/hi*10))), turns = d.filter((x, k) => k && x && d[k-1] && x !== d[k-1]).length;
+  if(turns > 1) return out;   // up, down, up: the action, not a ramp
+  const g = Math.exp(mk.reduce((x, y) => x + Math.log(Math.max(lo, y)), 0)/5);
+  out.spd = mk.map(x => +Math.min(2.5, Math.max(0.35, Math.pow(Math.max(lo, x)/g, 0.8))).toFixed(2));
+  return out;
+}
 async function analyzeReference(file, onP){
   const url = URL.createObjectURL(file);
   try{
@@ -6788,11 +6863,12 @@ async function analyzeReference(file, onP){
     if(!isFinite(dur) || dur <= 1 || !w) throw new Error('This video cannot be read here.');
     onP(0.02, 'listening to its music');
     // its music: the beats (shot lengths are measured in beats, so the pace carries over to another tempo)
-    let rb = null, rr = null, rmap = null;
+    let rb = null, rr = null, rmap = null, refAudio = null;
     try{ const ab = await decodeAnyAudio(file); const m = new Float32Array(ab.length);
       for(let c=0;c<ab.numberOfChannels;c++){ const d = ab.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ab.numberOfChannels; }
       let r; try{ r = await analyseInWorker(m, ab.sampleRate); }catch(e){ r = songAnalysis(m, ab.sampleRate); }
       if(r.beats && r.beats.length > 8) rb = r.beats;
+      refAudio = { mono: m, sr: ab.sampleRate, curve: onsetCurve(m, ab.sampleRate) };   // where it is in the creator's song (refAlign)
       rr = r; try{ rmap = soundMap(m, ab.sampleRate); }catch(e){ rmap = null; } }catch(e){ /* no soundtrack: pace in seconds */ }
     // its cuts: the same reading as a clip (scene changes, frame-accurate)
     const ps = { url, dur, w, h, file }; let refCutsOut = [];   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
@@ -6901,9 +6977,16 @@ async function analyzeReference(file, onP){
     Object.keys(trans).forEach(k=>{ trans[k] /= cuts.length; });
     const look = avgLook(looks);
     const drops = rr ? (rr.cuts || []).filter((c,k)=>rr.cutType[k] === 'drop') : [];
+    // what each shot shows, for picking the creator's moments like it (scoreWindow): how much moves in it (0-1, against
+    // the Reel's busiest shot) and how bright it is; the frames at its cuts are left out (a cut is all change)
+    const smp = ps.samples || [], shotStat = shots.map(s => { let m = 0, b = 0, n = 0;
+      for(const q of smp){ if(q.t >= s.a + 0.07 && q.t < s.b - 0.07){ m += q.m; b += q.b; n++; } } return n ? { m: m/n, b: b/n } : null; });
+    const mMax = Math.max(1e-6, ...shotStat.map(x => x ? x.m : 0));
     const moments = shots.slice(0, 200).map((s,i)=>{
       const mm = { beats: shotBeats[i] || 0, sec: +shotSec[i].toFixed(3), at: +s.a.toFixed(3), tr: i ? (cuts[i-1] ? cuts[i-1].kind : 'hard') : 'start', zoom: s.zoom > 1.03 ? 'in' : s.zoom < 0.97 ? 'out' : 'none' };
       if(s.flick) mm.flick = true;
+      if(shotStat[i] && !s.flick){ mm.mo = +(shotStat[i].m/mMax).toFixed(3); mm.br = +shotStat[i].b.toFixed(3);
+        const sp = refSpeedOf(smp, s.a, s.b, mMax, s.move ? s.move.freeze : null); if(sp.spd) mm.spd = sp.spd; if(sp.frz !== undefined) mm.frz = sp.frz; }
       // the Reel ends on black (an end card: a logo on black): the copy ends on black too
       if(i === shots.length - 1 && i > 0 && cuts[i-1] && cuts[i-1].after < 0.06 && s.b - s.a >= 0.8) mm.black = true;
       if(s.move){ if(s.move.keys.length >= 2 && (s.move.zoom !== 'none' || s.move.keys.some(k=>Math.abs(k.x) > 0.02 || Math.abs(k.y) > 0.02 || Math.abs(k.r) >= 2))){ mm.move = s.move.keys; mm.ease = s.move.ease; }
@@ -6913,7 +6996,7 @@ async function analyzeReference(file, onP){
         if(dm.hits && dm.hits.length) mm.hit = dm.hits.slice().sort((x,y)=>y.p-x.p)[0].k;
         if(drops.some(d=>Math.abs(d - s.a) < 0.15)) mm.drop = true; }
       return mm; });
-    return { name: file.name, key: refKeyOf(file), dur, w, h, moments, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
+    return { name: file.name, key: refKeyOf(file), audio: refAudio, dur, w, h, moments, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
       hookBeats: shotBeats[0] || 0, hookSec: shotSec[0] || 0, onBeat, energy, trans,
       zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
       look, bpm: P ? 60/P : 0 };
@@ -6932,9 +7015,31 @@ function describeRef(R){
 // Copy a Reel with the Reel's own song (the usual case: its song comes with it): every shot at its own time, to the frame,
 // not fitted again to beats found in the song: a cut on each eighth note, a stutter of a tenth of a second and a flicker
 // land exactly where they were. Another song: copyPlan (the shots' lengths in beats, on that song's beats).
-const copyTimed = () => mode === 'copy' && !!refProfile && !refProfile.learned && !!refProfile.key && !!song && !!song.file && refKeyOf(song.file) === refProfile.key && (refProfile.moments || []).some(m => m.at !== undefined);
+const copyTimed = () => mode === 'copy' && !!refProfile && !refProfile.learned && !!song && !!song.file && (refProfile.moments || []).some(m => m.at !== undefined)
+  && ((!!refProfile.key && refKeyOf(song.file) === refProfile.key) || refAlign() !== null);
+// The same song given as its own file (an mp3, another length, from the song's start): the Reel's sound found in it, to a
+// millisecond (songAlign.ts), so every cut lands at its own moment of the song all the same. null: not the same music.
+// Where the Reel's first frame is in the song (s): 0 for the Reel's own file.
+const refAligned = new WeakMap();
+function refAlign(){
+  const R = refProfile;
+  if(!R || R.learned || !R.audio || !song || !song.mono || !song.buf) return null;
+  if(R.key && song.file && refKeyOf(song.file) === R.key) return { at: 0 };
+  let byRef = refAligned.get(R); if(!byRef){ byRef = new Map(); refAligned.set(R, byRef); }
+  if(byRef.has(song.key)) return byRef.get(song.key);
+  let out = null;
+  try{
+    const sr = song.buf.sampleRate; if(!song.alignCurve) song.alignCurve = onsetCurve(song.mono, sr);
+    const a = alignInSong(R.audio.curve, song.alignCurve);
+    if(a){ out = { at: refineAlign(R.audio.mono, R.audio.sr, song.mono, sr, a.at), score: a.score };
+      rlog('song', 'Copy a Reel: the same song · the Reel starts at ' + out.at.toFixed(3) + ' s of it', { score: +a.score.toFixed(3), margin: +a.margin.toFixed(3) }); }
+  }catch(e){ console.warn('song alignment', e); }
+  byRef.set(song.key, out);
+  return out;
+}
+const refSongAt = () => { const a = refAlign(); return a ? a.at : 0; };
 function copyPlanTimed(){
-  const R = refProfile, M = R.moments, dur = buf.duration, off = secStart || 0, out = [];
+  const R = refProfile, M = R.moments, dur = buf.duration, off = (secStart || 0) - refSongAt(), out = [];   // the Reel's time + its start in the song - the part's start
   const typeAt = t => { const b = basePlan.find(s=>Math.abs(s.start - t) < 0.06); return b ? b.type : 'cut'; };
   M.forEach((m, i) => {
     const a = Math.max(0, m.at - off), b = Math.min(dur, m.at + m.sec - off);
@@ -7020,6 +7125,9 @@ function copyShots(){
       s.ak = m.move.map(k=>({ t: +(clip(k.f, 0, 1)*len).toFixed(3), s: clip(k.s, 0.4, 2.5), x: clip(k.x, -0.6, 0.6), y: clip(k.y, -0.6, 0.6), r: clip(k.r, -60, 60), o: 1, ez }));
     } else if(m.zoom === 'in' || m.zoom === 'out') s.efx = len > 1.2 ? 'pan' : 'punch-soft';
     if(m.shake && !s.ak.length) s.efx = 'shake';
+    // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
+    const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
+    if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
   });
 }
 // How close the new Reel is to the one copied, shot by shot (shown under it, and read by the checks): each shot's
@@ -7044,7 +7152,7 @@ function copyMatch(){
     const want = {}; Object.entries(R.trans || {}).forEach(([k,v])=>{ const t = REF_TR[k] || 'hard'; want[t] = (want[t]||0) + v; });
     let l1 = 0; new Set([...Object.keys(got), ...Object.keys(want)]).forEach(k=>{ l1 += Math.abs((got[k]||0) - (want[k]||0)); }); tr = 1 - l1/2; tn = 1; }
   // shots the edit does not have count as misses (an edit with a third of the Reel's cuts is not 90% alike)
-  const inSong = timed ? M.filter(m => m.at - (secStart || 0) < buf.duration - 0.05 && m.at + m.sec - (secStart || 0) > 0).length : 0;
+  const o0 = (secStart || 0) - (timed ? refSongAt() : 0), inSong = timed ? M.filter(m => m.at - o0 < buf.duration - 0.05 && m.at + m.sec - o0 > 0).length : 0;
   const cover = inSong ? Math.min(1, edit.length/inSong) : 1;
   const parts = { rhythm: cover*pace/pn, transitions: tn ? tr/tn : 1, moves: mn ? mv/mn : 1, look: copyLookScore };
   const w = { rhythm: 0.35, transitions: 0.3, moves: 0.15, look: 0.2 }; let s = 0, ws = 0;
@@ -7117,7 +7225,9 @@ $('reffile').addEventListener('change', async e=>{
     setMode('copy');
     refLookRun(f, refProfile);   // its texts, stickers, captions, background: the AI reads them (when it is on)
   }catch(err){ console.warn('reference not read:', err); $('refinfo').textContent = 'We could not read that Reel. Please try another video.'; notify('We could not read that Reel. Please try another video.', 'err'); }
-  finally{ refReading = false; root.classList.remove('refread'); mirror.disconnect(); refWaiters.splice(0).forEach(r => r()); if(buf && sources.length && !recording) makeEdit(); }   // now the AI may plan (the copy, or the Reel as it is)
+  finally{ refReading = false; root.classList.remove('refread'); mirror.disconnect(); refWaiters.splice(0).forEach(r => r());
+    // the same song as the Reel's, given as its own file: its part is cut again at the Reel's place (useSection makes the edit)
+    if(song && song.r && sec.auto && refAlign()) void useSection(); else if(buf && sources.length && !recording) makeEdit(); }   // now the AI may plan (the copy, or the Reel as it is)
 });
 $('refchange').addEventListener('click', ()=>$('reffile').click());
 /* ---- Copy a Reel, what is written and stuck on it ----
@@ -7859,7 +7969,7 @@ function pdb(){ return new Promise((res, rej) => { const r = indexedDB.open(PDB,
 function idb(store, mode, fn){ return pdb().then(d => new Promise((res, rej) => { const t = d.transaction(store, mode), req = fn(t.objectStore(store));
   t.oncomplete = () => { d.close(); res(req && 'result' in req ? req.result : undefined); }; t.onerror = () => { d.close(); rej(t.error); }; t.onabort = () => { d.close(); rej(t.error || new Error('storage full')); }; })); }
 function editOf(){
-  return kind === 'talk' ? [] : edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, black: e.black || undefined }));
+  return kind === 'talk' ? [] : edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
 function stateOf(){
   return { kind, song: song && song.file ? { fp: fileFp(song.file), name: song.name } : null, sec: { len: sec.len, auto: sec.auto, start: sec.start },
@@ -8021,7 +8131,7 @@ function restoreEdit(list){
   if(!list.every(x => sources[x.src])) return false;
   stopAll(); const uc = sources.map(() => 0);
   edit = list.map(x => { const e = { ...x, el: sources[x.src].els[(uc[x.src]++) % 3], dirWhy: '', why: '' }; e.sp = speedFor(x.sp, e); e.kf = keyframesFor(e); e.beatsIn = beats.filter(b => b > e.start + 0.12 && b < e.end - 0.05).map(b => b - e.start); return e; });
-  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, black: e.black }));
+  plan = edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, trRev: e.trRev, black: e.black }));
   setCanvas(); edit.forEach(e => camAt(e, 0)); renderEDL(); drawMusic(); captureLoop(); editGen++;
   flickBuild();   // a saved flicker montage: its stills again
   return true;

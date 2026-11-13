@@ -8,12 +8,17 @@ import { cn } from "@/lib/cn";
 
 /** After a Reel is exported (the studio sends "shubix:reel-exported" with its id), ask once for that Reel: stars, a
  * comment (Home shows it once an admin approves it), and what to improve (for the team only). Signed-in people only;
- * a Reel asked about (sent or skipped) is not asked again on this device. */
+ * asked after every export, also when it was closed before; a Reel whose review was sent is not asked again on this device. */
 
 export const REEL_EXPORTED = "shubix:reel-exported";
-const KEY = (id: string) => `review-asked:${id}`;
+// a Reel whose review was sent ("review-asked:" before 2026-11-13 also counted a closed popup: not read any more)
+const KEY = (id: string) => `review-sent:${id}`;
 const asked = (id: string) => { try { return localStorage.getItem(KEY(id)) === "1"; } catch { return false; } };
-const markAsked = (id: string) => { try { localStorage.setItem(KEY(id), "1"); } catch { /* private mode: asked again next time */ } };
+const markAsked = (id: string) => { try { localStorage.setItem(KEY(id), "1"); if (localStorage.getItem(PENDING) === id) localStorage.removeItem(PENDING); } catch { /* private mode: asked again next time */ } };
+// the Reel exported but not asked about yet (downloaded, then the tab or the app closed): asked on the next visit
+const PENDING = "review-pending";
+const setPending = (id: string) => { try { localStorage.setItem(PENDING, id); } catch { /* private mode */ } };
+const pending = () => { try { return localStorage.getItem(PENDING) ?? ""; } catch { return ""; } };
 const LABEL = ["", "Bad", "Not great", "Okay", "Good", "Loved it"];
 
 export function Stars({ value, size = 18 }: { value: number; size?: number }) {
@@ -45,15 +50,22 @@ export function ReviewPrompt() {
       const id = String((e as CustomEvent<{ reelId?: string }>).detail?.reelId ?? "");
       // the phone app's hidden studio (/engine) is never seen: no pop-up there
       if (!/^[A-Za-z0-9_-]{4,40}$/.test(id) || asked(id) || window.location.pathname.startsWith("/engine")) return;
+      setPending(id);
       window.clearTimeout(timer.current);
       // a moment first: the finished Reel and its download/share come up before this
       timer.current = window.setTimeout(() => { setRating(0); setComment(""); setImprovement(""); setDone(false); setError(""); setReelId(id); }, 2500);
     };
     window.addEventListener(REEL_EXPORTED, onDone);
+    // a Reel exported last time and never asked about (the page closed before the question came): asked now, after a
+    // moment, on any page but the studio's own engine
+    const left = pending();
+    if (left && /^[A-Za-z0-9_-]{4,40}$/.test(left) && !asked(left) && !window.location.pathname.startsWith("/engine"))
+      timer.current = window.setTimeout(() => { setRating(0); setComment(""); setImprovement(""); setDone(false); setError(""); setReelId(left); }, 2500);
     return () => { window.removeEventListener(REEL_EXPORTED, onDone); window.clearTimeout(timer.current); };
   }, [signedIn]);
 
-  const close = useCallback(() => { if (reelId) markAsked(reelId); setReelId(null); }, [reelId]);
+  // closed without sending: asked again after the next export (the team wants every review); only not on the next visit
+  const close = useCallback(() => { try { if (reelId && localStorage.getItem(PENDING) === reelId) localStorage.removeItem(PENDING); } catch { /* private mode */ } setReelId(null); }, [reelId]);
   useEffect(() => {
     if (!reelId) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
@@ -73,7 +85,7 @@ export function ReviewPrompt() {
   };
 
   return (
-    <div data-popup className="fixed inset-0 z-[90] grid place-items-end bg-[var(--overlay)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:place-items-center" onClick={close}>
+    <div data-popup className="fixed inset-0 z-[300] grid place-items-end bg-[var(--overlay)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:place-items-center" onClick={close}>
       <div role="dialog" aria-modal="true" aria-labelledby="review-title" onClick={(e) => e.stopPropagation()}
         className="flex max-h-[calc(100dvh-32px)] w-full max-w-md animate-pop flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-surface p-5 shadow-2xl">
         {done ? (

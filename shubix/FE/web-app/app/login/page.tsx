@@ -95,8 +95,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="isolate min-h-svh overflow-hidden bg-background bg-[image:radial-gradient(950px_520px_at_90%_-20%,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_68%)] text-foreground">
-      <div className="mx-auto grid min-h-svh w-full max-w-[1600px] lg:grid-cols-[1.02fr_.98fr]">
+    <main className="isolate min-h-svh overflow-hidden lg:h-svh bg-background bg-[image:radial-gradient(950px_520px_at_90%_-20%,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_68%)] text-foreground">
+      <div className="mx-auto grid min-h-svh w-full max-w-[1600px] lg:h-svh lg:grid-cols-[1.02fr_.98fr]">
         <section className="before:pointer-events-none before:absolute before:-top-[44%] before:-right-[34%] before:-z-1 before:aspect-square before:w-[min(80vw,720px)] before:rounded-full before:border before:border-[rgba(240,217,155,.09)] before:shadow-[0_0_0_28px_rgba(240,217,155,.018),0_0_0_64px_rgba(240,217,155,.014),0_0_100px_rgba(216,189,123,.08)] before:content-[''] after:pointer-events-none after:absolute after:-bottom-[48%] after:-left-1/4 after:-z-1 after:aspect-square after:w-[min(50vw,420px)] after:rounded-full after:bg-[radial-gradient(circle,rgba(216,189,123,.13),transparent_70%)] after:blur-[5px] after:content-[''] isolate relative flex bg-[linear-gradient(142deg,#111110_0%,#171613_57%,#252117_100%)] text-[#f4f0e7] min-h-[260px] flex-col overflow-hidden px-5 pb-8 pt-[max(20px,env(safe-area-inset-top))] sm:min-h-[310px] sm:px-9 sm:pb-11 lg:sticky lg:top-0 lg:h-svh lg:min-h-[680px] lg:px-12 lg:pb-12 lg:pt-10 xl:px-16" aria-label={text("nav.music")}>
           <span className={cn(GLOW, "top-[24%] right-[16%] bg-[rgba(185,150,77,.16)]")} aria-hidden />
           <span className={cn(GLOW, "bottom-[7%] left-[12%] bg-[rgba(116,94,51,.12)] [animation-delay:-4s]")} aria-hidden />
@@ -140,7 +140,7 @@ export default function LoginPage() {
           <SoundBars bars={bars.slice(0, 28)} unit="%" step={-0.13} speed="animate-[wave_.9s_ease-in-out_infinite_alternate]" barClassName="max-w-[5px]" className="absolute right-5 bottom-6 z-1 h-5 w-[118px] gap-[3px] opacity-[.66] sm:hidden" />
         </section>
 
-        <section className="isolate relative -mt-5 flex min-h-[calc(100svh-260px)] flex-col justify-center rounded-t-[26px] border-t border-border bg-background px-4 pb-[max(24px,env(safe-area-inset-bottom))] pt-7 sm:px-8 lg:mt-0 lg:min-h-svh lg:rounded-none lg:border-0 lg:px-10 lg:py-12 xl:px-16">
+        <section className="isolate relative -mt-5 flex min-h-[calc(100svh-260px)] flex-col justify-center rounded-t-[26px] border-t border-border bg-background px-4 pb-[max(24px,env(safe-area-inset-bottom))] pt-7 sm:px-8 lg:mt-0 lg:h-svh lg:min-h-0 lg:justify-center-safe lg:overflow-y-auto lg:overscroll-contain lg:rounded-none lg:border-0 lg:px-10 lg:py-12 xl:px-16">
           <div className="mx-auto w-full max-w-[440px] animate-[enter_.55s_.05s_both_cubic-bezier(.2,.7,.25,1)] motion-reduce:animate-none">
             <div className="mb-5 flex items-center justify-between gap-3 sm:mb-6">
               <div className="min-w-0"><Eyebrow className="text-[10px] text-accent">SHUBIX ACCOUNT</Eyebrow><p className="mt-1 text-[12px] text-muted">{text("auth.signIn")} · {text("auth.signUp")}</p></div>

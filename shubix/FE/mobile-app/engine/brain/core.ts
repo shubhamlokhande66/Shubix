@@ -1003,7 +1003,7 @@ function restoreEdit(list){
   const keyBefore = EH.dirKey(), planned = !!ES.director && ES.director.key === keyBefore;
   EH.stopAll(); const uc = ES.sources.map(() => 0);
   ES.edit = list.map(x => { const e = { ...x, el: ES.sources[x.src].els[(uc[x.src]++) % 3], dirWhy: '', why: '' }; e.sp = EH.speedFor(x.sp, e); e.kf = keyframesFor(e); e.beatsIn = ES.beats.filter(b => b > e.start + 0.12 && b < e.end - 0.05).map(b => b - e.start); return e; });
-  ES.plan = ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, black: e.black }));
+  ES.plan = ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, sp: e.sp, tr: e.tr, efx: e.efx, acc: e.acc, ak: e.ak, ref: e.ref, flick: e.flick, trd: e.trd, trRev: e.trRev, black: e.black }));
   if(planned){ const keyNow = EH.dirKey(); if(keyNow !== keyBefore){ ES.director = { ...ES.director, key: keyNow }; ES.dirCache.set(keyNow, ES.director); } }
   EH.setCanvas(); ES.edit.forEach(e => EH.camAt(e, 0)); EH.renderEDL(); EH.drawMusic(); EH.captureLoop(); ES.editGen++;
   EH.flickBuild();   // a saved flicker montage: its stills again
