@@ -26,6 +26,27 @@ function tasteFx(e, i, t){
   t.prevZoom = EH.ZOOM_FX.has(e.efx) || e.efx === 'hook';
   if(t.prevZoom) t.lastZoom = e.start;
 }
+// Motion-matched cuts (the website's motionMatch, engine.ts): a pan carried through the cut becomes a whip in its
+// direction; a whip or push the rules chose goes the way the camera moves. The AI's and the copied Reel's own are kept.
+function motionMatch(){
+  if(ES.mode === 'smooth' || ES.edit.length < 2) return;
+  const gxIn = (src, a, b) => { const S = (src.samples || []).filter(x => x.t >= a && x.t <= b && x.gx !== undefined); return S.length ? S.reduce((q, x) => q + x.gx, 0)/S.length : 0; };
+  const span = e => { const used = e.sp.pos(e.end - e.start)*(e.scaleR || 1); return [e.in, e.in + used]; };
+  let whips = Math.max(1, Math.round(2*Math.max(1, ES.buf.duration/30))) - ES.edit.filter(e => e.tr === 'whip').length, lastWhip = -9;
+  ES.edit.forEach((e, i) => {
+    if(!i || e.trByDir || e.trByRef) return;
+    const pe = ES.edit[i-1], src = ES.sources[e.src], psrc = ES.sources[pe.src]; if(!src || !psrc) return;
+    const [, pb] = span(pe), [ea] = span(e);
+    const out = gxIn(psrc, pb - 0.45, pb), inn = gxIn(src, ea, ea + 0.45), len = e.end - e.start, plen = pe.end - pe.start;
+    const sameWay = Math.abs(out) >= 0.5 && Math.abs(inn) >= 0.5 && Math.sign(out) === Math.sign(inn);
+    const dir = Math.abs(inn) >= 0.35 ? inn : Math.abs(out) >= 0.5 ? out : 0;
+    if(e.tr === 'whip'){ if(dir) e.trRev = dir > 0; lastWhip = i; return; }
+    if(e.tr === 'slideleft' || e.tr === 'slideright'){ if(dir) e.tr = dir > 0 ? 'slideright' : 'slideleft'; return; }
+    if(sameWay && whips > 0 && i - lastWhip >= 3 && len >= 0.35 && plen >= 0.35 && !['flash','dip','dissolve','fadein','dipwhite'].includes(e.tr)){
+      e.tr = 'whip'; e.trRev = out > 0; e.trd = undefined; e.why = (e.why ? e.why + ' · ' : '') + 'whip with the camera move'; whips--; lastWhip = i;
+    }
+  });
+}
 function makeEditNow(){
   if(ES.refReading) return;   // the Reel to copy is being read: its copy is made right after (no ordinary Reel meanwhile)
   EH.life({ stage: 'making the Reel', clips: ES.sources.length });
@@ -161,6 +182,7 @@ function makeEditNow(){
     e.kf = keyframesFor(e);
     e.beatsIn = ES.beats.filter(b=>b>e.start+0.12 && b<e.end-0.05).map(b=>b-e.start);
   });
+  motionMatch();
   EH.ukRestore(keptUk);
   EH.setCanvas(); ES.edit.forEach(e=>EH.camAt(e, 0)); EH.renderEDL();
   EH.autoTools(); EH.speechScan();

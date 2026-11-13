@@ -397,7 +397,7 @@ class ShubixVideoModule : Module() {
       }
       // the studio's transition into this shot (tr: id, dur): the old shot's last frame and this one, as the website
       val tr = c.optJSONObject("tr")
-      if (shaders?.main != null && tr != null) video += Transition(shaders.vert, shaders.main, held, tr.optString("id"), tr.optDouble("dur"), -base)
+      if (shaders?.main != null && tr != null) video += Transition(shaders.vert, shaders.main, held, tr.optString("id"), tr.optDouble("dur"), -base, tr.optBoolean("rev"))
       if (shaders?.main != null && c.optBoolean("keep")) video += KeepLast(shaders.vert, held)
       video += customEffects(c.optJSONArray("effects"), base, clipOutputDuration, w, h)
       video += studioPasses(shaders, c, -base, clipOutputDuration)   // the studio's own GPU passes (StudioPasses.kt)

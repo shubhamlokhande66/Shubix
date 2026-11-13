@@ -17,7 +17,7 @@ export const SITE_URL = (process.env.EXPO_PUBLIC_SITE_URL || "http://localhost:3
 export type AiPlan = { story: string; lines: string[] };
 export type SongAnalysis = { duration: number; bpm: number; beats: number; drops: number; breaks: number };
 /** a shot of the Reel as the studio made it (its state(): the clip, where in it, the transition into it, its effect, its speed) */
-export type EngineShot = { start: number; end: number; type: string; tr?: string; efx?: string; sp: string; src: number; in: number; cs?: Record<string, unknown>; uk?: NonNullable<ProjectClip["keyframes"]> };
+export type EngineShot = { start: number; end: number; type: string; tr?: string; trRev?: boolean; efx?: string; sp: string; src: number; in: number; cs?: Record<string, unknown>; uk?: NonNullable<ProjectClip["keyframes"]> };
 export type EngineReel = { work: { clips: number; shots: number }; state: { edit: EngineShot[]; mode?: string } & Record<string, unknown> };
 /** the website's Export sheet: quality, frame rate, the watermark, without the song */
 export type StudioExportPlan = { watermark: boolean; res: string; fps: number; bitrate: number; scale: number; stabs: ({ t: number[]; dx: number[]; dy: number[] } | null)[]; beats: number[][]; beatCam: unknown[]; follow: (number[][] | null)[] };
@@ -210,7 +210,7 @@ export function shotsOf(shots: EngineShot[], list: ProjectClip[]): ProjectClip[]
   return shots.map((e, i) => {
     const c = list[e.src] ?? list[0], timeline = e.end - e.start;
     const { start, end, speed } = c.kind === "image" ? { start: 0, end: timeline, speed: 1 } : fitShot(timeline, SPEED[e.sp] ?? 1, c.sourceDuration, e.in);
-    const clip = { ...c, id: `${c.id}-s${i}`, start, end, duration: end - start, speed, transition: e.tr || "hard", effect: e.efx || undefined, keyframes: e.uk, ...(e.cs ? { cs: e.cs } : {}) };
+    const clip = { ...c, id: `${c.id}-s${i}`, start, end, duration: end - start, speed, transition: e.tr || "hard", ...(e.tr === "whip" && e.trRev ? { trRev: true } : {}), effect: e.efx || undefined, keyframes: e.uk, ...(e.cs ? { cs: e.cs } : {}) };
     made.set(clip.id, { shot: e, clip });
     return clip;
   });

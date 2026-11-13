@@ -114,7 +114,7 @@ function nativeSpec(p: ReelProject, width: number, height: number, preview = fal
       // the studio's settings of this shot (Adjust and its keyframes; Curves / HSL as the grade pass)
       ...(clip.cs ? { cs: clip.cs, ...(clip.cs.cv || clip.cs.hsl ? { grade: { cv: clip.cs.cv ?? null, hsl: clip.cs.hsl ?? null } } : {}) } : {}),
       // the studio's own transition (all 44, StudioTransitions.kt); the clip before it keeps its last frame for it
-      ...(studioTr(clip, i) ? { tr: { id: clip.transition, dur: Math.min(TR_DUR[clip.transition], clipDuration(clip) / 2) } } : {}),
+      ...(studioTr(clip, i) ? { tr: { id: clip.transition, dur: Math.min(TR_DUR[clip.transition], clipDuration(clip) / 2), ...(clip.trRev ? { rev: true } : {}) } } : {}),
       ...(studioTr(p.clips[i + 1], i + 1) ? { keep: true } : {}),
       ...(!studioTr(clip, i) && clip.transition && normalizeAndroidTransition(clip.transition)
         ? { transitionIn: { type: normalizeAndroidTransition(clip.transition)!, duration: Math.min(0.35, Math.max(0.001, clipDuration(clip) / 2)) } }

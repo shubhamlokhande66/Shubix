@@ -45,7 +45,7 @@ internal class KeepLast(private val vert: String, private val held: HeldFrame) :
 }
 
 @UnstableApi
-internal class Transition(private val vert: String, private val main: String, private val held: HeldFrame, private val id: String, private val dur: Double, private val offset: Double) : GlEffect {
+internal class Transition(private val vert: String, private val main: String, private val held: HeldFrame, private val id: String, private val dur: Double, private val offset: Double, private val rev: Boolean = false) : GlEffect {
   override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = object : BaseGlShaderProgram(useHdr, 1) {
     private val copy = GlProgram(vert, COPY)
     private val prog = GlProgram(vert, main)
@@ -55,7 +55,7 @@ internal class Transition(private val vert: String, private val main: String, pr
       val local = offset + presentationTimeUs / 1_000_000.0
       val p = if (dur > 0) (local / dur).coerceIn(0.0, 1.0) else 1.0
       if (p >= 1.0 || (!held.has && id != "fadein")) { draw(copy, inputTexId); return }
-      val s = stateOf(id, p, w, h, held.has)
+      val s = stateOf(id, p, w, h, held.has, rev)
       drawMain(prog, if (s.swap) held.tex else inputTexId, if (held.has) held.tex else inputTexId, inputTexId, w, h, s.a, s.b, s.hasA, s.mode, s.prog, s.mix, local.toFloat(), s.flash, s.leak)
     }
     override fun release() { super.release(); copy.delete(); prog.delete() }
@@ -161,14 +161,15 @@ private fun outExpo(x: Double) = if (x >= 1) 1.0 else 1 - 2.0.pow(-10 * x)
 private fun outBack(x: Double): Double { val c1 = 1.70158; val c3 = c1 + 1; return 1 + c3 * (x - 1).pow(3) + c1 * (x - 1).pow(2) }
 
 /** the website's drawFrameGL switch (engine.ts), for a full-frame picture: the same modes, progress and moves */
-private fun stateOf(id: String, p: Double, W: Float, H: Float, hasA: Boolean): TrState {
+/** rev: a whip to the right (the studio matched it to a camera panning left) */
+private fun stateOf(id: String, p: Double, W: Float, H: Float, hasA: Boolean, rev: Boolean = false): TrState {
   val q = outCubic(p)
   fun L(scale: Double = 1.0, dx: Double = 0.0, dy: Double = 0.0, rot: Double = 0.0, zb: Double = 0.0, dbx: Double = 0.0, dby: Double = 0.0, rgb: Double = 0.0) =
     Layer(floatArrayOf((W / 2 - W * scale / 2 + dx).toFloat(), (H / 2 - H * scale / 2 + dy).toFloat(), (W * scale).toFloat(), (H * scale).toFloat()), (rot * PI / 180).toFloat(), zb.toFloat(), dbx.toFloat(), dby.toFloat(), rgb.toFloat())
   val s = TrState(L(), L(), hasA, prog = p.toFloat())
   fun set(a: Layer, b: Layer, mode: Int, mix: Double = 1.0) { s.a.rect = a.rect; s.a.rot = a.rot; s.a.zb = a.zb; s.a.dbx = a.dbx; s.a.dby = a.dby; s.a.clip = a.clip; s.b = b; s.mode = mode.toFloat(); s.mix = mix.toFloat() }
   when (id) {
-    "whip" -> { val bl = 0.09 * W * sin(PI * q); set(L(dx = -q * W, dbx = bl), L(dx = (1 - q) * W, dbx = bl), 3) }
+    "whip" -> { val bl = 0.09 * W * sin(PI * q); val sg = if (rev) -1.0 else 1.0; set(L(dx = -sg * q * W, dbx = bl), L(dx = sg * (1 - q) * W, dbx = bl), 3) }
     "zoom" -> set(L(scale = 1 + 0.9 * p * p, zb = 1.2), L(scale = 1.6 - 0.6 * q, zb = 1 - q), 1, q)
     "spin" -> set(L(rot = 90 * p * p, scale = 1 + 0.5 * p, zb = 0.8), L(rot = -90 * (1 - q), scale = 1.5 - 0.5 * q, zb = 1 - q), 1, q)
     "glitch" -> { s.b = L(rgb = 22 * (1 - p)); s.mode = 5f }
