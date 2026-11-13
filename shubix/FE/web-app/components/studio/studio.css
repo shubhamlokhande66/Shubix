@@ -912,6 +912,9 @@
 .brs .protag{position:absolute;top:3px;right:3px;display:inline-flex;align-items:center;gap:2px;padding:1px 5px 1px 4px;border-radius:6px;background:var(--gold-gradient);color:var(--on-accent,#fff);font:600 8.5px/1.5 var(--body);font-style:normal;letter-spacing:.04em;pointer-events:none}
 .brs .protag svg{width:9px;height:9px;flex:none}
 .brs .protag b{font:inherit}   /* its plan (or the administrator): the tool is simply there */
+/* Edit (the full editor) on a plan below its own: the big button carries the plan's tag at its corner, and opens the plans */
+.brs #fedit{position:relative}
+.brs #fedit .protag{top:-8px;right:-6px;padding:2px 7px;font-size:10px;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .brs.v-one:not(.fopen) #out{max-height:min(52vh,520px)}
 .brs.v-one label.safe{display:none}
 

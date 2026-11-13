@@ -53,15 +53,20 @@ export function HelpChat({ raised = true, authPlacement = false }: { raised?: bo
   return (
     <>
       {!open && (
-        <button type="button" onClick={() => setOpen(true)} aria-label={text("help.open")}
-          className={cn(authPlacement ? "absolute right-4 top-[calc(72px+env(safe-area-inset-top))] z-30 lg:fixed lg:bottom-6 lg:right-6 lg:top-auto" : cn("fixed right-4 z-30", raised ? "bottom-[calc(84px+env(safe-area-inset-bottom))]" : "bottom-[calc(16px+env(safe-area-inset-bottom))]", "md:bottom-6 md:right-6"), "flex h-12 items-center gap-2 rounded-full text-on-accent [background:var(--gold-gradient)] px-4 text-[13.5px] font-bold shadow-[0_10px_30px_-12px_var(--brand-glow)] transition-transform hover:-translate-y-0.5")}>
-          <Icon name="chat" size={20} />
-          <span className="hidden sm:inline">{text("help.button")}</span>
+        // an icon only (phones and computers): a round button with the chat mark, its name for screen readers
+        <button type="button" onClick={() => setOpen(true)} aria-label={text("help.open")} title={text("help.button")}
+          className={cn(authPlacement ? "absolute right-4 top-[calc(72px+env(safe-area-inset-top))] z-30 lg:fixed lg:bottom-6 lg:right-6 lg:top-auto" : cn("fixed right-4 z-30", raised ? "bottom-[calc(84px+env(safe-area-inset-bottom))]" : "bottom-[calc(16px+env(safe-area-inset-bottom))]", "md:bottom-6 md:right-6"),
+            "group grid size-14 place-items-center rounded-full text-on-accent [background:var(--gold-gradient)] shadow-[0_12px_32px_-10px_var(--brand-glow),inset_0_1px_0_rgba(255,255,255,.35)] ring-4 ring-[color-mix(in_srgb,var(--accent)_18%,transparent)] transition-transform duration-200 hover:scale-105 active:scale-95")}>
+          <HelpMark />
+          <span className="absolute right-0.5 top-0.5 size-3 rounded-full border-2 border-background bg-[#3ccf7a]" aria-hidden />
         </button>
       )}
+      {open && <div className="fixed inset-0 z-40 animate-[helpfade_.2s_ease-out_both] bg-[var(--overlay)] md:bg-transparent" onClick={() => setOpen(false)} aria-hidden />}
       {open && (
+        // phones: a sheet from the bottom edge; computers: a card rising from the bottom right corner
         <section role="dialog" aria-label={text("help.title")}
-          className={cn("fixed inset-x-3 z-40", raised ? "bottom-[calc(80px+env(safe-area-inset-bottom))]" : "bottom-[calc(12px+env(safe-area-inset-bottom))]", " flex max-h-[min(72vh,620px)] animate-sheet flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-[0_24px_70px_rgba(20,10,40,.35)] md:inset-x-auto md:bottom-6 md:right-6 md:w-[390px]")}>
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] animate-[helpsheet_.32s_cubic-bezier(.2,.8,.25,1)_both] flex-col overflow-hidden rounded-t-3xl border border-b-0 border-border bg-background pb-[env(safe-area-inset-bottom)] shadow-[0_-18px_60px_rgba(20,10,40,.35)] md:inset-x-auto md:bottom-6 md:right-6 md:max-h-[min(78vh,640px)] md:w-[390px] md:animate-[helpcard_.28s_cubic-bezier(.2,.8,.25,1)_both] md:rounded-3xl md:border-b md:pb-0 md:shadow-[0_24px_70px_rgba(20,10,40,.35)]">
+          <span className="absolute left-1/2 top-1.5 z-10 h-1 w-10 -translate-x-1/2 rounded-full bg-white/35 md:hidden" aria-hidden />
           <header className="flex items-center gap-3 border-b border-white/10 bg-[linear-gradient(135deg,#29271f,#191917_62%,#393326)] px-4 py-3.5 text-white">
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/15"><Icon name="sparkle" size={18} /></span>
             <div className="min-w-0 flex-1">
@@ -110,6 +115,14 @@ export function HelpChat({ raised = true, authPlacement = false }: { raised?: bo
   );
 }
 
+/** the Help button's mark: a speech bubble with three dots and a small spark */
+const HelpMark = () => (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden className="transition-transform duration-200 group-hover:-rotate-6">
+    <path d="M4 11.5C4 7.36 7.58 4 12 4s8 3.36 8 7.5S16.42 19 12 19c-.98 0-1.92-.16-2.8-.46L5 20l1.2-3.3C4.84 15.37 4 13.52 4 11.5Z" fill="currentColor" fillOpacity=".18" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    <circle cx="8.6" cy="11.5" r="1.15" fill="currentColor" /><circle cx="12" cy="11.5" r="1.15" fill="currentColor" /><circle cx="15.4" cy="11.5" r="1.15" fill="currentColor" />
+    <path d="M19.2 2.2l.45 1.15 1.15.45-1.15.45-.45 1.15-.45-1.15-1.15-.45 1.15-.45z" fill="currentColor" />
+  </svg>
+);
 const Bubble = ({ role, children }: { role: "user" | "assistant"; children: React.ReactNode }) => (
   <div className={cn("max-w-[86%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed [&_p]:m-0 [&_p+p]:mt-1.5",
     role === "user" ? "self-end rounded-br-md text-on-accent [background:var(--gold-gradient)]" : "self-start rounded-bl-md border border-border bg-surface shadow-[var(--shadow)]")}>
