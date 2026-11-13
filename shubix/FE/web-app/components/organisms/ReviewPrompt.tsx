@@ -8,10 +8,11 @@ import { cn } from "@/lib/cn";
 
 /** After a Reel is exported (the studio sends "shubix:reel-exported" with its id), ask once for that Reel: stars, a
  * comment (Home shows it once an admin approves it), and what to improve (for the team only). Signed-in people only;
- * a Reel asked about (sent or skipped) is not asked again on this device. */
+ * asked after every export, also when it was closed before; a Reel whose review was sent is not asked again on this device. */
 
 export const REEL_EXPORTED = "shubix:reel-exported";
-const KEY = (id: string) => `review-asked:${id}`;
+// a Reel whose review was sent ("review-asked:" before 2026-11-13 also counted a closed popup: not read any more)
+const KEY = (id: string) => `review-sent:${id}`;
 const asked = (id: string) => { try { return localStorage.getItem(KEY(id)) === "1"; } catch { return false; } };
 const markAsked = (id: string) => { try { localStorage.setItem(KEY(id), "1"); if (localStorage.getItem(PENDING) === id) localStorage.removeItem(PENDING); } catch { /* private mode: asked again next time */ } };
 // the Reel exported but not asked about yet (downloaded, then the tab or the app closed): asked on the next visit
@@ -63,7 +64,8 @@ export function ReviewPrompt() {
     return () => { window.removeEventListener(REEL_EXPORTED, onDone); window.clearTimeout(timer.current); };
   }, [signedIn]);
 
-  const close = useCallback(() => { if (reelId) markAsked(reelId); setReelId(null); }, [reelId]);
+  // closed without sending: asked again after the next export (the team wants every review); only not on the next visit
+  const close = useCallback(() => { try { if (reelId && localStorage.getItem(PENDING) === reelId) localStorage.removeItem(PENDING); } catch { /* private mode */ } setReelId(null); }, [reelId]);
   useEffect(() => {
     if (!reelId) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
