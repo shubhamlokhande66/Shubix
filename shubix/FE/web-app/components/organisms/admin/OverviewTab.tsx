@@ -12,7 +12,7 @@ import { ago, count, page, rupees } from "./format";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export const useOverview = () => useQuery({ queryKey: ["admin", "overview"], queryFn: api.adminOverview, refetchInterval: 60_000 });
+export const useOverview = () => useQuery({ queryKey: ["admin", "overview"], queryFn: api.adminOverview });
 
 export function LiveDot() {
   return (
