@@ -1904,13 +1904,13 @@ function styleEdit(){
   let h = mixNo + 1; for(const c of reelIdNow()) h = (h*31 + c.charCodeAt(0)) >>> 0;
   const pick = () => { h = (h*16807 + 1) % 2147483647; return h / 2147483647; };
   const mixed = a => { const o = [...a]; for(let i = o.length-1; i > 0; i--){ const j = Math.floor(pick()*(i+1)); [o[i], o[j]] = [o[j], o[i]]; } return o; };
-  const HIT_TR = mixed(['whip','iris','zoom','glitch','swipeup','spin','dropin','bars','pixelate'].filter(k => !isLocked('tr', k)));   // only what the plan opens
+  const HIT_TR = mixed(['whip','iris','zoom','glitch','swipeup','spin','dropin','bars','pixelate','cube','flip3d','cubeup'].filter(k => !isLocked('tr', k)));   // only what the plan opens (the 3D ones: Pro)
   const CUT_TR = mixed(['hard','wipe','hard','iris','slideleft','hard','bars','blur','hard','luma','doors'].filter(k => k === 'hard' || !isLocked('tr', k)));
   const HIT_FX = mixed(['punch','tilt','punch','shake']);
   let lastTr = '', lastFx = '', hk = 0, ck = 0, fk = 0, dk = 0;
   const beatsRel = (s) => beats.filter(b=>b>s.start+0.15 && b<s.end-0.1).map(b=>b-s.start);
   // restraint: fancy transitions are rationed (whip pans 1-2 per reel), the rest are clean hard cuts
-  const per = Math.max(1, buf.duration/30), budget = {snap:Math.round(2*per), whip:Math.round(2*per), spin:Math.round(1*per), glitch:Math.round(2*per), bars:Math.round(2*per), iris:Math.round(3*per), zoom:Math.round(3*per), wipe:Math.round(2*per), dissolve:Math.round(2*per)};
+  const per = Math.max(1, buf.duration/30), budget = {snap:Math.round(2*per), whip:Math.round(2*per), spin:Math.round(1*per), glitch:Math.round(2*per), bars:Math.round(2*per), iris:Math.round(3*per), zoom:Math.round(3*per), wipe:Math.round(2*per), dissolve:Math.round(2*per), cube:Math.round(1*per), flip3d:Math.round(1*per), cubeup:Math.round(1*per)};
   const take = k => { if(budget[k]===undefined) return k; if(budget[k]>0){ budget[k]--; return k; } return 'hard'; };
   // beat shapes on a few longer shots and some drops: a different set and order with each seed / mix, never one twice in a row
   const SH_ROT = ['boxgrow','frame','grid','circle','strips','triple','heartbeat','starbeat'].filter(k => !isLocked('fx', k)), SH_DROP = ['kaleido','strobe','triple','rgbpulse','mirror','vhs'].filter(k => !isLocked('fx', k));
@@ -1959,11 +1959,13 @@ const TR_NAME = {hard:'Hard cut', fadein:'Fade-in', flash:'Exposure flash', whip
   slideleft:'Push left', slideright:'Push right', slideup:'Push up', slidedown:'Push down', swipeup:'Swipe up (feed scroll)', zoomout:'Zoom out', blur:'Blur through', flip:'Card flip',
   luma:'Light fade (by brightness)', pixelate:'Pixelate', clock:'Clock wipe', doors:'Doors open', ripple:'Ripple', burn:'Film burn', dropin:'Drop in (bounce)',
   stripes:'Stripes', blinds:'Blinds', checker:'Checkerboard', dots:'Dots', noise:'Noise dissolve', splith:'Split open', wave:'Wave wipe', dipwhite:'Dip to white', chroma:'Colour split', tiles:'Random tiles',
-  zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in'};
+  zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
+  cube:'3D cube', cubeup:'3D cube (up)', flip3d:'3D card flip', swing:'3D door swing'};
 const FX_NAME = {jump:'Punch-in (jump cut)', 'punch-soft':'Soft zoom', 'pan-soft':'Ken Burns (soft)', snap:'Photo snap (freeze + flash)', hook:'Hook zoom + RGB', none:'—', pan:'Ken Burns + beat bounce', zoomburst:'Zoom burst + RGB', drift:'Slow drift + vignette', punch:'Zoom punch', tilt:'Tilt punch', shake:'Shake', bounce:'Beat bounce',
   boxgrow:'Shape: box grows on the beat', grid:'Shape: grid opens on the beat', strips:'Shape: strips on the beat', circle:'Shape: circle pulse', heartbeat:'Shape: heart pulse', starbeat:'Shape: star pulse',
   frame:'Frame in frame', mirror:'Mirror', kaleido:'Kaleidoscope', triple:'Triple split', vhs:'VHS retro', strobe:'Strobe on the beat', rgbpulse:'RGB split on the beat', blurpulse:'Blur pulse on the beat',
-  grain:'Film grain', leak:'Light leak', rainbow:'Rainbow', negative:'Negative', halftone:'Halftone', pixel8:'8-bit pixels', crt:'CRT screen', fisheye:'Fisheye', swirl:'Swirl', sketch:'Sketch', duotone:'Duotone', zoom3d:'3D zoom'};
+  grain:'Film grain', leak:'Light leak', rainbow:'Rainbow', negative:'Negative', halftone:'Halftone', pixel8:'8-bit pixels', crt:'CRT screen', fisheye:'Fisheye', swirl:'Swirl', sketch:'Sketch', duotone:'Duotone', zoom3d:'3D zoom',
+  glow:'Soft glow', shine:'Light sweep', chromatic:'Chromatic', glitchfx:'Digital glitch', sparkle:'Sparkles', bokeh:'Bokeh lights', snow:'Snow', rain:'Rain', tiltshift:'Tilt-shift', thermal:'Thermal', xray:'X-ray', comic:'Comic', radialblur:'Radial blur', quad:'Four split'};
 const trDur = e => e.trd ?? (TR_DUR[e.tr] || 0);   // a shot's own (shorter) transition, else the transition's usual length
 
 
@@ -4375,7 +4377,7 @@ function lensPass2D(g, e){
 /* =============== OVERLAY TRACK: videos and photos on top of the Reel ===============
  * Each layer: a video or photo (lmedia) shown from t0 to t1, placed at x / y (its middle, 0..1 of the frame), s wide
  * (0..1 of the frame), turned r degrees, op opacity, cropped (crop l/t/r/b, 0..1 of the picture), mirrored / flipped,
- * masked (mask: none / circle / rect / line / mirror, with mk size, angle, feather, invert), faded in / out, and for a
+ * masked (mask: none / circle / rect / line / mirror / star / heart / triangle / diamond / hexagon, with mk size, angle, feather, invert), faded in / out, and for a
  * video its own sound (vol). Drawn over the shot, under texts and captions, the same way in the preview and the export
  * (where each video layer has its own decoder). Saved with the Reel; Undo keeps them. Layouts place a layer in one tap. */
 let lmedia = [], layers = [], lySeq = 0, lySel = -1;
@@ -4422,8 +4424,11 @@ function drawLayers(g, t){
     const life = t - L.t0, left = L.t1 - t, a = L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
     const face = L.follow === 'face' ? facePosOnScreen(t) : null;
     const lx = face ? face.x + (L.followOffsetX || 0) : L.x, ly = face ? face.y + (L.followOffsetY || 0) : L.y;
-    g.save(); g.globalAlpha = Math.max(0, Math.min(1, a)); g.globalCompositeOperation = L.blend || 'source-over'; g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.scale(L.fh ? -1 : 1, L.fv ? -1 : 1);
+    // a matte: the layer is a window; the Reel shows only through it (matte) or only outside it (matte-inv), black elsewhere
+    const matte = L.blend === 'matte' || L.blend === 'matte-inv';
+    g.save(); g.globalAlpha = Math.max(0, Math.min(1, a)); g.globalCompositeOperation = matte ? (L.blend === 'matte' ? 'destination-in' : 'destination-out') : (L.blend || 'source-over'); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.scale(L.fh ? -1 : 1, L.fv ? -1 : 1);
     g.drawImage(lyBuf, -dw/2, -dh/2); g.restore();
+    if(matte){ g.save(); g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.restore(); }
     if(L === layers[lySel] && !exporting && !recording && !playing){   // the chosen layer: a thin frame (preview only)
       g.save(); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.strokeStyle = 'rgba(176,92,255,0.95)'; g.lineWidth = Math.max(2, W*0.004); g.setLineDash([W*0.012, W*0.008]); g.strokeRect(-dw/2, -dh/2, dw, dh); g.restore(); }
   }
@@ -4442,6 +4447,13 @@ function chromaKey(q, w, h, K){
   q.putImageData(im, 0, 0);
 }
 // keep only the mask's shape (or cut it out, inverted); soft edges with a blur
+/* the shape masks, as points around the layer's middle (-0.5..0.5 of the mask's size); the Android app has the same (StudioLayers.kt) */
+const MASK_PTS = (() => { const P = {}, n = 48;
+  P.triangle = [[0,-0.5],[0.5,0.5],[-0.5,0.5]]; P.diamond = [[0,-0.5],[0.5,0],[0,0.5],[-0.5,0]];
+  P.hexagon = [...Array(6)].map((_, i) => [0.5*Math.cos(Math.PI/3*i), 0.5*Math.sin(Math.PI/3*i)]);
+  P.star = [...Array(10)].map((_, i) => { const a = -Math.PI/2 + Math.PI/5*i, r = i % 2 ? 0.2 : 0.5; return [r*Math.cos(a), r*Math.sin(a)]; });
+  P.heart = [...Array(n)].map((_, i) => { const t = 2*Math.PI*i/n; return [16*Math.pow(Math.sin(t), 3)/34, -(13*Math.cos(t) - 5*Math.cos(2*t) - 2*Math.cos(3*t) - Math.cos(4*t))/34 - 0.075]; });
+  return P; })();
 function layerMask(q, L, w, h){
   const k = L.mk, f = Math.max(0, k.f)*Math.min(w, h)*0.5;
   if(L.mask === 'luma'){
@@ -4469,6 +4481,7 @@ function layerMask(q, L, w, h){
   }
   else if(L.mask === 'rect'){ q.translate(cx, cy); q.rotate(k.a*Math.PI/180); const rw = k.w*w - 2*f, rh = k.h*h - 2*f; if(q.roundRect) q.roundRect(-rw/2, -rh/2, rw, rh, L.rad*Math.min(rw, rh)/2); else q.rect(-rw/2, -rh/2, rw, rh); }
   else if(L.mask === 'polygon'){ q.translate(cx, cy); q.rotate(k.a*Math.PI/180); const pts = Array.isArray(k.points) && k.points.length >= 3 ? k.points : [[0.5,0.02],[0.92,0.25],[0.92,0.75],[0.5,0.98],[0.08,0.75],[0.08,0.25]]; pts.forEach((p,i)=>{ const px=(p[0]-0.5)*k.w*w, py=(p[1]-0.5)*k.h*h; if(i===0) q.moveTo(px,py); else q.lineTo(px,py); }); q.closePath(); }
+  else if(MASK_PTS[L.mask]){ q.translate(cx, cy); q.rotate(k.a*Math.PI/180); MASK_PTS[L.mask].forEach((p, i) => { const px = p[0]*k.w*w, py = p[1]*k.h*h; if(i) q.lineTo(px, py); else q.moveTo(px, py); }); q.closePath(); }
   else if(L.mask === 'line'){ q.translate(cx, cy); q.rotate(k.a*Math.PI/180); const R = Math.hypot(w, h); q.rect(-R, -R, 2*R, R + (k.h - 0.5)*h); }
   else if(L.mask === 'mirror'){ q.translate(cx, cy); q.rotate(k.a*Math.PI/180); const R = Math.hypot(w, h), bh = k.h*h; q.rect(-R, -bh/2, 2*R, bh); }
   else { const r = L.rad*Math.min(w, h)/2; if(q.roundRect) q.roundRect(0, 0, w, h, r); else q.rect(0, 0, w, h); }   // rounded corners only
@@ -4806,7 +4819,7 @@ function aiTexts(list){
   overlays.filter(o => o.font).forEach(o => loadFont(o.font).then(redraw));
   ovSel = -1; renderOvList(); redraw(); return list.length;
 }
-const BLENDS = ['source-over','multiply','screen','overlay','darken','lighten','color-dodge','color-burn','hard-light','soft-light','difference','exclusion','hue','saturation','color','luminosity'];
+const BLENDS = ['source-over','multiply','screen','overlay','darken','lighten','color-dodge','color-burn','hard-light','soft-light','difference','exclusion','hue','saturation','color','luminosity','matte','matte-inv'];
 // shot steps change the shots' numbers: the last shot's first, so each step's number is the shot the AI meant
 const SHOT_OPS = ['split','dup','freeze','delete','reverse'];
 async function aiActions(list){
@@ -5375,7 +5388,7 @@ function drawFrame2D(t){
         if(p<0.5){ drawShot(og, pe, pl); og.fillStyle=`rgba(0,0,0,${EASE.inOut(p*2)})`; og.fillRect(0,0,W,H); }
         else { drawShot(og, e, local); og.fillStyle=`rgba(0,0,0,${1-EASE.inOut((p-0.5)*2)})`; og.fillRect(0,0,W,H); }
         break;
-      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein':   // the 2D renderer: a dissolve
+      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing':   // the 2D renderer: a dissolve
       case 'dissolve': drawShot(og, pe, pl, {noFx:true}); drawShot(og, e, local, {alpha:EASE.inOut(p)}); break;
       case 'fadein': drawShot(og, e, local, {alpha:q}); break;
       case 'flash': {   // exposure flash: picture blows out to white, then settles
@@ -5497,9 +5510,23 @@ const GRADES = { natural:{con:1.06,sat:1.04,bri:1.0,teal:0,mono:0,grain:0}, vivi
   matte:{con:0.92,sat:0.92,bri:1.0,teal:0,mono:0,grain:0.03,lift:0.1},
   punchy:{con:1.26,sat:1.3,bri:1.02,teal:0,mono:0,grain:0.02},
   forest:{con:1.08,sat:0.95,bri:0.98,teal:0,mono:0,grain:0.04,tsh:[0.44,0.58,0.46,0.45],thi:[0.56,0.56,0.46,0.2]},
-  rose:{con:1.0,sat:1.0,bri:1.03,teal:0,mono:0,grain:0.02,lift:0.04,tsh:[0.6,0.44,0.5,0.4],thi:[0.6,0.5,0.52,0.25]} };
+  rose:{con:1.0,sat:1.0,bri:1.03,teal:0,mono:0,grain:0.02,lift:0.04,tsh:[0.6,0.44,0.5,0.4],thi:[0.6,0.5,0.52,0.25]},
+  /* the pro film and mood looks */
+  kodak:{con:1.08,sat:1.08,bri:1.0,teal:0,mono:0,grain:0.06,warm:0.35,lift:0.04,tsh:[0.46,0.55,0.5,0.3],thi:[0.6,0.54,0.44,0.3]},
+  fuji:{con:1.05,sat:1.0,bri:1.0,teal:0,mono:0,grain:0.05,warm:-0.15,tsh:[0.42,0.56,0.55,0.35],thi:[0.56,0.56,0.5,0.15]},
+  film90:{con:0.96,sat:0.9,bri:1.0,teal:0,mono:0,grain:0.12,warm:0.25,lift:0.1,vig:0.35,tsh:[0.5,0.48,0.56,0.3]},
+  chrome:{con:1.1,sat:0.75,bri:1.0,teal:0,mono:0,grain:0.04,warm:0.05,tsh:[0.44,0.5,0.54,0.3]},
+  bolly:{con:1.12,sat:1.25,bri:1.03,teal:0,mono:0,grain:0.02,warm:0.45,thi:[0.62,0.52,0.42,0.3]},
+  sunglow:{con:1.08,sat:1.15,bri:1.0,teal:0,mono:0,grain:0.03,warm:0.6,tsh:[0.56,0.42,0.56,0.35],thi:[0.64,0.5,0.38,0.4]},
+  neon:{con:1.15,sat:1.25,bri:1.0,teal:0,mono:0,grain:0.03,tsh:[0.62,0.36,0.62,0.55],thi:[0.38,0.62,0.66,0.45]},
+  moon:{con:1.12,sat:0.7,bri:0.9,teal:0,mono:0,grain:0.05,warm:-0.6,vig:0.45,tsh:[0.36,0.44,0.66,0.55]},
+  ice:{con:1.05,sat:0.85,bri:1.05,teal:0,mono:0,grain:0,warm:-0.7,lift:0.05},
+  desert:{con:1.06,sat:0.9,bri:1.0,teal:0,mono:0,grain:0.04,warm:0.6,lift:0.06,thi:[0.62,0.54,0.4,0.35]},
+  silver:{con:0.95,sat:1,bri:1.02,teal:0,mono:1,grain:0.05,lift:0.08},
+  clean:{con:1.04,sat:1.06,bri:1.06,teal:0,mono:0,grain:0,lift:0.02} };
 const LOOK_EXTRA = { warmfilm:'Warm film', cool:'Cool', retro:'Retro', moody:'Moody', wedding:'Wedding', golden:'Golden hour', tealorange:'Teal & orange', faded:'Faded', noir:'Noir', sepia:'Sepia',
-  cyber:'Cyber', pastel:'Pastel', dramatic:'Dramatic', summer:'Summer', night:'Night', vintage:'Vintage', matte:'Matte', punchy:'Punchy', forest:'Forest', rose:'Rose' };
+  cyber:'Cyber', pastel:'Pastel', dramatic:'Dramatic', summer:'Summer', night:'Night', vintage:'Vintage', matte:'Matte', punchy:'Punchy', forest:'Forest', rose:'Rose',
+  kodak:'Kodak film', fuji:'Fuji film', film90:'90s film', chrome:'Classic chrome', bolly:'Bollywood', sunglow:'Sunset glow', neon:'Neon nights', moon:'Moonlight', ice:'Ice', desert:'Desert', silver:'Silver B&W', clean:'Clean bright' };
 for(const [k, n] of Object.entries(LOOK_EXTRA)){ const G = GRADES[k];   // the 2D renderer's version of each filter, and its button in Look
   LOOKS[k] = { name: n, filter: (G.mono ? 'grayscale(1) ' : '') + 'contrast(' + G.con + ') saturate(' + G.sat + ') brightness(' + G.bri + ')' + (G.warm > 0.2 ? ' sepia(' + (G.warm*0.3).toFixed(2) + ')' : ''), grain: G.grain || 0 };
   const lb = $('look'), cp = lb && lb.querySelector('[data-l="copy"]'); if(lb && !lb.querySelector('[data-l="' + k + '"]')){ const b = document.createElement('button'); b.dataset.l = k; b.setAttribute('aria-pressed', 'false'); b.textContent = n; lb.insertBefore(b, cp); } }
@@ -5821,6 +5848,7 @@ function drawFrameGL(t){
       case 'shake': { const j = Math.sin(Math.PI*p)*0.05*W, sx = Math.sin(p*90)*j, sy = Math.cos(p*70)*j; S.A = layerOf(pe, pl, {dx:sx, dy:sy, noFx:true}); S.B = layerOf(e, local, {dx:-sx, dy:-sy}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'squeeze': { const k = EASE.inOut(p), a = layerOf(pe, pl, {noFx:true}), [ax, ay, aw, ah] = a.rect, [bx, by, bw, bh] = S.B.rect;
         a.rect = [ax*(1-k), ay, Math.max(1, aw*(1-k)), ah]; a.clip = 1; S.A = a; S.B.rect = [W*(1-k) + bx*k, by, Math.max(1, bw*k), bh]; S.B.clip = 1; S.mode = 3; break; }
+      case 'cube': case 'cubeup': case 'flip3d': case 'swing': S.mode = {cube:27, cubeup:28, flip3d:29, swing:30}[e.tr]; S.prog = EASE.inOut(p); break;
       case 'rotatein': S.A = layerOf(pe, pl, {scale:1-0.3*p, zb:0.6*p, noFx:true}); S.B = layerOf(e, local, {rot:-180*(1-q)*(1-q), scale:0.4+0.6*q}); S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'dissolve': S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'fadein': S.mode = 1; S.mix = q; if(!pe) S.A = null; break;
