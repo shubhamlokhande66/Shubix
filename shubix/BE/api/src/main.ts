@@ -11,6 +11,16 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   app.set("trust proxy", true); // behind the web app rewrite / Cloudflare: the real host and protocol
   app.disable("x-powered-by");
+  // How many requests this server is answering right now: Cloudflare's Worker asks GET /__active on the container's
+  // port when its own count says busy but nothing moves, to let an idle container sleep 30 s after the last activity
+  // (infra/cloudflare/src/index.ts). Not under /api: the Worker never passes it from the internet.
+  let active = 0;
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path === "/__active") { res.json({ active }); return; }
+    active++; let done = false;
+    res.on("close", () => { if (!done) { done = true; active--; } });
+    next();
+  });
   // the headers next.config.ts gave every API answer (the phone app calls the API directly)
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader("X-Content-Type-Options", "nosniff");

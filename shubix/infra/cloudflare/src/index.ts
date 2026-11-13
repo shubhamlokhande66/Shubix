@@ -12,7 +12,13 @@ interface Env {
   [key: string]: unknown;
 }
 
-const HUNG_AFTER = 3 * 60_000, KILL_AFTER = 15_000;
+const HUNG_AFTER = 3 * 60_000, KILL_AFTER = 15_000, PROBE_EVERY = 10_000;
+/** "30s", "2m", "1h" (the library's sleepAfter form) in milliseconds */
+const toMs = (t: string | number) => {
+  if (typeof t === "number") return t * 1000;
+  const m = /^(\d+)\s*(s|m|h)?$/.exec(t.trim());
+  return m ? Number(m[1]) * ({ s: 1000, m: 60_000, h: 3_600_000 }[(m[2] ?? "s") as "s" | "m" | "h"]) : 30_000;
+};
 
 export class ReelApp extends Container<Env> {
   defaultPort = 3000;
@@ -26,17 +32,26 @@ export class ReelApp extends Container<Env> {
     // The library never lets the container sleep while it counts a request in flight. A request that hangs (the container
     // replaced or rolled out while answering) stays counted for ever: the container stayed awake, and billed, 20+ min
     // with no request at all (QA 2026-11-13, 18:17 -> 18:36). A live request moves bytes or ends; one counted with no new
-    // request and no byte up or down for HUNG_AFTER is a hung one: dropped, so the container can sleep.
+    // request and no byte up or down: the server is asked whether it is still answering (alarm, below). HUNG_AFTER is the
+    // last resort when the server cannot be asked.
     const lib = this as unknown as { inflightRequests: number; isActivityExpired(): boolean };
     const expired = lib.isActivityExpired.bind(this);
     lib.isActivityExpired = () => {
-      if (lib.inflightRequests > 0 && Date.now() - this.lastActivity > HUNG_AFTER) {
-        console.warn(`${lib.inflightRequests} request(s) counted in flight with nothing moving for ${HUNG_AFTER / 60_000} min: dropped, the container may sleep`);
-        lib.inflightRequests = 0;
+      if (lib.inflightRequests > 0) {
+        if (Date.now() - this.lastActivity > HUNG_AFTER) {
+          console.warn(`${lib.inflightRequests} request(s) counted in flight with nothing moving for ${HUNG_AFTER / 60_000} min: dropped, the container may sleep`);
+          lib.inflightRequests = 0;
+          return expired();
+        }
+        // next look: SLEEP_AFTER after the last activity (not "SLEEP_AFTER from now" as the library would), then the
+        // server is asked (alarm); while it says busy, again every PROBE_EVERY
+        (lib as unknown as { sleepAfterMs: number }).sleepAfterMs = Math.max(Date.now() + 1000, this.lastActivity + toMs(this.sleepAfter), this.nextProbe);
+        return false;
       }
       return expired();
     };
   }
+  private nextProbe = 0;
   // the last request, or the last bytes of an upload or a download through this object
   private lastActivity = Date.now();
   private meter() {
@@ -64,6 +79,33 @@ export class ReelApp extends Container<Env> {
   // If the container stopped without this object hearing it (a new version rolled out), the answer is "not running":
   // the container is let go, started again and the request asked once more (a request with a body: the next one is).
   private ready = false;
+  // A request still counted but with nothing moving for SLEEP_AFTER: the API server itself is asked how many requests
+  // it is really answering (a Shubix AI call waits up to 2 min with no byte moving, and is real). None: the count is a
+  // hung one, dropped, and the container sleeps SLEEP_AFTER after the last activity like any idle container.
+  override async alarm(props?: { retryCount: number; isRetry: boolean }) {
+    const lib = this as unknown as { inflightRequests: number; sleepAfterMs: number };
+    const idleFor = Date.now() - this.lastActivity, sleepMs = toMs(this.sleepAfter);
+    if (lib.inflightRequests > 0 && this.ctx.container?.running && idleFor >= sleepMs - 1000 && Date.now() >= this.nextProbe) {
+      const active = await this.serverActive();
+      this.nextProbe = Date.now() + PROBE_EVERY;
+      if (active === 0) {
+        this.nextProbe = 0;
+        console.warn(`${lib.inflightRequests} request(s) counted but none answered by the server: dropped, the container may sleep`);
+        lib.inflightRequests = 0;
+        lib.sleepAfterMs = this.lastActivity + sleepMs;
+      }
+    }
+    return super.alarm(props as never);
+  }
+  /** Requests the API server is answering right now (-1: could not ask). Asked on the container's port directly, so the
+   * question itself does not count as activity. */
+  private async serverActive(): Promise<number> {
+    try {
+      const r = await this.ctx.container!.getTcpPort(this.defaultPort).fetch("http://container/__active", { signal: AbortSignal.timeout(3000) });
+      const n = Number(((await r.json()) as { active?: unknown }).active);
+      return Number.isFinite(n) ? n : -1;
+    } catch { return -1; }
+  }
   override onStop() {
     this.ready = false; this.stopAskedAt = 0;
     // the container is gone: nothing can still be answering, a count left over would keep the next one awake
