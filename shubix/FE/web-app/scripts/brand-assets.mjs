@@ -38,6 +38,7 @@ const mobile = join(root, "../mobile-app/assets");
 for (const [h, name] of [[360, "shubix-studio.webp"], [200, "shubix-studio-sm.webp"]]) {
   const pic = await sharp(logo).resize({ height: h }).webp({ quality: 90 }).toBuffer();
   await put(pic, join(root, "public/brand", name)); await put(pic, join(mobile, "brand", name));
+  if (h === 200) await put(pic, join(root, "../mobile-app/modules/shubix-video/android/src/main/assets/shubix-watermark.webp")); // the Android export's watermark (StudioWatermark.kt)
 }
 await put(await square(512), join(root, "app/icon.png"));
 await put(await ico([await square(16), await square(32), await square(48)]), join(root, "app/favicon.ico"));
