@@ -2217,6 +2217,9 @@ async function askNotDone(){
 }
 async function upsell(){
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
+  // the plan not known yet (nobody was signed in when the studio opened, or its answer is still coming): asked now,
+  // so a Free account always gets its choice
+  if(!aiInfo) await aiCheck();
   if(!aiLocked){
     if(!aiOn) return 'skip';
     if(aiReelOk()){ aiRun(); return 'skip'; }   // already agreed for this Reel: the AI starts (it was held)
@@ -6131,7 +6134,7 @@ async function recordExport(){
     const sh = saveFile(blob, name);
     tasks.done('export', 'Your Reel is ready · ' + (blob.size/1e6).toFixed(1) + ' MB');
     notify('Your Reel is ready', 'ok');
-    showMsg(savedMsg(sh, 'Video') + ': '+name+' ('+(blob.size/1e6).toFixed(1)+' MB). Ready for Instagram, TikTok and Shorts.');
+    $('xmsg').hidden = true;   // the export sheet shows the saved video and its buttons: no note left on the editor after it
   } finally {
     onEnd = null; if(recCleanup){ recCleanup(); recCleanup = null; }
     if(tick) clearInterval(tick);
@@ -6405,8 +6408,8 @@ async function fastExport(){
     const name = fileTitle() + '.' + (mp4 ? 'mp4' : 'webm');   // the Reel's own name (Untitled 1, or what it was renamed to)
     const sh = saveFile(blob, name);
     tasks.done('export', 'Your Reel is ready · ' + (blob.size/1e6).toFixed(1) + ' MB');
-    if(noSong){ notify('Your Reel is ready', 'ok'); showMsg(savedMsg(sh, 'Video') + ' without the song: ' + noSongTip()); return true; }
-    notify('Your Reel is ready', 'ok'); showMsg(savedMsg(sh, 'Video') + ': ' + name + ' (' + (blob.size/1e6).toFixed(1) + ' MB). Ready for Instagram, TikTok and Shorts.');
+    if(noSong){ notify('Your Reel is ready', 'ok'); $('xmsg').hidden = true; return true; }
+    notify('Your Reel is ready', 'ok'); $('xmsg').hidden = true;   // the export sheet says it; nothing stays on the editor
     return true;
   } finally {
     exporting = false; edit.forEach(e=>{ e.fc = null; e.fcLast = null; if(e.tail){ e.tail.forEach(c => { c.width = c.height = 0; }); e.tail = null; } }); layers.forEach(L => { L.fc = null; });

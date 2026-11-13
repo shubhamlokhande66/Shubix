@@ -32,7 +32,8 @@ export function signInThen(next: string) {
  * clip into the browser's storage first and loading it all again after, which ran an iPhone out of memory (Safari then
  * reloads the page). A popup says so; when the other tab has signed in (checked when this tab is seen again, and every 3 s)
  * it closes and `onDone` goes on with the Reel. Close: nothing happens. */
-export function signInBeside(onDone: () => void) {
+/** direct: the sign-in window opens at once (call it inside the click); this screen only says it waits, with Cancel. */
+export function signInBeside(onDone: () => void, direct = false) {
   if (document.getElementById("signin-beside")) return;
   const box = document.createElement("div");
   box.id = "signin-beside"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
@@ -56,5 +57,16 @@ export function signInBeside(onDone: () => void) {
     const win = window.open("/login?next=%2Fsigned-in", "shubix-signin", feat);
     if (win) e.preventDefault();
   });
+  if (direct) {
+    const wide = window.innerWidth >= 700, w = 480, h = 720;
+    const feat = wide ? `popup,width=${w},height=${h},left=${Math.round(window.screenX + (window.outerWidth - w) / 2)},top=${Math.round(window.screenY + (window.outerHeight - h) / 2)}` : "";
+    const win = window.open("/login?next=%2Fsigned-in", "shubix-signin", feat);
+    if (win) {   // opened: no question here, only what is happening (and Cancel)
+      box.querySelector("h2")!.textContent = "Signing in…";
+      box.querySelector("p")!.textContent = "Finish signing in, and Shubix makes your Reel right here. Your clips stay as they are.";
+      const go = box.querySelector<HTMLAnchorElement>("#signin-beside-go")!; go.textContent = "Open sign-in again";
+      box.querySelector("button")!.textContent = "Cancel";
+    }
+  }
   document.body.appendChild(box);
 }
