@@ -83,7 +83,7 @@ export function ReviewPrompt() {
   };
 
   return (
-    <div data-popup className="fixed inset-0 z-[90] grid place-items-end bg-[var(--overlay)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:place-items-center" onClick={close}>
+    <div data-popup className="fixed inset-0 z-[300] grid place-items-end bg-[var(--overlay)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] backdrop-blur-[2px] sm:place-items-center" onClick={close}>
       <div role="dialog" aria-modal="true" aria-labelledby="review-title" onClick={(e) => e.stopPropagation()}
         className="flex max-h-[calc(100dvh-32px)] w-full max-w-md animate-pop flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-surface p-5 shadow-2xl">
         {done ? (
