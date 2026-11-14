@@ -157,7 +157,9 @@ export function chooseEditTake<T>(make: (takeNo: number) => T, review: (take: T)
   return { take, kept, tried, review: best };
 }
 
-const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.2, LONG = 6, EDGE = 0.02;
+// FLASH: the beat edit cuts on every drum hit of a roll, never closer than 0.13 s (the engines' beatEdit): a run of
+// such shots is the edit as meant; only a shot shorter than the engines ever make on purpose is a slip.
+const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.12, LONG = 6, EDGE = 0.02;
 /** what the review calls soft (sharpness against the clip's own) and too dark to see (brightness): the engines' repairs use the same limits */
 export const EDIT_REVIEW_LIMITS = { soft: SOFT, dark: DARK } as const;
 

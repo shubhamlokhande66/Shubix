@@ -27,7 +27,7 @@ random numbers go on from the first take's, so a clean edit is unchanged and the
 After the takes, two repairs with one right answer are made on the kept take (not on a copied Reel, Shubix AI's plan
 or a shot the director chose): a shot too dark to see moves to a moment that can be seen, when unused footage has one;
 and a clip of the creator's that no shot shows takes a shot from a clip shown more than once (the shot that loses least
-by it, never the opening, never a dark or soft moment). A soft shot is not moved: fast action is soft too. No repair
+by it, never the opening, never a dark or soft moment). This holds with fewer shots than clips too: 10 shots from 12 clips show 10 clips, not 6. A soft shot is not moved: fast action is soft too. No repair
 shows footage twice, puts two parts of one clip in a row, or moves a cut.
 
 Measured on the Android app's engine with no page (`FE/mobile-app/tests/edit-repairs.test.ts` keeps it so), 60 Reels of

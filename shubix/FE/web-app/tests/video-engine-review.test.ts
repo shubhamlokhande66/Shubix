@@ -161,6 +161,17 @@ describe("the edit's own review", () => {
     expect(r.score).toBe(97);
   });
 
+  it("takes a run of very short shots on a drum roll as the edit meant it, and only a shorter one as a slip", () => {
+    // 161 BPM, a cut on every half beat (0.186 s), as the beat edit makes on a dholki roll
+    const n = 16, step = 0.186, roll = Array.from({ length: n }, (_, i) => shot(i, { start: i * step, end: (i + 1) * step, sourceStart: 2, sourceEnd: 2 + step }));
+    const input = (shots: EditReviewShot[]) => ({ shots, beats: shots.map((s) => s.start), duration: shots[shots.length - 1].end, sourceCount: n });
+    expect(reviewAutonomousEdit(input(roll)).issues.map((i) => i.code)).toEqual([]);
+    const slip = roll.map((s, i) => (i === 5 ? { ...s, end: s.start + 0.1 } : i === 6 ? { ...s, start: roll[5].start + 0.1 } : s));
+    const r = reviewAutonomousEdit(input(slip));
+    expect(r.issues.filter((i) => i.code === "flash-shot").map((i) => i.shot)).toEqual([5]);
+    expect(r.repairs).toEqual(["merge-shot"]);
+  });
+
   it("caps what one kind of issue can cost, so the score stays readable", () => {
     const shots = Array.from({ length: 30 }, (_, i) => shot(i, { start: i * 0.5 + (i ? 0.1 : 0), end: i === 29 ? 15 : i * 0.5 + 0.6, sourceIndex: i }));
     const r = reviewAutonomousEdit({ shots, beats: Array.from({ length: 31 }, (_, i) => i * 0.5), duration: 15, sourceCount: 30 });

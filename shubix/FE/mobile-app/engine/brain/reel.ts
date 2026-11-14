@@ -194,7 +194,7 @@ function makeEditNow(){
       let fixedDark = 0, addedClips = 0;
       order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || st.b >= EDIT_REVIEW_LIMITS.dark) return;
         const alt = other(i); if(alt){ put(i, alt); fixedDark++; } });
-      if(ES.plan.length >= ES.sources.length) ES.sources.forEach((src, si) => {
+      ES.sources.forEach((src, si) => {
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
         const count = ES.sources.map((_, k) => res.filter(r => r.src === k).length);
         let bi = -1, balt = null, least = 1;
