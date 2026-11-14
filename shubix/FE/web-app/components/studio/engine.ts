@@ -10,6 +10,7 @@
  * Plain JS on purpose (ported from the standalone page); the page mounts it with initStudio(root).
  */
 import { createTasks } from './tasks';
+import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
@@ -1640,6 +1641,8 @@ async function denoise(pcm, sr){
   return resampleTo(y, 48000, sr);
 }
 let kind = 'music', talkPace = 'natural', talkMusic = 0.09, talk = null, talkToken = 0;
+// AI dub (components/studio/dub.ts): the talk's voice in another language, made once per talk + language + voice
+let dub = null, dubLang = '', dubVoice = '', dubToken = 0;
 const PACE = { tight: { pre: 0.08, post: 0.12, merge: 0.22 }, natural: { pre: 0.12, post: 0.2, merge: 0.42 }, relaxed: { pre: 0.18, post: 0.3, merge: 0.8 } };
 const VOICE_RMS = 0.12;   // about -18 dBFS of speech: room for the music and the limiter
 async function voiceOf(src){
@@ -1693,7 +1696,7 @@ async function buildTalk(){
   sources.forEach((src, si) => { if(!src.voice.has) return; for(const [a,b] of speechParts(src.voice, src.dur, talkPace)) parts.push({ si, a, b }); });
   const mute = sources.filter(s => !s.voice.has).length;
   if(!parts.length){ root.dataset.nomake = 'No voice found: add a clip where you talk'; $('s3st').textContent = 'No voice found in these clips'; showMsg('We could not hear anyone talking in these clips. For a Beat Reel, choose "Beat Reel" at the top.', true); return; }
-  const sr = getCtx().sampleRate, T = parts.reduce((q,p)=>q + p.b - p.a, 0), N = Math.round(T*sr), voice = new Float32Array(N), act = new Float32Array(N);
+  const sr = getCtx().sampleRate, T = parts.reduce((q,p)=>q + p.b - p.a, 0), N = Math.round(T*sr); let voice = new Float32Array(N), act = new Float32Array(N);
   // the voice: the parts end to end, 8 ms fades at every join (no clicks), one loudness for every clip
   const fade = Math.round(0.008*sr); let o = 0;
   for(const p of parts){
@@ -1703,6 +1706,10 @@ async function buildTalk(){
       act[o+i] = (v.probs[Math.floor((p.a + i/sr)/v.hop)] || 0) > 0.5 ? 1 : 0; }
     o += n; p.t1 = o/sr;
   }
+  // AI dub: the dubbed voice in place of the person's own (same length: each sentence starts where it was said)
+  const orig = voice, base = sources.map(s=>fpOf(s)).join(',') + '|' + talkPace + '|' + (denoiseOn ? 'clean' : 'raw') + '|' + T.toFixed(2);
+  const dubbed = !!(dub && dub.base === base && dub.sr === sr && dub.pcm.length === N);
+  if(dubbed){ voice = dub.pcm; act = activity(dub.pcm, sr); }
   // the music under it: the song's best part as long as the talk (repeated if the talk is longer), at one loudness,
   // stepping back while someone speaks (80 ms down, 400 ms back up)
   const mix = getCtx().createBuffer(2, N, sr);
@@ -1721,7 +1728,7 @@ async function buildTalk(){
   if(token !== talkToken) return;
   buf = mix; mono = new Float32Array(N); { const L = mix.getChannelData(0), R = mix.getChannelData(1); for(let i=0;i<N;i++) mono[i] = (L[i] + R[i])/2; }
   normGain = 1; secStart = 0; beats = []; period = 0.5; peaks = []; peakS = [];
-  talk = { voice, sr, parts, songKey: song && talkMusic > 0 ? song.key : '', sig: sources.map(s=>fpOf(s)).join(',') + '|' + talkPace + '|' + (denoiseOn ? 'clean' : 'raw') + '|' + T.toFixed(2) };
+  talk = { voice, orig, base, sr, parts, songKey: song && talkMusic > 0 ? song.key : '', sig: base + (dubbed ? '|dub:' + dub.lang + ':' + dub.voice : '') };
   // the shots: one per part; a long one is split at its quietest moment; a jump cut inside one take is a punch-in
   const shots = [];
   for(const p of parts){
@@ -1756,6 +1763,42 @@ async function buildTalk(){
   if(talkKfs && talkKfs.length === edit.length){ edit.forEach((e, k) => { if(talkKfs[k]) e.uk = talkKfs[k].map(q => ({ ...q })); }); }
   talkKfs = null;
   captureLoop(); editGen++;
+  if(dubLang && tts && !dubbed) makeDub();   // the clips or the pauses changed: the dub follows (speech already made is kept in the browser)
+}
+// AI dub: the words of the talk (its own voice), in sentences, translated, each spoken by an AI voice where it was said
+async function makeDub(){
+  const token = ++dubToken;
+  if(!dubLang){ tasks.clear('dub'); if(dub){ dub = null; await buildTalk(); saveNow(); } return; }
+  if(kind !== 'talk' || !talk || !tts || !tts.voices.length) return;
+  const voiceKey = dubVoice || tts.voices[0].key, base = talk.base, sr = talk.sr, src = talk.orig || talk.voice, lang = dubLang;
+  if(dub && dub.base === base && dub.lang === lang && dub.voice === voiceKey && talk.voice === dub.pcm) return;
+  const name = (DUB_LANGS.find(l => l[0] === lang) || [lang, lang])[1];
+  if(src.length/sr > DUB_MAX_SECONDS){ tasks.fail('dub', 'AI dub works on talks up to 3 minutes. Cut the clips shorter, then try again.'); return; }
+  tasks.start('dub', 'voice', 'AI dub: ' + name, 'Listening to the words…');
+  try{
+    let r = await apiFetch('/api/studio/transcribe?lang=' + encodeURIComponent($('caplang').value), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: await songWav(src, sr, 0), signal: ac.signal });
+    let j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error((j.error && j.error.message) || ('The words could not be heard (' + r.status + ').'));
+    const segs = dubSegments(Array.isArray(j.words) ? j.words : []).slice(0, 120);
+    if(!segs.length) throw new Error('No words were heard in this video, so there is nothing to dub.');
+    if(token !== dubToken) return;
+    tasks.update('dub', 0.15, 'Translating into ' + name + '…');
+    r = await apiFetch('/api/studio/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to: lang, lines: segs.map(s => ({ i: s.i, text: s.text.slice(0, 160) })) }), signal: ac.signal });
+    j = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error((j.error && j.error.message) || ('The translation failed (' + r.status + ').'));
+    const tr = new Map((j.lines || []).map(l => [l.i, l.text])), spoken = [];
+    for(const [k, s] of segs.entries()){
+      if(token !== dubToken) return;
+      tasks.update('dub', 0.2 + 0.75*k/segs.length, 'Speaking ' + (k + 1) + ' of ' + segs.length + '…');
+      spoken.push(await tts.speak(tr.get(s.i) || s.text, voiceKey));
+    }
+    if(token !== dubToken || !talk || talk.base !== base) return;
+    const placed = placeDub(segs, spoken, src.length, sr, VOICE_RMS);
+    dub = { base, sr, lang, voice: voiceKey, pcm: placed.pcm };
+    await buildTalk();
+    tasks.done('dub', 'Dubbed into ' + name + (placed.stretched ? ' · ' + placed.stretched + ' sentence' + (placed.stretched > 1 ? 's' : '') + ' spoken a little faster to fit' : ''));
+    saveNow();
+  }catch(err){ if(err && err.name === 'AbortError') return; console.warn('dub', err); if(token === dubToken) tasks.fail('dub', (err && err.message) || 'The dub could not be made. Please try again.'); }
 }
 function setKind(k){
   remakeOk();
@@ -7557,9 +7600,12 @@ function ttsList(){
     d.querySelector('button').addEventListener('click', () => { ttsClips = ttsClips.filter(x => x !== c); ttsList(); applyVo(); clipMixKey = ''; });
     box.appendChild(d); }
 }
-if(tts){ $('ttsvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join(''); }
+if(tts){ $('ttsvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
+  $('dubvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join(''); $('dubrow').hidden = false; }
 else $('ttsbox').hidden = true;
 $('ttsadd').addEventListener('click', ttsAdd, SIG);
+$('dublang').addEventListener('change', e => { dubLang = e.target.value; makeDub(); }, SIG);
+$('dubvoice').addEventListener('change', e => { dubVoice = e.target.value; if(dubLang) makeDub(); }, SIG);
 // the mix is made again only when something in it changed (called before playing and exporting)
 async function ensureMix(){
   if(kind === 'talk' || !baseBuf) return;
@@ -8002,7 +8048,7 @@ function editOf(){
 function stateOf(){
   return { kind, song: song && song.file ? { fp: fileFp(song.file), name: song.name } : null, sec: { len: sec.len, auto: sec.auto, start: sec.start },
     clips: sources.map(s => ({ fp: fileFp(s.file), name: s.name })),
-    settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-CHAT_KEEP), reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
+    settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), dub: dubLang ? { lang: dubLang, voice: dubVoice } : null, trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-CHAT_KEEP), reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
     overlays: overlays.map(o => { const c = { ...o }; delete c.box; return c; }),
     lmedia: lmedia.map(M => ({ fp: fileFp(M.file), name: M.name })), layers: lyOf(),
     edit: editOf(),
@@ -8111,6 +8157,7 @@ async function openProject(id){
     press('tpace', 'p', S.talkPace); press('tmusic', 'v', String(S.talkMusic));
     if(S.au) au = { ...AU0, ...S.au }; auUI();
     if(S.tts && S.tts.length){ ttsClips = S.tts.map(c => ({ ...c })); ttsSeq = ttsClips.reduce((q, c) => Math.max(q, c.id), 0); ttsList(); }
+    if(S.dub && S.dub.lang && tts){ dubLang = S.dub.lang; dubVoice = S.dub.voice || ''; $('dublang').value = dubLang; if(dubVoice) $('dubvoice').value = dubVoice; }   // made again once the talk is built (buildTalk)
     hookText = S.hookText || ''; $('hook').value = hookText; seed = S.seed || 1; chatRestore(S.chat); if(typeof S.reelId === 'string' && S.reelId){ reelId = S.reelId; if(S.aiOk) aiReel = reelId; chatUsed = Number(S.chatUsed) || 0; } if(S.denoise === false){ denoiseOn = false; $('dn1').checked = false; $('dn2').checked = false; }
     if(S.caplang !== undefined) $('caplang').value = S.caplang;
     if(S.trTo){ for(const [k, v] of S.tr || []) trCache.set(k, v); trTo = S.trTo; trOnly = !!S.trOnly; $('captr').value = trTo; $('tronly').checked = trOnly; $('trwrap').hidden = false; }
