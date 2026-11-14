@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeEditReview, editNeedsAnotherTake, reviewAutonomousEdit, type EditReviewInput, type EditReviewShot } from "../../../Shared/video-engine/src/index";
+import { chooseEditTake, describeEditReview, editNeedsAnotherTake, reviewAutonomousEdit, type EditReviewInput, type EditReviewShot } from "../../../Shared/video-engine/src/index";
 
 /** a clean 8-second Reel at 120 BPM: a cut every second, each shot from its own clip, sharp, bright, the opening the strongest */
 const beats = Array.from({ length: 17 }, (_, i) => i * 0.5);
@@ -186,3 +186,52 @@ describe("the edit's own review", () => {
     expect(describeEditReview(reviewAutonomousEdit(clean({ shots })))).toBe("97.5/100 · 7/7 cuts on the beat · 1 weak shot");
   });
 });
+
+describe("the edit tries again", () => {
+  // a take is the shot list itself; `soft` shots of it are soft
+  const takeWith = (soft: number, locked = false) => clean().shots.map((s, i) => (i >= 1 && i <= soft ? { ...s, sharpness: 0.3, locked } : s));
+  const review = (shots: EditReviewShot[]) => reviewAutonomousEdit(clean({ shots }));
+  const maker = (softPerTake: number[]) => { const made: number[] = []; return { made, make: (k: number) => { made.push(k); return takeWith(softPerTake[k - 1]); } }; };
+
+  it("makes one take when the first has nothing another take could better", () => {
+    const m = maker([0, 0, 0]), c = chooseEditTake(m.make, review);
+    expect(m.made).toEqual([1]);
+    expect([c.kept, c.tried]).toEqual([1, 1]);
+    expect(c.review!.score).toBe(100);
+  });
+  it("keeps the take with the best review, out of three at most", () => {
+    const m = maker([3, 1, 2]), c = chooseEditTake(m.make, review);
+    expect(m.made).toEqual([1, 2, 3]);
+    expect([c.kept, c.tried]).toEqual([2, 3]);
+    expect(c.take).toEqual(takeWith(1));
+    expect(c.review!.score).toBe(97.5);
+  });
+  it("stops as soon as a take has no fault left", () => {
+    const m = maker([2, 0, 0]), c = chooseEditTake(m.make, review);
+    expect(m.made).toEqual([1, 2]);
+    expect([c.kept, c.tried]).toEqual([2, 2]);
+  });
+  it("keeps the first take on a tie, and when the later ones are worse", () => {
+    expect(chooseEditTake(maker([2, 2, 2]).make, review).kept).toBe(1);
+    expect(chooseEditTake(maker([1, 3, 2]).make, review).kept).toBe(1);
+  });
+  it("does not try again for faults only on locked shots", () => {
+    const made: number[] = [], c = chooseEditTake((k) => { made.push(k); return takeWith(2, true); }, review);
+    expect(made).toEqual([1]);
+    expect(c.review!.score).toBe(95);
+  });
+  it("honours the most takes allowed", () => {
+    expect(chooseEditTake(maker([3, 2, 1, 0]).make, review, 1).tried).toBe(1);
+    expect(chooseEditTake(maker([3, 2, 1, 0]).make, review, 4).kept).toBe(4);
+    expect(chooseEditTake(maker([3, 2, 1, 0]).make, review, Number.NaN).tried).toBe(1);
+  });
+  it("never loses the edit to a review that cannot be made", () => {
+    const first = chooseEditTake(maker([2, 0]).make, () => { throw new Error("no samples"); });
+    expect([first.kept, first.tried, first.review]).toEqual([1, 1, null]);
+    // the second take's review fails: the first take stays, the third is still tried
+    let n = 0;
+    const c = chooseEditTake(maker([2, 0, 1]).make, (shots) => { if (++n === 2) return null; return review(shots); });
+    expect([c.kept, c.tried]).toEqual([3, 3]);
+  });
+});
+

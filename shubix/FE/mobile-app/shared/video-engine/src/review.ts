@@ -137,6 +137,26 @@ export const EDIT_TAKE_FAULTS: readonly EditReviewIssueCode[] = ["footage-repeat
 export const editNeedsAnotherTake = (review: EditReview) =>
   review.issues.some((issue) => issue.repairable && EDIT_TAKE_FAULTS.includes(issue.code));
 
+export type EditTakeChoice<T> = { take: T; /** which take was kept (1 = the first) and how many were made */ kept: number; tried: number; review: EditReview | null };
+
+/**
+ * The edit reviews itself and tries again. `make(1)` is the edit as it is made today; when its review has a fault another
+ * take can change, `make(2)`, `make(3)`... are made (up to `maxTakes` in all) and the take with the best review is kept.
+ * The first take wins a tie, so an edit with nothing to better is exactly the first take, made once. A review that
+ * cannot be made (`review` returns null or throws) never costs the edit: the best take so far is kept.
+ * Both engines (the website's studio and the Android app's brain) choose their take here, so they choose alike.
+ */
+export function chooseEditTake<T>(make: (takeNo: number) => T, review: (take: T) => EditReview | null, maxTakes = 3): EditTakeChoice<T> {
+  const judge = (take: T) => { try { return review(take); } catch { return null; } };
+  const most = Number.isFinite(maxTakes) ? Math.max(1, Math.floor(maxTakes)) : 1;
+  let take = make(1), best = judge(take), kept = 1, tried = 1;
+  while (best && editNeedsAnotherTake(best) && tried < most) {
+    const next = make(++tried), r = judge(next);
+    if (r && r.score > best.score + 1e-9) { take = next; best = r; kept = tried; }
+  }
+  return { take, kept, tried, review: best };
+}
+
 const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.2, LONG = 6, EDGE = 0.02;
 
 /** how far `time` is from the nearest of `sorted` (seconds; Infinity with none) */

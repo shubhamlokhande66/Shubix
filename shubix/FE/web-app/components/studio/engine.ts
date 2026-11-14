@@ -10,7 +10,7 @@
  * Plain JS on purpose (ported from the standalone page); the page mounts it with initStudio(root).
  */
 import { createTasks } from './tasks';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, editNeedsAnotherTake } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -3789,23 +3789,19 @@ function makeEditNow(){
         used[best.src].push([best.in, best.in + plan[i].sp.pos(len)*best.scaleR]);
         res[i] = best;
       }); };
-    // The edit reviews itself (Shared/video-engine review.ts) and tries again: when the first take has a fault another
-    // take can change (footage shown twice, two parts of one clip in a row, a soft or dark moment, a weak opening), up
-    // to two more takes are made, as "New mix" would make them, and the one with the best review is kept. The first
-    // take wins a tie, so a clean edit is exactly the edit as before. The random numbers after this go on from the
-    // first take's, whichever take is kept: the same clips and song make the same Reel every time.
-    const judge = () => { try{ const R = reviewOf(plan.map((s, i) => ({ ...s, ...res[i] }))); return editNeedsAnotherTake(R) ? R.score : Infinity; }catch(e){ return Infinity; } };
-    const seed0 = seed; take();
-    let top = judge();
-    if(top !== Infinity){
-      const after = seed; let keep = { res: res.slice(), used: used.map(u => u.slice()), dup: dupCount }, s = seed0;
-      for(let k = 2; k <= 3 && top !== Infinity; k++){
-        s = (s*7919 + 13) % 2147483647 || 7; seed = s; take(); editTakes.tried = k;
-        const sc = judge();
-        if(sc > top + 1e-9){ top = sc; editTakes.kept = k; keep = { res: res.slice(), used: used.map(u => u.slice()), dup: dupCount }; }
-      }
-      keep.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...keep.used[i]); }); dupCount = keep.dup; seed = after;
-    }
+    // The edit reviews itself and tries again (Shared/video-engine review.ts, chooseEditTake): when the first take has
+    // a fault another take can change (footage shown twice, two parts of one clip in a row, a soft or dark moment, a
+    // weak opening), up to two more takes are made, as "New mix" would make them, and the one with the best review is
+    // kept. The first take wins a tie, so a clean edit is exactly the edit as before. The random numbers after this go
+    // on from the first take's, whichever take is kept: the same clips and song make the same Reel every time.
+    const seed0 = seed; let after = seed0, s = seed0;
+    const choice = chooseEditTake(k => {
+      if(k > 1){ s = (s*7919 + 13) % 2147483647 || 7; seed = s; }
+      take(); if(k === 1) after = seed;
+      return { res: res.slice(), used: used.map(u => u.slice()), dup: dupCount };
+    }, t => reviewOf(plan.map((p, i) => ({ ...p, ...t.res[i] }))));
+    choice.take.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...choice.take.used[i]); });
+    dupCount = choice.take.dup; seed = after; editTakes = { tried: choice.tried, kept: choice.kept };
   }
   const useCount = sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   edit = plan.map((s,i)=>({...s, ...res[i], el: sources[res[i].src].els[(useCount[res[i].src]++)%3]}));
