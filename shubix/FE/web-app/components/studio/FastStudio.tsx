@@ -71,6 +71,8 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
         const { initStudio } = await import("@/components/studio/engine");
         // AI voices (text to speech) from the server, when it has them (OpenAI / Gemini); without them the tool is hidden
         const tts = await import("@/lib/tts/client").then((m) => m.loadTts()).catch(() => null);
+        // AI pictures (B-roll) from the server, when it makes them (Cloudflare FLUX / OpenAI / Gemini)
+        const aiPicture = await import("@/lib/broll/client").then((m) => m.loadAiPicture()).catch(() => null);
         if (cancelled || !root.current) return;
         cleanup = initStudio(root.current, {
           loadMediabunny: () => import("mediabunny"),
@@ -85,6 +87,7 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           // voice noise cleanup (RNNoise, WebAssembly), loaded only for talking videos and voiceovers
           loadRnnoise: () => import("@shiguredo/rnnoise-wasm"),
           tts,
+          aiPicture,
           // My Reels: "Export & save" keeps the finished Reel in the account (straight to storage, lib/cloudReels.ts)
           cloud: {
             usage: () => import("@/lib/cloudReels").then((m) => m.cloudUsage()),
