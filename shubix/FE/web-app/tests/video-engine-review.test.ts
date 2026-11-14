@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseEditTake, describeEditReview, editNeedsAnotherTake, reviewAutonomousEdit, type EditReviewInput, type EditReviewShot } from "../../../Shared/video-engine/src/index";
+import { chooseEditTake, describeEditReview, editNeedsAnotherTake, editTakesFor, reviewAutonomousEdit, type EditReviewInput, type EditReviewShot } from "../../../Shared/video-engine/src/index";
 
 /** a clean 8-second Reel at 120 BPM: a cut every second, each shot from its own clip, sharp, bright, the opening the strongest */
 const beats = Array.from({ length: 17 }, (_, i) => i * 0.5);
@@ -235,6 +235,14 @@ describe("the edit tries again", () => {
     expect(chooseEditTake(maker([3, 2, 1, 0]).make, review, 1).tried).toBe(1);
     expect(chooseEditTake(maker([3, 2, 1, 0]).make, review, 4).kept).toBe(4);
     expect(chooseEditTake(maker([3, 2, 1, 0]).make, review, Number.NaN).tried).toBe(1);
+  });
+  it("allows more takes only where footage is little: by the clips and the song, never by the device", () => {
+    expect(editTakesFor(50, 20)).toBe(3);      // 50 shots from 20 s of clips: the first take has to make do
+    expect(editTakesFor(50, 60)).toBe(3);
+    expect(editTakesFor(50, 61)).toBe(1);      // plenty to choose from: one pass, the phone is not kept waiting
+    expect(editTakesFor(24, 600)).toBe(1);
+    expect(editTakesFor(0, 20)).toBe(1);
+    expect(editTakesFor(50, Number.NaN)).toBe(1);
   });
   it("never loses the edit to a review that cannot be made", () => {
     const first = chooseEditTake(maker([2, 0]).make, () => { throw new Error("no samples"); });

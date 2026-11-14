@@ -12,8 +12,15 @@ import { createChatBrain } from "./chat";
 /** all the brain's parts on one state; what is not in the brain comes from `values` (plain data), else it is a page job, which does nothing here */
 export function createBrain(ES, values = {}) {
   const parts = {}, pageJobs = new Map();
+  // Every `EH.name` in the brain comes through here, thousands of times for one edit (the picker asks for scoreWindow,
+  // rng, ... at every moment of every clip it weighs), so the part that has a name is remembered: looking through all
+  // the parts each time was over a third of the time an edit took. The parts are made once and never change; a name
+  // is read from its part each time, and looked for again should that part stop having it.
+  const where = new Map();
   const EH = new Proxy({}, { get: (_, name) => {
-    for (const part of Object.values(parts)) if (part[name] !== undefined) return part[name];
+    const known = where.get(name);
+    if (known !== undefined) { const v = known[name]; if (v !== undefined) return v; where.delete(name); }
+    for (const k in parts) { const part = parts[k]; if (part[name] !== undefined) { where.set(name, part); return part[name]; } }
     if (name in values) return values[name];
     return () => { pageJobs.set(name, (pageJobs.get(name) || 0) + 1); };
   } });

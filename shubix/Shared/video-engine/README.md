@@ -35,6 +35,13 @@ Measured on the Android app's engine with no page (`FE/mobile-app/tests/edit-rep
 after; with 20 clips, 10.2 before and none after; no Reel reviewed worse, none got repeated footage or a jump. With 3
 short clips (too little footage) the takes bettered 5 Reels of 15 a little and the repairs had nothing to move to.
 
+What it costs (the Android engine with no page, the time to make one edit, before this work -> now): 12 clips 20 ->
+12 ms, 40 clips of up to a minute 132 -> 84 ms, a 90 s song with 40 clips 139 -> 87 ms. More takes are made only where
+footage is little (`editTakesFor`: shots x seconds of clips up to 3000; it goes by the clips and the song, never by the
+device, so the same Reel is made everywhere), an unused clip is tried against eight shots at most, and the brain
+remembers which part holds each of its functions (`FE/mobile-app/engine/brain/index.ts`: that lookup was over a third
+of an edit's time).
+
 The website writes each review to the Reel's log (Admin → Logs, step `review`) and keeps it in `root.__lastEditReview`.
 
 ## Shared editing primitives

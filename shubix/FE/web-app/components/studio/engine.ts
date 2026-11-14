@@ -11,7 +11,7 @@
  */
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, EDIT_REVIEW_LIMITS } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -3694,7 +3694,10 @@ function makeEdit(){
   const was = (playing || starting) && !recording && !exportBusy && kind !== 'talk', at = playing ? curTime() : pos, gen = editGen;
   makeEditNow();
   if(edit.length && editGen !== gen){ try{ const L = shotsForLog(); rlog('edit', 'Reel made · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat (±30 ms)', L, L.cuts && L.onBeat < L.cuts ? 'warn' : 'info'); }catch(e){} }
-  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R; rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
+  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R;
+    // the review's score beside the shot count the creator already reads (makeEditNow has just written that line anew)
+    const st = $('s3st'); if(st && !/quality \d/.test(st.textContent)) st.textContent += ' · quality ' + Math.round(R.score) + '/100';
+    rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
@@ -3847,7 +3850,7 @@ function makeEditNow(){
       if(k > 1){ s = (s*7919 + 13) % 2147483647 || 7; seed = s; }
       take(); if(k === 1) after = seed;
       return { res: res.slice(), used: used.map(u => u.slice()), dup: dupCount };
-    }, t => reviewOf(plan.map((p, i) => ({ ...p, ...t.res[i] }))));
+    }, t => reviewOf(plan.map((p, i) => ({ ...p, ...t.res[i] }))), editTakesFor(plan.length, sources.reduce((a, s) => a + (s.dur || 0), 0)));
     choice.take.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...choice.take.used[i]); });
     dupCount = choice.take.dup; seed = after; editTakes = { tried: choice.tried, kept: choice.kept };
     // The review's repairs that have one right answer (the director's own moments, a copied Reel and Shubix AI's plan
@@ -3872,8 +3875,10 @@ function makeEditNow(){
       sources.forEach((src, si) => {
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
         const count = sources.map((_, k) => res.filter(r => r.src === k).length);
+        // the shots it may take: of the clips shown most, eight at most (each one tried is a search of the clip)
+        const tryAt = res.map((_, i) => i).filter(i => i > 0 && !res[i].byDir && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
         let bi = -1, balt = null, least = 1;
-        for(let i = 1; i < res.length; i++){ if(res[i].byDir || count[res[i].src] < 2) continue;
+        for(const i of tryAt){
           const alt = other(i, si); if(!alt) continue;
           const loss = scoreWindow(i, sources[res[i].src], res[i].in, span(i), gmax).sc - scoreWindow(i, src, alt.in, len(i)*alt.scaleR, gmax).sc;
           if(loss < least){ least = loss; bi = i; balt = alt; } }
