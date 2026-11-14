@@ -3642,7 +3642,9 @@ function reviewOf(list){
     return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
       ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
       effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
-  return reviewAutonomousEdit({ shots, beats: beats.map(x => x - t0), duration: list[list.length-1].end - t0, sourceCount: sources.length, sourceDurations: sources.map(s => s.dur), cutLead: 1/30 });
+  // the song's own drops (its analysis, before the plan was made from it): each should have a cut on it
+  const drops = (cuts || []).filter((c, k) => cutType[k] === 'drop').map(c => c - t0);
+  return reviewAutonomousEdit({ shots, beats: beats.map(x => x - t0), drops, duration: list[list.length-1].end - t0, sourceCount: sources.length, sourceDurations: sources.map(s => s.dur), cutLead: 1/30 });
 }
 function editReview(){ return reviewOf(edit); }
 function makeEdit(){

@@ -75,6 +75,21 @@ describe("the edit repairs what its review finds", () => {
     const r = await reelOf(12, 19);
     expect(r.review.metrics.beatSync!.ratio).toBe(1);
   });
+  it("gives its review to the app: the same review as measured here, with the takes and repairs", async () => {
+    const w = world(12, 19);
+    await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths }); await w.e.call("ready");
+    const got = (await w.e.call("review")) as { review: { version: number; score: number; status: string; metrics: { shots: number; clipCoverage: { used: number } } } | null; takes: { addedClips: number } | null };
+    const r = await reelOf(12, 19);
+    expect(got.review!.version).toBe(1);
+    expect(got.review!.metrics.shots).toBe(r.ES.edit.length);
+    expect(got.review!.metrics.clipCoverage.used).toBe(12);
+    expect(got.review!.status).not.toBe("fail");
+    expect(got.takes!.addedClips).toBe(r.ES.editTakes.addedClips);
+  });
+  it("has no review before there is an edit", async () => {
+    const w = world(3, 5);
+    expect(((await w.e.call("review")) as { review: unknown }).review).toBeNull();
+  });
   it("makes the same Reel again from the same clips and song", async () => {
     const a = await reelOf(12, 33), b = await reelOf(12, 33);
     expect(a.sig).toBe(b.sig);
