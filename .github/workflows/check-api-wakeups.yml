@@ -1,0 +1,49 @@
+name: Check API wakeups
+
+# Who wakes the API containers (QA, UAT, prod)? By hand: Actions, Check API wakeups, Run workflow. Prints the past
+# requests and logs of shubix-api-qa / -uat / shubix-api (Workers Observability), then watches them live for a few
+# minutes (wrangler tail). Read only: nothing is deployed or changed. Uses the same CLOUDFLARE_API_TOKEN as the deploys.
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Past hours of logs to read"
+        default: "6"
+        type: string
+      watch_minutes:
+        description: "Minutes to watch live requests"
+        default: "10"
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - name: The Cloudflare secrets are there
+        run: test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID missing"; exit 1; }
+      - name: Past requests and logs
+        continue-on-error: true
+        run: python3 .github/scripts/api_wakeups.py past "${{ inputs.hours }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Watch live requests
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/tail && cd /tmp/tail
+          secs=$(( ${{ inputs.watch_minutes }} * 60 ))
+          for w in shubix-api-qa shubix-api-uat shubix-api; do
+            (timeout "$secs" npx -y wrangler@4.142.0 tail "$w" --format json > "$w.json" 2> "$w.err" || true) &
+          done
+          wait
+          for w in shubix-api-qa shubix-api-uat shubix-api; do
+            python3 "$GITHUB_WORKSPACE/.github/scripts/api_wakeups.py" live "$w.json" "$w"
+            grep -v -i -E "token|secret" "$w.err" | tail -5 || true
+          done

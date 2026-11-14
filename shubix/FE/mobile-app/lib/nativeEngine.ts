@@ -252,6 +252,8 @@ export function createNativeEngine(io: NativeIo) {
     },
     part: async (a) => { host.sec.start = Number(a.start); host.sec.auto = false; await host.useSection(); return { start: host.ES.secStart ?? 0 }; },
     ready: () => ({ work: work(), state: state() }),
+    // the edit's own review (shared/video-engine review.ts) and how many takes and repairs it had: read only
+    review: () => ({ review: host.brain.editReview?.() ?? null, takes: host.ES.editTakes ?? null }),
     state,
     edit: (a) => { const list = a.shots as Args[]; if (list.length) { const last = list[list.length - 1]; if (Number(last.end) < host.ES.buf.duration) last.end = host.ES.buf.duration; } const ok = !!host.brain.restoreEdit(list) || true; if (Array.isArray(a.overlays)) host.ES.overlays = a.overlays; return { ok }; },
     shotCs: () => host.brain.shotCs(),

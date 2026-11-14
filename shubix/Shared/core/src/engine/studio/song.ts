@@ -9,6 +9,7 @@
 export function songAnalysis(monoIn, sampleRate, opts){
   opts = opts || {};
   const ALT_FAST = opts.altFast ?? 0.55;
+  const JIT = opts.jit ?? 0.010;
   const DRUM_MIN = 0.7;
   const buf = { sampleRate, length: monoIn.length, duration: monoIn.length/sampleRate, numberOfChannels: 1, getChannelData: () => monoIn };
   let mono = null, period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, beatLvl = [];
@@ -139,7 +140,7 @@ function trimNoPulse(bt, strength){
    spectrum, the low end at half weight) puts every beat on the attack nearest to it. The correction is checked against
    the beats around it: the local median correction is applied in full, a single beat may differ from it by at most
    25 ms (an off-beat hi-hat or a flam cannot pull one beat away from the groove). */
-function refineBeats(bt, periodSec){
+function refineBeats(bt, periodSec, jit){
   if(!bt.length) return bt;
   const sr = buf.sampleRate, fN = 512, fH = 128, len = mono.length, nF = Math.max(1, Math.floor((len-fN)/fH)+1), half = fN/2;
   const fft = makeFFT(fN), re = new Float64Array(fN), im = new Float64Array(fN), win = new Float64Array(fN), prev = new Float64Array(half);
@@ -155,7 +156,11 @@ function refineBeats(bt, periodSec){
   const fps2 = sr/fH, off = (fN/2)/sr, tOf = i => i/fps2 + off, idx = t => (t-off)*fps2;
   // smoothed copy (±6 ms): tolerant to small timing spread when lining up several beats at once
   const g = new Float32Array(nF); for(let i=0;i<nF;i++){ let s2=0, ws=0; for(let j=-3;j<=3;j++){ const v = fe[i+j]; if(v!==undefined){ const ww = Math.exp(-0.5*(j/1.5)**2); s2 += ww*v; ws += ww; } } g[i] = s2/ws; }
-  const gAt = t => { const x = idx(t), i = Math.floor(x); if(i < 0 || i >= nF-1) return 0; return g[i] + (g[i+1]-g[i])*(x-i); };
+  // beats that come in coarse steps (the neural tracker's: 20 ms frames) sit up to `jit` off their attacks: for lining
+  // the grid up, each such beat counts the strongest attack within `jit` of it. Without this the grid's best fit could
+  // land away from the beats: whole stretches moved 60 to 90 ms off (measured: FE/web-app/scripts/studio-beats).
+  const gj = jit > 0 ? (() => { const r = Math.max(1, Math.round(jit*fps2)), o = new Float32Array(nF); for(let i=0;i<nF;i++){ let m = 0; for(let j=Math.max(0,i-r), e=Math.min(nF-1,i+r); j<=e; j++) if(g[j] > m) m = g[j]; o[i] = m; } return o; })() : g;
+  const gAt = t => { const x = idx(t), i = Math.floor(x); if(i < 0 || i >= nF-1) return 0; return gj[i] + (gj[i+1]-gj[i])*(x-i); };
   // 1) phase: shift the grid locally (±12% of a beat: enough for a late 808, never as far as the next triplet or 16th) to where the 9 beats around
   //    each beat land best on attacks; a weak preference for no shift
   const P = periodSec, maxS = 0.12*P, stepS = 1/fps2, shift = bt.map((b,k)=>{
@@ -287,7 +292,7 @@ function analyse(){
     }
     if(pickAi){ const ib = opts.beats.slice(1).map((t,i)=>t-opts.beats[i]).sort((x,y)=>x-y); own = opts.beats.slice(); ownPeriod = ib[ib.length>>1]; beatSource = 'ai'; }
   }
-  beatsDP = opts.forceBeats && opts.forceBeats.length >= 4 ? own.slice() : trimNoPulse(refineBeats(own, ownPeriod), t => { const f = Math.round((t - (N/2)/sr)*fps); let m = 0; for(let j=f-3;j<=f+3;j++) if(env[j] > m) m = env[j]; return m; });
+  beatsDP = opts.forceBeats && opts.forceBeats.length >= 4 ? own.slice() : trimNoPulse(refineBeats(own, ownPeriod, beatSource === 'ai' ? JIT : 0), t => { const f = Math.round((t - (N/2)/sr)*fps); let m = 0; for(let j=f-3;j<=f+3;j++) if(env[j] > m) m = env[j]; return m; });
   period = ownPeriod; phase = beatsDP.length ? beatsDP[0] : 0; hopSec = H/sr;
   // accent strength = drums + bass + instrument attacks (voice counts only half)
   const detrend = a => { const c=new Float64Array(frames+1); for(let i=0;i<frames;i++) c[i+1]=c[i]+a[i]; const o=new Float64Array(frames);
