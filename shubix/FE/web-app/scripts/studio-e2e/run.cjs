@@ -14,9 +14,12 @@ const media = JSON.parse(fs.readFileSync(path.join(MEDIA, 'media.json'), 'utf8')
 fs.mkdirSync(OUT, { recursive: true });
 
 // what each run is: the song, which clips, and why it is here
+const PHONE = { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
+  userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' };
 const SCENARIOS = [
-  { id: 'A-12clips-fourfloor', song: 'four_floor_124', clips: media.clips.map((c) => c.index), why: '12 clips, a steady 124 BPM song: every clip in the Reel, cuts on the beat' },
-  { id: 'B-5clips-bhangra', song: 'bhangra_dhol_98', clips: [0, 3, 5, 8, 10], why: '5 clips (one half dark), bhangra: little footage, the dark part kept out' },
+  { id: 'A-12clips-fourfloor', song: 'four_floor_124', clips: media.clips.map((c) => c.index), why: 'a computer, as it comes (clips in my order, 1080p): 12 clips, a steady 124 BPM song' },
+  { id: 'B-5clips-bhangra-mix', song: 'bhangra_dhol_98', clips: [0, 3, 5, 8, 10], mix: true, wholeSong: true, res: '720p', why: 'a computer, Mix all clips for the whole song: 5 clips (one half dark), bhangra; the edit reviews and repairs itself here' },
+  { id: 'C-phone-8clips-dembow', song: 'bollywood_dembow_96', clips: [1, 2, 4, 5, 6, 7, 9, 11], phone: true, res: '720p', why: 'a phone-sized screen with touch, as it comes: 8 clips, a dembow song' },
 ].filter((s) => !process.env.ONLY || s.id.startsWith(process.env.ONLY));
 
 const now = () => Date.now();
@@ -25,7 +28,7 @@ const studio = () => document.querySelector('.brs');
 async function scenario(browser, sc) {
   const rep = { id: sc.id, why: sc.why, song: sc.song, popups: [], steps: [], errors: [], consoleErrors: [], failedRequests: 0, ok: false };
   const step = (name, data) => { rep.steps.push({ name, ...data }); console.log(`[${sc.id}] ${name}`, data ? JSON.stringify(data).slice(0, 600) : ''); };
-  const ctx = await browser.newContext({ viewport: { width: 1300, height: 1000 }, acceptDownloads: true });
+  const ctx = await browser.newContext({ ...(sc.phone ? PHONE : { viewport: { width: 1300, height: 1000 } }), acceptDownloads: true });
   const p = await ctx.newPage();
   p.on('pageerror', (e) => rep.errors.push(String(e.message).slice(0, 300)));
   p.on('console', (m) => { if (m.type() === 'error' && rep.consoleErrors.length < 40) rep.consoleErrors.push(m.text().slice(0, 200)); });
@@ -65,6 +68,8 @@ async function scenario(browser, sc) {
       await p.waitForTimeout(700);
     }
   };
+  // the phone flow goes screen by screen: its one bottom button that can be pressed (Let's Start, Next)
+  const next = async (why) => { const ok = await p.evaluate(() => { const b = [...document.querySelectorAll('[data-fnext]')].find((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.disabled; }); if (b) { b.click(); return b.innerText.trim(); } return null; }); console.log(`[${sc.id}]   ${why}: ${ok ? 'pressed "' + ok + '"' : 'no button to press'}`); await p.waitForTimeout(600); return ok; };
   const openDialogs = () => p.evaluate(() => [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; }).map((d) => d.innerText.replace(/\s+/g, ' ').slice(0, 120)));
   try {
     // ---- 1. the studio opens
@@ -75,6 +80,7 @@ async function scenario(browser, sc) {
     await p.waitForFunction(() => document.querySelector('.brs') && document.querySelector('.brs').__studio, null, { timeout: 120000 });
     step('studio open', { ms: now() - t0, ...(await long()) });
     await see('open'); await shot('open');
+    if (sc.phone) { await next('the first screen'); await see('after-start'); }
 
     // ---- 2. the song: read, its beats found
     const song = media.songs.find((s) => s.name === sc.song);
@@ -86,17 +92,24 @@ async function scenario(browser, sc) {
         section: { start: x.start, len: x.len, whole: x.whole, auto: x.auto } }; });
     step('song ready', { ms: now() - t0, ...songInfo, ...(await long()) });
     await see('song');
+    if (sc.phone) { await shot('song'); await next('after the song'); await see('clips-screen'); }
 
     // ---- 3. the clips: read, and the Reel made by itself
+    // what a creator can choose before the clips: every clip mixed (not in my order), the whole song (not only as long as the clips)
+    if (sc.mix || sc.wholeSong) { const set = await p.evaluate(({ mix, whole }) => { const out = {};
+        if (mix) { const b = document.querySelector('#seq button[data-q=mix]'); if (b) { b.click(); out.mix = b.getAttribute('aria-pressed'); } else out.mix = 'no such button'; }
+        if (whole) { const c = document.getElementById('fitclips'); if (c) { if (c.checked) c.click(); out.fitclips = c.checked; } else out.fitclips = 'no such box'; }
+        return out; }, { mix: !!sc.mix, whole: !!sc.wholeSong }); step('options set', set); }
     const files = sc.clips.map((i) => path.join(MEDIA, media.clips[i].file));
     t0 = now();
     await p.setInputFiles('#vfile', files);
     // the Create flow: Generate Reel comes on when the song, the beats and the clips are read; pressing it opens the Reel
-    await p.waitForFunction(() => { const g = document.getElementById('fgen'); return g && !g.disabled && /Generate/i.test(g.innerText); }, null, { timeout: 600000 });
+    const GEN = sc.phone ? 'fclipsnext' : 'fgen';
+    await p.waitForFunction((id) => { const g = document.getElementById(id), r = g && g.getBoundingClientRect(); return g && !g.disabled && r.width > 0 && r.height > 0; }, GEN, { timeout: 600000 });
     const readMs = now() - t0;
     step('clips read', { ms: readMs, ...(await long()) });
     await see('before-generate'); await shot('before-generate');
-    await p.click('#fgen');
+    await p.evaluate((id) => document.getElementById(id).click(), GEN);
     // what comes after Generate is watched and said, popup by popup, until the Reel can be played
     const tGen = now(); let opened = false;
     for (let k = 0; k < 150 && !opened; k++) {
@@ -111,6 +124,7 @@ async function scenario(browser, sc) {
     // the neural beat check and the reading of the clips can remake the edit once more: wait until it has stopped changing
     let gen = -1, same = 0;
     for (let k = 0; k < 60 && same < 4; k++) { const g = await p.evaluate(() => document.querySelector('.brs').__studio.editGen); same = g === gen ? same + 1 : 0; gen = g; await p.waitForTimeout(500); }
+    await settle();
     const made = await p.evaluate(() => {
       const root = document.querySelector('.brs'), S = root.__studio, e = S.edit || [], x = S.section || {};
       const srcs = (S.sources || []).map((s) => ({ name: s.name, dur: s.dur, samples: (s.samples || []).length }));
@@ -152,6 +166,7 @@ async function scenario(browser, sc) {
       await p.click('#' + which, { timeout: 15000 }); }
     await p.waitForTimeout(1500); await see('export-sheet'); await shot('export-sheet');
     await p.waitForSelector('#xgo', { state: 'visible', timeout: 30000 });
+    if (sc.res) { const got = await p.evaluate((res) => { const b = [...document.querySelectorAll('#xres button')].find((x) => x.innerText.trim().startsWith(res)); if (!b || b.disabled) return b ? 'cannot be chosen' : 'no such choice'; b.click(); return b.getAttribute('aria-pressed'); }, sc.res); step('export size chosen', { res: sc.res, pressed: got }); await p.waitForTimeout(400); }
     await p.click('#xgo');
     let lastMsg = '';
     const done = await (async () => {
@@ -177,7 +192,7 @@ async function scenario(browser, sc) {
     const ext = /webm/.test(exp.type) ? 'webm' : 'mp4', file = `${sc.id}.${ext}`;
     fs.writeFileSync(path.join(OUT, file), Buffer.from(exp.b64, 'base64'));
     rep.exported = { file, type: exp.type, bytes: exp.size, name: exp.name, quality: exp.quality };
-    step('exported', { ms: now() - t0, file, type: exp.type, mb: +(exp.size / 1048576).toFixed(2), quality: exp.quality ? { status: exp.quality.status, score: exp.quality.score, issues: (exp.quality.issues || []).map((i) => i.code || i) } : null, ...(await long()) });
+    step('exported', { ms: now() - t0, file, type: exp.type, mb: +(exp.size / 1048576).toFixed(2), quality: exp.quality, ...(await long()) });
     await shot('exported');
     rep.ok = true;
     rep.popups = answered;

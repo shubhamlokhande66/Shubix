@@ -29,7 +29,8 @@ def probe(path):
         n, d = v['avg_frame_rate'].split('/'); fr = float(n) / float(d) if float(d) else None
     return {'video': v and {'codec': v.get('codec_name'), 'width': v.get('width'), 'height': v.get('height'), 'fps': fr and round(fr, 3), 'frames': v.get('nb_frames')},
             'audio': a and {'codec': a.get('codec_name'), 'rate': a.get('sample_rate'), 'channels': a.get('channels')},
-            'seconds': float(j.get('format', {}).get('duration', 0) or 0)}
+            'seconds': float(j.get('format', {}).get('duration', 0) or 0),
+            'starts': {'video': v and v.get('start_time'), 'audio': a and a.get('start_time')}}
 
 
 def frames_of(path, fps):
@@ -106,7 +107,8 @@ for sc in report['scenarios']:
     hard = [abs(e['ms']) for e in errs if e['tr'] == 'hard']
     allabs = [abs(e['ms']) for e in errs]
     stat = lambda a: None if not a else {'n': len(a), 'medianMs': round(float(np.median(a)), 1), 'worstMs': round(float(np.max(a)), 1), 'within1Frame': round(float(np.mean(np.array(a) <= 1000 / fps + 0.5)), 3)}
-    res['cuts'] = {'planned': len(planned), 'plannedBetweenClips': len(seen_changes), 'seenInFile': len(cuts), 'matched': len(errs), 'notFound': missed[:12],
+    extra = [{'at': round(c['t'], 3), 'from': c['from'], 'to': c['to'], 'soft': c['soft']} for c in cuts if not any(p['to'] == c['to'] and abs(c['t'] - p['t']) < 0.35 for p in seen_changes)]
+    res['cuts'] = {'notPlanned': extra[:12], 'planned': len(planned), 'plannedBetweenClips': len(seen_changes), 'seenInFile': len(cuts), 'matched': len(errs), 'notFound': missed[:12],
                    'fileAgainstPlan': {'all': stat(allabs), 'hardCuts': stat(hard)}}
 
     # ---- the cuts in the file against the song's true beats (the whole point: a cut on the beat, in the file)
@@ -114,7 +116,7 @@ for sc in report['scenarios']:
     truth = next(x['beats'] for x in report['media']['songs'] if x['name'] == name)
     sec = made['section'].get('start') or 0.0
     beats_in_reel = [b - sec - t0 for b in truth]
-    file_cut_times = [c['t'] for c in cuts if c['soft'] <= 2]
+    file_cut_times = [c['t'] for c in cuts if c['soft'] <= 2 and any(p['to'] == c['to'] and abs(c['t'] - p['t']) < 0.35 for p in seen_changes)]   # the planned cuts, where the file has them
     # the studio cuts one frame before the beat on purpose (1/30 s): measured both as it is and with that taken off
     raw = [nearest(beats_in_reel, t) * 1000 for t in file_cut_times]
     lead = [nearest(beats_in_reel, t + 1 / 30) * 1000 for t in file_cut_times]
@@ -152,7 +154,7 @@ json.dump(out, open(os.path.join(out_dir, 'analysis.json'), 'w'), indent=1)
 for r in out['scenarios']:
     print('\n== ' + r['id'] + (' ' if r.get('file') else ' · ' + str(r.get('note'))))
     if not r.get('file'): continue
-    f = r['file']; print(f"  file: {f['video']['codec']} {f['video']['width']}x{f['video']['height']} {f['video']['fps']} fps, sound {f['audio'] and f['audio']['codec']}, {f['seconds']:.2f} s (planned {r['length']['planned']} s)")
+    f = r['file']; print('  stream starts:', json.dumps(f.get('starts'))); print(f"  file: {f['video']['codec']} {f['video']['width']}x{f['video']['height']} {f['video']['fps']} fps, sound {f['audio'] and f['audio']['codec']}, {f['seconds']:.2f} s (planned {r['length']['planned']} s)")
     print('  frames told apart:', r['frames']['toldApart'], '· black frames:', r['frames']['dark'])
     print('  cuts:', json.dumps(r['cuts']))
     print('  beats:', json.dumps(r['beats']))
