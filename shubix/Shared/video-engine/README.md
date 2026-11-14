@@ -24,6 +24,17 @@ Both engines use it when they make a Reel (`FE/web-app/components/studio/engine.
 `FE/mobile-app/engine/brain/reel.ts`, `makeEditNow`): when the first take has a fault another take can change
 (`editNeedsAnotherTake`), up to two more takes are made and the best review is kept. The first take wins a tie and the
 random numbers go on from the first take's, so a clean edit is unchanged and the same clips and song make the same Reel.
+After the takes, two repairs with one right answer are made on the kept take (not on a copied Reel, Shubix AI's plan
+or a shot the director chose): a shot too dark to see moves to a moment that can be seen, when unused footage has one;
+and a clip of the creator's that no shot shows takes a shot from a clip shown more than once (the shot that loses least
+by it, never the opening, never a dark or soft moment). A soft shot is not moved: fast action is soft too. No repair
+shows footage twice, puts two parts of one clip in a row, or moves a cut.
+
+Measured on the Android app's engine with no page (`FE/mobile-app/tests/edit-repairs.test.ts` keeps it so), 60 Reels of
+50 shots from made-up clips with dark and soft stretches: with 12 clips, 3.9 of them were in no shot before and none
+after; with 20 clips, 10.2 before and none after; no Reel reviewed worse, none got repeated footage or a jump. With 3
+short clips (too little footage) the takes bettered 5 Reels of 15 a little and the repairs had nothing to move to.
+
 The website writes each review to the Reel's log (Admin → Logs, step `review`) and keeps it in `root.__lastEditReview`.
 
 ## Shared editing primitives

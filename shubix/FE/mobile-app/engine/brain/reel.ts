@@ -4,7 +4,7 @@
 // @ts-nocheck
 import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats } from './pure';
 import { repace } from '../components/studio/soundmap';
-import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake } from '@mobile/video-engine';
+import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 
 export function createReelBrain(ES, EH){
@@ -122,10 +122,11 @@ function makeEditNow(){
   const sharedRankMax = Math.max(1, sharedDirector.shots.length - 1);
   // the director's chosen moments are held for their own cuts
   const held = ES.plan.map((s,i)=>{ const d = EH.dirShot(i); return d ? {i, si:d.src, a:d.in, b:d.in + s.sp.pos(s.end-s.start)} : null; }).filter(Boolean);
-  const pick = (i, allowNeighbour, allowOverlap, anyScene) => {
+  const pick = (i, allowNeighbour, allowOverlap, anyScene, seen, only) => {
     const s = ES.plan[i], len = s.end - s.start, dir = EH.dirShot(i);
     let best=null, bs=-Infinity;
     ES.sources.forEach((src,si)=>{
+      if(only != null && si !== only) return;   // (a repair: a moment of this one clip)
       let need = s.sp.pos(len), scaleR = 1;
       if(need > src.dur-TAIL){ scaleR = Math.max(0.05, (src.dur-TAIL)/need*0.98); need *= scaleR; }
       if(!allowNeighbour && ES.sources.length>1 && [res[i-1],res[i+1]].some(x=>x && x.src===si)) return;
@@ -136,6 +137,8 @@ function makeEditNow(){
         if(!allowOverlap && held.some(h=>h.i!==i && h.si===si && !res[h.i] && Math.min(h.b,a+need)-Math.max(h.a,a) > 0.001)) return;
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
         const w = EH.scoreWindow(i, src, a, need, gmax);
+        // (a repair: only a moment that can be seen; for a clip brought into the Reel, a sharp one too)
+        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
         let sc = w.sc - 5*ov/need + EH.rng()*0.15;
         const directorRank = sharedRank.get(si);
         if(directorRank != null) sc += 0.18 * (1 - directorRank / sharedRankMax); // soft preference, never overrides explicit AI picks
@@ -172,6 +175,36 @@ function makeEditNow(){
     }, t => reviewOf(ES.plan.map((p, i) => ({ ...p, ...t.res[i] }))));
     choice.take.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...choice.take.used[i]); });
     ES.dupCount = choice.take.dup; ES.seed = after; ES.editTakes = { tried: choice.tried, kept: choice.kept };
+    // The review's repairs that have one right answer (the director's own moments, a copied Reel and Shubix AI's plan
+    // are left as they are):
+    //  - a shot too dark to see moves to a moment that can be seen, when unused footage has one. A soft shot is not
+    //    moved: fast action is soft too, and on a drop it is the right shot.
+    //  - a clip of the creator's that no shot shows takes a shot from a clip shown more than once: the shot that loses
+    //    least by it, and only when that is less than the scorer takes off for footage it calls bad (the opening stays).
+    // No repair shows footage twice or puts two parts of one clip in a row, and the random numbers go on as before it.
+    if(ES.mode !== 'copy' && !EH.aiTrusted()){
+      const seedR = ES.seed, len = i => ES.plan[i].sp.pos(ES.plan[i].end - ES.plan[i].start), span = i => len(i)*res[i].scaleR;
+      const stat = i => { const s = ES.sources[res[i].src]; return s && s.samples && s.samples.length ? windowStats(s, res[i].in, res[i].in + Math.max(span(i), 0.05)) : null; };
+      const put = (i, alt) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in); if(k >= 0) u.splice(k, 1);
+        if(res[i].ov > 0.001) ES.dupCount = Math.max(0, ES.dupCount - 1);
+        res[i] = alt; used[alt.src].push([alt.in, alt.in + span(i)]); };
+      // another moment for shot i (its own footage counts as free while it is looked for), or null
+      const other = (i, only) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in), own = k >= 0 ? u.splice(k, 1)[0] : null;
+        const alt = pick(i, false, false, false, only != null ? 2 : 1, only); if(own) u.push(own); return alt && !(alt.ov > 0.001) ? alt : null; };
+      let fixedDark = 0, addedClips = 0;
+      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || st.b >= EDIT_REVIEW_LIMITS.dark) return;
+        const alt = other(i); if(alt){ put(i, alt); fixedDark++; } });
+      if(ES.plan.length >= ES.sources.length) ES.sources.forEach((src, si) => {
+        if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
+        const count = ES.sources.map((_, k) => res.filter(r => r.src === k).length);
+        let bi = -1, balt = null, least = 1;
+        for(let i = 1; i < res.length; i++){ if(res[i].byDir || count[res[i].src] < 2) continue;
+          const alt = other(i, si); if(!alt) continue;
+          const loss = EH.scoreWindow(i, ES.sources[res[i].src], res[i].in, span(i), gmax).sc - EH.scoreWindow(i, src, alt.in, len(i)*alt.scaleR, gmax).sc;
+          if(loss < least){ least = loss; bi = i; balt = alt; } }
+        if(bi >= 0){ put(bi, balt); addedClips++; } });
+      ES.editTakes.fixedDark = fixedDark; ES.editTakes.addedClips = addedClips; ES.seed = seedR;
+    }
   }
   const useCount = ES.sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   ES.edit = ES.plan.map((s,i)=>({...s, ...res[i], el: ES.sources[res[i].src].els[(useCount[res[i].src]++)%3]}));

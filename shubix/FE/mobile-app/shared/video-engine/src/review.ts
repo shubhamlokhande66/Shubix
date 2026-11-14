@@ -158,6 +158,8 @@ export function chooseEditTake<T>(make: (takeNo: number) => T, review: (take: T)
 }
 
 const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.2, LONG = 6, EDGE = 0.02;
+/** what the review calls soft (sharpness against the clip's own) and too dark to see (brightness): the engines' repairs use the same limits */
+export const EDIT_REVIEW_LIMITS = { soft: SOFT, dark: DARK } as const;
 
 /** how far `time` is from the nearest of `sorted` (seconds; Infinity with none) */
 function nearest(sorted: number[], time: number): number {
