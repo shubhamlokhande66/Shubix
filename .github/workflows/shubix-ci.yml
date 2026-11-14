@@ -52,6 +52,14 @@ jobs:
           node make-sets.mjs "$RUNNER_TEMP/beats"
           node bench.mjs --check baseline.json "$RUNNER_TEMP/beats/set1" "$RUNNER_TEMP/beats/set2" "$RUNNER_TEMP/beats/set3"
           node bench.mjs "$RUNNER_TEMP/beats/deg1" "$RUNNER_TEMP/beats/deg2" "$RUNNER_TEMP/beats/deg3"
+      # the two trackers together, as the studio uses them. Shown, and compared with the kept results, but it does not
+      # fail the run: ffmpeg's resampler differs a little between versions, and one song changing tracker moves a set
+      - name: Beat accuracy benchmark, with the neural tracker
+        continue-on-error: true
+        working-directory: shubix/FE/web-app/scripts/studio-beats
+        run: |
+          node beatthis.mjs "$RUNNER_TEMP/beats/set1" "$RUNNER_TEMP/beats/set2" "$RUNNER_TEMP/beats/set3"
+          node bench.mjs --check baseline.json "$RUNNER_TEMP/beats/set1" "$RUNNER_TEMP/beats/set2" "$RUNNER_TEMP/beats/set3"
       - name: Build web app
         run: pnpm --filter @shubix/web-app build
 

@@ -44,18 +44,36 @@ A song with no `.beats.txt`, or with under 8 beats marked, is skipped and named;
 
 ## Results
 
-The studio's own tracker alone, measured 2026-11-14 (`baseline.json`):
+Measured 2026-11-14 (`baseline.json`). "Own" is the studio's own tracker alone; "both" is what the studio uses: its own
+tracker and the neural tracker Beat This!, the analysis keeping the better of the two (`docs/fast-studio.md`).
+
+```
+node beatthis.mjs out/set1 out/set2 out/set3 out/deg1 out/deg2 out/deg3     # the neural tracker's beats (beatthis.json)
+node bench.mjs --check baseline.json out/set1 out/set2 out/set3 out/deg1 out/deg2 out/deg3
+```
 
 | | set 1 | set 2 | set 3 | set 1 phone | set 2 phone | set 3 phone |
 |---|---|---|---|---|---|---|
-| F70 | 99.7% | 100% | 86.9% | 90.7% | 87.9% | 79.5% |
-| F40 | 99.7% | 99.8% | 86.7% | 90.7% | 86.3% | 79.2% |
+| own, F70 | 99.7% | 100% | 86.9% | 90.7% | 87.9% | 79.5% |
+| own, F40 | 99.7% | 99.8% | 86.7% | 90.7% | 86.3% | 79.2% |
+| Beat This! alone, F70 | 96.0% | 98.4% | 80.3% | 92.0% | 87.7% | 79.0% |
+| **both, F70** | **99.3%** | **98.6%** | **92.5%** | **95.4%** | **94.4%** | **93.7%** |
+| **both, F40** | **99.3%** | **98.6%** | **92.5%** | **95.4%** | **94.4%** | **93.4%** |
 
-Where it is wrong, it is the tempo, not the timing: the beats it finds sit 0 to 11 ms (median) from the true ones, but
-`pop_triplet_808_135`, `tabla_kaharwa_84`, phone `fast_174`, `trap_70_halftime` and `bollywood_dembow_96` are counted
-at another tempo (0.5x, 0.74x, 0.8x, 1.7x, 2x).
+Where the own tracker is wrong, it is the tempo, not the timing: the beats it finds sit 0 to 11 ms (median) from the
+true ones, but `pop_triplet_808_135`, `tabla_kaharwa_84`, phone `fast_174`, `trap_70_halftime` and
+`bollywood_dembow_96` are counted at another tempo (0.5x, 0.74x, 0.8x, 1.7x, 2x). Beat This! gets most of those right.
 
-The studio does not use this tracker alone: the neural tracker Beat This! runs beside it and the analysis keeps the
-better of the two (`docs/fast-studio.md`). With a `beatthis.json` in a set's folder (`{ "<name>": { "beats": [...] } }`)
-`bench.mjs` also scores the two together ("both"). Earlier measurements of the two together, made with a script that is
-no longer in the repository and not measured again here: 99.7% / 100% / 99.7% clean, 98.5% / 89.1% / 99.7% phone.
+Found with this benchmark and fixed (2026-11-14): the neural tracker's beats come in 20 ms steps, and lining the grid
+up on the attacks (`refineBeats`) moved whole stretches of them 60 to 90 ms off the true beats.
+`reggaeton_95`: 100% with either tracker alone, 85% (F40 64%) together; now 100%. Set 2 together: 96.5% -> 98.6% (F40
+93.5% -> 98.6%); no set lower.
+
+Still wrong together, not changed (the rules that choose a tracker were tuned on real songs, and these are synthetic):
+- `tabla_kaharwa_84`: the own tracker counts twice too fast and is kept (67%); Beat This! alone has it right.
+- `bhajan_accelerando_90_140` and `change_140_100`: Beat This! is kept (75%, 94%) where the own tracker is right.
+- phone `trap_70_halftime`: neither has it (72%).
+
+These numbers are lower than the table in `docs/fast-studio.md` (99.7% / 100% / 99.7%), which was measured earlier
+with a script no longer in the repository; here the song reaches Beat This! through ffmpeg's resampler, in the app
+through the browser's. Real songs (above) are what settles it.

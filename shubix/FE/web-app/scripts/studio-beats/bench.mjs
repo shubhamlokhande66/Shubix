@@ -97,14 +97,17 @@ function scoreSet(dir){
     // the true beats of the part the song really plays (a marker past the end of the file is a marking mistake)
     const dur = x.length / sr, truth = s.truth.filter((t) => t <= dur);
     const a = matchBeats(r.beats, truth, 0.07), b = matchBeats(r.beats, truth, 0.04), off = median(a.offs);
-    const aiBeats = ai && ai[s.name] && Array.isArray(ai[s.name].beats) ? ai[s.name].beats : null;
-    const both = aiBeats ? matchBeats(songAnalysis(x, sr, { beats: aiBeats }).beats, truth, 0.07).f : null;
-    rows.push({ name: s.name, f70: a.f, f40: b.f, both, offMs: off === null ? null : off * 1000, tempo: truth.length ? r.beats.length / truth.length : null, bpm: r.period ? 60 / r.period : null, ms, beats: r.beats.length, truth: truth.length });
+    // the two trackers together, given to the analysis as the studio gives them (engine.ts: beats and bar starts)
+    const aiOf = ai && ai[s.name] && Array.isArray(ai[s.name].beats) ? ai[s.name] : null;
+    const two = aiOf ? songAnalysis(x, sr, { beats: aiOf.beats, downbeats: aiOf.downbeats || [] }) : null;
+    const both = two ? matchBeats(two.beats, truth, 0.07).f : null, both40 = two ? matchBeats(two.beats, truth, 0.04).f : null;
+    const aiOnly = aiOf ? matchBeats(aiOf.beats, truth, 0.07).f : null;
+    rows.push({ name: s.name, f70: a.f, f40: b.f, both, both40, aiOnly, chose: two ? two.beatSource : null, offMs: off === null ? null : off * 1000, tempo: truth.length ? r.beats.length / truth.length : null, bpm: r.period ? 60 / r.period : null, ms, beats: r.beats.length, truth: truth.length });
   }
   const mean = (k) => rows.length ? rows.reduce((n, r) => n + r[k], 0) / rows.length : null;
-  const withBoth = rows.filter((r) => r.both !== null);
+  const all = rows.length && rows.every((r) => r.both !== null);   // a mean only when every song has the neural beats
   return { set: path.basename(path.resolve(dir)), songs: rows.length, f70: mean('f70'), f40: mean('f40'),
-    both: withBoth.length === rows.length && rows.length ? withBoth.reduce((n, r) => n + r.both, 0) / rows.length : null, rows, skipped };
+    both: all ? mean('both') : null, both40: all ? mean('both40') : null, aiOnly: all ? mean('aiOnly') : null, rows, skipped };
 }
 
 const pct = (v) => v === null ? '   - ' : (v * 100).toFixed(1).padStart(5) + '%';
@@ -112,10 +115,10 @@ function print(res){
   console.log('\n' + res.set + ' · ' + res.songs + ' song' + (res.songs === 1 ? '' : 's'));
   for(const r of res.rows){
     console.log('  ' + r.name.padEnd(30).slice(0, 30), 'F70', pct(r.f70), ' F40', pct(r.f40), ' off', (r.offMs === null ? '-' : r.offMs.toFixed(0)).padStart(3) + ' ms',
-      ' tempo', r.tempo === null ? '-' : r.tempo.toFixed(2), ' ', (r.bpm === null ? '-' : r.bpm.toFixed(1)).padStart(5), 'BPM ', r.ms + ' ms', r.both === null ? '' : ' both F70 ' + pct(r.both));
+      ' tempo', r.tempo === null ? '-' : r.tempo.toFixed(2), ' ', (r.bpm === null ? '-' : r.bpm.toFixed(1)).padStart(5), 'BPM ', r.ms + ' ms', r.both === null ? '' : ' | Beat This! ' + pct(r.aiOnly) + '  both F70 ' + pct(r.both) + ' F40 ' + pct(r.both40) + ' (' + r.chose + ')');
   }
   for(const s of res.skipped) console.log('  skipped: ' + s);
-  if(res.songs) console.log('  mean'.padEnd(32), 'F70', pct(res.f70), ' F40', pct(res.f40), res.both === null ? '' : ' both F70 ' + pct(res.both));
+  if(res.songs) console.log('  mean'.padEnd(32), 'F70', pct(res.f70), ' F40', pct(res.f40), res.both === null ? '' : ' '.repeat(41) + '| Beat This! ' + pct(res.aiOnly) + '  both F70 ' + pct(res.both) + ' F40 ' + pct(res.both40));
 }
 
 if(process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)){
@@ -126,8 +129,8 @@ if(process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.met
   const results = args.map((dir) => { if(!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()){ console.error('not a folder: ' + dir); process.exit(2); } return scoreSet(dir); });
   results.forEach(print);
   const round = (v) => Math.round(v * 1000) / 10;
-  const summary = Object.fromEntries(results.filter((r) => r.songs).map((r) => [r.set, { songs: r.songs, f70: round(r.f70), f40: round(r.f40) }]));
-  console.log('\n' + Object.entries(summary).map(([k, v]) => k + ': F70 ' + v.f70 + '%  F40 ' + v.f40 + '% (' + v.songs + ')').join('\n'));
+  const summary = Object.fromEntries(results.filter((r) => r.songs).map((r) => [r.set, { songs: r.songs, f70: round(r.f70), f40: round(r.f40), ...(r.both === null ? {} : { both70: round(r.both), both40: round(r.both40) }) }]));
+  console.log('\n' + Object.entries(summary).map(([k, v]) => k + ': F70 ' + v.f70 + '%  F40 ' + v.f40 + '%' + (v.both70 === undefined ? '' : '  | both F70 ' + v.both70 + '%  F40 ' + v.both40 + '%') + ' (' + v.songs + ')').join('\n'));
   if(write){ fs.writeFileSync(write, JSON.stringify({ tracker: 'own', slack: SLACK, sets: summary }, null, 2) + '\n'); console.log('\nkept in ' + write); }
   if(check){
     const base = JSON.parse(fs.readFileSync(check, 'utf8')).sets, bad = [];
@@ -135,7 +138,8 @@ if(process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.met
       const now = summary[set];
       if(!now){ console.log('not scored now (its folder was not given): ' + set); continue; }
       if(now.songs !== was.songs) bad.push(set + ': ' + now.songs + ' songs, the kept result has ' + was.songs);
-      for(const k of ['f70', 'f40']) if(now[k] < was[k] - SLACK) bad.push(set + ' ' + k.toUpperCase() + ': ' + now[k] + '% now, ' + was[k] + '% kept');
+      // the two together are compared only when both the kept result and this run have them
+      for(const k of ['f70', 'f40', 'both70', 'both40']) if(was[k] !== undefined && now[k] !== undefined && now[k] < was[k] - SLACK) bad.push(set + ' ' + k.toUpperCase() + ': ' + now[k] + '% now, ' + was[k] + '% kept');
     }
     if(bad.length){ console.error('\nBeat accuracy got worse:\n  ' + bad.join('\n  ')); process.exit(1); }
     console.log('\nNo set is worse than the kept results (within ' + SLACK + ' point).');
