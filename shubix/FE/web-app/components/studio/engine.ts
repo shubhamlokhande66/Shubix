@@ -1912,6 +1912,22 @@ function statsIndex(src){
 const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
 const TAIL = 0.15;   // seconds of clip kept free after a shot's window
+// A clip's black part that is a fault in it: some of it black (brightness under 0.08), but under four fifths, so it is
+// not a dark clip (night, a stage: that is the clip as filmed).
+function blackPart(src){ if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < 0.08).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; }
+// How long such a clip is black at its start and at its end (a fade in, the lens covered, a cut to black), in seconds:
+// [0, 0] for a clip with no such fault, for under 0.2 s of it, and when less than half a second of picture would be left.
+function blackEnds(src){
+  if(src._be) return src._be;
+  const S = src.samples || []; let lead = 0, trail = 0;
+  if(blackPart(src)){
+    const a = S.findIndex(x => x.b >= 0.08); let b = S.length - 1; while(b >= 0 && S[b].b < 0.08) b--;
+    if(a > 0) lead = S[a].t; if(b >= 0 && b < S.length - 1) trail = Math.max(0, (src.dur || 0) - S[b + 1].t);
+    if(lead < 0.2) lead = 0; if(trail < 0.2) trail = 0;
+    if((src.dur || 0) - lead - trail < 0.5 + TAIL) lead = trail = 0;
+  }
+  return (src._be = [lead, trail]);
+}
 function windowStats(src, a, b){
   const X = statsIndex(src);
   let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh, dk;
@@ -3634,7 +3650,9 @@ function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
   for(const si of [...new Set(seq)]){
-    const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
+    // a clip that opens or ends on black (a fade in, the lens covered) is walked from its first picture to its last: the
+    // black is not footage, so as for a shorter clip its shots play a little slower rather than show it
+    const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), [from, trail] = blackEnds(src), foot = Math.max(0.05, src.dur - TAIL - trail - from), end = from + foot;
     const need = ids.map(i => plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
     // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
@@ -3642,10 +3660,10 @@ function seqPick(seq, res, gmax){
     const fit = spare < 0 ? Math.max(seqFloor, foot/sum(need)*0.98) : 1;
     const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
-    let cur = 0;
+    let cur = from;
     ids.forEach((i, k) => {
-      cur = Math.min(cur, Math.max(0, foot - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
-      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, foot - nd - rest);
+      cur = Math.min(cur, Math.max(from, end - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
+      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, end - nd - rest);
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
@@ -3803,8 +3821,6 @@ function makeEditNow(){
   const sharedRankMax = Math.max(1, sharedDirector.shots.length - 1);
   // the director's chosen moments are held for their own cuts
   const held = plan.map((s,i)=>{ const d = dirShot(i); return d ? {i, si:d.src, a:d.in, b:d.in + s.sp.pos(s.end-s.start)} : null; }).filter(Boolean);
-  // has this clip a black part that is a fault in it (some of it black, but under four fifths: not a dark clip)?
-  const blackPart = src => { if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < EDIT_REVIEW_LIMITS.dark).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; };
   const pick = (i, allowNeighbour, allowOverlap, anyScene, seen, only) => {
     const s = plan[i], len = s.end - s.start, dir = dirShot(i);
     let best=null, bs=-Infinity;

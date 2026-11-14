@@ -63,6 +63,22 @@ export function statsIndex(src){
 export const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 export const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
 export const TAIL = 0.15;   // seconds of clip kept free after a shot's window
+// A clip's black part that is a fault in it: some of it black (brightness under 0.08), but under four fifths, so it is
+// not a dark clip (night, a stage: that is the clip as filmed).
+export function blackPart(src){ if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < 0.08).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; }
+// How long such a clip is black at its start and at its end (a fade in, the lens covered, a cut to black), in seconds:
+// [0, 0] for a clip with no such fault, for under 0.2 s of it, and when less than half a second of picture would be left.
+export function blackEnds(src){
+  if(src._be) return src._be;
+  const S = src.samples || []; let lead = 0, trail = 0;
+  if(blackPart(src)){
+    const a = S.findIndex(x => x.b >= 0.08); let b = S.length - 1; while(b >= 0 && S[b].b < 0.08) b--;
+    if(a > 0) lead = S[a].t; if(b >= 0 && b < S.length - 1) trail = Math.max(0, (src.dur || 0) - S[b + 1].t);
+    if(lead < 0.2) lead = 0; if(trail < 0.2) trail = 0;
+    if((src.dur || 0) - lead - trail < 0.5 + TAIL) lead = trail = 0;
+  }
+  return (src._be = [lead, trail]);
+}
 export function windowStats(src, a, b){
   const X = statsIndex(src);
   let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh, dk;

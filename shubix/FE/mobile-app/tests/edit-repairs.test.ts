@@ -41,7 +41,7 @@ function world(nClips: number, seed: number) {
     if (path === "faces") return ok("[]\n");
     return { ok: false, status: 404, text: async () => "no", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
   };
-  return { e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher }), paths };
+  return { e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher }), paths, clips };
 }
 async function reelOf(nClips: number, seed: number) {
   const w = world(nClips, seed);
@@ -109,5 +109,31 @@ describe("the edit repairs what its review finds", () => {
     const r = await reelOf(6, 48);
     expect(count(r, "dark-shot")).toBe(0);
     expect(r.black).toBe(0);
+  });
+});
+
+describe("In my order: a clip that opens on black", () => {
+  // clip 2 is black for its first two fifths (a fade in, the lens covered); the others are as before
+  async function inOrder(nClips: number, seed: number) {
+    const w = world(nClips, seed), c = w.clips["/c2.mp4"], blackUntil = c.dur * 0.4;
+    c.samples.forEach((x) => { x.b = x.t < blackUntil ? 0.02 : 0.5; x.sh = 100; });
+    await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths });
+    const h = w.e.host() as unknown as { ES: State & { seqOn: boolean }; brain: { makeEditNow: () => void } };
+    h.ES.seqOn = true; h.brain.makeEditNow();
+    return { edit: h.ES.edit, blackUntil, nClips };
+  }
+  it("shows every clip once, in the creator's order", async () => {
+    for (const [n, seed] of [[8, 5], [12, 19], [5, 3]] as const) {
+      const r = await inOrder(n, seed);
+      expect(r.edit.map((e) => e.src)).toEqual(Array.from({ length: n }, (_, i) => i));
+    }
+  });
+  it("starts that clip at its first picture, and plays it slower rather than show the black", async () => {
+    for (const [n, seed] of [[8, 5], [8, 9], [12, 19], [5, 3], [20, 27]] as const) {
+      const r = await inOrder(n, seed), shot = r.edit.find((e) => e.src === 2)!;
+      expect(shot.in).toBeGreaterThanOrEqual(r.blackUntil - 0.11);   // (readings are 0.1 s apart)
+      expect(shot.scaleR).toBeGreaterThanOrEqual(0.25);              // never slower than the engine's own floor
+      expect(shot.scaleR).toBeLessThanOrEqual(1);
+    }
   });
 });

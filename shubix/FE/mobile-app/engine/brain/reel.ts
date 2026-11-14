@@ -2,7 +2,7 @@
 // the website's studio: its state is the object ES, and what is the app's own comes through EH.
 // The golden test (scripts/engine-golden.mjs) says it still makes the same Reel.
 // @ts-nocheck
-import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats } from './pure';
+import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats, blackPart } from './pure';
 import { repace } from '../components/studio/soundmap';
 import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
@@ -75,7 +75,39 @@ function makeEditNow(){
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
   // one clip always plays forward (its shots out of order jump back and forth in time)
-  const seq = (ES.seqOn || ES.sources.length === 1) && ES.sources.length ? EH.seqSlots(ES.plan.length) : null;
+  let seq = (ES.seqOn || ES.sources.length === 1) && ES.sources.length ? EH.seqSlots(ES.plan.length) : null; ES.seqFloor = 0.4;
+  // In my order, each clip is one shot (1 2 3 4…): the song's cuts that would fall inside a clip are let go, so its
+  // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
+  // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
+  if(seq && ES.seqOn && ES.sources.length > 1 && !EH.copyExact()){
+    for(let i = ES.plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
+      ES.plan[i-1] = { ...ES.plan[i-1], end: ES.plan[i].end, sp: EH.SPEED.normal }; ES.plan.splice(i, 1); seq.splice(i, 1);
+    }
+    // a shot no slower than 0.4x can fill (a 2.5 s clip under a 9 s shot stood still for 3 s, its camera move still
+    // drifting over the stopped picture): its cut moves, its time goes to the clips beside it that have footage to
+    // spare, on a beat where one is near
+    // too little footage in all for the song even at 0.4x: every clip a little slower still (down to 0.25x), evenly
+    const footAll = seq.reduce((a, si) => a + Math.max(0.05, ES.sources[si].dur - TAIL), 0), reelLen = ES.plan[ES.plan.length-1].end - ES.plan[0].start;
+    ES.seqFloor = Math.min(0.4, Math.max(0.25, footAll/reelLen*0.98));
+    const cap = i => Math.max(0.3, (ES.sources[seq[i]].dur - TAIL)/ES.seqFloor), len = i => ES.plan[i].end - ES.plan[i].start;
+    if(ES.plan.some((_, i) => len(i) > cap(i) + 0.02)){
+      // each shot at most what its clip fills; the time over goes to the shots with room, in proportion to it
+      const L = ES.plan.map((_, i) => Math.min(len(i), cap(i)));
+      for(let pass = 0; pass < 6; pass++){
+        const D = reelLen - L.reduce((a, b) => a + b, 0), room = L.map((l, i) => Math.max(0, cap(i) - l)), R = room.reduce((a, b) => a + b, 0);
+        if(D <= 0.01 || R <= 0.01) break;
+        L.forEach((l, i) => { L[i] = l + Math.min(room[i], D*room[i]/R); });
+      }
+      // the cuts again from these lengths, each on a beat when one is near and the shots around it still fit
+      let t = ES.plan[0].start;
+      for(let i = 0; i < ES.plan.length - 1; i++){
+        let c = t + L[i]; const b = ES.beats.reduce((x, y) => Math.abs(y - c) < Math.abs(x - c) ? y : x, Infinity);
+        if(Math.abs(b - c) < 0.3 && b - t <= cap(i) + 1e-6 && b - t >= 0.4) c = b;
+        ES.plan[i] = { ...ES.plan[i], start: t, end: c }; t = c;
+      }
+      ES.plan[ES.plan.length-1] = { ...ES.plan[ES.plan.length-1], start: t };
+    }
+  }
   const order = ES.plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[ES.plan[a].type]) - (b===0?-1:pr[ES.plan[b].type]) || a-b; });
   const res = new Array(ES.plan.length); ES.dupCount = 0;
   // Shared Director pass: rank the source clips once, then use its explainable quality ranking
@@ -124,8 +156,6 @@ function makeEditNow(){
   const sharedRankMax = Math.max(1, sharedDirector.shots.length - 1);
   // the director's chosen moments are held for their own cuts
   const held = ES.plan.map((s,i)=>{ const d = EH.dirShot(i); return d ? {i, si:d.src, a:d.in, b:d.in + s.sp.pos(s.end-s.start)} : null; }).filter(Boolean);
-  // has this clip a black part that is a fault in it (some of it black, but under four fifths: not a dark clip)?
-  const blackPart = src => { if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < EDIT_REVIEW_LIMITS.dark).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; };
   const pick = (i, allowNeighbour, allowOverlap, anyScene, seen, only) => {
     const s = ES.plan[i], len = s.end - s.start, dir = EH.dirShot(i);
     let best=null, bs=-Infinity;
