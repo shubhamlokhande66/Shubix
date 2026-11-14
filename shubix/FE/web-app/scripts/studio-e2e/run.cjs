@@ -23,7 +23,7 @@ const now = () => Date.now();
 const studio = () => document.querySelector('.brs');
 
 async function scenario(browser, sc) {
-  const rep = { id: sc.id, why: sc.why, song: sc.song, steps: [], errors: [], consoleErrors: [], failedRequests: 0, ok: false };
+  const rep = { id: sc.id, why: sc.why, song: sc.song, popups: [], steps: [], errors: [], consoleErrors: [], failedRequests: 0, ok: false };
   const step = (name, data) => { rep.steps.push({ name, ...data }); console.log(`[${sc.id}] ${name}`, data ? JSON.stringify(data).slice(0, 600) : ''); };
   const ctx = await browser.newContext({ viewport: { width: 1300, height: 1000 }, acceptDownloads: true });
   const p = await ctx.newPage();
@@ -45,6 +45,27 @@ async function scenario(browser, sc) {
       return { url: location.pathname + location.search, s1st: txt('s1st'), s3st: txt('s3st'), qinfo: txt('qinfo'), fgent: txt('fgent'), freadys: txt('freadys'), xmsg: txt('xmsg'), dialogs, buttons };
     }); console.log(`[${sc.id}] SEE ${name} ` + JSON.stringify(v)); return v; } catch (e) { console.log(`[${sc.id}] SEE ${name} failed: ` + e.message); return null; } };
   const long = async () => p.evaluate(() => { const l = window.__long.splice(0); return { blocks: l.length, longestMs: Math.max(0, ...l), over200: l.filter((x) => x > 200).length, totalMs: l.reduce((a, b) => a + b, 0) }; });
+  // The popups a creator answers on the way, answered as one would: the server is not there in this check ("Shubix is
+  // not answering": Close), and with more clips than song Shubix is let to pick ("Shubix picks the best 30 s"). Every
+  // popup answered is written down; one this does not know is left open and said.
+  const answered = [];
+  const settle = async (rounds = 6) => {
+    for (let k = 0; k < rounds; k++) {
+      const did = await p.evaluate(() => {
+        const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+        for (const d of [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis)) {
+          const text = d.innerText.replace(/\s+/g, ' ').slice(0, 160);
+          if (/not answering right now/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^close$/i.test(x.innerText.trim())); if (b) { b.click(); return 'Close · ' + text.slice(0, 60); } }
+          const ok = d.querySelector('#cconfok'); if (ok && vis(ok)) { const t = ok.innerText.trim(); ok.click(); return t + ' · ' + text.slice(0, 60); }
+        }
+        return null;
+      });
+      if (!did) return;
+      answered.push(did); console.log(`[${sc.id}]   popup answered: ${did}`);
+      await p.waitForTimeout(700);
+    }
+  };
+  const openDialogs = () => p.evaluate(() => [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; }).map((d) => d.innerText.replace(/\s+/g, ' ').slice(0, 120)));
   try {
     // ---- 1. the studio opens
     let t0 = now();
@@ -79,13 +100,14 @@ async function scenario(browser, sc) {
     // what comes after Generate is watched and said, popup by popup, until the Reel can be played
     const tGen = now(); let opened = false;
     for (let k = 0; k < 150 && !opened; k++) {
-      await p.waitForTimeout(2000);
-      opened = await p.evaluate(() => { const pl = document.getElementById('play'), r = pl && pl.getBoundingClientRect(); return !!pl && !pl.disabled && r.width > 0 && r.height > 0 && (document.querySelector('.brs').__studio.edit || []).length > 0; });
+      await p.waitForTimeout(2000); await settle();
+      opened = (await openDialogs()).filter((t) => !/Crafting your Reel/.test(t)).length === 0 && await p.evaluate(() => { const pl = document.getElementById('play'), r = pl && pl.getBoundingClientRect(); return !!pl && !pl.disabled && r.width > 0 && r.height > 0 && (document.querySelector('.brs').__studio.edit || []).length > 0; });
       if (!opened && (k < 6 || k % 10 === 0)) { const v = await see('after-generate-' + (k * 2) + 's'); if (k === 2 || (v && v.dialogs.length && k < 12)) await shot('after-generate-' + (k * 2) + 's'); }
     }
     if (!opened) { await see('reel-not-opened'); throw new Error('the Reel did not open within 5 minutes of Generate'); }
     const editMs = readMs + (now() - tGen);
-    step('reel opened', { msAfterGenerate: now() - tGen });
+    step('reel opened', { msAfterGenerate: now() - tGen, popups: answered.slice() });
+    await see('reel-opened'); await shot('reel-opened');
     // the neural beat check and the reading of the clips can remake the edit once more: wait until it has stopped changing
     let gen = -1, same = 0;
     for (let k = 0; k < 60 && same < 4; k++) { const g = await p.evaluate(() => document.querySelector('.brs').__studio.editGen); same = g === gen ? same + 1 : 0; gen = g; await p.waitForTimeout(500); }
@@ -104,7 +126,8 @@ async function scenario(browser, sc) {
     await shot('made');
 
     // ---- 4. the preview plays: how far it gets in 5 seconds, and how evenly the screen was drawn
-    await p.click('#play');
+    await settle();
+    await p.click('#play', { timeout: 15000 });
     const play = await p.evaluate(async () => {
       const S = document.querySelector('.brs').__studio, gaps = []; let last = performance.now(), on = true;
       const tick = (t) => { gaps.push(t - last); last = t; if (on) requestAnimationFrame(tick); }; requestAnimationFrame(tick);
@@ -116,15 +139,14 @@ async function scenario(browser, sc) {
       return { started: S.playing, startMs, reelSeconds: +(b - a).toFixed(2), wallSeconds: +wall.toFixed(2), frames: gaps.length, fps: +(gaps.length / wall).toFixed(1),
         medianGapMs: g.length ? +g[g.length >> 1].toFixed(1) : null, worstGapMs: g.length ? +g[g.length - 1].toFixed(0) : null, over100ms: gaps.filter((x) => x > 100).length };
     });
-    await p.click('#play').catch(() => {});
     await p.evaluate(() => document.querySelector('.brs').__studio.stopPreview && document.querySelector('.brs').__studio.stopPreview());
     step('preview played', { ...play, ...(await long()) });
 
     // ---- 5. export, and the file kept
     await p.waitForTimeout(500);
     t0 = now();
-    await see('before-export');
-    await p.click('#export');
+    await settle(); await see('before-export');
+    await p.click('#export', { timeout: 15000 });
     await p.waitForTimeout(1500); await see('export-sheet'); await shot('export-sheet');
     await p.waitForSelector('#xgo', { state: 'visible', timeout: 30000 });
     await p.click('#xgo');
@@ -137,6 +159,7 @@ async function scenario(browser, sc) {
         if (s.msg && s.msg !== lastMsg && !/^Exporting/.test(s.msg)) console.log(`[${sc.id}]   says: ${s.msg}`);
         if (s.msg) lastMsg = s.msg;
         if (s.href.startsWith('blob:')) return s;
+        await settle(2);
         if (s.err) return { failed: s.msg };
         await p.waitForTimeout(1000);
       }
@@ -154,6 +177,7 @@ async function scenario(browser, sc) {
     step('exported', { ms: now() - t0, file, type: exp.type, mb: +(exp.size / 1048576).toFixed(2), quality: exp.quality ? { status: exp.quality.status, score: exp.quality.score, issues: (exp.quality.issues || []).map((i) => i.code || i) } : null, ...(await long()) });
     await shot('exported');
     rep.ok = true;
+    rep.popups = answered;
   } catch (e) {
     rep.failure = String(e && e.message || e).slice(0, 500);
     console.log(`[${sc.id}] FAILED: ${rep.failure}`);
