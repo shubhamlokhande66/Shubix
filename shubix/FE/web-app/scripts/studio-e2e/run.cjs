@@ -20,7 +20,7 @@ const SCENARIOS = [
   { id: 'A-12clips-fourfloor', song: 'four_floor_124', clips: media.clips.map((c) => c.index), why: 'a computer, as it comes (clips in my order, 1080p): 12 clips, a steady 124 BPM song' },
   { id: 'B-5clips-bhangra-mix', song: 'bhangra_dhol_98', clips: [0, 3, 5, 8, 10], mix: true, wholeSong: true, res: '720p', why: 'a computer, Mix all clips for the whole song: 5 clips (one half dark), bhangra; the edit reviews and repairs itself here' },
   { id: 'C-phone-8clips-dembow', song: 'bollywood_dembow_96', clips: [1, 2, 4, 5, 6, 7, 9, 11], phone: true, res: '720p', why: 'a phone-sized screen with touch, as it comes: 8 clips, a dembow song' },
-].filter((s) => !process.env.ONLY || s.id.startsWith(process.env.ONLY));
+].filter((s) => !process.env.ONLY || process.env.ONLY.split(',').some((o) => s.id.startsWith(o.trim())));
 
 const now = () => Date.now();
 const studio = () => document.querySelector('.brs');
@@ -41,7 +41,7 @@ async function scenario(browser, sc) {
     if (process.env.SHOTS_IN_LOG !== '0') console.log(`SHOT ${sc.id}-${name} ${buf.toString('base64')} END`); } catch (e) { /* the page is gone */ } };
   // what the page shows now, in words: the statuses, the open popups and their buttons, the buttons that can be pressed
   const see = async (name) => { try { const v = await p.evaluate(() => {
-      const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+      const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight && st.visibility !== 'hidden' && st.display !== 'none'; };
       const txt = (id) => { const el = document.getElementById(id); return el ? el.textContent.trim().slice(0, 120) : null; };
       const dialogs = [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis).map((d) => ({ id: d.id || null, text: d.innerText.replace(/\s+/g, ' ').slice(0, 260), buttons: [...d.querySelectorAll('button,a[href]')].filter(vis).map((b) => (b.id ? '#' + b.id + ' ' : '') + b.innerText.replace(/\s+/g, ' ').trim().slice(0, 40)) }));
       const buttons = [...document.querySelectorAll('button')].filter((b) => vis(b) && !b.disabled).map((b) => (b.id ? '#' + b.id + ' ' : '') + b.innerText.replace(/\s+/g, ' ').trim().slice(0, 30)).slice(0, 60);
@@ -55,7 +55,7 @@ async function scenario(browser, sc) {
   const settle = async (rounds = 6) => {
     for (let k = 0; k < rounds; k++) {
       const did = await p.evaluate(() => {
-        const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+        const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight && st.visibility !== 'hidden' && st.display !== 'none'; };
         for (const d of [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis)) {
           const text = d.innerText.replace(/\s+/g, ' ').slice(0, 160);
           if (/not answering right now/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^close$/i.test(x.innerText.trim())); if (b) { b.click(); return 'Close · ' + text.slice(0, 60); } }
@@ -70,7 +70,7 @@ async function scenario(browser, sc) {
   };
   // the phone flow goes screen by screen: its one bottom button that can be pressed (Let's Start, Next)
   const next = async (why) => { const ok = await p.evaluate(() => { const b = [...document.querySelectorAll('[data-fnext]')].find((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.disabled; }); if (b) { b.click(); return b.innerText.trim(); } return null; }); console.log(`[${sc.id}]   ${why}: ${ok ? 'pressed "' + ok + '"' : 'no button to press'}`); await p.waitForTimeout(600); return ok; };
-  const openDialogs = () => p.evaluate(() => [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; }).map((d) => d.innerText.replace(/\s+/g, ' ').slice(0, 120)));
+  const openDialogs = () => p.evaluate(() => [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight && getComputedStyle(el).visibility !== 'hidden'; }).map((d) => d.innerText.replace(/\s+/g, ' ').slice(0, 120)));
   try {
     // ---- 1. the studio opens
     let t0 = now();
