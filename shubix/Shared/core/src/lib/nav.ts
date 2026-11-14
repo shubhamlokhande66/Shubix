@@ -17,6 +17,7 @@ export const GROUPS: NavGroup[] = [
       // (next.config.ts) so its AI beat tracker can use several cores
       { href: "/create/music", label: "Beat Reel", tk: "nav.music", icon: "music", fullLoad: true },
       { href: "/create/talking", label: "Talking Reel", tk: "nav.talking", icon: "mic", fullLoad: true },
+      { href: "/create/clips", label: "Clips from a Video", tk: "nav.clips", icon: "scissors" },
       { href: "/create/photo", label: "Photo Reel", tk: "nav.photo", icon: "image", fullLoad: true },
       { href: "/create/copy", label: "Match a Reel's Style", tk: "nav.copy", icon: "copy", fullLoad: true },
       { href: "/reels", label: "My Reels", tk: "nav.reels", icon: "reels" },
@@ -78,6 +79,7 @@ const PAGES: Record<string, PageMeta> = {
   // the flow has its own back (FE/web-app/components/studio/flow.ts)
   "/create/music": { title: "Beat Reel", tk: "nav.music", credits: true },
   "/create/talking": { title: "Talking Reel", tk: "nav.talking", credits: true },
+  "/create/clips": { title: "Clips from a Video", tk: "nav.clips", credits: true },
   "/create/photo": { title: "Photo Reel", tk: "nav.photo", credits: true },
   "/templates": { title: "Templates", tk: "nav.templates" },
   "/brands": { title: "My Brands", tk: "nav.myBrands" },

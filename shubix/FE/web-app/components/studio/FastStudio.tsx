@@ -91,6 +91,13 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           personMask: (rgba: Uint8ClampedArray) => import("@/lib/vision/client").then((m) => m.personMask(rgba)),
           findFaces: (squares: Uint8ClampedArray[]) => import("@/lib/vision/client").then((m) => m.findFaces(squares)),
         });
+        // a moment cut out in Clips from a Video (/create/talking?from=clips): it waits in this browser, put in as the clip
+        if (!engine && new URLSearchParams(location.search).get("from") === "clips") {
+          const clip = await import("@/lib/clips/media").then((m) => m.takeForStudio());
+          const input = root.current?.querySelector<HTMLInputElement>("#vfile");
+          if (clip && input && !cancelled) { const dt = new DataTransfer(); dt.items.add(clip); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true })); }
+          const u = new URL(location.href); u.searchParams.delete("from"); history.replaceState(history.state, "", u);
+        }
         if (engine && root.current) { const { initBridge } = await import("@/components/studio/bridge"); const stop = initBridge(root.current), stopStudio = cleanup; cleanup = () => { stop(); stopStudio?.(); }; }
       } catch (e) {
         setFailed(e instanceof Error ? e.message : String(e));

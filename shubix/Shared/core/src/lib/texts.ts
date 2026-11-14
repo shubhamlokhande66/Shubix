@@ -457,7 +457,7 @@ export const TEXT_GROUPS: TextGroup[] = [
   page(EVERY, "nav", "Menu & top bar",
     S("Menu",
       C("Headings", T("nav.studio", "Studio", "Studio"), T("nav.library", "Library", "Library"), T("nav.account", "Account", "Account")),
-      C("Links", T("nav.voices", "Voice profiles", "Voice profiles"), T("nav.rewardsLink", "Invite & earn", "Invite & earn"), T("nav.home", "Home", "Home"), T("nav.music", "Beat Reel", "Beat Reel"), T("nav.talking", "Talking Reel", "Talking Reel"), T("nav.photo", "Photo Reel", "Photo Reel"),
+      C("Links", T("nav.voices", "Voice profiles", "Voice profiles"), T("nav.rewardsLink", "Invite & earn", "Invite & earn"), T("nav.home", "Home", "Home"), T("nav.music", "Beat Reel", "Beat Reel"), T("nav.talking", "Talking Reel", "Talking Reel"), T("nav.clips", "Clips from a Video", "Clips from a Video"), T("nav.photo", "Photo Reel", "Photo Reel"),
         T("nav.copy", "Match a Reel's Style", "Match a Reel's Style"), T("nav.story", "Story Maker", "Story Maker"), T("nav.reels", "My Reels", "My Reels"), T("nav.templates", "Templates", "Templates"),
         T("nav.brands", "Brands", "Brands"), T("nav.pricing", "Pricing & plans", "Pricing & plans")),
       C("Bottom", T("nav.newReel", "New Reel button", "New Reel"), T("nav.adminDashboard", "Phone app menu: the administrators' link", "Admin dashboard"), T("nav.signOut", "Sign out", "Sign out"), T("nav.studioTag", "Tag next to the email", "STUDIO"), T("common.adminDashboard", "Admin dashboard", "Admin dashboard"))),

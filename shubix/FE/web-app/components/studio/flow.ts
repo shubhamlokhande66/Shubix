@@ -46,6 +46,8 @@ export function initFlow(root: HTMLElement): () => void {
   // a saved Reel being opened: "Opening your Reel…" from the first paint (the engine takes it away once it is back)
   if (q.has("p")) root.classList.add("opening");
   let step: Step = q.has("p") && (["choose", "adjust", "clips"] as string[]).includes(q.get("step") ?? "") ? (q.get("step") as Step) : "intro";
+  // a moment cut out in Clips from a Video (/create/talking?from=clips): straight to its clip (FastStudio puts it in)
+  if (q.get("from") === "clips" && location.pathname === "/create/talking") step = "clips";
   let kind: Kind = "music";
   let pct = 0;
   // Copy a Reel: the Reel being copied (its file, for its song) and whether its song is still to come (below)

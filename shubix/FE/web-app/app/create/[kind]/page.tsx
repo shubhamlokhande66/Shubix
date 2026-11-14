@@ -3,13 +3,15 @@ import { notFound, redirect } from "next/navigation";
 import { FastStudio } from "@/components/studio/FastStudio";
 import { PlanGate } from "@/components/organisms/PlanGate";
 import { TemplateGate } from "@/components/organisms/TemplateGate";
+import { ClipsFinder } from "@/components/organisms/ClipsFinder";
 
 /** Fast Studio, one address per way in:
  * - /create/music, /create/talking, /create/photo, /create/copy: the Create flow of that kind, its defaults set
  *   (components/studio/flow.ts); Copy a Reel starts by picking the Reel to copy
+ * - /create/clips: Clips from a Video: a long video's best moments, each made a Talking Reel (components/organisms/ClipsFinder)
  * - /create/story: Story Maker needs a voice, and the website has none now (docs/third-party-licenses.md): old links go to Music Reel
  * - /create/edit: legacy saved Reel / template links redirect to /editor with their original query parameters */
-const KINDS = { music: "Beat Reel", talking: "Talking Reel", photo: "Photo Reel", copy: "Match a Reel's Style", story: "Story Maker", edit: "Your Reel" } as const;
+const KINDS = { music: "Beat Reel", talking: "Talking Reel", photo: "Photo Reel", copy: "Match a Reel's Style", clips: "Clips from a Video", story: "Story Maker", edit: "Your Reel" } as const;
 type Kind = keyof typeof KINDS;
 const FLOW = new Set<Kind>(["music", "talking", "photo", "copy"]); // drawn in the Create flow from the first paint
 
@@ -28,6 +30,7 @@ export default async function CreatePage({ params, searchParams }: { params: Pro
   if (!(kind in KINDS)) notFound();
   const q = await searchParams;
   if (kind === "edit" && !q.p && !q.tpl) notFound();
+  if (kind === "clips") return <ClipsFinder />;
   if (kind === "story") redirect("/create/music");
   if (kind === "edit") {
     const target = new URLSearchParams();

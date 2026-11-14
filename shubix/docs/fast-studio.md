@@ -526,3 +526,23 @@ Checked: screenshots of every design screen (phone Ivory / Noir, computer) again
 "Add or change clips" opens step 2; an Editor chip changes the shot's transition (hard → fade-in) and lights up; the
 Effect tab shows its 13 choices; the Pro inspector changes the speed; tapping the Pro timeline at 75% moves the playhead
 to 0.75; the menu's Noir and Simple apply and are remembered. `check-keyframes`, `check-overlays`, `check-templates` pass.
+
+## Clips from a Video (long video → Reels)
+
+`/create/clips` (`components/organisms/ClipsFinder.tsx`, `lib/clips/media.ts`): one long video (up to 2 hours: a podcast,
+a talk, a class, a vlog) in, its best moments out, each a Reel. The video never leaves the phone.
+- **Words**: the sound is read part by part (170 s, mediabunny's audio sink, one part in memory at a time), made 16 kHz
+  mono and transcribed by `/api/studio/transcribe`; the words get their place in the whole video. Read once per video and
+  language: a new length or number of clips asks only for the moments again.
+- **Moments** (`/api/studio/moments`, `BE/api/src/server/studio/moments.ts`): the words in sentences (full stop, `।`, a
+  pause over 0.8 s), every stretch of whole sentences inside the length (15–35 s, 30–60 s, 55–90 s), a plain score (a
+  hook in the first sentence, no weak start like "and / so / aur / ani", a finished last sentence, steady talking, no long
+  silences), the best ones apart (none sharing time). Shubix AI (Editor and Pro; AI task "Clips from a long video") judges
+  up to 30 of them: a score, a title, an on-screen hook and why, in the video's own language. Charged once per video
+  (`studio_moments`, 5 credits by default; given back if the AI fails). Without the AI: the plain picks.
+- **Each moment**: plays in the page from its start to its end; **Make Reel** cuts it out on the phone (mediabunny
+  Conversion with a trim: exact frames) and opens the Talking Reel studio with it (`/create/talking?from=clips`: the clip
+  waits in IndexedDB, used once, for 10 minutes); **Download** saves the cut clip.
+
+Checked in Chromium (a 6.6 min spoken WebM): 3 parts of the voice in 2.9 s, a 30 s clip cut in 0.07 s (30.00 s, VP9 +
+Opus), handed to the studio once.
