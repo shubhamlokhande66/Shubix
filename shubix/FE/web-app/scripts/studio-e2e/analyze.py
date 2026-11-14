@@ -83,6 +83,13 @@ for sc in report['scenarios']:
     who = dist.argmin(1); far = dist.min(1)
     known = (s > 0.25) & (v > 0.15) & (far < 360 / len(clips) / 2 + 3)
     who = np.where(known, who, -1)
+    # a dissolve between two clips passes through colours that are neither's (and can look like a third clip's for a
+    # frame or two): a clip counts where it holds for 4 frames or more, the rest is the way from one to the next
+    k0 = 0
+    for k in range(1, len(who) + 1):
+        if k == len(who) or who[k] != who[k0]:
+            if k - k0 < 4: who[k0:k] = -1
+            k0 = k
     res['frames'] = {'count': int(len(F)), 'fps': fps, 'toldApart': round(float(known.mean()), 3), 'dark': int((v < 0.08).sum())}
 
     # ---- where the picture really cuts: the frame a new clip first shows

@@ -3803,6 +3803,8 @@ function makeEditNow(){
   const sharedRankMax = Math.max(1, sharedDirector.shots.length - 1);
   // the director's chosen moments are held for their own cuts
   const held = plan.map((s,i)=>{ const d = dirShot(i); return d ? {i, si:d.src, a:d.in, b:d.in + s.sp.pos(s.end-s.start)} : null; }).filter(Boolean);
+  // has this clip a black part that is a fault in it (some of it black, but under four fifths: not a dark clip)?
+  const blackPart = src => { if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < EDIT_REVIEW_LIMITS.dark).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; };
   const pick = (i, allowNeighbour, allowOverlap, anyScene, seen, only) => {
     const s = plan[i], len = s.end - s.start, dir = dirShot(i);
     let best=null, bs=-Infinity;
@@ -3818,6 +3820,11 @@ function makeEditNow(){
         if(!allowOverlap && held.some(h=>h.i!==i && h.si===si && !res[h.i] && Math.min(h.b,a+need)-Math.max(h.a,a) > 0.001)) return;
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
         const w = scoreWindow(i, src, a, need, gmax);
+        // A black part of a clip (it opens on black, a cut to black) is not footage to show: such a moment is not
+        // taken while any other can be, footage shown twice included (a second of black looks broken; a moment seen
+        // again does not). Not for a dark clip (night, a stage: four fifths of it or more under the limit): that is
+        // the clip as filmed, and its moments are weighed as before. The last pass takes what there is.
+        if(!anyScene && !seen && blackPart(src) && (w.st.dark || 0)*need >= EDIT_REVIEW_LIMITS.darkSeconds) return;
         // (a repair: only a moment that can be seen; for a clip brought into the Reel, a sharp one too)
         if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (w.st.dark || 0)*need >= EDIT_REVIEW_LIMITS.darkSeconds || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
         let sc = w.sc - 5*ov/need + rng()*0.15;
