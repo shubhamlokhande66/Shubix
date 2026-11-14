@@ -559,3 +559,19 @@ add speech too ("add a voiceover saying …").
 
 Checked in Chromium (the client against a stand-in server): the voice list, a 1.79 s WAV decoded at 48 kHz, the same
 speech again from the browser's cache (no second request), a refused request's message shown as it is.
+
+## AI dub (a Talking Reel in another language)
+
+Captions panel → "AI dub: Hindi / Marathi / English / Hinglish / Gujarati / Bengali / Tamil / Telugu / Punjabi" and an
+AI voice (talking Reels; shown when the server has AI voices). `makeDub` in `engine.ts`, the pure parts in `dub.ts`:
+- the talk's own voice (pauses already cut) is transcribed, the words put in sentences (full stop, a pause over 0.6 s,
+  12 s or 150 characters), the sentences translated (`/api/studio/translate`) and each spoken by the AI voice
+  (`/api/studio/speak`, 1 credit each, kept in the browser);
+- each spoken sentence starts where the original one did (or just after the one before), sped up with its pitch kept
+  (WSOLA, at most 1.35×) when it would run into the next; the music steps back under the dubbed voice;
+- the dubbed voice takes the place of the person's own in the preview, captions (made again from the dub, so they are in
+  the new language) and the export; "AI dub: off" puts the own voice back. Saved with the Reel (language and voice) and
+  made again on opening (the speech comes from the browser's cache). Up to 3 minutes of talk. The lips are not moved.
+
+Checked in Chromium (`next dev`, the API stood in for): a 9.3 s talking clip, Hindi → listened, translated, 4 sentences
+spoken, the talk rebuilt with the dub; `tests/studio-dub.test.ts` (sentences, 1.3× faster at the same pitch, placing).
