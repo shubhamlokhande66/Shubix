@@ -146,7 +146,10 @@ async function scenario(browser, sc) {
     await p.waitForTimeout(500);
     t0 = now();
     await settle(); await see('before-export');
-    await p.click('#export', { timeout: 15000 });
+    // the editor's own Export (the top bar's on a computer; the studio's where that one is not shown)
+    { const which = await p.evaluate(() => ['topexport', 'export'].find((id) => { const el = document.getElementById(id), r = el && el.getBoundingClientRect(); return el && !el.disabled && r.width > 0 && r.height > 0; }) || null);
+      if (!which) throw new Error('no Export button can be pressed');
+      await p.click('#' + which, { timeout: 15000 }); }
     await p.waitForTimeout(1500); await see('export-sheet'); await shot('export-sheet');
     await p.waitForSelector('#xgo', { state: 'visible', timeout: 30000 });
     await p.click('#xgo');
