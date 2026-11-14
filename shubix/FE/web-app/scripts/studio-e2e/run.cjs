@@ -34,14 +34,26 @@ async function scenario(browser, sc) {
     window.__long = [];
     try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push(Math.round(e.duration)); }).observe({ type: 'longtask', buffered: true }); } catch (e) { /* no long task timing here */ }
   });
-  const shot = async (name) => { try { await p.screenshot({ path: path.join(OUT, `${sc.id}-${name}.png`) }); } catch (e) { /* the page is gone */ } };
+  const shot = async (name) => { try { const buf = await p.screenshot({ type: 'jpeg', quality: 38 }); fs.writeFileSync(path.join(OUT, `${sc.id}-${name}.jpg`), buf);
+    if (process.env.SHOTS_IN_LOG !== '0') console.log(`SHOT ${sc.id}-${name} ${buf.toString('base64')} END`); } catch (e) { /* the page is gone */ } };
+  // what the page shows now, in words: the statuses, the open popups and their buttons, the buttons that can be pressed
+  const see = async (name) => { try { const v = await p.evaluate(() => {
+      const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+      const txt = (id) => { const el = document.getElementById(id); return el ? el.textContent.trim().slice(0, 120) : null; };
+      const dialogs = [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis).map((d) => ({ id: d.id || null, text: d.innerText.replace(/\s+/g, ' ').slice(0, 260), buttons: [...d.querySelectorAll('button,a[href]')].filter(vis).map((b) => (b.id ? '#' + b.id + ' ' : '') + b.innerText.replace(/\s+/g, ' ').trim().slice(0, 40)) }));
+      const buttons = [...document.querySelectorAll('button')].filter((b) => vis(b) && !b.disabled).map((b) => (b.id ? '#' + b.id + ' ' : '') + b.innerText.replace(/\s+/g, ' ').trim().slice(0, 30)).slice(0, 60);
+      return { url: location.pathname + location.search, s1st: txt('s1st'), s3st: txt('s3st'), qinfo: txt('qinfo'), fgent: txt('fgent'), freadys: txt('freadys'), xmsg: txt('xmsg'), dialogs, buttons };
+    }); console.log(`[${sc.id}] SEE ${name} ` + JSON.stringify(v)); return v; } catch (e) { console.log(`[${sc.id}] SEE ${name} failed: ` + e.message); return null; } };
   const long = async () => p.evaluate(() => { const l = window.__long.splice(0); return { blocks: l.length, longestMs: Math.max(0, ...l), over200: l.filter((x) => x > 200).length, totalMs: l.reduce((a, b) => a + b, 0) }; });
   try {
     // ---- 1. the studio opens
     let t0 = now();
-    await p.goto(BASE + '/studio?view=all', { waitUntil: 'domcontentloaded', timeout: 120000 });
+    // no API runs behind this website: the one thing the Create flow must know from it is that nobody has to sign in
+    await ctx.route('**/api/auth/me', (route) => route.fulfill({ json: { authEnabled: false, user: null } }));
+    await p.goto(BASE + (process.env.STUDIO_PATH || '/create/music'), { waitUntil: 'domcontentloaded', timeout: 120000 });
     await p.waitForFunction(() => document.querySelector('.brs') && document.querySelector('.brs').__studio, null, { timeout: 120000 });
     step('studio open', { ms: now() - t0, ...(await long()) });
+    await see('open'); await shot('open');
 
     // ---- 2. the song: read, its beats found
     const song = media.songs.find((s) => s.name === sc.song);
@@ -52,13 +64,28 @@ async function scenario(browser, sc) {
       return { status: document.getElementById('s1st').textContent, bpm: r.period ? +(60 / r.period).toFixed(1) : null, beatSource: r.beatSource || null, beats: (S.beats || []).length,
         section: { start: x.start, len: x.len, whole: x.whole, auto: x.auto } }; });
     step('song ready', { ms: now() - t0, ...songInfo, ...(await long()) });
+    await see('song');
 
     // ---- 3. the clips: read, and the Reel made by itself
     const files = sc.clips.map((i) => path.join(MEDIA, media.clips[i].file));
     t0 = now();
     await p.setInputFiles('#vfile', files);
-    await p.waitForFunction(() => !document.getElementById('play').disabled && document.getElementById('qinfo').textContent === '', null, { timeout: 600000 });
-    const editMs = now() - t0;
+    // the Create flow: Generate Reel comes on when the song, the beats and the clips are read; pressing it opens the Reel
+    await p.waitForFunction(() => { const g = document.getElementById('fgen'); return g && !g.disabled && /Generate/i.test(g.innerText); }, null, { timeout: 600000 });
+    const readMs = now() - t0;
+    step('clips read', { ms: readMs, ...(await long()) });
+    await see('before-generate'); await shot('before-generate');
+    await p.click('#fgen');
+    // what comes after Generate is watched and said, popup by popup, until the Reel can be played
+    const tGen = now(); let opened = false;
+    for (let k = 0; k < 150 && !opened; k++) {
+      await p.waitForTimeout(2000);
+      opened = await p.evaluate(() => { const pl = document.getElementById('play'), r = pl && pl.getBoundingClientRect(); return !!pl && !pl.disabled && r.width > 0 && r.height > 0 && (document.querySelector('.brs').__studio.edit || []).length > 0; });
+      if (!opened && (k < 6 || k % 10 === 0)) { const v = await see('after-generate-' + (k * 2) + 's'); if (k === 2 || (v && v.dialogs.length && k < 12)) await shot('after-generate-' + (k * 2) + 's'); }
+    }
+    if (!opened) { await see('reel-not-opened'); throw new Error('the Reel did not open within 5 minutes of Generate'); }
+    const editMs = readMs + (now() - tGen);
+    step('reel opened', { msAfterGenerate: now() - tGen });
     // the neural beat check and the reading of the clips can remake the edit once more: wait until it has stopped changing
     let gen = -1, same = 0;
     for (let k = 0; k < 60 && same < 4; k++) { const g = await p.evaluate(() => document.querySelector('.brs').__studio.editGen); same = g === gen ? same + 1 : 0; gen = g; await p.waitForTimeout(500); }
@@ -96,9 +123,10 @@ async function scenario(browser, sc) {
     // ---- 5. export, and the file kept
     await p.waitForTimeout(500);
     t0 = now();
+    await see('before-export');
     await p.click('#export');
+    await p.waitForTimeout(1500); await see('export-sheet'); await shot('export-sheet');
     await p.waitForSelector('#xgo', { state: 'visible', timeout: 30000 });
-    await shot('export-sheet');
     await p.click('#xgo');
     let lastMsg = '';
     const done = await (async () => {
@@ -114,7 +142,7 @@ async function scenario(browser, sc) {
       }
       return { failed: 'no exported file after 25 minutes; the last message: ' + lastMsg };
     })();
-    if (done.failed) { step('export FAILED', { ms: now() - t0, said: done.failed }); await shot('export-failed'); throw new Error('export: ' + done.failed); }
+    if (done.failed) { step('export FAILED', { ms: now() - t0, said: done.failed }); throw new Error('export: ' + done.failed); }
     const exp = await p.evaluate(async () => {
       const a = document.getElementById('dlvid'), blob = await (await fetch(a.href)).blob(), buf = new Uint8Array(await blob.arrayBuffer());
       let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
@@ -129,7 +157,7 @@ async function scenario(browser, sc) {
   } catch (e) {
     rep.failure = String(e && e.message || e).slice(0, 500);
     console.log(`[${sc.id}] FAILED: ${rep.failure}`);
-    await shot('failure');
+    await see('failure'); await shot('failure');
     try { rep.pageText = (await p.evaluate(() => document.body.innerText)).slice(0, 1500); } catch (e2) { /* the page is gone */ }
   }
   await ctx.close();
@@ -143,5 +171,6 @@ async function scenario(browser, sc) {
   for (const sc of SCENARIOS) report.scenarios.push(await scenario(browser, sc));
   await browser.close();
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
+  console.log('REPORT ' + JSON.stringify({ ...report, media: undefined, scenarios: report.scenarios.map((s) => ({ ...s, made: s.made ? { ...s.made, beats: undefined, edit: s.made.edit.length + ' shots', review: undefined } : undefined })) }));
   console.log('report: ' + path.join(OUT, 'report.json'), '·', report.scenarios.map((s) => s.id + (s.ok ? ' ok' : ' FAILED')).join(', '));
 })().catch((e) => { console.error('FAIL', e); process.exit(1); });
