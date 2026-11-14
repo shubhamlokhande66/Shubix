@@ -129,6 +129,14 @@ const REPAIR_ORDER: EditReviewRepair[] = ["rebuild-timeline", "shorten-shot", "c
   "pick-unused-moment", "pick-another-clip", "stronger-opening", "pick-sharper-moment", "pick-brighter-moment",
   "use-unused-clip", "merge-shot", "split-shot", "vary-transitions", "fewer-effects"];
 
+/** The faults another take of the same edit can change (which moment of which clip each shot shows); the cuts, the
+ * transitions and the effects are the same in every take. */
+export const EDIT_TAKE_FAULTS: readonly EditReviewIssueCode[] = ["footage-repeated", "same-clip-jump", "soft-shot",
+  "dark-shot", "weak-hook", "slow-stretch", "footage-overrun"];
+/** Is another take worth making: does this one have a fault a take can change, on a shot that may be changed? */
+export const editNeedsAnotherTake = (review: EditReview) =>
+  review.issues.some((issue) => issue.repairable && EDIT_TAKE_FAULTS.includes(issue.code));
+
 const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.2, LONG = 6, EDGE = 0.02;
 
 /** how far `time` is from the nearest of `sorted` (seconds; Infinity with none) */

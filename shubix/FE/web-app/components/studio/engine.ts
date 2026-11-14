@@ -10,7 +10,7 @@
  * Plain JS on purpose (ported from the standalone page); the page mounts it with initStudio(root).
  */
 import { createTasks } from './tasks';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, editNeedsAnotherTake } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -2029,6 +2029,8 @@ function keyframesFor(e){
 }
 
 let dupCount = 0;
+// how many takes the last edit had, and which one was kept (1 = the first: nothing in it another take could better)
+let editTakes = { tried: 1, kept: 1 };
 /* ---- optional AI: which moment goes where ----
    The phone sends a few small frames per clip; a vision model scores each moment like a pro editor (strength, what it
    suits, what is wrong, where the subject is). Timing stays with the music analysis; the AI only steers the choice of
@@ -3633,20 +3635,21 @@ function shotsForLog(){
 // The edit's own review (Shared/video-engine review.ts): the finished edit measured as a careful editor would look it
 // over: cuts against the beats, drops without a cut, footage shown twice, soft or dark shots, a weak opening. It reads
 // the edit and changes nothing; a shot the creator or Shubix AI chose is reviewed but never proposed for a change.
-function editReview(){
-  const t0 = edit[0].start, gmax = Math.max(1e-6, ...sources.flatMap(s => (s.samples || []).map(x => x.m)));
-  const shots = edit.map(e => { const s = sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
+function reviewOf(list){
+  const t0 = list[0].start, gmax = Math.max(1e-6, ...sources.flatMap(s => (s.samples || []).map(x => x.m)));
+  const shots = list.map(e => { const s = sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
     const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
     return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
       ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
       effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
-  return reviewAutonomousEdit({ shots, beats: beats.map(x => x - t0), duration: edit[edit.length-1].end - t0, sourceCount: sources.length, sourceDurations: sources.map(s => s.dur), cutLead: 1/30 });
+  return reviewAutonomousEdit({ shots, beats: beats.map(x => x - t0), duration: list[list.length-1].end - t0, sourceCount: sources.length, sourceDurations: sources.map(s => s.dur), cutLead: 1/30 });
 }
+function editReview(){ return reviewOf(edit); }
 function makeEdit(){
   const was = (playing || starting) && !recording && !exportBusy && kind !== 'talk', at = playing ? curTime() : pos, gen = editGen;
   makeEditNow();
   if(edit.length && editGen !== gen){ try{ const L = shotsForLog(); rlog('edit', 'Reel made · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat (±30 ms)', L, L.cuts && L.onBeat < L.cuts ? 'warn' : 'info'); }catch(e){} }
-  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R; rlog('review', 'Edit review · ' + describeEditReview(R), { status: R.status, score: R.score, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
+  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R; rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
@@ -3775,14 +3778,35 @@ function makeEditNow(){
     });
     return best;
   };
+  editTakes = { tried: 1, kept: 1 };
   if(seq) seqPick(seq, res, gmax);
-  else order.forEach(i=>{
-    const len = plan[i].end - plan[i].start;
-    let best = pick(i,false,false) || pick(i,true,false) || pick(i,true,true) || pick(i,true,true,true) || {src:0,in:0,scaleR:1,cx:0.5,cy:0.5,face:0,ov:0};
-    if(best.ov > 0.001) dupCount++;
-    used[best.src].push([best.in, best.in + plan[i].sp.pos(len)*best.scaleR]);
-    res[i] = best;
-  });
+  else {
+    const take = () => { res.fill(undefined); used.forEach(u => { u.length = 0; }); dupCount = 0;
+      order.forEach(i=>{
+        const len = plan[i].end - plan[i].start;
+        let best = pick(i,false,false) || pick(i,true,false) || pick(i,true,true) || pick(i,true,true,true) || {src:0,in:0,scaleR:1,cx:0.5,cy:0.5,face:0,ov:0};
+        if(best.ov > 0.001) dupCount++;
+        used[best.src].push([best.in, best.in + plan[i].sp.pos(len)*best.scaleR]);
+        res[i] = best;
+      }); };
+    // The edit reviews itself (Shared/video-engine review.ts) and tries again: when the first take has a fault another
+    // take can change (footage shown twice, two parts of one clip in a row, a soft or dark moment, a weak opening), up
+    // to two more takes are made, as "New mix" would make them, and the one with the best review is kept. The first
+    // take wins a tie, so a clean edit is exactly the edit as before. The random numbers after this go on from the
+    // first take's, whichever take is kept: the same clips and song make the same Reel every time.
+    const judge = () => { try{ const R = reviewOf(plan.map((s, i) => ({ ...s, ...res[i] }))); return editNeedsAnotherTake(R) ? R.score : Infinity; }catch(e){ return Infinity; } };
+    const seed0 = seed; take();
+    let top = judge();
+    if(top !== Infinity){
+      const after = seed; let keep = { res: res.slice(), used: used.map(u => u.slice()), dup: dupCount }, s = seed0;
+      for(let k = 2; k <= 3 && top !== Infinity; k++){
+        s = (s*7919 + 13) % 2147483647 || 7; seed = s; take(); editTakes.tried = k;
+        const sc = judge();
+        if(sc > top + 1e-9){ top = sc; editTakes.kept = k; keep = { res: res.slice(), used: used.map(u => u.slice()), dup: dupCount }; }
+      }
+      keep.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...keep.used[i]); }); dupCount = keep.dup; seed = after;
+    }
+  }
   const useCount = sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   edit = plan.map((s,i)=>({...s, ...res[i], el: sources[res[i].src].els[(useCount[res[i].src]++)%3]}));
   flickBuild();   // a copied flicker montage: its stills (once per set of clips)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeEditReview, reviewAutonomousEdit, type EditReviewInput, type EditReviewShot } from "../../../Shared/video-engine/src/index";
+import { describeEditReview, editNeedsAnotherTake, reviewAutonomousEdit, type EditReviewInput, type EditReviewShot } from "../../../Shared/video-engine/src/index";
 
 /** a clean 8-second Reel at 120 BPM: a cut every second, each shot from its own clip, sharp, bright, the opening the strongest */
 const beats = Array.from({ length: 17 }, (_, i) => i * 0.5);
@@ -167,6 +167,17 @@ describe("the edit's own review", () => {
     expect(r.metrics.beatSync!.onBeat).toBe(0);
     expect(r.issues.filter((i) => i.code === "cut-off-beat")).toHaveLength(29);
     expect(r.score).toBe(80);
+  });
+
+  it("asks for another take only for a fault a take can change, on a shot that may be changed", () => {
+    expect(editNeedsAnotherTake(reviewAutonomousEdit(clean()))).toBe(false);
+    const soft = clean().shots; soft[1] = shot(1, { sharpness: 0.3 });
+    expect(editNeedsAnotherTake(reviewAutonomousEdit(clean({ shots: soft })))).toBe(true);
+    const locked = clean().shots; locked[1] = shot(1, { sharpness: 0.3, locked: true });
+    expect(editNeedsAnotherTake(reviewAutonomousEdit(clean({ shots: locked })))).toBe(false);
+    // a cut off the beat is the same in every take: another take cannot help
+    const off = clean().shots; off[2] = shot(2, { end: 3.12 }); off[3] = shot(3, { start: 3.12 });
+    expect(editNeedsAnotherTake(reviewAutonomousEdit(clean({ shots: off })))).toBe(false);
   });
 
   it("puts the review in one line for the Reel's log", () => {

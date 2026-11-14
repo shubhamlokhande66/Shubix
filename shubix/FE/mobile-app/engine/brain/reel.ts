@@ -2,12 +2,23 @@
 // the website's studio: its state is the object ES, and what is the app's own comes through EH.
 // The golden test (scripts/engine-golden.mjs) says it still makes the same Reel.
 // @ts-nocheck
-import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor } from './pure';
+import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats } from './pure';
 import { repace } from '../components/studio/soundmap';
-import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes } from '@mobile/video-engine';
+import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, editNeedsAnotherTake } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 
 export function createReelBrain(ES, EH){
+// The edit's own review (shared/video-engine review.ts), as the website's studio gives it (engine.ts reviewOf): the same
+// edit gets the same review on both.
+function reviewOf(list){
+  const t0 = list[0].start, gmax = Math.max(1e-6, ...ES.sources.flatMap(s => (s.samples || []).map(x => x.m)));
+  const shots = list.map(e => { const s = ES.sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
+    const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
+    return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
+      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
+      effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
+  return reviewAutonomousEdit({ shots, beats: ES.beats.map(x => x - t0), duration: list[list.length-1].end - t0, sourceCount: ES.sources.length, sourceDurations: ES.sources.map(s => s.dur), cutLead: 1/30 });
+}
 function tasteFx(e, i, t){
   if(ES.mode === 'copy' || EH.aiTrusted()) return;
   const len = e.end - e.start, photo = EH.isPhotoMode();
@@ -137,14 +148,33 @@ function makeEditNow(){
     });
     return best;
   };
+  ES.editTakes = { tried: 1, kept: 1 };
   if(seq) EH.seqPick(seq, res, gmax);
-  else order.forEach(i=>{
-    const len = ES.plan[i].end - ES.plan[i].start;
-    let best = pick(i,false,false) || pick(i,true,false) || pick(i,true,true) || pick(i,true,true,true) || {src:0,in:0,scaleR:1,cx:0.5,cy:0.5,face:0,ov:0};
-    if(best.ov > 0.001) ES.dupCount++;
-    used[best.src].push([best.in, best.in + ES.plan[i].sp.pos(len)*best.scaleR]);
-    res[i] = best;
-  });
+  else {
+    const take = () => { res.fill(undefined); used.forEach(u => { u.length = 0; }); ES.dupCount = 0;
+      order.forEach(i=>{
+        const len = ES.plan[i].end - ES.plan[i].start;
+        let best = pick(i,false,false) || pick(i,true,false) || pick(i,true,true) || pick(i,true,true,true) || {src:0,in:0,scaleR:1,cx:0.5,cy:0.5,face:0,ov:0};
+        if(best.ov > 0.001) ES.dupCount++;
+        used[best.src].push([best.in, best.in + ES.plan[i].sp.pos(len)*best.scaleR]);
+        res[i] = best;
+      }); };
+    // The edit reviews itself and tries again, exactly as on the website (engine.ts makeEditNow): up to two more takes
+    // when the first has a fault another take can change; the best review is kept, the first take wins a tie, and the
+    // random numbers after this go on from the first take's.
+    const judge = () => { try{ const R = reviewOf(ES.plan.map((s, i) => ({ ...s, ...res[i] }))); return editNeedsAnotherTake(R) ? R.score : Infinity; }catch(e){ return Infinity; } };
+    const seed0 = ES.seed; take();
+    let top = judge();
+    if(top !== Infinity){
+      const after = ES.seed; let keep = { res: res.slice(), used: used.map(u => u.slice()), dup: ES.dupCount }, s = seed0;
+      for(let k = 2; k <= 3 && top !== Infinity; k++){
+        s = (s*7919 + 13) % 2147483647 || 7; ES.seed = s; take(); ES.editTakes.tried = k;
+        const sc = judge();
+        if(sc > top + 1e-9){ top = sc; ES.editTakes.kept = k; keep = { res: res.slice(), used: used.map(u => u.slice()), dup: ES.dupCount }; }
+      }
+      keep.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...keep.used[i]); }); ES.dupCount = keep.dup; ES.seed = after;
+    }
+  }
   const useCount = ES.sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   ES.edit = ES.plan.map((s,i)=>({...s, ...res[i], el: ES.sources[res[i].src].els[(useCount[res[i].src]++)%3]}));
   EH.flickBuild();   // a copied flicker montage: its stills (once per set of clips)
