@@ -10,7 +10,7 @@
  * Plain JS on purpose (ported from the standalone page); the page mounts it with initStudio(root).
  */
 import { createTasks } from './tasks';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -3630,10 +3630,23 @@ function shotsForLog(){
   const offs = shots.slice(1).map(x => x.offBeatMs).filter(x => x != null);
   return { shots: shots.length, onBeat: offs.filter(x => x <= 30).length, cuts: offs.length, worstOffBeatMs: offs.length ? Math.max(...offs) : 0, mode, style: typeof look !== 'undefined' ? look : null, sectionStart: +secStart.toFixed(3), list: shots };
 }
+// The edit's own review (Shared/video-engine review.ts): the finished edit measured as a careful editor would look it
+// over: cuts against the beats, drops without a cut, footage shown twice, soft or dark shots, a weak opening. It reads
+// the edit and changes nothing; a shot the creator or Shubix AI chose is reviewed but never proposed for a change.
+function editReview(){
+  const t0 = edit[0].start, gmax = Math.max(1e-6, ...sources.flatMap(s => (s.samples || []).map(x => x.m)));
+  const shots = edit.map(e => { const s = sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
+    const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
+    return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
+      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
+      effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
+  return reviewAutonomousEdit({ shots, beats: beats.map(x => x - t0), duration: edit[edit.length-1].end - t0, sourceCount: sources.length, sourceDurations: sources.map(s => s.dur), cutLead: 1/30 });
+}
 function makeEdit(){
   const was = (playing || starting) && !recording && !exportBusy && kind !== 'talk', at = playing ? curTime() : pos, gen = editGen;
   makeEditNow();
   if(edit.length && editGen !== gen){ try{ const L = shotsForLog(); rlog('edit', 'Reel made · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat (±30 ms)', L, L.cuts && L.onBeat < L.cuts ? 'warn' : 'info'); }catch(e){} }
+  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R; rlog('review', 'Edit review · ' + describeEditReview(R), { status: R.status, score: R.score, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
