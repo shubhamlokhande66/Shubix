@@ -34,7 +34,7 @@ import { parseDirectorVisualIntent } from './visualIntent';
 import { bootPart } from '../../lib/boot';
 
 export function initStudio(root, deps) {
-  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, loadRnnoise = null, cloud = null, tts = null } = deps;
+  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, loadRnnoise = null, cloud = null, tts = null, aiPicture = null } = deps;
 
 const $ = id => root.querySelector('#'+id);
 const tasks = createTasks(root);   // what is happening now, always in view (components/studio/tasks.ts)
@@ -4591,6 +4591,31 @@ function lySet(k, v){ const L = layers[lySel]; if(!L) return;
   if(!playing) redrawFrame(); }
 $('lyadd').addEventListener('click', () => $('lyfile').click(), SIG);
 $('lyfile').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if(f.length) layerAdd(f); }, SIG);
+// AI pictures (B-roll, lib/broll/client.ts): a few words → a picture made at the Reel's shape, on the whole frame at the
+// playhead for 3 s, fading in and out
+if(aiPicture){
+  $('brbox').hidden = false;
+  $('brstyle').innerHTML = aiPicture.styles.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  if(aiPicture.styles.some(s => s.id === 'photo')) $('brstyle').value = 'photo';
+  $('brhdwrap').hidden = !aiPicture.hd;
+}
+async function brollAdd(prompt, style, hd){
+  if(!aiPicture) throw new Error('AI pictures are not available here.');
+  if(!edit.length){ notify('Make the Reel first, then add AI pictures.'); return null; }
+  prompt = String(prompt || '').trim(); if(prompt.length < 3){ notify('Describe the picture in a few words.', 'err'); return null; }
+  tasks.start('broll', 'ai', 'AI picture', '"' + prompt.slice(0, 40) + (prompt.length > 40 ? '…' : '') + '"');
+  try{
+    const r = await aiPicture.make(prompt, { style: style || 'photo', aspect, hd: !!hd });
+    const before = layers.length;
+    await layerAdd([r.file]);
+    if(layers.length <= before) throw new Error('The picture could not be added.');
+    const L = layers[layers.length - 1]; L.x = 0.5; L.y = 0.5; L.s = 1; L.fin = 0.25; L.fout = 0.25;
+    lyUI(); await prepLayers(pos); redrawFrame(); saveNow();
+    tasks.done('broll', 'Picture added at ' + fmt(L.t0).replace(/\.\d+$/, '') + (r.charged ? ' · ' + r.charged + ' credit' + (r.charged > 1 ? 's' : '') : ''));
+    return { id: L.id, t0: L.t0, t1: L.t1 };
+  }catch(err){ tasks.fail('broll', (err && err.message) || 'The picture could not be made. Please try again.'); return null; }
+}
+$('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; } }, SIG);
 $('lyedit').addEventListener('input', e => { const el = e.target, k = el.dataset && el.dataset.ly; if(!k) return; const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' ? el.value : +el.value; lySet(k, v); const o = el.parentElement.querySelector('output'); if(o && el.type !== 'checkbox') o.textContent = lyFmt(k, v); }, SIG);
 $('lyedit').addEventListener('click', e => { const t = e.target.closest('button'); if(!t) return; const L = layers[lySel]; if(!L) return;
   if(t.dataset.m){ L.mask = t.dataset.m; lyUI(); redrawFrame(); }

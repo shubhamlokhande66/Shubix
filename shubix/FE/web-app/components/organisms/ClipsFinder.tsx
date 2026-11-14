@@ -101,7 +101,6 @@ export function ClipsFinder() {
         body: JSON.stringify({ words: words.current.words, duration: meta.duration, length, count, key }),
       }, ctl.signal);
       setStage(null); setClips(r.clips); setBy(r.by);
-      if (r.charged) toast.info(`${r.charged} credit${r.charged > 1 ? "s" : ""} used`);
       if (!r.clips.length) setError("No moment of this length stands on its own. Try another length.");
     } catch (e) {
       setStage(null);

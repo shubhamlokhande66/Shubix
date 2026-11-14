@@ -11,6 +11,7 @@ import { megabytes, videoQuality } from "@shubix/utils";
 import { useText } from "@/hooks/useApi";
 import { confirmAction } from "@/components/molecules/ConfirmDialog";
 import { MoreMenu } from "@/components/molecules/MoreMenu";
+import { PublishDialog } from "@/components/organisms/PublishDialog";
 import { Badge, Button, Card, DurationTag, Icon, IconButton, Photo, Spinner } from "@/components/atoms";
 import { EmptyState, ErrorBanner, PageHeader, Segmented } from "@/components/molecules";
 import { cloudReelUrl, deleteCloudReel, listCloudReels, shareCloudReel, type CloudReel, type CloudUsage } from "@/lib/cloudReels";
@@ -89,7 +90,7 @@ function Drafts({ drafts, onGone }: { drafts: Draft[] | null; onGone: (id: strin
   );
 }
 
-function SavedCard({ r, onChange, onDelete }: { r: CloudReel; onChange: (r: CloudReel) => void; onDelete: () => void }) {
+function SavedCard({ r, onChange, onDelete, onPublish }: { r: CloudReel; onChange: (r: CloudReel) => void; onDelete: () => void; onPublish: () => void }) {
   const text = useText();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -127,6 +128,7 @@ function SavedCard({ r, onChange, onDelete }: { r: CloudReel; onChange: (r: Clou
       <div className="flex items-center gap-1 rounded-xl border border-border bg-surface p-1">
         <a href={cloudReelUrl(r.id, true)} aria-label={`${text("reels.download")} ${r.name}`} title={text("reels.download")}
           className="grid h-8 flex-1 place-items-center rounded-lg text-foreground transition-colors hover:bg-accent/10 hover:text-accent"><Icon name="download" size={15} /></a>
+        <IconButton icon="send" plain size={32} iconSize={15} label={`Publish ${r.name} to Instagram or YouTube`} title="Publish to Instagram / YouTube" disabled={!!busy} onClick={onPublish} className="flex-1 rounded-lg hover:bg-accent/10" />
         <IconButton icon="share" plain size={32} iconSize={15} label={`${text("reels.share")}: ${r.name}`} title={text("reels.share")} disabled={!!busy} onClick={() => void share()} className="flex-1 rounded-lg hover:bg-accent/10" />
         <IconButton icon="trash" plain size={32} iconSize={15} label={`${text("reels.delete")} ${r.name}`} title={text("reels.delete")} disabled={!!busy} onClick={() => void remove()} className="flex-1 rounded-lg text-danger hover:bg-danger/10" />
       </div>
@@ -137,6 +139,16 @@ function SavedCard({ r, onChange, onDelete }: { r: CloudReel; onChange: (r: Clou
 
 function Saved({ data, error, retry, setData }: { data: { reels: CloudReel[]; usage: CloudUsage } | null; error: string | null; retry: () => void; setData: React.Dispatch<React.SetStateAction<{ reels: CloudReel[]; usage: CloudUsage } | null>> }) {
   const text = useText();
+  const [publishing, setPublishing] = useState<CloudReel | null>(null);
+  // back from connecting Instagram / YouTube (/api/social/…/callback → /reels?social=…&result=…)
+  useEffect(() => {
+    const q = new URLSearchParams(location.search), p = q.get("social"), res = q.get("result");
+    if (!p || !res) return;
+    const name = p === "youtube" ? "YouTube" : "Instagram";
+    if (res === "ok") toast.success(`${name} connected. Choose a Reel and press Publish.`);
+    else toast.error(res === "cancelled" ? `${name} was not connected.` : `${name} could not be connected. Please try again.`);
+    q.delete("social"); q.delete("result"); history.replaceState(history.state, "", `${location.pathname}${q.size ? `?${q}` : ""}`);
+  }, []);
   if (error) return <ErrorBanner message={error} onRetry={retry} />;
   if (!data) return <Spinner />;
   const { reels, usage } = data;
@@ -161,12 +173,13 @@ function Saved({ data, error, retry, setData }: { data: { reels: CloudReel[]; us
       ) : (
         <div className={GRID}>
           {reels.map((r) => (
-            <SavedCard key={r.id} r={r}
+            <SavedCard key={r.id} r={r} onPublish={() => setPublishing(r)}
               onChange={(n) => setData((d) => d && { ...d, reels: d.reels.map((x) => (x.id === n.id ? n : x)) })}
               onDelete={() => setData((d) => d && { reels: d.reels.filter((x) => x.id !== r.id), usage: { ...d.usage, used: Math.max(0, d.usage.used - 1) } })} />
           ))}
         </div>
       )}
+      <PublishDialog key={publishing?.id ?? "none"} reel={publishing} onClose={() => setPublishing(null)} />
     </div>
   );
 }
