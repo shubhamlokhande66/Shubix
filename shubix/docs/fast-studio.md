@@ -546,3 +546,16 @@ a talk, a class, a vlog) in, its best moments out, each a Reel. The video never 
 
 Checked in Chromium (a 6.6 min spoken WebM): 3 parts of the voice in 2.9 s, a 30 s clip cut in 0.07 s (30.00 s, VP9 +
 Opus), handed to the studio once.
+
+## AI voices (text to speech)
+
+Edit → Voice → "Text to speech · AI voice": type what to say (any language), pick a voice, "Add at the playhead". The
+speech is made on the server (`/api/studio/speak`, `BE/api/src/server/studio/speak.ts`) by the natural AI voices it has
+(OpenAI: 11 voices, Gemini: 14; none without a key, and then the tool is hidden), and mixed on the phone like the
+voiceover (the song steps back while it speaks; the voice changer works on it). 1 credit per piece of speech
+(`studio_voice`), Editor and Pro or credits; the same text in the same voice is never charged twice, and the browser keeps
+each piece (`lib/tts/client.ts`, Cache Storage), so reopening a Reel does not ask the server again. Shubix AI's chat can
+add speech too ("add a voiceover saying …").
+
+Checked in Chromium (the client against a stand-in server): the voice list, a 1.79 s WAV decoded at 48 kHz, the same
+speech again from the browser's cache (no second request), a refused request's message shown as it is.
