@@ -1,0 +1,71 @@
+name: Studio start to end
+
+on:
+  # by hand only, like Shubix CI (Actions minutes are spent when the owner chooses). Nothing deploys here.
+  workflow_dispatch:
+
+concurrency:
+  group: studio-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The website's studio in the installed Chrome, as a creator uses it: a song, clips, the Reel made by itself, the
+  # preview, the export; then the exported file is measured (FE/web-app/scripts/studio-e2e/README.md). The API is not
+  # running: what needs an account or the cloud is not part of this.
+  studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: shubix
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: shubix/pnpm-lock.yaml
+      - name: Install FFmpeg, numpy and Playwright (it drives the Chrome already on the runner)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          python3 -m pip install --quiet --user --break-system-packages numpy || python3 -m pip install --quiet --user numpy
+          npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright-core@1.56.1
+          google-chrome --version
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared core and the website
+        run: |
+          pnpm --filter @shubix/core build
+          pnpm --filter @shubix/web-app build
+      - name: Make the test clips and songs
+        working-directory: shubix/FE/web-app/scripts
+        run: |
+          node studio-beats/make-sets.mjs "$RUNNER_TEMP/beats"
+          node studio-e2e/make-media.mjs "$RUNNER_TEMP/media" "$RUNNER_TEMP/beats"
+      - name: The studio, start to end
+        working-directory: shubix/FE/web-app
+        env:
+          BASE: http://localhost:3001
+          CHANNEL: chrome
+        run: |
+          (pnpm start > "$RUNNER_TEMP/web.log" 2>&1 &)
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3001/studio && break; sleep 2; done
+          PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright-core" MEDIA="$RUNNER_TEMP/media" OUT="$RUNNER_TEMP/e2e" node scripts/studio-e2e/run.cjs
+      - name: Measure the exported Reels
+        if: always()
+        working-directory: shubix/FE/web-app/scripts/studio-e2e
+        run: python3 analyze.py "$RUNNER_TEMP/media" "$RUNNER_TEMP/e2e"
+      - name: The website's log (its last lines)
+        if: always()
+        run: tail -n 40 "$RUNNER_TEMP/web.log" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: studio-e2e
+          path: ${{ runner.temp }}/e2e
+          retention-days: 7
