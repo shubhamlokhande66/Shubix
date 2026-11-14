@@ -42,6 +42,16 @@ jobs:
         run: pnpm --filter @shubix/mobile-app test
       - name: Run web tests
         run: pnpm --filter @shubix/web-app test
+      # the studio's beat tracker against songs whose beats are known (FE/web-app/scripts/studio-beats/README.md): the
+      # clean sets are the same on every computer and fail the run when they get worse; the phone sets go through
+      # ffmpeg's MP3 encoder, which differs between versions, so they are shown and not checked here
+      - name: Beat accuracy benchmark
+        working-directory: shubix/FE/web-app/scripts/studio-beats
+        run: |
+          python3 -m pip install --quiet --user --break-system-packages numpy || python3 -m pip install --quiet --user numpy
+          node make-sets.mjs "$RUNNER_TEMP/beats"
+          node bench.mjs --check baseline.json "$RUNNER_TEMP/beats/set1" "$RUNNER_TEMP/beats/set2" "$RUNNER_TEMP/beats/set3"
+          node bench.mjs "$RUNNER_TEMP/beats/deg1" "$RUNNER_TEMP/beats/deg2" "$RUNNER_TEMP/beats/deg3"
       - name: Build web app
         run: pnpm --filter @shubix/web-app build
 
