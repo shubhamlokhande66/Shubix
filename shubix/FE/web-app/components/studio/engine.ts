@@ -3694,7 +3694,10 @@ function makeEdit(){
   const was = (playing || starting) && !recording && !exportBusy && kind !== 'talk', at = playing ? curTime() : pos, gen = editGen;
   makeEditNow();
   if(edit.length && editGen !== gen){ try{ const L = shotsForLog(); rlog('edit', 'Reel made · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat (±30 ms)', L, L.cuts && L.onBeat < L.cuts ? 'warn' : 'info'); }catch(e){} }
-  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R; rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
+  if(edit.length && editGen !== gen && kind !== 'talk'){ try{ const R = editReview(); root.__lastEditReview = R;
+    // the review's score beside the shot count the creator already reads (makeEditNow has just written that line anew)
+    const st = $('s3st'); if(st && !/quality \d/.test(st.textContent)) st.textContent += ' · quality ' + Math.round(R.score) + '/100';
+    rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
