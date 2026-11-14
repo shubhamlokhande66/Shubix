@@ -117,6 +117,7 @@ export const ROUTES: [string, () => Record<string, unknown>][] = [
   ["api/studio/reels/[id]/share", () => require("../routes/api/studio/reels/[id]/share/route")],
   ["api/studio/ref-look", () => require("../routes/api/studio/ref-look/route")],
   ["api/studio/song", () => require("../routes/api/studio/song/route")],
+  ["api/studio/speak", () => require("../routes/api/studio/speak/route")],
   ["api/studio/story", () => require("../routes/api/studio/story/route")],
   ["api/studio/story/picture", () => require("../routes/api/studio/story/picture/route")],
   ["api/studio/styles", () => require("../routes/api/studio/styles/route")],

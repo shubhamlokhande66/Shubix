@@ -7501,7 +7501,7 @@ async function clipPcm(si){
 }
 const csVoiced = e => !!(e.cs && (e.cs.vol > 0 || (e.cs.kx || []).some(k => k.vol > 0)));   // the shot's own sound plays (its volume, or a volume keyframe)
 const clipVoiced = () => kind !== 'talk' && edit.some(e => csVoiced(e));
-/* ---- text to speech (on the phone, Piper voices): each piece of speech starts at its time and is mixed like the
+/* ---- text to speech (the server's AI voices, lib/tts/client.ts): each piece of speech starts at its time and is mixed like the
  * voiceover (the voice changer works on it too; the song steps back while it speaks) ---- */
 let ttsClips = [], ttsSeq = 0;
 const ttsPcm = (c) => { if(!c.pcm) return null; if(au.vfx === 'none') return c.pcm; const k = 'tts' + c.id + '|' + au.vfx; if(!fxCache.has(k)) fxCache.set(k, voiceFx(c.pcm, c.sr, au.vfx)); return fxCache.get(k); };
@@ -7510,7 +7510,7 @@ async function ttsMake(c, quiet){
   if(!quiet) tasks.start(id, 'voice', 'Making the voice', '"' + c.text.slice(0, 40) + (c.text.length > 40 ? '…' : '') + '"');
   try{ const r = await tts.speak(c.text, c.voice, (pr) => { if(!quiet) tasks.update(id, pr.p, pr.stage === 'download' ? 'Getting the voice (once, about 60 MB)' : 'Speaking'); });
     c.pcm = r.pcm; c.sr = r.sr; if(!quiet) tasks.done(id, 'Voice ready'); }
-  catch(err){ console.warn('tts', err); if(!quiet) tasks.fail(id, 'Could not make the voice. Check the internet for the first download and try again.'); throw err; }
+  catch(err){ console.warn('tts', err); if(!quiet) tasks.fail(id, (err && err.message) || 'Could not make the voice. Check the internet and try again.'); throw err; }
 }
 async function ttsAdd(){
   const text = $('ttstext').value.trim(), voice = $('ttsvoice').value; if(!text || !voice) return;

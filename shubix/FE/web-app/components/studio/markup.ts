@@ -557,7 +557,7 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="voice">${panelHead("voice")}
             <div class="row vorow" id="vorow"><button class="${Button.secondary}" id="vorec" type="button">${IC.voice}Record voiceover</button><button class="${Button.small}" id="vodel" type="button" hidden>Remove voiceover</button><label class="tog"><input type="checkbox" id="dn2" checked> Clean up noise</label><span class="fname" id="vostat"></span></div>
             <div class="ttsbox musiconly" id="ttsbox">
-              <label class="label" for="ttstext">Text to speech</label>
+              <label class="label" for="ttstext">Text to speech · AI voice</label>
               <textarea id="ttstext" rows="2" maxlength="1200" placeholder="Type what the voice should say… (English, हिन्दी, मराठी, తెలుగు, മലയാളം)"></textarea>
               <div class="row"><select id="ttsvoice" aria-label="Voice"></select><button type="button" class="${Button.secondary}" id="ttsadd">${IC.voice}Add at the playhead</button></div>
               <p class="hint">Made on this phone. Each voice is downloaded once (about 60 MB).</p>

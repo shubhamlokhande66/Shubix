@@ -41,10 +41,11 @@ const DEFAULT_PRICING = {
       features: ["Everything in Pro", "Several brands", "Priority email support"] },
   ] as PlanDef[],
   topUps: [{ id: "topup_100", credits: 100, price: 99 }, { id: "topup_300", credits: 300, price: 249 }],
-  costs: { studio_ai: 10, studio_chat_small: 1, studio_chat_big: 2, studio_mix: 0, studio_captions: 0, studio_ref_look: 0, studio_moments: 5, clip_reel: 1, version: 1, story_render: 2, ai_picture: 1, paid_picture: 3, preview: 0 } as Record<string, number>,
+  costs: { studio_ai: 10, studio_chat_small: 1, studio_chat_big: 2, studio_mix: 0, studio_captions: 0, studio_ref_look: 0, studio_moments: 5, studio_voice: 1, clip_reel: 1, version: 1, story_render: 2, ai_picture: 1, paid_picture: 3, preview: 0 } as Record<string, number>,
 };
 export const COST_LABELS: Record<string, string> = { studio_ai: "Shubix AI edits a Reel (once per Reel)", studio_chat_small: "Ask Shubix: a small change (a few shots)", studio_chat_big: "Ask Shubix: a change to the whole Reel",
   studio_mix: "Change Reel: Shubix's other versions", studio_captions: "Captions from the song (per song)", studio_ref_look: "Match a Reel's Style: texts, stickers and captions (per Reel)",
+  studio_voice: "Text to speech: an AI voice (per piece of speech)",
   studio_moments: "Clips from a long video: Shubix AI finds the best moments (per video)",
   clip_reel: "Reel from your own clips (server)", version: "New version / re-render (server)", story_render: "Story Reel: narrate and render", ai_picture: "Shubix picture for a story scene", paid_picture: "Premium HD Shubix picture", preview: "Quick previews" };
 export type Pricing = typeof DEFAULT_PRICING;
