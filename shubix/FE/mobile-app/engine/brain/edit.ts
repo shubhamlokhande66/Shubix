@@ -1,7 +1,7 @@
 // The engine's edit core: how a Reel's shots are chosen and placed. Moved from components/studio/engine.ts, with its state in
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
-import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed } from './pure';
+import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -653,7 +653,9 @@ function scoreWindow(i, src, a, need, gmax){
   else if(s.type==='break') sc = 1 - Math.abs(m-0.18)*2;
   else sc = 1 - Math.abs(m-0.55);
   if(i===0) sc = 2.4*m;   // hook: the most action-packed moment opens the reel
-  if(st.b < 0.08) sc -= 1;                              // too dark
+  // too dark: the whole moment (as before), or a part of it (a clip that opens on black, a fade in): half of it
+  // black costs as much as all of it did, and more black costs more, so the moment with the least black is taken
+  sc -= Math.max(st.b < 0.08 ? 1 : 0, 2*(st.dark || 0));
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
@@ -677,24 +679,28 @@ function seqSlots(n){
   const cnt = w.map((x, j) => Math.min(room[j], Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot))));   // every clip once while there are shots enough
   while(sum(cnt) > n){ const k = cnt.lastIndexOf(Math.max(...cnt)); cnt[k]--; }   // (fewer shots than clips: the last clips wait)
   while(sum(cnt) < n){ const free = cnt.some((c,j) => c < room[j]); let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b && (!free || c < room[j])){ b = r; k = j; } }); cnt[k]++; }
-  // never the same clip on two cuts in a row: a clip's next shot waits for the next clip (the order stays near the person's)
-  const seq = cnt.flatMap((c, si) => Array(c).fill(si));
-  for(let i = 1; i < seq.length; i++) if(seq[i] === seq[i-1]){ const j = seq.findIndex((x, k) => k > i && x !== seq[i]); if(j > 0) seq.splice(i, 0, seq.splice(j, 1)[0]); }
-  return seq;   // shot i -> its clip
+  // strictly the person's order: a clip's shots one after another (it plays on forward across them), then the next
+  // clip; never back to a clip already left (moving a shot to avoid a repeat sent the Reel back to the clip before)
+  return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
 }
 function seqPick(seq, res, gmax){
   const n = ES.plan.length, lenOf = i => ES.plan[i].end - ES.plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= EH.SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
   for(const si of [...new Set(seq)]){
-    const src = ES.sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
+    // a clip that opens or ends on black (a fade in, the lens covered) is walked from its first picture to its last: the
+    // black is not footage, so as for a shorter clip its shots play a little slower rather than show it
+    const src = ES.sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), [from, trail] = blackEnds(src), foot = Math.max(0.05, src.dur - TAIL - trail - from), end = from + foot;
     const need = ids.map(i => ES.plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
-    const scale = ids.map(i => spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(EH.SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
+    // last picture until the cut ("it stops when the clip ends") or showing a moment of it twice
+    const fit = spare < 0 ? Math.max(ES.seqFloor, foot/sum(need)*0.98) : 1;
+    const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(EH.SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
-    let cur = 0;
+    let cur = from;
     ids.forEach((i, k) => {
-      cur = Math.min(cur, Math.max(0, foot - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
-      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, foot - nd - rest);
+      cur = Math.min(cur, Math.max(from, end - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
+      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, end - nd - rest);
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;

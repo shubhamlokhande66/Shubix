@@ -1901,24 +1901,41 @@ function rng(){ seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; }
 // Window statistics in O(log n): prefix sums over the clip's samples and faces (built once per clip). The edit scores
 // thousands of windows, so a plain loop here froze the page on long videos.
 function statsIndex(src){
-  if(src._st) return src._st;
-  const S = src.samples, n = S.length, T = new Float64Array(n), cm = new Float64Array(n+1), cb = new Float64Array(n+1), cc = new Float64Array(n+1), cs = new Float64Array(n+1);
-  for(let i=0;i<n;i++){ T[i]=S[i].t; cm[i+1]=cm[i]+S[i].m; cb[i+1]=cb[i]+S[i].b; cc[i+1]=cc[i]+S[i].cx*S[i].m; cs[i+1]=cs[i]+S[i].sh; }
+  if(src._st && src._st.cd) return src._st;   // (an index kept from before `cd` was in it is made again)
+  const S = src.samples, n = S.length, T = new Float64Array(n), cm = new Float64Array(n+1), cb = new Float64Array(n+1), cc = new Float64Array(n+1), cs = new Float64Array(n+1), cd = new Float64Array(n+1);
+  // cd: how many readings so far are black (brightness under 0.08), so a window knows how much of it is
+  for(let i=0;i<n;i++){ T[i]=S[i].t; cm[i+1]=cm[i]+S[i].m; cb[i+1]=cb[i]+S[i].b; cc[i+1]=cc[i]+S[i].cx*S[i].m; cs[i+1]=cs[i]+S[i].sh; cd[i+1]=cd[i]+(S[i].b < 0.08 ? 1 : 0); }
   const F = src.faces || [], k = F.length, FT = new Float64Array(k), cn = new Float64Array(k+1), cfx = new Float64Array(k+1), cfy = new Float64Array(k+1), cfs = new Float64Array(k+1);
   for(let i=0;i<k;i++){ const f=F[i], on=f.n?1:0; FT[i]=f.t; cn[i+1]=cn[i]+on; cfx[i+1]=cfx[i]+(on?f.fx:0); cfy[i+1]=cfy[i]+(on?f.fy:0); cfs[i+1]=cfs[i]+(on?f.fs:0); }
-  return (src._st = {T, cm, cb, cc, cs, FT, cn, cfx, cfy, cfs});
+  return (src._st = {T, cm, cb, cc, cs, cd, FT, cn, cfx, cfy, cfs});
 }
 const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
 const TAIL = 0.15;   // seconds of clip kept free after a shot's window
+// A clip's black part that is a fault in it: some of it black (brightness under 0.08), but under four fifths, so it is
+// not a dark clip (night, a stage: that is the clip as filmed).
+function blackPart(src){ if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < 0.08).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; }
+// How long such a clip is black at its start and at its end (a fade in, the lens covered, a cut to black), in seconds:
+// [0, 0] for a clip with no such fault, for under 0.2 s of it, and when less than half a second of picture would be left.
+function blackEnds(src){
+  if(src._be) return src._be;
+  const S = src.samples || []; let lead = 0, trail = 0;
+  if(blackPart(src)){
+    const a = S.findIndex(x => x.b >= 0.08); let b = S.length - 1; while(b >= 0 && S[b].b < 0.08) b--;
+    if(a > 0) lead = S[a].t; if(b >= 0 && b < S.length - 1) trail = Math.max(0, (src.dur || 0) - S[b + 1].t);
+    if(lead < 0.2) lead = 0; if(trail < 0.2) trail = 0;
+    if((src.dur || 0) - lead - trail < 0.5 + TAIL) lead = trail = 0;
+  }
+  return (src._be = [lead, trail]);
+}
 function windowStats(src, a, b){
   const X = statsIndex(src);
-  let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh;
-  if(n > 0){ m = X.cm[i1]-X.cm[i0]; br = X.cb[i1]-X.cb[i0]; cx = X.cc[i1]-X.cc[i0]; sh = X.cs[i1]-X.cs[i0]; }
+  let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh, dk;
+  if(n > 0){ m = X.cm[i1]-X.cm[i0]; br = X.cb[i1]-X.cb[i0]; cx = X.cc[i1]-X.cc[i0]; sh = X.cs[i1]-X.cs[i0]; dk = X.cd[i1]-X.cd[i0]; }
   else { const k = Math.min(Math.max(i0,0), src.samples.length-1), k2 = Math.max(0, k-1), s = Math.abs(src.samples[k2].t-a) < Math.abs(src.samples[k].t-a) ? src.samples[k2] : src.samples[k];
-    m = s.m; br = s.b; cx = s.cx*s.m; sh = s.sh; n = 1; }
+    m = s.m; br = s.b; cx = s.cx*s.m; sh = s.sh; dk = s.b < 0.08 ? 1 : 0; n = 1; }
   const f0 = lowerB(X.FT, a-0.5), f1 = upperB(X.FT, b+0.5), fT = f1-f0, fN = X.cn[f1]-X.cn[f0];
-  return { m: m/n, b: br/n, cx: m>1e-6 ? cx/m : 0.5, sh: sh/n, face: fT ? fN/fT : 0,
+  return { m: m/n, b: br/n, dark: dk/n, cx: m>1e-6 ? cx/m : 0.5, sh: sh/n, face: fT ? fN/fT : 0,
     fx: fN ? (X.cfx[f1]-X.cfx[f0])/fN : 0.5, fy: fN ? (X.cfy[f1]-X.cfy[f0])/fN : 0.5, fs: fN ? (X.cfs[f1]-X.cfs[f0])/fN : 0 };
 }
 /* ---- editing style: transition in, effect during, speed ---- */
@@ -3582,7 +3599,9 @@ function scoreWindow(i, src, a, need, gmax){
   else if(s.type==='break') sc = 1 - Math.abs(m-0.18)*2;
   else sc = 1 - Math.abs(m-0.55);
   if(i===0) sc = 2.4*m;   // hook: the most action-packed moment opens the reel
-  if(st.b < 0.08) sc -= 1;                              // too dark
+  // too dark: the whole moment (as before), or a part of it (a clip that opens on black, a fade in): half of it
+  // black costs as much as all of it did, and more black costs more, so the moment with the least black is taken
+  sc -= Math.max(st.b < 0.08 ? 1 : 0, 2*(st.dark || 0));
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
@@ -3631,7 +3650,9 @@ function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
   for(const si of [...new Set(seq)]){
-    const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
+    // a clip that opens or ends on black (a fade in, the lens covered) is walked from its first picture to its last: the
+    // black is not footage, so as for a shorter clip its shots play a little slower rather than show it
+    const src = sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), [from, trail] = blackEnds(src), foot = Math.max(0.05, src.dur - TAIL - trail - from), end = from + foot;
     const need = ids.map(i => plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
     // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
@@ -3639,10 +3660,10 @@ function seqPick(seq, res, gmax){
     const fit = spare < 0 ? Math.max(seqFloor, foot/sum(need)*0.98) : 1;
     const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
-    let cur = 0;
+    let cur = from;
     ids.forEach((i, k) => {
-      cur = Math.min(cur, Math.max(0, foot - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
-      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, foot - nd - rest);
+      cur = Math.min(cur, Math.max(from, end - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
+      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, end - nd - rest);
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
@@ -3683,7 +3704,7 @@ function reviewOf(list){
   const shots = list.map(e => { const s = sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
     const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
     return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
-      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
+      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, darkSeconds: (st.dark || 0)*Math.max(need, 0.05), motion: Math.min(1, st.m/gmax), face: st.face } : {}),
       effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
   // the song's own drops (its analysis, before the plan was made from it): each should have a cut on it
   const drops = (cuts || []).filter((c, k) => cutType[k] === 'drop').map(c => c - t0);
@@ -3815,8 +3836,13 @@ function makeEditNow(){
         if(!allowOverlap && held.some(h=>h.i!==i && h.si===si && !res[h.i] && Math.min(h.b,a+need)-Math.max(h.a,a) > 0.001)) return;
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
         const w = scoreWindow(i, src, a, need, gmax);
+        // A black part of a clip (it opens on black, a cut to black) is not footage to show: such a moment is not
+        // taken while any other can be, footage shown twice included (a second of black looks broken; a moment seen
+        // again does not). Not for a dark clip (night, a stage: four fifths of it or more under the limit): that is
+        // the clip as filmed, and its moments are weighed as before. The last pass takes what there is.
+        if(!anyScene && !seen && blackPart(src) && (w.st.dark || 0)*need >= EDIT_REVIEW_LIMITS.darkSeconds) return;
         // (a repair: only a moment that can be seen; for a clip brought into the Reel, a sharp one too)
-        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
+        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (w.st.dark || 0)*need >= EDIT_REVIEW_LIMITS.darkSeconds || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
         let sc = w.sc - 5*ov/need + rng()*0.15;
         const directorRank = sharedRank.get(si);
         if(directorRank != null) sc += 0.18 * (1 - directorRank / sharedRankMax); // soft preference, never overrides explicit AI picks
@@ -3870,7 +3896,7 @@ function makeEditNow(){
       const other = (i, only) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in), own = k >= 0 ? u.splice(k, 1)[0] : null;
         const alt = pick(i, false, false, false, only != null ? 2 : 1, only); if(own) u.push(own); return alt && !(alt.ov > 0.001) ? alt : null; };
       let fixedDark = 0, addedClips = 0;
-      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || st.b >= EDIT_REVIEW_LIMITS.dark) return;
+      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || (st.b >= EDIT_REVIEW_LIMITS.dark && (st.dark || 0)*span(i) < EDIT_REVIEW_LIMITS.darkSeconds)) return;
         const alt = other(i); if(alt){ put(i, alt); fixedDark++; } });
       sources.forEach((src, si) => {
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;

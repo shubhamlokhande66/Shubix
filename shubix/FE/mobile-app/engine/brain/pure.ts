@@ -52,24 +52,41 @@ export function splitPoint(v, a, b){
 }
 export function rmsOf(x, gate = 0.01){ let s2 = 0, n = 0; for(let i=0;i<x.length;i+=4){ const v = x[i]; if(Math.abs(v) > gate){ s2 += v*v; n++; } } return Math.sqrt(s2/Math.max(1, n)); }
 export function statsIndex(src){
-  if(src._st) return src._st;
-  const S = src.samples, n = S.length, T = new Float64Array(n), cm = new Float64Array(n+1), cb = new Float64Array(n+1), cc = new Float64Array(n+1), cs = new Float64Array(n+1);
-  for(let i=0;i<n;i++){ T[i]=S[i].t; cm[i+1]=cm[i]+S[i].m; cb[i+1]=cb[i]+S[i].b; cc[i+1]=cc[i]+S[i].cx*S[i].m; cs[i+1]=cs[i]+S[i].sh; }
+  if(src._st && src._st.cd) return src._st;   // (an index kept from before `cd` was in it is made again)
+  const S = src.samples, n = S.length, T = new Float64Array(n), cm = new Float64Array(n+1), cb = new Float64Array(n+1), cc = new Float64Array(n+1), cs = new Float64Array(n+1), cd = new Float64Array(n+1);
+  // cd: how many readings so far are black (brightness under 0.08), so a window knows how much of it is
+  for(let i=0;i<n;i++){ T[i]=S[i].t; cm[i+1]=cm[i]+S[i].m; cb[i+1]=cb[i]+S[i].b; cc[i+1]=cc[i]+S[i].cx*S[i].m; cs[i+1]=cs[i]+S[i].sh; cd[i+1]=cd[i]+(S[i].b < 0.08 ? 1 : 0); }
   const F = src.faces || [], k = F.length, FT = new Float64Array(k), cn = new Float64Array(k+1), cfx = new Float64Array(k+1), cfy = new Float64Array(k+1), cfs = new Float64Array(k+1);
   for(let i=0;i<k;i++){ const f=F[i], on=f.n?1:0; FT[i]=f.t; cn[i+1]=cn[i]+on; cfx[i+1]=cfx[i]+(on?f.fx:0); cfy[i+1]=cfy[i]+(on?f.fy:0); cfs[i+1]=cfs[i]+(on?f.fs:0); }
-  return (src._st = {T, cm, cb, cc, cs, FT, cn, cfx, cfy, cfs});
+  return (src._st = {T, cm, cb, cc, cs, cd, FT, cn, cfx, cfy, cfs});
 }
 export const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 export const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
 export const TAIL = 0.15;   // seconds of clip kept free after a shot's window
+// A clip's black part that is a fault in it: some of it black (brightness under 0.08), but under four fifths, so it is
+// not a dark clip (night, a stage: that is the clip as filmed).
+export function blackPart(src){ if(src._bp === undefined){ const S = src.samples || [], d = S.filter(x => x.b < 0.08).length; src._bp = S.length > 0 && d > 0 && d < S.length*0.8; } return src._bp; }
+// How long such a clip is black at its start and at its end (a fade in, the lens covered, a cut to black), in seconds:
+// [0, 0] for a clip with no such fault, for under 0.2 s of it, and when less than half a second of picture would be left.
+export function blackEnds(src){
+  if(src._be) return src._be;
+  const S = src.samples || []; let lead = 0, trail = 0;
+  if(blackPart(src)){
+    const a = S.findIndex(x => x.b >= 0.08); let b = S.length - 1; while(b >= 0 && S[b].b < 0.08) b--;
+    if(a > 0) lead = S[a].t; if(b >= 0 && b < S.length - 1) trail = Math.max(0, (src.dur || 0) - S[b + 1].t);
+    if(lead < 0.2) lead = 0; if(trail < 0.2) trail = 0;
+    if((src.dur || 0) - lead - trail < 0.5 + TAIL) lead = trail = 0;
+  }
+  return (src._be = [lead, trail]);
+}
 export function windowStats(src, a, b){
   const X = statsIndex(src);
-  let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh;
-  if(n > 0){ m = X.cm[i1]-X.cm[i0]; br = X.cb[i1]-X.cb[i0]; cx = X.cc[i1]-X.cc[i0]; sh = X.cs[i1]-X.cs[i0]; }
+  let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh, dk;
+  if(n > 0){ m = X.cm[i1]-X.cm[i0]; br = X.cb[i1]-X.cb[i0]; cx = X.cc[i1]-X.cc[i0]; sh = X.cs[i1]-X.cs[i0]; dk = X.cd[i1]-X.cd[i0]; }
   else { const k = Math.min(Math.max(i0,0), src.samples.length-1), k2 = Math.max(0, k-1), s = Math.abs(src.samples[k2].t-a) < Math.abs(src.samples[k].t-a) ? src.samples[k2] : src.samples[k];
-    m = s.m; br = s.b; cx = s.cx*s.m; sh = s.sh; n = 1; }
+    m = s.m; br = s.b; cx = s.cx*s.m; sh = s.sh; dk = s.b < 0.08 ? 1 : 0; n = 1; }
   const f0 = lowerB(X.FT, a-0.5), f1 = upperB(X.FT, b+0.5), fT = f1-f0, fN = X.cn[f1]-X.cn[f0];
-  return { m: m/n, b: br/n, cx: m>1e-6 ? cx/m : 0.5, sh: sh/n, face: fT ? fN/fT : 0,
+  return { m: m/n, b: br/n, dark: dk/n, cx: m>1e-6 ? cx/m : 0.5, sh: sh/n, face: fT ? fN/fT : 0,
     fx: fN ? (X.cfx[f1]-X.cfx[f0])/fN : 0.5, fy: fN ? (X.cfy[f1]-X.cfy[f0])/fN : 0.5, fs: fN ? (X.cfs[f1]-X.cfs[f0])/fN : 0 };
 }
 export function velocitySpeed(len, bl){

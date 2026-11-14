@@ -95,6 +95,17 @@ describe("the edit's own review", () => {
     expect(reviewAutonomousEdit(clean({ shots: clean().shots.map((s) => ({ ...s, sharpness: undefined, brightness: undefined })) })).metrics.weakShots).toBeNull();
   });
 
+  it("finds a shot that is black for a part of it, though bright on the whole", () => {
+    const shots = clean().shots; shots[4] = shot(4, { brightness: 0.4, darkSeconds: 0.3 }); shots[6] = shot(6, { brightness: 0.4, darkSeconds: 0.1 });
+    const r = reviewAutonomousEdit(clean({ shots }));
+    expect(r.issues.filter((i) => i.code === "dark-shot").map((i) => [i.shot, i.value])).toEqual([[4, 0.3]]);   // 0.1 s is three frames: not said
+    expect(r.metrics.weakShots).toEqual({ measured: 8, soft: 0, dark: 1, ratio: 0.125 });
+    expect(r.repairs).toEqual(["pick-brighter-moment"]);
+    // a shot dark on the whole is one dark shot, not two
+    const both = clean().shots; both[4] = shot(4, { brightness: 0.03, darkSeconds: 1 });
+    expect(reviewAutonomousEdit(clean({ shots: both })).issues.filter((i) => i.code === "dark-shot")).toHaveLength(1);
+  });
+
   it("fails an edit that needs more footage than a clip has, and warns of a shot slowed too far", () => {
     const shots = clean().shots;
     shots[3] = shot(3, { sourceStart: 9.5, sourceEnd: 10.5 });
