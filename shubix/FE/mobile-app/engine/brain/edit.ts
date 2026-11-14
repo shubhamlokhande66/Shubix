@@ -653,7 +653,9 @@ function scoreWindow(i, src, a, need, gmax){
   else if(s.type==='break') sc = 1 - Math.abs(m-0.18)*2;
   else sc = 1 - Math.abs(m-0.55);
   if(i===0) sc = 2.4*m;   // hook: the most action-packed moment opens the reel
-  if(st.b < 0.08) sc -= 1;                              // too dark
+  // too dark: the whole moment (as before), or a part of it (a clip that opens on black, a fade in): half of it
+  // black costs as much as all of it did, and more black costs more, so the moment with the least black is taken
+  sc -= Math.max(st.b < 0.08 ? 1 : 0, 2*(st.dark || 0));
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger

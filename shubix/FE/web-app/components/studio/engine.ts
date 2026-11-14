@@ -1901,24 +1901,25 @@ function rng(){ seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; }
 // Window statistics in O(log n): prefix sums over the clip's samples and faces (built once per clip). The edit scores
 // thousands of windows, so a plain loop here froze the page on long videos.
 function statsIndex(src){
-  if(src._st) return src._st;
-  const S = src.samples, n = S.length, T = new Float64Array(n), cm = new Float64Array(n+1), cb = new Float64Array(n+1), cc = new Float64Array(n+1), cs = new Float64Array(n+1);
-  for(let i=0;i<n;i++){ T[i]=S[i].t; cm[i+1]=cm[i]+S[i].m; cb[i+1]=cb[i]+S[i].b; cc[i+1]=cc[i]+S[i].cx*S[i].m; cs[i+1]=cs[i]+S[i].sh; }
+  if(src._st && src._st.cd) return src._st;   // (an index kept from before `cd` was in it is made again)
+  const S = src.samples, n = S.length, T = new Float64Array(n), cm = new Float64Array(n+1), cb = new Float64Array(n+1), cc = new Float64Array(n+1), cs = new Float64Array(n+1), cd = new Float64Array(n+1);
+  // cd: how many readings so far are black (brightness under 0.08), so a window knows how much of it is
+  for(let i=0;i<n;i++){ T[i]=S[i].t; cm[i+1]=cm[i]+S[i].m; cb[i+1]=cb[i]+S[i].b; cc[i+1]=cc[i]+S[i].cx*S[i].m; cs[i+1]=cs[i]+S[i].sh; cd[i+1]=cd[i]+(S[i].b < 0.08 ? 1 : 0); }
   const F = src.faces || [], k = F.length, FT = new Float64Array(k), cn = new Float64Array(k+1), cfx = new Float64Array(k+1), cfy = new Float64Array(k+1), cfs = new Float64Array(k+1);
   for(let i=0;i<k;i++){ const f=F[i], on=f.n?1:0; FT[i]=f.t; cn[i+1]=cn[i]+on; cfx[i+1]=cfx[i]+(on?f.fx:0); cfy[i+1]=cfy[i]+(on?f.fy:0); cfs[i+1]=cfs[i]+(on?f.fs:0); }
-  return (src._st = {T, cm, cb, cc, cs, FT, cn, cfx, cfy, cfs});
+  return (src._st = {T, cm, cb, cc, cs, cd, FT, cn, cfx, cfy, cfs});
 }
 const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
 const TAIL = 0.15;   // seconds of clip kept free after a shot's window
 function windowStats(src, a, b){
   const X = statsIndex(src);
-  let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh;
-  if(n > 0){ m = X.cm[i1]-X.cm[i0]; br = X.cb[i1]-X.cb[i0]; cx = X.cc[i1]-X.cc[i0]; sh = X.cs[i1]-X.cs[i0]; }
+  let i0 = lowerB(X.T, a), i1 = upperB(X.T, b), n = i1 - i0, m, br, cx, sh, dk;
+  if(n > 0){ m = X.cm[i1]-X.cm[i0]; br = X.cb[i1]-X.cb[i0]; cx = X.cc[i1]-X.cc[i0]; sh = X.cs[i1]-X.cs[i0]; dk = X.cd[i1]-X.cd[i0]; }
   else { const k = Math.min(Math.max(i0,0), src.samples.length-1), k2 = Math.max(0, k-1), s = Math.abs(src.samples[k2].t-a) < Math.abs(src.samples[k].t-a) ? src.samples[k2] : src.samples[k];
-    m = s.m; br = s.b; cx = s.cx*s.m; sh = s.sh; n = 1; }
+    m = s.m; br = s.b; cx = s.cx*s.m; sh = s.sh; dk = s.b < 0.08 ? 1 : 0; n = 1; }
   const f0 = lowerB(X.FT, a-0.5), f1 = upperB(X.FT, b+0.5), fT = f1-f0, fN = X.cn[f1]-X.cn[f0];
-  return { m: m/n, b: br/n, cx: m>1e-6 ? cx/m : 0.5, sh: sh/n, face: fT ? fN/fT : 0,
+  return { m: m/n, b: br/n, dark: dk/n, cx: m>1e-6 ? cx/m : 0.5, sh: sh/n, face: fT ? fN/fT : 0,
     fx: fN ? (X.cfx[f1]-X.cfx[f0])/fN : 0.5, fy: fN ? (X.cfy[f1]-X.cfy[f0])/fN : 0.5, fs: fN ? (X.cfs[f1]-X.cfs[f0])/fN : 0 };
 }
 /* ---- editing style: transition in, effect during, speed ---- */
@@ -3582,7 +3583,9 @@ function scoreWindow(i, src, a, need, gmax){
   else if(s.type==='break') sc = 1 - Math.abs(m-0.18)*2;
   else sc = 1 - Math.abs(m-0.55);
   if(i===0) sc = 2.4*m;   // hook: the most action-packed moment opens the reel
-  if(st.b < 0.08) sc -= 1;                              // too dark
+  // too dark: the whole moment (as before), or a part of it (a clip that opens on black, a fade in): half of it
+  // black costs as much as all of it did, and more black costs more, so the moment with the least black is taken
+  sc -= Math.max(st.b < 0.08 ? 1 : 0, 2*(st.dark || 0));
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
@@ -3683,7 +3686,7 @@ function reviewOf(list){
   const shots = list.map(e => { const s = sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
     const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
     return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
-      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
+      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, darkSeconds: (st.dark || 0)*Math.max(need, 0.05), motion: Math.min(1, st.m/gmax), face: st.face } : {}),
       effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
   // the song's own drops (its analysis, before the plan was made from it): each should have a cut on it
   const drops = (cuts || []).filter((c, k) => cutType[k] === 'drop').map(c => c - t0);
@@ -3816,7 +3819,7 @@ function makeEditNow(){
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
         const w = scoreWindow(i, src, a, need, gmax);
         // (a repair: only a moment that can be seen; for a clip brought into the Reel, a sharp one too)
-        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
+        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (w.st.dark || 0)*need >= EDIT_REVIEW_LIMITS.darkSeconds || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
         let sc = w.sc - 5*ov/need + rng()*0.15;
         const directorRank = sharedRank.get(si);
         if(directorRank != null) sc += 0.18 * (1 - directorRank / sharedRankMax); // soft preference, never overrides explicit AI picks
@@ -3870,7 +3873,7 @@ function makeEditNow(){
       const other = (i, only) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in), own = k >= 0 ? u.splice(k, 1)[0] : null;
         const alt = pick(i, false, false, false, only != null ? 2 : 1, only); if(own) u.push(own); return alt && !(alt.ov > 0.001) ? alt : null; };
       let fixedDark = 0, addedClips = 0;
-      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || st.b >= EDIT_REVIEW_LIMITS.dark) return;
+      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || (st.b >= EDIT_REVIEW_LIMITS.dark && (st.dark || 0)*span(i) < EDIT_REVIEW_LIMITS.darkSeconds)) return;
         const alt = other(i); if(alt){ put(i, alt); fixedDark++; } });
       sources.forEach((src, si) => {
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;

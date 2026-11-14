@@ -21,6 +21,8 @@ export type EditReviewShot = {
   sharpness?: number;
   /** average brightness, 0 (black) to 1 */
   brightness?: number;
+  /** seconds of the footage this shot shows that are black (a clip that opens on black, a fade in) */
+  darkSeconds?: number;
   /** movement, 0 (still) to 1 (the most movement in these clips) */
   motion?: number;
   /** share of the shot with a face in it, 0 to 1 */
@@ -168,9 +170,9 @@ export const editTakesFor = (shots: number, footageSeconds: number) =>
 
 // FLASH: the beat edit cuts on every drum hit of a roll, never closer than 0.13 s (the engines' beatEdit): a run of
 // such shots is the edit as meant; only a shot shorter than the engines ever make on purpose is a slip.
-const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.12, LONG = 6, EDGE = 0.02;
+const SOFT = 0.45, DARK = 0.08, DARK_SECONDS = 0.2, SLOWEST = 0.4, FLASH = 0.12, LONG = 6, EDGE = 0.02;
 /** what the review calls soft (sharpness against the clip's own) and too dark to see (brightness): the engines' repairs use the same limits */
-export const EDIT_REVIEW_LIMITS = { soft: SOFT, dark: DARK } as const;
+export const EDIT_REVIEW_LIMITS = { soft: SOFT, dark: DARK, darkSeconds: DARK_SECONDS } as const;
 
 /** how far `time` is from the nearest of `sorted` (seconds; Infinity with none) */
 function nearest(sorted: number[], time: number): number {
@@ -282,9 +284,11 @@ export function reviewAutonomousEdit(input: EditReviewInput): EditReview {
   const multi = shots.length > 1;
   shots.forEach((s, i) => {
     const len = lengths[i], locked = !!s.locked;
-    if (num(s.sharpness) || num(s.brightness)) measured++;
+    if (num(s.sharpness) || num(s.brightness) || num(s.darkSeconds)) measured++;
     if (num(s.sharpness) && s.sharpness < SOFT) { soft++; add("soft-shot", "warning", "pick-sharper-moment", `Shot ${i + 1} is soft (${round(s.sharpness, 2)} of its clip's usual sharpness).`, i, s.sharpness, locked); }
     if (num(s.brightness) && s.brightness < DARK) { dark++; add("dark-shot", "warning", "pick-brighter-moment", `Shot ${i + 1} is too dark to see (brightness ${round(s.brightness, 2)}).`, i, s.brightness, locked); }
+    // not dark on the whole, but black for a part a viewer sees (0.2 s is six frames)
+    else if (num(s.darkSeconds) && s.darkSeconds >= DARK_SECONDS) { dark++; add("dark-shot", "warning", "pick-brighter-moment", `Shot ${i + 1} shows ${round(s.darkSeconds, 2)} s of black.`, i, s.darkSeconds, locked); }
     const clipLen = input.sourceDurations?.[s.sourceIndex];
     if (num(clipLen) && s.sourceEnd > clipLen + 0.05) add("footage-overrun", "error", "shorten-shot", `Shot ${i + 1} needs ${round(s.sourceEnd - clipLen, 2)} s more footage than its clip has.`, i, s.sourceEnd - clipLen, locked);
     const rate = (s.sourceEnd - s.sourceStart) / len;

@@ -59,6 +59,8 @@ async function scenario(browser, sc) {
         for (const d of [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis)) {
           const text = d.innerText.replace(/\s+/g, ' ').slice(0, 160);
           if (/not answering right now/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^close$/i.test(x.innerText.trim())); if (b) { b.click(); return 'Close · ' + text.slice(0, 60); } }
+          // too little good video for the song: the shorter Reel Shubix offers is taken (not "Add clips")
+          if (/Not enough clips/i.test(text)) { const no = d.querySelector('#cconfno'); if (no && vis(no)) { const t = no.innerText.trim(); no.click(); return t + ' · ' + text.slice(0, 60); } }
           const ok = d.querySelector('#cconfok'); if (ok && vis(ok)) { const t = ok.innerText.trim(); ok.click(); return t + ' · ' + text.slice(0, 60); }
         }
         return null;

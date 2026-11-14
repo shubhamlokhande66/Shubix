@@ -47,10 +47,12 @@ async function reelOf(nClips: number, seed: number) {
   const w = world(nClips, seed);
   await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths }); await w.e.call("ready");
   const ES = (w.e.host() as unknown as { ES: State }).ES, t0 = ES.edit[0].start;
+  let black = 0;   // seconds of black the Reel shows (parts of clips that are black)
   const shots = ES.edit.map((e) => { const s = ES.sources[e.src], need = e.sp.pos(e.end - e.start) * (e.scaleR || 1), st = windowStats(s, e.in, e.in + Math.max(need, 0.05));
-    return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, sharpness: st.sh / (s.shMed || 1), brightness: st.b }; });
+    black += (st.dark || 0) * need;
+    return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, sharpness: st.sh / (s.shMed || 1), brightness: st.b, darkSeconds: (st.dark || 0) * Math.max(need, 0.05) }; });
   const review = reviewAutonomousEdit({ shots, beats: ES.beats.map((b) => b - t0), duration: ES.edit[ES.edit.length - 1].end - t0, sourceCount: ES.sources.length, sourceDurations: ES.sources.map((s) => s.dur), cutLead: 1 / 30 });
-  return { ES, review, sig: ES.edit.map((e) => `${e.src}@${e.in.toFixed(3)}`).join(",") };
+  return { ES, review, black, sig: ES.edit.map((e) => `${e.src}@${e.in.toFixed(3)}`).join(",") };
 }
 const count = (r: Awaited<ReturnType<typeof reelOf>>, code: string) => r.review.issues.filter((i) => i.code === code).length;
 
@@ -69,6 +71,14 @@ describe("the edit repairs what its review finds", () => {
       const r = await reelOf(n, seed);
       for (const code of ["footage-repeated", "same-clip-jump", "dark-shot", "soft-shot", "footage-overrun"]) expect(count(r, code)).toBe(0);
       expect(r.review.status).not.toBe("fail");
+    }
+  });
+  it("shows no black: a clip's black part is kept out though the moment around it is bright", async () => {
+    // every clip here has a stretch that is black or soft; before this, a Reel of these showed about a second of black
+    for (const [n, seed] of [[12, 19], [12, 33], [20, 27], [20, 41]] as const) {
+      const r = await reelOf(n, seed);
+      expect(r.black).toBe(0);
+      expect(count(r, "dark-shot")).toBe(0);
     }
   });
   it("keeps the cuts on the beat: a repair changes what a shot shows, never when it cuts", async () => {
@@ -94,10 +104,10 @@ describe("the edit repairs what its review finds", () => {
     const a = await reelOf(12, 33), b = await reelOf(12, 33);
     expect(a.sig).toBe(b.sig);
   });
-  it("moves a shot that is too dark to see when unused footage can be seen", async () => {
-    // 6 clips for 50 shots: little footage to spare; this Reel had a dark shot and a moment to move it to
+  it("keeps a black part out when footage is little too, where room for it is", async () => {
+    // 6 clips for 50 shots: this Reel showed a black part before the scorer counted black inside a moment
     const r = await reelOf(6, 48);
-    expect(r.ES.editTakes.fixedDark).toBeGreaterThan(0);
     expect(count(r, "dark-shot")).toBe(0);
+    expect(r.black).toBe(0);
   });
 });

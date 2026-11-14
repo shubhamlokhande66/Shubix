@@ -15,7 +15,7 @@ function reviewOf(list){
   const shots = list.map(e => { const s = ES.sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
     const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
     return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
-      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, motion: Math.min(1, st.m/gmax), face: st.face } : {}),
+      ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, darkSeconds: (st.dark || 0)*Math.max(need, 0.05), motion: Math.min(1, st.m/gmax), face: st.face } : {}),
       effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
   // the song's own drops (its analysis, before the plan was made from it): each should have a cut on it
   const drops = (ES.cuts || []).filter((c, k) => ES.cutType[k] === 'drop').map(c => c - t0);
@@ -140,7 +140,7 @@ function makeEditNow(){
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
         const w = EH.scoreWindow(i, src, a, need, gmax);
         // (a repair: only a moment that can be seen; for a clip brought into the Reel, a sharp one too)
-        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
+        if(seen && (w.st.b < EDIT_REVIEW_LIMITS.dark || (w.st.dark || 0)*need >= EDIT_REVIEW_LIMITS.darkSeconds || (seen === 2 && w.st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft))) return;
         let sc = w.sc - 5*ov/need + EH.rng()*0.15;
         const directorRank = sharedRank.get(si);
         if(directorRank != null) sc += 0.18 * (1 - directorRank / sharedRankMax); // soft preference, never overrides explicit AI picks
@@ -194,7 +194,7 @@ function makeEditNow(){
       const other = (i, only) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in), own = k >= 0 ? u.splice(k, 1)[0] : null;
         const alt = pick(i, false, false, false, only != null ? 2 : 1, only); if(own) u.push(own); return alt && !(alt.ov > 0.001) ? alt : null; };
       let fixedDark = 0, addedClips = 0;
-      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || st.b >= EDIT_REVIEW_LIMITS.dark) return;
+      order.forEach(i => { if(res[i].byDir) return; const st = stat(i); if(!st || (st.b >= EDIT_REVIEW_LIMITS.dark && (st.dark || 0)*span(i) < EDIT_REVIEW_LIMITS.darkSeconds)) return;
         const alt = other(i); if(alt){ put(i, alt); fixedDark++; } });
       ES.sources.forEach((src, si) => {
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;

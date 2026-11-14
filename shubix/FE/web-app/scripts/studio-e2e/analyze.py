@@ -111,6 +111,14 @@ for sc in report['scenarios']:
     res['cuts'] = {'notPlanned': extra[:12], 'planned': len(planned), 'plannedBetweenClips': len(seen_changes), 'seenInFile': len(cuts), 'matched': len(errs), 'notFound': missed[:12],
                    'fileAgainstPlan': {'all': stat(allabs), 'hardCuts': stat(hard)}}
 
+    # ---- the end of the file: which clip each of its last frames shows, and those frames as a picture in the log
+    res['lastFrames'] = {'clips': [int(x) for x in who[-15:]], 'lastShotClip': edit[-1]['src']}
+    if res['cuts']['notPlanned']:
+        import base64
+        t_at = max(0.0, min(c['at'] for c in res['cuts']['notPlanned'][-3:]) - 0.2)
+        jpg = subprocess.run(['ffmpeg', '-loglevel', 'error', '-ss', f'{t_at:.3f}', '-i', path, '-frames:v', '16', '-vf', 'scale=120:-2,tile=16x1', '-q:v', '6', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'], capture_output=True).stdout
+        if jpg: print(f"SHOT {sc['id']}-frames-from-{t_at:.2f}s {base64.b64encode(jpg).decode()} END")
+
     # ---- the cuts in the file against the song's true beats (the whole point: a cut on the beat, in the file)
     name = sc.get('song') or {'A': 'four_floor_124', 'B': 'bhangra_dhol_98'}.get(sc['id'][0])
     truth = next(x['beats'] for x in report['media']['songs'] if x['name'] == name)
