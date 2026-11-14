@@ -4,7 +4,7 @@
 // @ts-nocheck
 import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats } from './pure';
 import { repace } from '../components/studio/soundmap';
-import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
+import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 
 export function createReelBrain(ES, EH){
@@ -174,7 +174,7 @@ function makeEditNow(){
       if(k > 1){ s = (s*7919 + 13) % 2147483647 || 7; ES.seed = s; }
       take(); if(k === 1) after = ES.seed;
       return { res: res.slice(), used: used.map(u => u.slice()), dup: ES.dupCount };
-    }, t => reviewOf(ES.plan.map((p, i) => ({ ...p, ...t.res[i] }))));
+    }, t => reviewOf(ES.plan.map((p, i) => ({ ...p, ...t.res[i] }))), editTakesFor(ES.plan.length, ES.sources.reduce((a, s) => a + (s.dur || 0), 0)));
     choice.take.res.forEach((r, i) => { res[i] = r; }); used.forEach((u, i) => { u.length = 0; u.push(...choice.take.used[i]); });
     ES.dupCount = choice.take.dup; ES.seed = after; ES.editTakes = { tried: choice.tried, kept: choice.kept };
     // The review's repairs that have one right answer (the director's own moments, a copied Reel and Shubix AI's plan
@@ -199,8 +199,10 @@ function makeEditNow(){
       ES.sources.forEach((src, si) => {
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
         const count = ES.sources.map((_, k) => res.filter(r => r.src === k).length);
+        // the shots it may take: of the clips shown most, eight at most (each one tried is a search of the clip)
+        const tryAt = res.map((_, i) => i).filter(i => i > 0 && !res[i].byDir && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
         let bi = -1, balt = null, least = 1;
-        for(let i = 1; i < res.length; i++){ if(res[i].byDir || count[res[i].src] < 2) continue;
+        for(const i of tryAt){
           const alt = other(i, si); if(!alt) continue;
           const loss = EH.scoreWindow(i, ES.sources[res[i].src], res[i].in, span(i), gmax).sc - EH.scoreWindow(i, src, alt.in, len(i)*alt.scaleR, gmax).sc;
           if(loss < least){ least = loss; bi = i; balt = alt; } }

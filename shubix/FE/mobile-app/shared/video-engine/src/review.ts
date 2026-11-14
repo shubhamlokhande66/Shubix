@@ -157,6 +157,15 @@ export function chooseEditTake<T>(make: (takeNo: number) => T, review: (take: T)
   return { take, kept, tried, review: best };
 }
 
+/**
+ * How many takes an edit may have. Another take is a whole new pass over the footage, so it is kept for where it helps
+ * and costs little: little footage for the shots (that is where the first take has to show footage twice or use a weak
+ * moment). With plenty of footage the first take is the edit, made once, and the phone is not kept waiting. It goes by
+ * the clips and the song alone, never by how fast the device is: the same clips and song make the same Reel everywhere.
+ */
+export const editTakesFor = (shots: number, footageSeconds: number) =>
+  num(shots) && num(footageSeconds) && shots > 0 && footageSeconds > 0 && shots * footageSeconds <= 3000 ? 3 : 1;
+
 // FLASH: the beat edit cuts on every drum hit of a roll, never closer than 0.13 s (the engines' beatEdit): a run of
 // such shots is the edit as meant; only a shot shorter than the engines ever make on purpose is a slip.
 const SOFT = 0.45, DARK = 0.08, SLOWEST = 0.4, FLASH = 0.12, LONG = 6, EDGE = 0.02;
