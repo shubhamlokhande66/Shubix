@@ -140,6 +140,9 @@ export const settings = {
   // "Continue with Google" (Google Cloud → APIs & Services → Credentials → OAuth client, Web); both are secrets
   googleClientId: env("GOOGLE_CLIENT_ID", ""),
   googleClientSecret: env("GOOGLE_CLIENT_SECRET", ""),
+  // Publish to Instagram ("Instagram API with Instagram Login": the Meta app's Instagram app ID and secret)
+  instagramAppId: env("INSTAGRAM_APP_ID", ""),
+  instagramAppSecret: env("INSTAGRAM_APP_SECRET", ""),
   geminiTextModel: env("GEMINI_TEXT_MODEL", ""),
   geminiVisionModel: env("GEMINI_VISION_MODEL", ""),
   anthropicApiKey: env("ANTHROPIC_API_KEY", ""),

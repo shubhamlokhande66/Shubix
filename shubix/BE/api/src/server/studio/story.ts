@@ -22,8 +22,8 @@ export const ART_STYLES: ArtStyle[] = [
 const styleOf = (id: string) => ART_STYLES.find((s) => s.id === id) ?? ART_STYLES[0];
 export const MAX_SCENES = 12;
 
-const freeAi = () => Boolean(cfg.cloudflareAccountId && cfg.cloudflareApiToken);
-const paidAi = () => (cfg.storyPaidImages === "gemini" && cfg.geminiApiKey ? "gemini" : cfg.storyPaidImages === "openai" && cfg.openaiApiKey ? "openai" : "");
+export const freeAi = () => Boolean(cfg.cloudflareAccountId && cfg.cloudflareApiToken);
+export const paidAi = () => (cfg.storyPaidImages === "gemini" && cfg.geminiApiKey ? "gemini" : cfg.storyPaidImages === "openai" && cfg.openaiApiKey ? "openai" : "");
 /** The styles this studio can show: the AI-only ones need the free or paid AI pictures connected. */
 export function storyOptions(aiPlan = true) {
   const ai = aiPlan && (freeAi() || !!paidAi()); // AI pictures: connected, and Shubix AI in the person's plan (Editor, Pro)
@@ -128,7 +128,7 @@ function promptFor(scene: Scene, style: ArtStyle, characters: { name: string; lo
   const looks = characters.filter((c) => c.look && scene.visual.toLowerCase().includes(c.name.toLowerCase())).map((c) => `${c.name}: ${c.look}`);
   return [`${style.prompt}.`, scene.visual, looks.length ? `Characters: ${looks.join("; ")}.` : "", "Vertical 9:16 composition, subject in the centre. No text, no letters, no watermark."].filter(Boolean).join(" ").slice(0, 2000);
 }
-async function flux(p: string): Promise<Picture> {
+export async function flux(p: string): Promise<Picture> {
   const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cfg.cloudflareAccountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`, { method: "POST",
     headers: { Authorization: `Bearer ${cfg.cloudflareApiToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ prompt: p, steps: 6 }), signal: AbortSignal.timeout(90_000) });
   if (!r.ok) throw new Error(`free AI pictures: ${r.status}`);
@@ -136,7 +136,7 @@ async function flux(p: string): Promise<Picture> {
   if (!result.result?.image || result.result.image.length > Math.ceil(MAX_IMAGE_BYTES * 4 / 3)) throw new Error("AI image is missing or too large");
   return { data: Buffer.from(result.result.image, "base64"), source: "free_ai", credit: "Shubix picture", ref: "" };
 }
-async function paid(p: string): Promise<Picture> {
+export async function paid(p: string): Promise<Picture> {
   if (paidAi() === "gemini") {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiImageModel}:generateContent`, { method: "POST", headers: { "x-goog-api-key": cfg.geminiApiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ contents: [{ parts: [{ text: p }] }], generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: "9:16" } } }), signal: AbortSignal.timeout(150_000) });

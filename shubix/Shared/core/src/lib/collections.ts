@@ -26,6 +26,7 @@ export const LISTS: ListDef[] = [
     items: [
       card("music", "Beat Reel", "Cuts on every beat", "/create/music", "music", "music"),
       card("talking", "Talking Reel", "Vlogs & Tutorials", "/create/talking", "mic", "talk"),
+      card("clips", "Clips from a Video", "Long video → viral Reels", "/create/clips", "scissors", "talk"),
       card("photo", "Photo Reel", "Bring Photos to Life", "/create/photo", "image", "photo"),
       card("copy", "Match a Reel's Style", "Its rhythm and look on your clips", "/create/copy", "copy", "copy"),
       card("templates", "Templates", "Ready-made Styles", "/templates", "grid", "template"),

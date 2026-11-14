@@ -498,6 +498,7 @@ export const STUDIO_HTML = `
             <label class="tog" id="capwrap" hidden><input type="checkbox" id="caps"> Captions: the words, word by word</label>
             <p class="hint capnone">Captions appear here once a song with words or a talking video is in.</p>
             <div class="row" id="caprow" hidden><select id="caplang" aria-label="Language of the song"><option value="">Language: detect</option><option value="hi">Hindi</option><option value="mr">Marathi</option><option value="en">English</option><option value="gu">Gujarati</option><option value="pa">Punjabi</option><option value="bn">Bengali</option><option value="ta">Tamil</option><option value="te">Telugu</option></select><select id="captr" aria-label="Also show the captions in"><option value="">Translation: off</option><option value="mr">+ मराठी (Marathi)</option><option value="hi">+ हिंदी (Hindi)</option><option value="en">+ English</option><option value="hinglish">+ Hinglish</option><option value="gu">+ ગુજરાતી</option><option value="bn">+ বাংলা</option><option value="ta">+ தமிழ்</option><option value="te">+ తెలుగు</option><option value="pa">+ ਪੰਜਾਬੀ</option></select><label class="tog" id="trwrap" hidden><input type="checkbox" id="tronly"> Only the translation</label><span class="fname" id="capstat"></span><label class="tog" id="kwwrap"><input type="checkbox" id="kwon" checked> Key words + zoom (talking, voiceover)</label></div>
+            <div class="row talkonly" id="dubrow" hidden><select id="dublang" aria-label="AI dub: the talk in another language"><option value="">AI dub: off (your own voice)</option><option value="hi">AI dub: Hindi</option><option value="mr">AI dub: Marathi</option><option value="en">AI dub: English</option><option value="hinglish">AI dub: Hinglish</option><option value="gu">AI dub: Gujarati</option><option value="bn">AI dub: Bengali</option><option value="ta">AI dub: Tamil</option><option value="te">AI dub: Telugu</option><option value="pa">AI dub: Punjabi</option></select><select id="dubvoice" aria-label="Voice of the dub (AI voice)"></select></div>
           </section>
 
           <section class="panel" data-panel="look">${panelHead("look")}
@@ -514,6 +515,11 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="layers">${panelHead("layers")}
             <div class="row"><button type="button" class="${Button.secondary}" id="lyadd">${IC.plus}Add a video or photo on top</button><input id="lyfile" type="file" accept="video/*,image/*,.mov,.mp4,.jpg,.jpeg,.png,.webp" multiple hidden></div>
             <p class="hint">It starts at the playhead. Picture in picture, split screen, a masked shape, a logo…</p>
+            <div class="aibroll" id="brbox" hidden>
+              <label class="label" for="brtext">AI picture (B-roll) · made by AI</label>
+              <textarea id="brtext" rows="2" maxlength="400" placeholder="Describe the picture: a chai stall in the Mumbai rain at night, warm lights…"></textarea>
+              <div class="row"><select id="brstyle" aria-label="Picture style"></select><label class="tog" id="brhdwrap" hidden><input type="checkbox" id="brhd"> HD</label><button type="button" class="${Button.secondary}" id="bradd">${IC.plus}Make and add at the playhead</button></div>
+            </div>
             <div class="lylist" id="lylist"></div>
             <div class="lyedit" id="lyedit" hidden>
               <span class="label">Layout</span>
@@ -557,7 +563,7 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="voice">${panelHead("voice")}
             <div class="row vorow" id="vorow"><button class="${Button.secondary}" id="vorec" type="button">${IC.voice}Record voiceover</button><button class="${Button.small}" id="vodel" type="button" hidden>Remove voiceover</button><label class="tog"><input type="checkbox" id="dn2" checked> Clean up noise</label><span class="fname" id="vostat"></span></div>
             <div class="ttsbox musiconly" id="ttsbox">
-              <label class="label" for="ttstext">Text to speech</label>
+              <label class="label" for="ttstext">Text to speech · AI voice</label>
               <textarea id="ttstext" rows="2" maxlength="1200" placeholder="Type what the voice should say… (English, हिन्दी, मराठी, తెలుగు, മലയാളം)"></textarea>
               <div class="row"><select id="ttsvoice" aria-label="Voice"></select><button type="button" class="${Button.secondary}" id="ttsadd">${IC.voice}Add at the playhead</button></div>
               <p class="hint">Made on this phone. Each voice is downloaded once (about 60 MB).</p>

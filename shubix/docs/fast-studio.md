@@ -526,3 +526,52 @@ Checked: screenshots of every design screen (phone Ivory / Noir, computer) again
 "Add or change clips" opens step 2; an Editor chip changes the shot's transition (hard → fade-in) and lights up; the
 Effect tab shows its 13 choices; the Pro inspector changes the speed; tapping the Pro timeline at 75% moves the playhead
 to 0.75; the menu's Noir and Simple apply and are remembered. `check-keyframes`, `check-overlays`, `check-templates` pass.
+
+## Clips from a Video (long video → Reels)
+
+`/create/clips` (`components/organisms/ClipsFinder.tsx`, `lib/clips/media.ts`): one long video (up to 2 hours: a podcast,
+a talk, a class, a vlog) in, its best moments out, each a Reel. The video never leaves the phone.
+- **Words**: the sound is read part by part (170 s, mediabunny's audio sink, one part in memory at a time), made 16 kHz
+  mono and transcribed by `/api/studio/transcribe`; the words get their place in the whole video. Read once per video and
+  language: a new length or number of clips asks only for the moments again.
+- **Moments** (`/api/studio/moments`, `BE/api/src/server/studio/moments.ts`): the words in sentences (full stop, `।`, a
+  pause over 0.8 s), every stretch of whole sentences inside the length (15–35 s, 30–60 s, 55–90 s), a plain score (a
+  hook in the first sentence, no weak start like "and / so / aur / ani", a finished last sentence, steady talking, no long
+  silences), the best ones apart (none sharing time). Shubix AI (Editor and Pro; AI task "Clips from a long video") judges
+  up to 30 of them: a score, a title, an on-screen hook and why, in the video's own language. Charged once per video
+  (`studio_moments`, 5 credits by default; given back if the AI fails). Without the AI: the plain picks.
+- **Each moment**: plays in the page from its start to its end; **Make Reel** cuts it out on the phone (mediabunny
+  Conversion with a trim: exact frames) and opens the Talking Reel studio with it (`/create/talking?from=clips`: the clip
+  waits in IndexedDB, used once, for 10 minutes); **Download** saves the cut clip.
+
+Checked in Chromium (a 6.6 min spoken WebM): 3 parts of the voice in 2.9 s, a 30 s clip cut in 0.07 s (30.00 s, VP9 +
+Opus), handed to the studio once.
+
+## AI voices (text to speech)
+
+Edit → Voice → "Text to speech · AI voice": type what to say (any language), pick a voice, "Add at the playhead". The
+speech is made on the server (`/api/studio/speak`, `BE/api/src/server/studio/speak.ts`) by the natural AI voices it has
+(OpenAI: 11 voices, Gemini: 14; none without a key, and then the tool is hidden), and mixed on the phone like the
+voiceover (the song steps back while it speaks; the voice changer works on it). 1 credit per piece of speech
+(`studio_voice`), Editor and Pro or credits; the same text in the same voice is never charged twice, and the browser keeps
+each piece (`lib/tts/client.ts`, Cache Storage), so reopening a Reel does not ask the server again. Shubix AI's chat can
+add speech too ("add a voiceover saying …").
+
+Checked in Chromium (the client against a stand-in server): the voice list, a 1.79 s WAV decoded at 48 kHz, the same
+speech again from the browser's cache (no second request), a refused request's message shown as it is.
+
+## AI dub (a Talking Reel in another language)
+
+Captions panel → "AI dub: Hindi / Marathi / English / Hinglish / Gujarati / Bengali / Tamil / Telugu / Punjabi" and an
+AI voice (talking Reels; shown when the server has AI voices). `makeDub` in `engine.ts`, the pure parts in `dub.ts`:
+- the talk's own voice (pauses already cut) is transcribed, the words put in sentences (full stop, a pause over 0.6 s,
+  12 s or 150 characters), the sentences translated (`/api/studio/translate`) and each spoken by the AI voice
+  (`/api/studio/speak`, 1 credit each, kept in the browser);
+- each spoken sentence starts where the original one did (or just after the one before), sped up with its pitch kept
+  (WSOLA, at most 1.35×) when it would run into the next; the music steps back under the dubbed voice;
+- the dubbed voice takes the place of the person's own in the preview, captions (made again from the dub, so they are in
+  the new language) and the export; "AI dub: off" puts the own voice back. Saved with the Reel (language and voice) and
+  made again on opening (the speech comes from the browser's cache). Up to 3 minutes of talk. The lips are not moved.
+
+Checked in Chromium (`next dev`, the API stood in for): a 9.3 s talking clip, Hindi → listened, translated, 4 sentences
+spoken, the talk rebuilt with the dub; `tests/studio-dub.test.ts` (sentences, 1.3× faster at the same pitch, placing).
