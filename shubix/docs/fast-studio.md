@@ -619,3 +619,13 @@ the sentences a picture helps (never the opening one, never two in a row; one pi
 and writes each picture; each is made (`/api/studio/broll`) and laid over the speaker from that sentence for up to 3 s,
 full frame, fading in and out, as a layer the creator can move, trim or delete. Credits: the plan (1) and each picture.
 Checked in Chrome with the API stood in for: a 10.5 s talk got one picture at 3.8-6.1 s, no page errors.
+
+## Shubix's song library ("Choose a song for me")
+
+Admin → Songs: the administrator adds songs Shubix may use in the Reels people post (royalty-free with a licence that
+allows it, or bought for it), each with its licence, source, moods (energetic, happy, calm, romantic, emotional,
+devotional, cinematic, festive) and, optionally, its BPM (`BE/api/src/server/songs.ts`, collection `song_library`,
+files under `songs/` in the bucket). In the studio's first step, "Choose a song for me" (shown when the library has
+songs) asks `/api/songs/pick` for one: by the clips' energy (their movement, once read), the template's kind (a wedding:
+romantic; Ganpati: devotional; a festival: festive; gym / car: energetic), long enough, never the song chosen last; the
+studio reads it as if the creator had added it and says its licence. Checked in Chrome with the API stood in for.

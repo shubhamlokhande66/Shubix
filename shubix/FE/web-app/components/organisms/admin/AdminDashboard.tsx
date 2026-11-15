@@ -17,11 +17,12 @@ import { UserPanel } from "./UserPanel";
 import { UsersTab } from "./UsersTab";
 import { MarketingTab } from "./MarketingTab";
 import { MessagesTab } from "./MessagesTab";
+import { SongsTab } from "./SongsTab";
 import { ReviewsTab } from "./ReviewsTab";
 import { SupportTab } from "./SupportTab";
 
 /** The admin panel (like the shop's): a grouped sidebar, a header with who is online and Refresh, then the open tab. */
-type Tab = "overview" | "users" | "messages" | "marketing" | "support" | "templates" | "settings" | "errors" | "logs" | "reviews" | "ai" | "trends";
+type Tab = "overview" | "users" | "messages" | "marketing" | "support" | "templates" | "songs" | "settings" | "errors" | "logs" | "reviews" | "ai" | "trends";
 const NAV: { title: string; items: { id: Tab; label: string; icon: string; hint: string }[] }[] = [
   { title: "Overview", items: [{ id: "overview", label: "Dashboard", icon: "home", hint: "Visitors, sign-ups, revenue and credits at a glance" }] },
   { title: "People", items: [{ id: "users", label: "Users", icon: "user", hint: "Everyone who signed up: logins, purchases, credits left" },
@@ -29,7 +30,8 @@ const NAV: { title: string; items: { id: Tab; label: string; icon: string; hint:
     { id: "marketing", label: "Marketing", icon: "gift", hint: "Invite rewards, sending credits, affiliates, coupon codes and sales" },
     { id: "support", label: "Support", icon: "mail", hint: "Messages from the Contact page, and what people ask the Help chat" },
     { id: "reviews", label: "Reviews", icon: "star", hint: "What people said after exporting a Reel: approve the ones to show on Home, read what to improve" }] },
-  { title: "Content", items: [{ id: "templates", label: "Templates", icon: "grid", hint: "Every template of the studio: add, change, hide, order, its times and its days" }] },
+  { title: "Content", items: [{ id: "templates", label: "Templates", icon: "grid", hint: "Every template of the studio: add, change, hide, order, its times and its days" },
+    { id: "songs", label: "Songs", icon: "music", hint: "Shubix's song library: the songs a Reel can be made with when the creator has none (each with its licence)" }] },
   { title: "System", items: [{ id: "settings", label: "Settings", icon: "gear", hint: "Every setting of the studio, managed here" }, { id: "errors", label: "Errors", icon: "key", hint: "What broke in people's browsers, newest first" },
     { id: "logs", label: "Logs", icon: "history", hint: "Each Reel's whole log by its Reel ID: song, clips, compression, AI calls with their JSON, export, with date and time" }] },
   // the AI's tools open here too (before, they were links that left the dashboard)
@@ -161,6 +163,7 @@ export function AdminDashboard() {
             {tab === "overview" && <OverviewTab onOpenUser={setUser} onOpenTab={setTab} />}
             {tab === "users" && <UsersTab onOpenUser={setUser} />}
             {tab === "messages" && <MessagesTab />}
+            {tab === "songs" && <SongsTab />}
             {tab === "marketing" && <MarketingTab />}
             {tab === "support" && <SupportTab />}
             {tab === "settings" && <SettingsTab />}
