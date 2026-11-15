@@ -19,6 +19,7 @@ const PHONE = { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch:
 const SCENARIOS = [
   { id: 'A-12clips-fourfloor', song: 'four_floor_124', clips: media.clips.map((c) => c.index), why: 'a computer, as it comes (clips in my order, 1080p): 12 clips, a steady 124 BPM song' },
   { id: 'B-5clips-bhangra-mix', song: 'bhangra_dhol_98', clips: [0, 3, 5, 8, 10], mix: true, wholeSong: true, res: '720p', why: 'a computer, Mix all clips for the whole song: 5 clips (one half dark), bhangra; the edit reviews and repairs itself here' },
+  ...((media.talk || []).length ? [{ id: 'D-talking-vlog', talk: true, res: '720p', path: '/create/talking', why: 'a computer, a Talking Reel (a vlog, a tutorial): three clips of speech in English, Hindi and Marathi with known pauses, no song' }] : []),
   { id: 'C-phone-8clips-dembow', song: 'bollywood_dembow_96', clips: [1, 2, 4, 5, 6, 7, 9, 11], phone: true, res: '720p', why: 'a phone-sized screen with touch, as it comes: 8 clips, a dembow song' },
 ].filter((s) => !process.env.ONLY || process.env.ONLY.split(',').some((o) => s.id.startsWith(o.trim())));
 
@@ -26,7 +27,7 @@ const now = () => Date.now();
 const studio = () => document.querySelector('.brs');
 
 async function scenario(browser, sc) {
-  const rep = { id: sc.id, why: sc.why, song: sc.song, popups: [], steps: [], errors: [], consoleErrors: [], failedRequests: 0, ok: false };
+  const rep = { id: sc.id, why: sc.why, song: sc.song || null, isTalk: !!sc.talk, popups: [], steps: [], errors: [], consoleErrors: [], failedRequests: 0, ok: false };
   const step = (name, data) => { rep.steps.push({ name, ...data }); console.log(`[${sc.id}] ${name}`, data ? JSON.stringify(data).slice(0, 600) : ''); };
   const ctx = await browser.newContext({ ...(sc.phone ? PHONE : { viewport: { width: 1300, height: 1000 } }), acceptDownloads: true });
   const p = await ctx.newPage();
@@ -78,13 +79,14 @@ async function scenario(browser, sc) {
     let t0 = now();
     // no API runs behind this website: the one thing the Create flow must know from it is that nobody has to sign in
     await ctx.route('**/api/auth/me', (route) => route.fulfill({ json: { authEnabled: false, user: null } }));
-    await p.goto(BASE + (process.env.STUDIO_PATH || '/create/music'), { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await p.goto(BASE + (sc.path || process.env.STUDIO_PATH || '/create/music'), { waitUntil: 'domcontentloaded', timeout: 120000 });
     await p.waitForFunction(() => document.querySelector('.brs') && document.querySelector('.brs').__studio, null, { timeout: 120000 });
     step('studio open', { ms: now() - t0, ...(await long()) });
     await see('open'); await shot('open');
     if (sc.phone) { await next('the first screen'); await see('after-start'); }
 
-    // ---- 2. the song: read, its beats found
+    // ---- 2. the song: read, its beats found (a Talking Reel needs none)
+    if (sc.song) {
     const song = media.songs.find((s) => s.name === sc.song);
     t0 = now();
     await p.setInputFiles('#mfile', path.join(MEDIA, song.file));
@@ -97,12 +99,13 @@ async function scenario(browser, sc) {
     if (sc.phone) { await shot('song'); await next('after the song'); await see('clips-screen'); }
 
     // ---- 3. the clips: read, and the Reel made by itself
+    }
     // what a creator can choose before the clips: every clip mixed (not in my order), the whole song (not only as long as the clips)
     if (sc.mix || sc.wholeSong) { const set = await p.evaluate(({ mix, whole }) => { const out = {};
         if (mix) { const b = document.querySelector('#seq button[data-q=mix]'); if (b) { b.click(); out.mix = b.getAttribute('aria-pressed'); } else out.mix = 'no such button'; }
         if (whole) { const c = document.getElementById('fitclips'); if (c) { if (c.checked) c.click(); out.fitclips = c.checked; } else out.fitclips = 'no such box'; }
         return out; }, { mix: !!sc.mix, whole: !!sc.wholeSong }); step('options set', set); }
-    const files = sc.clips.map((i) => path.join(MEDIA, media.clips[i].file));
+    const files = sc.talk ? media.talk.map((c) => path.join(MEDIA, c.file)) : sc.clips.map((i) => path.join(MEDIA, media.clips[i].file));
     t0 = now();
     await p.setInputFiles('#vfile', files);
     // the Create flow: Generate Reel comes on when the song, the beats and the clips are read; pressing it opens the Reel
@@ -133,12 +136,25 @@ async function scenario(browser, sc) {
       return { status: document.getElementById('s3st').textContent, sources: srcs,
         section: { start: x.start, len: x.len }, songStatus: document.getElementById('s1st').textContent, beatSource: (S.songR || {}).beatSource || null,
         beats: (S.beats || []).map((b) => +b.toFixed(4)),
-        edit: e.map((s) => ({ start: +s.start.toFixed(4), end: +s.end.toFixed(4), src: s.src, in: +(+s.in).toFixed(3), need: +(s.sp.pos(s.end - s.start) * (s.scaleR || 1)).toFixed(3), type: s.type, tr: s.tr || 'hard', efx: s.efx || 'none' })),
-        review: root.__lastEditReview || null };
+        edit: e.map((s) => ({ start: +s.start.toFixed(4), end: +s.end.toFixed(4), src: s.src, in: +(+s.in).toFixed(3), need: +((s.sp && s.sp.pos ? s.sp.pos(s.end - s.start) : s.end - s.start) * (s.scaleR || 1)).toFixed(3), type: s.type, tr: s.tr || 'hard', efx: s.efx || 'none' })),
+        review: root.__lastEditReview || null,
+        talk: S.talk ? { seconds: +S.talk.parts.reduce((q, x) => q + x.b - x.a, 0).toFixed(3), parts: S.talk.parts.length, detector: [...new Set((S.sources || []).map((x) => x.voice && x.voice.how))] } : null };
     });
     step('reel made', { ms: editMs, shots: made.edit.length, status: made.status, clipsUsed: new Set(made.edit.map((s) => s.src)).size, clipsGiven: files.length,
       review: made.review ? { score: made.review.score, status: made.review.status, beatSync: made.review.metrics.beatSync, drops: made.review.metrics.drops, issues: made.review.issues.map((i) => i.code + (i.shot === undefined ? '' : '@' + i.shot)) } : null, ...(await long()) });
     rep.made = made;
+    if (sc.talk) {
+      // against the phrases really spoken (make_talk.py): how much of the speech is in the Reel, how much of the long pauses
+      let speech = 0, kept = 0, gaps = 0, gapsKept = 0;
+      made.sources.forEach((src, si) => { const tr = media.talk.find((c) => src.name === c.name + '.webm'); if (!tr) return;
+        const sh = made.edit.filter((e) => e.src === si).map((e) => [e.in, e.in + (e.end - e.start)]);
+        const ov = (a, b) => sh.reduce((q, [u, v]) => q + Math.max(0, Math.min(b, v) - Math.max(a, u)), 0);
+        tr.speech.forEach(([a, b]) => { speech += b - a; kept += ov(a, b); });
+        tr.speech.slice(1).forEach(([a], k) => { const g0 = tr.speech[k][1]; if (a - g0 >= 1) { gaps += a - g0; gapsKept += ov(g0, a); } }); });
+      rep.talk = { clipsSeconds: +media.talk.reduce((q, c) => q + c.dur, 0).toFixed(2), talkSeconds: made.talk && made.talk.seconds, speechSeconds: +speech.toFixed(2), speechKept: speech ? +(kept / speech).toFixed(4) : null,
+        longPausesSeconds: +gaps.toFixed(2), longPausesLeft: gaps ? +(gapsKept / gaps).toFixed(4) : null, detector: made.talk && made.talk.detector };
+      step('talk measured', rep.talk);
+    }
     await shot('made');
 
     // ---- 4. the preview plays: how far it gets in 5 seconds, and how evenly the screen was drawn
@@ -211,7 +227,7 @@ async function scenario(browser, sc) {
 (async () => {
   const browser = await chromium.launch({ ...(process.env.CHANNEL ? { channel: process.env.CHANNEL } : {}),
     args: ['--autoplay-policy=no-user-gesture-required', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const report = { base: BASE, browser: browser.version(), at: new Date().toISOString(), media: { clips: media.clips, songs: media.songs.map((s) => ({ name: s.name, file: s.file, beats: s.beats })) }, scenarios: [] };
+  const report = { base: BASE, browser: browser.version(), at: new Date().toISOString(), media: { talk: media.talk || [], clips: media.clips, songs: media.songs.map((s) => ({ name: s.name, file: s.file, beats: s.beats })) }, scenarios: [] };
   for (const sc of SCENARIOS) report.scenarios.push(await scenario(browser, sc));
   await browser.close();
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
