@@ -165,6 +165,18 @@ async function scenario(browser, sc) {
         await p.waitForTimeout(1500); await shot(`pop-${k}`);
       }
     }
+    // FINISH=1: My brand (a test logo and @handle) and the three finish toggles, then what the Reel carries
+    if (process.env.FINISH && !sc.talk) {
+      made.finish = await p.evaluate(async () => {
+        const S = document.querySelector('.brs').__studio, c = document.createElement('canvas'); c.width = 300; c.height = 120;
+        const g = c.getContext('2d'); g.fillStyle = '#E8B04A'; g.font = 'bold 80px sans-serif'; g.fillText('VP', 70, 95);
+        await S.brandSave({ handle: 'vp_cinematic_90', logo: c.toDataURL('image/png'), mark: true, end: true });
+        const drop = ((S.songR || {}).cutType || []).includes('drop'), r = { bars: S.finishSet('bars', true), tint: S.finishSet('tint', true), bw: drop ? S.finishSet('bw', true) : 'no drop in this song' };
+        return { set: r, layers: S.brandLayers, texts: S.overlays.filter((o) => o.brand).map((o) => o.text) };
+      });
+      await p.getByRole('button', { name: 'OK', exact: true }).click({ timeout: 3000 }).catch(() => {});   // a finish this song cannot take says why
+      step('finish', made.finish);
+    }
     rep.made = made;
     fs.writeFileSync(path.join(OUT, `${sc.id}-made.json`), JSON.stringify(made));   // the edit, kept as soon as it is made
     if (process.env.STOP_AFTER === 'made') { rep.ok = true; rep.stopped = 'after the Reel was made (STOP_AFTER=made)'; return rep; }

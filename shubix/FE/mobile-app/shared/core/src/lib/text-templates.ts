@@ -24,6 +24,9 @@ export const TEXT_TEMPLATES: Record<string, TextTemplate> = {
   step: { name: "Step", len: 3, words: ["Mix it well", "1"], parts: [P("STEP {2}", "tag", "#FFD54A", "slide", 0.2, 0.8, 0), P("{1}", "box", "#111111", "slide", 0.27, 0.9, 0.2)] },
   typewriter: { name: "Typewriter", len: 3.5, words: ["Here is how I did it", ""], parts: [P("{1}", "clean", "#FFFFFF", "type", 0.42, 1, 0, { font: "poppins" })] },
   spinin: { name: "Spin in", len: 2.5, words: ["WOW", ""], parts: [P("{1}", "bold", "#FFFFFF", "spin", 0.42, 1.8, 0, { font: "bangers", out: "spin" })] },
+  // the end card creators put on their Reels (Shared/video-engine/src/finish.ts): the @handle under the logo, or alone
+  endcard: { name: "End card", len: 4.4, words: ["@yourname", "Follow for more"], parts: [P("{1}", "bold", "#FFFFFF", "fade", 0.6, 0.95, 0.25, { font: "montserrat" }), P("{2}", "clean", "#D9D9D9", "fade", 0.665, 0.6, 0.55)] },
+  endtext: { name: "End card (no logo)", len: 4.4, words: ["@yourname", "Follow for more"], parts: [P("{1}", "bold", "#FFFFFF", "zoom", 0.46, 1.3, 0.15, { font: "montserrat" }), P("{2}", "clean", "#D9D9D9", "fade", 0.54, 0.7, 0.5)] },
   price: { name: "Price", len: 3, words: ["₹999", "only"], parts: [P("{1}", "tag", "#FFD54A", "drop", 0.6, 1.3, 0, { loop: "bounce" }), P("{2}", "clean", "#FFFFFF", "fade", 0.68, 0.7, 0.3)] },
 };
 

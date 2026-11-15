@@ -182,6 +182,7 @@ export const ACTIONS = {
   template: `a ready-made animated title (several texts that come in together, each with its own style, font, entrance and loop): {"do":"template","name":"${Object.keys(TEXT_TEMPLATES).join("|")}","words":["<main words>","<second words or empty>"],"at":seconds of the Reel,"len":seconds}`,
   voiceover: `a spoken voice-over (text to speech) at a time of the Reel: {"do":"voiceover","text":"<what is said>","at":seconds}`,
   broll: `pictures over a Talking Reel for what is said (B-roll: Shubix picks the moments and makes the pictures; only when the creator asks for pictures or B-roll in a talking video; credits): {"do":"broll"}`,
+  finish: `a finish creators use, on or off: cinematic bars (a wide band, black above and below), a colour flash on the strong beats (blue, then orange), black and white until the drop: {"do":"finish","what":"bars|tint|bw","on":true|false}`,
   pop: `the subject pop (a car, a bike or a person cut out of a shot, small over the shot before it while that plays on darker, growing until the Reel cuts to it; creators do it before the drop; only one in a Reel): {"do":"pop"}`,
   picture: `a new picture made by AI (B-roll: shown on the whole frame for 3 s, e.g. what the person is talking about; only when the creator asks for a picture or B-roll; at most 2 per answer, each costs a credit): {"do":"picture","prompt":"<what the picture shows, in English, no text in it>","at":seconds,"style":"photo|cinematic|anime|watercolor|comic|classical"}`,
 } as const;

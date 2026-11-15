@@ -88,8 +88,14 @@ export function pcmOfWav(bytes: ArrayBuffer): { pcm: Float32Array; sr: number } 
   return { pcm, sr };
 }
 
+/** the layers that need no file: the end card's black, cinematic bars, a colour flash (StudioLayers.kt draws them) */
+const FILL_KINDS = ["shade", "bars", "tint"];
+
 export function createNativeEngine(io: NativeIo) {
-  const make = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  // My brand (the app keeps it: lib/engine.ts): every new Reel's host gets it
+  let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
+  const make = () => { const h = make0(); h.ES.brand = brand; return h; };
   let host = make(), signedIn = false;
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: { name: string; path: string; w: number; h: number }[] = [];
@@ -347,7 +353,7 @@ export function createNativeEngine(io: NativeIo) {
       const M = host.ES.lmedia[L.m as number] as { path?: string; kind?: string } | undefined;
       return { index, id: L.id, t0: L.t0, t1: L.t1, x: L.x, y: L.y, scale: L.s, opacity: L.op, rotation: L.r, mask: L.mask, blend: L.blend || "source-over", follow: L.follow || "none", followOffsetX: L.followOffsetX || 0, followOffsetY: L.followOffsetY || 0,
         maskWidth: L.mk?.w ?? 0.8, maskHeight: L.mk?.h ?? 0.8, maskThreshold: L.mk?.th ?? 0.5, maskFeather: L.mk?.f ?? 0.12, maskAngle: L.mk?.a ?? 0, maskInverted: !!L.mk?.inv, chromaKey: !!L.key?.on, chromaColor: L.key?.c ?? "#00FF00", chromaTolerance: L.key?.tol ?? 0.35,
-        native: M?.path ? { path: M.path, kind: M.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend, ...(L.grow ? { grow: L.grow } : {}), ...(L.shade ? { shade: L.shade } : {}) } : null, pop: L.pop || null };
+        native: M?.path || FILL_KINDS.includes(String(M?.kind)) ? { path: M?.path || "", kind: M?.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend, ...(L.grow ? { grow: L.grow } : {}), ...(L.shade ? { shade: L.shade } : {}), ...(L.ratio ? { ratio: L.ratio } : {}), ...(L.pulses ? { pulses: L.pulses } : {}) } : null, pop: L.pop || null, brand: L.brand || null, finish: L.finish || null };
     }),
     layerAdd: async (a) => {
       const path = String(a.path), name = String(a.name || "overlay"), p = await io.fetch(url("probe", `&p=${encodeURIComponent(path)}`));
@@ -355,6 +361,15 @@ export function createNativeEngine(io: NativeIo) {
       await host.brain.layerAdd([{ kind: video ? "video" : "photo", path, name, ...facts }]);
       return { ok: true, count: host.ES.layers.length };
     },
+    /** My brand from the app: the @handle, the logo's file on the phone and its size, the logo in the corner, the end card */
+    brandSet: async (a) => {
+      const b = a && (a.handle || a.logoPath) ? { handle: String(a.handle || "").slice(0, 40), logoPath: a.logoPath ? String(a.logoPath) : null, logoW: Number(a.logoW) || 512, logoH: Number(a.logoH) || 512, mark: a.mark !== false, end: a.end !== false } : null;
+      brand = b; host.ES.brand = b; host.ES.brandOff = { mark: false, end: false };
+      if (host.ES.edit.length) await host.brain.brandFinish();
+      return { ok: true, brand: b };
+    },
+    finish: (a) => { const what = String(a.what); if (!["bars", "tint", "bw"].includes(what)) throw new Error("No such finish"); return { ok: !!host.brain.finishSet(what, a.on !== false), on: { bars: !!host.brain.finishOn("bars"), tint: !!host.brain.finishOn("tint"), bw: !!host.brain.finishOn("bw") } }; },
+    finishState: () => ({ bars: !!host.brain.finishOn("bars"), tint: !!host.brain.finishOn("tint"), bw: !!host.brain.finishOn("bw") }),
     subjectPop: async () => { const r = await host.brain.subjectPop(false); return { ok: !!r, ...(r || {}), count: host.ES.layers.length }; },
     layerSelect: async (a) => ({ ok: !!(await host.brain.lySelect(Number(a.index))), selected: Number(a.index) }),
     layerSet: (a) => { host.brain.lySet(String(a.key), a.value); return { ok: true }; },
