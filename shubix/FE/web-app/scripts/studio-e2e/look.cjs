@@ -27,6 +27,7 @@ const lookAt = () => {
     if (cy >= 0 && cy <= H && cx >= 0 && cx <= W) { const top = document.elementFromPoint(cx, cy); if (top && top !== b && !b.contains(top) && !top.contains(b)) faults.push('under ' + name(top)); }
     const text = (b.innerText || b.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 28);
     if (b.scrollWidth > b.clientWidth + 2 && getComputedStyle(b).overflow !== 'visible') faults.push('its text is cut (' + b.scrollWidth + ' in ' + b.clientWidth + ')');
+    if (r.right < 0 || r.left > W) continue;   // kept off the screen on purpose (the closed menu, the editor)
     out.push({ el: name(b), text, at: [Math.round(r.left), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)], off: !!b.disabled, faults });
   }
   // the parts of the studio that show (those with an id), for "what is gone"
@@ -46,10 +47,14 @@ const lookAt = () => {
     await ctx.route('**/api/studio/model/*', (route) => { const m = MODELS.find((f) => route.request().url().endsWith('/' + f.name));
       return m ? route.fulfill({ body: fs.readFileSync(path.join(API, m.dir, m.name)), contentType: 'application/octet-stream' }) : route.fulfill({ status: 404, body: '' }); });
     await p.goto(BASE + url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-    await p.waitForFunction(() => document.querySelector('.brs') && document.querySelector('.brs').__studio, null, { timeout: 120000 });
+    await p.waitForFunction(() => document.querySelector('.brs') && document.querySelector('.brs').__studio, null, { timeout: 120000 })
+      .catch(() => console.log(`[${id}] the studio did not open at ${url}: now at ${p.url()}`));
     await p.waitForTimeout(1200);
+    // no API runs behind this website: its "not answering" popup is closed, it is not what is looked at
+    const quiet = async () => { for (let k = 0; k < 4; k++) { const did = await p.evaluate(() => { for (const d of document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')) { const r = d.getBoundingClientRect(); if (!(r.width > 0) || !/not answering/i.test(d.innerText || '')) continue;
+        const b = [...d.querySelectorAll('button')].find((x) => /^close$/i.test((x.innerText || '').trim())); if (b) { b.click(); return true; } } return false; }).catch(() => false); if (!did) break; await p.waitForTimeout(500); } };
     const see = async (name) => {
-      await p.waitForTimeout(900);
+      await p.waitForTimeout(900); await quiet(); await p.waitForTimeout(300);
       const v = await p.evaluate(lookAt); seen[`${id}-${name}`] = v;
       console.log(`[${id}] LOOK ${name} step=${v.step}${v.wide ? ' · ' + v.wide : ''}`);
       for (const b of v.buttons) console.log(`[${id}]   ${b.faults.length ? 'FAULT' : 'ok   '} ${b.el} "${b.text}" at ${b.at.join(',')}${b.off ? ' (off)' : ''}${b.faults.length ? ' · ' + b.faults.join(' · ') : ''}`);
@@ -59,7 +64,7 @@ const lookAt = () => {
     const next = () => p.evaluate(() => { const b = [...document.querySelectorAll('[data-fnext]')].find((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.disabled; }); if (b) { b.click(); return (b.innerText || '').trim(); } return null; });
     const gone = (a, b, what) => { const A = seen[`${id}-${a}`], B = seen[`${id}-${b}`]; if (!A || !B) return;
       console.log(`[${id}] ${what}: gone ${JSON.stringify(A.parts.filter((x) => !B.parts.includes(x)))} · new ${JSON.stringify(B.parts.filter((x) => !A.parts.includes(x)))}`); };
-    return { p, ctx, see, next, gone };
+    return { p, ctx, see, next, gone, quiet };
   };
   const songReady = (p) => p.waitForFunction(() => /confirmed|double-checked|^Ready/.test(document.getElementById('s1st').textContent), null, { timeout: 300000 });
   const song = media.songs.find((s) => s.name === 'bhangra_dhol_98') || media.songs[0];
@@ -94,14 +99,15 @@ const lookAt = () => {
     await ctx.close();
   } catch (e) { console.log('[music] FAILED ' + e.message.split('\n')[0]); }
 
+  let look = null;
   // ---- 2. Copy a Reel on a phone: the Reel to copy is a small Reel made here (three clips under the song)
   try {
     const ref = path.join(OUT, 'reel-to-copy.webm'), c = media.clips.filter((x) => !x.short && !x.darkUntil).slice(0, 3).map((x) => path.join(MEDIA, x.file));
     const r = spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-t', '2', '-i', c[0], '-t', '2', '-i', c[1], '-t', '2', '-i', c[2], '-i', path.join(MEDIA, song.file),
       '-filter_complex', '[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]', '-map', '[v]', '-map', '3:a', '-t', '6', '-c:v', 'libvpx', '-b:v', '1200k', '-deadline', 'realtime', '-cpu-used', '8', '-c:a', 'libopus', ref], { stdio: 'inherit' });
     if (r.status !== 0) throw new Error('the Reel to copy could not be made');
-    const { p, ctx, see, next, gone } = await open('copy', '/create/copy');
-    await see('1-first');
+    const { p, ctx, see, next, gone, quiet } = await open('copy', '/create/copy'); look = see;
+    await see('1-first'); await quiet();
     const chooser = p.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
     console.log('[copy] pressed: ' + await next());
     const fc = await chooser;
@@ -117,7 +123,7 @@ const lookAt = () => {
       console.log(`[copy] ${sel} ${did}`); if (did === 'pressed') { await see(name); gone('4-clips-added', name, 'after ' + sel); }
     }
     await ctx.close();
-  } catch (e) { console.log('[copy] FAILED ' + e.message.split('\n')[0]); }
+  } catch (e) { console.log('[copy] FAILED ' + e.message.split('\n')[0]); if (look) await look('failed').catch(() => {}); }
 
   fs.writeFileSync(path.join(OUT, 'look.json'), JSON.stringify(seen, null, 1));
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify({ at: new Date().toISOString(), base: BASE, media, scenarios: [] }, null, 1));
