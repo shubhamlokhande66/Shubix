@@ -170,7 +170,7 @@ export function createHost(initial, io = {}){
     ES.musicKey = ES.song.key + (ES.secStart || ES.buf !== W ? '@' + ES.secStart.toFixed(2) + '+' + ES.buf.duration.toFixed(2) : '');
     applyAnalysis(r); loudness();
     ES.pos = 0; ES.baseBuf = ES.buf; ES.baseNorm = ES.normGain;
-    if(ES.sources.length) brain.makeEditNow();
+    if(ES.sources.length) brain.makeEdit();
   }
   /** `channels`: the song's sound, one Float32Array each; `mono`: their mix; `r`: its analysis */
   async function setSong(song){
@@ -185,6 +185,7 @@ export function createHost(initial, io = {}){
     const shs = clip.samples.map(s => s.sh).sort((a,b) => a - b), src = { removed: false, ...clip, shMed: shs[Math.floor(shs.length/2)] || 1, els: [{}, {}, {}] };
     ES.sources.push(src); return src;
   }
-  function makeReel(){ if(ES.buf && ES.sources.length) brain.makeEditNow(); return ES.edit; }
+  // makeEdit, as the website: the edit, then what follows a new edit (the opening words, the start of Undo)
+  function makeReel(){ if(ES.buf && ES.sources.length) brain.makeEdit(); return ES.edit; }
   return { brain, ES, values, sec, setSong, useSection, addClip, makeReel, account, runAi, aiBusy, setCaptions, addTemplate, addTtsAtPlayhead, exportChoose, exportPlan, exportOptions, exportFix: () => lockedUsed().forEach(x => x.fix()), lockedUsed };
 }

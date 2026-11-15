@@ -1085,12 +1085,17 @@ function sfxSynth(kind, sr){
 }
 function sfxEvents(){
   const out = ES.sfxList.map(x => ({ at: x.at, kind: x.kind }));
-  if(ES.au.sfx && ES.kind !== 'talk'){ let lastW = -9;
-    ES.edit.forEach((e, i) => { if(!i) return;
-      if(EH.WHOOSH_TR.includes(e.tr) && e.start - lastW > 0.8){ out.push({ at: Math.max(0, e.start - 0.2), kind: 'whoosh' }); lastW = e.start; }
-      else if((e.tr === 'flash' || e.tr === 'burn') && e.type === 'drop') out.push({ at: e.start, kind: 'boom' });
-      if(e.efx === 'snap' || (e.sp && e.sp.label === 'Freeze frame')) out.push({ at: e.start, kind: 'click' }); });
-    for(const o of ES.overlays) if(o.anim === 'pop' && !o.all && o.t0 > 0.05) out.push({ at: o.t0, kind: 'pop' }); }
+  // the automatic sounds, as an editor uses them: a boom on the drop, a whoosh into a whip or a swipe now and then (4 s
+  // apart at least), a click on a photo snap or a freeze, a pop on a text that pops in; at most one every 6 s of the
+  // Reel in all (a whoosh on every swipe is what made them sound home-made, so they were off until now)
+  if(ES.au.sfx && ES.kind !== 'talk' && ES.edit.length){
+    const len = ES.edit[ES.edit.length-1].end - ES.edit[0].start, cap = Math.max(2, Math.round(len/6)), t0 = ES.edit[0].start;
+    let n = 0, lastW = -9;
+    ES.edit.forEach((e, i) => { if(!i || n >= cap) return;
+      if(e.type === 'drop'){ out.push({ at: e.start, kind: 'boom' }); n++; lastW = e.start; }
+      else if(EH.WHOOSH_TR.includes(e.tr) && e.start - lastW >= 4){ out.push({ at: Math.max(0, e.start - 0.2), kind: 'whoosh' }); lastW = e.start; n++; }
+      if(n < cap && (e.efx === 'snap' || (e.sp && e.sp.label === 'Freeze frame'))){ out.push({ at: e.start, kind: 'click' }); n++; } });
+    for(const o of ES.overlays) if(n < cap && o.anim === 'pop' && !o.all && o.t0 > 0.05 && o.t0 < t0 + len){ out.push({ at: o.t0, kind: 'pop' }); n++; } }
   return out;
 }
 /* ---- voice changer (on the phone): deep, chipmunk, robot, radio, echo ---- */
