@@ -42,6 +42,14 @@ device, so the same Reel is made everywhere), an unused clip is tried against ei
 remembers which part holds each of its functions (`FE/mobile-app/engine/brain/index.ts`: that lookup was over a third
 of an edit's time).
 
+**In my order** (`seqSlots`, the same code in both engines): each clip gets its share of the Reel's time, not of its
+number of shots. The clips stay one after another, so this is where each clip ends among the song's cuts: the ends that
+leave every clip nearest its share (by its length, at most what its footage fills at 0.4x), and a drop's cut is kept as
+an end unless a clip would be left far from its share. Inside a fast part (`beatEdit`: a cut on every drum hit) the drop's
+own cut stays too. Measured on 12 real clips of 15 s and a 22 s song (136 BPM, a drop at 8.2 s), In my order, as it comes:
+before, the first clip held 7.3 s and five clips 0.6-0.7 s each, the drop had no cut, the review said 75; now the shots
+are 0.9-2.7 s, the drop is cut on, the review says 88.5 (`FE/mobile-app/tests/brain-edit.test.ts` keeps it so).
+
 The website writes each review to the Reel's log (Admin → Logs, step `review`) and keeps it in `root.__lastEditReview`.
 
 ## Shared editing primitives

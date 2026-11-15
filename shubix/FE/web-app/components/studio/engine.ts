@@ -270,9 +270,11 @@ function beatEdit(p, ai){
   if(!burst.length && !flick.length) return p;
   const inR = (t, R) => R.some(([a, b]) => t > a + 0.02 && t < b - 0.02);
   // the cut points: the plan's own, outside the bursts and flickers; every hit inside a burst; both ends of a flicker
-  let pts = p.slice(1).map(x => x.start).filter(t => !inR(t, burst) && !inR(t, flick));
+  // a drop's own cut stays where it is inside a burst (the hits beside it give way): an editor never misses the drop
+  const keep = p.slice(1).filter(x => x.type === 'drop' && inR(x.start, burst) && !inR(x.start, flick)).map(x => x.start);
+  let pts = p.slice(1).map(x => x.start).filter(t => !inR(t, burst) && !inR(t, flick)).concat(keep);
   const gap = Math.max(0.13, period/3);
-  burst.forEach(([a, b]) => { let last = -9; H.forEach(h => { const t = h - 1/30; if(t > a && t < b && t - last >= gap && !inR(t, flick)){ pts.push(t); last = t; } }); });
+  burst.forEach(([a, b]) => { let last = -9; H.forEach(h => { const t = h - 1/30; if(t > a && t < b && t - last >= gap && !inR(t, flick) && !keep.some(k => Math.abs(k - t) < gap)){ pts.push(t); last = t; } }); });
   flick.forEach(([a, b]) => { pts.push(a, b); });
   pts = pts.filter(t => t > 0.12 && t < dur - 0.15).sort((x,y)=>x-y).filter((t, i, A) => !i || t - A[i-1] >= 0.1);
   const of = t => p.find(x => t >= x.start - 1e-3 && t < x.end) || p[p.length-1];
@@ -3630,6 +3632,26 @@ function seqSlots(n){
   const sum = c => c.reduce((a,b)=>a+b,0);
   // how many shots each clip's footage fills: a short clip given more shows the same moment twice
   const shot = plan.length ? plan.reduce((a,s)=>a+s.end-s.start,0)/plan.length : 1, room = S.map(s => Math.max(1, Math.floor((s.dur - TAIL)/Math.max(0.2, shot))));
+  // Shots enough for every clip: each clip gets its share of the Reel's TIME, as an editor lays clips out (its share
+  // of the NUMBER of shots gave the first clip 7 s of a calm intro and a later one 0.6 s where the song cuts fast).
+  // The clips' shots stay one after another, so this is where each clip ends among the song's cuts: the ends that
+  // leave every clip nearest its share (a clip's footage at 0.4x is the most it fills), a drop's cut kept as an end
+  // unless that leaves a clip far from its share (an editor does not miss the drop).
+  if(S.length > 1 && n >= S.length && plan.length === n){
+    const pre = [0]; plan.forEach(s => pre.push(pre[pre.length-1] + s.end - s.start));
+    const T = pre[n], K = S.length, want = w.map(x => T*x/tot), capT = S.map(s => Math.max(0.3, (s.dur - TAIL)/0.4));
+    const cost = (j, a, b) => { const t = pre[b] - pre[a], d = t - want[j], over = Math.max(0, t - capT[j]), more = Math.max(0, b - a - room[j]);
+      return d*d/want[j] + over*over*4 + more*0.2 - (b < n && plan[b].type === 'drop' ? 1.5 : 0); };
+    const best = Array.from({ length: K + 1 }, () => new Array(n + 1).fill(Infinity)), from = Array.from({ length: K + 1 }, () => new Array(n + 1).fill(0));
+    best[0][0] = 0;
+    for(let j = 1; j <= K; j++) for(let b = j; b <= n - (K - j); b++) for(let a = j - 1; a < b; a++){
+      if(best[j-1][a] === Infinity) continue;
+      const c = best[j-1][a] + cost(j - 1, a, b); if(c < best[j][b]){ best[j][b] = c; from[j][b] = a; }
+    }
+    const out = new Array(n); let b = n;
+    for(let j = K; j >= 1; j--){ const a = from[j][b]; for(let i = a; i < b; i++) out[i] = j - 1; b = a; }
+    return out;   // shot i -> its clip
+  }
   const cnt = w.map((x, j) => Math.min(room[j], Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot))));   // every clip once while there are shots enough
   while(sum(cnt) > n){ const k = cnt.lastIndexOf(Math.max(...cnt)); cnt[k]--; }   // (fewer shots than clips: the last clips wait)
   while(sum(cnt) < n){ const free = cnt.some((c,j) => c < room[j]); let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b && (!free || c < room[j])){ b = r; k = j; } }); cnt[k]++; }

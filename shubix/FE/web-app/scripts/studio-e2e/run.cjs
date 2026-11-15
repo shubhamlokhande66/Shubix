@@ -136,6 +136,7 @@ async function scenario(browser, sc) {
       return { status: document.getElementById('s3st').textContent, sources: srcs,
         section: { start: x.start, len: x.len }, songStatus: document.getElementById('s1st').textContent, beatSource: (S.songR || {}).beatSource || null,
         beats: (S.beats || []).map((b) => +b.toFixed(4)),
+        plan: (S.plan || []).map((x) => ({ start: +x.start.toFixed(3), end: +x.end.toFixed(3), type: x.type })), songCuts: ((S.songR || {}).cuts || []).map((c, k) => ({ t: +c.toFixed(3), type: ((S.songR || {}).cutType || [])[k] })), parts: S.parts || null, mode: S.mode,
         edit: e.map((s) => ({ start: +s.start.toFixed(4), end: +s.end.toFixed(4), src: s.src, in: +(+s.in).toFixed(3), need: +((s.sp && s.sp.pos ? s.sp.pos(s.end - s.start) : s.end - s.start) * (s.scaleR || 1)).toFixed(3), type: s.type, tr: s.tr || 'hard', efx: s.efx || 'none' })),
         review: root.__lastEditReview || null,
         talk: S.talk ? { seconds: +S.talk.parts.reduce((q, x) => q + x.b - x.a, 0).toFixed(3), parts: S.talk.parts.length, detector: [...new Set((S.sources || []).map((x) => x.voice && x.voice.how))] } : null };
@@ -143,6 +144,8 @@ async function scenario(browser, sc) {
     step('reel made', { ms: editMs, shots: made.edit.length, status: made.status, clipsUsed: new Set(made.edit.map((s) => s.src)).size, clipsGiven: files.length,
       review: made.review ? { score: made.review.score, status: made.review.status, beatSync: made.review.metrics.beatSync, drops: made.review.metrics.drops, issues: made.review.issues.map((i) => i.code + (i.shot === undefined ? '' : '@' + i.shot)) } : null, ...(await long()) });
     rep.made = made;
+    fs.writeFileSync(path.join(OUT, `${sc.id}-made.json`), JSON.stringify(made));   // the edit, kept as soon as it is made
+    if (process.env.STOP_AFTER === 'made') { rep.ok = true; rep.stopped = 'after the Reel was made (STOP_AFTER=made)'; return rep; }
     if (sc.talk) {
       // against the phrases really spoken (make_talk.py): how much of the speech is in the Reel, how much of the long pauses
       let speech = 0, kept = 0, gaps = 0, gapsKept = 0;
