@@ -111,6 +111,7 @@ export const ROUTES: [string, () => Record<string, unknown>][] = [
   ["api/social/posts", () => require("../routes/api/social/posts/route")],
   ["api/social/posts/[id]", () => require("../routes/api/social/posts/[id]/route")],
   ["api/studio/broll", () => require("../routes/api/studio/broll/route")],
+  ["api/studio/broll/plan", () => require("../routes/api/studio/broll/plan/route")],
   ["api/studio/convert", () => require("../routes/api/studio/convert/route")],
   ["api/studio/convert/[id]", () => require("../routes/api/studio/convert/[id]/route")],
   ["api/studio/convert/[id]/file", () => require("../routes/api/studio/convert/[id]/file/route")],

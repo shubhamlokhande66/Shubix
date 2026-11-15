@@ -4734,7 +4734,7 @@ if(aiPicture){
   $('brbox').hidden = false;
   $('brstyle').innerHTML = aiPicture.styles.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
   if(aiPicture.styles.some(s => s.id === 'photo')) $('brstyle').value = 'photo';
-  $('brhdwrap').hidden = !aiPicture.hd;
+  $('brhdwrap').hidden = !aiPicture.hd; $('brollrow').hidden = false;
 }
 async function brollAdd(prompt, style, hd){
   if(!aiPicture) throw new Error('AI pictures are not available here.');
@@ -4752,6 +4752,36 @@ async function brollAdd(prompt, style, hd){
     return { id: L.id, t0: L.t0, t1: L.t1 };
   }catch(err){ tasks.fail('broll', (err && err.message) || 'The picture could not be made. Please try again.'); return null; }
 }
+// A Talking Reel's B-roll: what is said (its captions) in sentences; Shubix AI picks the moments a picture helps and
+// writes each picture (/api/studio/broll/plan), each is made (aiPicture) and laid over the speaker for up to 3 s with a
+// fade, as an editor cuts away to what is talked about. One tap; credits for the plan and each picture.
+async function brollAuto(){
+  if(!aiPicture){ notify('AI pictures are not available here.', 'err'); return; }
+  if(kind !== 'talk' || !talk){ notify('Pictures for what you say are for Talking Reels.'); return; }
+  if(!capWords || !capWords.length){ if(!capsOn) await setCaptions(true); if(!capWords || !capWords.length){ notify('The words could not be heard yet: captions first, then the pictures.', 'err'); return; } }
+  const segs = dubSegments(capWords).filter(s => s.end - s.start >= 1), n = Math.min(4, Math.max(1, Math.round(reelLen()/15)));
+  if(segs.length < 2){ notify('This talk is too short for pictures.'); return; }
+  tasks.start('brollauto', 'ai', 'Pictures for what you say', 'Choosing the moments…');
+  try{
+    const r = await apiFetch('/api/studio/broll/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: segs.slice(0, 80).map(s => ({ i: s.i, text: s.text.slice(0, 200) })), count: n }), signal: ac.signal });
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error((j.error && j.error.message) || ('The moments could not be chosen (' + r.status + ').'));
+    const picks = (j.picks || []).slice(0, n); let done = 0;
+    if(!picks.length) throw new Error('Shubix AI found no moment where a picture helps. Try again, or add one by hand (Layers).');
+    for(const [k, p] of picks.entries()){
+      const s = segs.find(x => x.i === p.i); if(!s) continue;
+      tasks.update('brollauto', 0.1 + 0.85*k/picks.length, 'Making picture ' + (k + 1) + ' of ' + picks.length + '…');
+      const made = await aiPicture.make(p.prompt, { style: p.style || 'photo', aspect, hd: false });
+      const before = layers.length; pos = Math.max(0, s.start); await layerAdd([made.file]);
+      if(layers.length <= before) continue;
+      const L = layers[layers.length - 1]; Object.assign(L, { x: 0.5, y: 0.5, s: 1, fin: 0.25, fout: 0.25, t0: +s.start.toFixed(2), t1: +Math.min(s.end, s.start + 3, reelLen()).toFixed(2), broll: true }); done++;
+    }
+    lyUI(); await prepLayers(pos); redrawFrame(); saveNow();
+    if(!done) throw new Error('The pictures could not be made. Please try again.');
+    tasks.done('brollauto', done + ' picture' + (done > 1 ? 's' : '') + ' added over what you say · each one in Layers');
+  }catch(err){ if(err && err.name === 'AbortError') return; tasks.fail('brollauto', (err && err.message) || 'The pictures could not be made. Please try again.'); }
+}
+$('brollauto').addEventListener('click', async () => { const b = $('brollauto'); b.disabled = true; try{ await brollAuto(); } finally{ b.disabled = false; } }, SIG);
 $('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; } }, SIG);
 $('lyedit').addEventListener('input', e => { const el = e.target, k = el.dataset && el.dataset.ly; if(!k) return; const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' ? el.value : +el.value; lySet(k, v); const o = el.parentElement.querySelector('output'); if(o && el.type !== 'checkbox') o.textContent = lyFmt(k, v); }, SIG);
 $('lyedit').addEventListener('click', e => { const t = e.target.closest('button'); if(!t) return; const L = layers[lySel]; if(!L) return;
@@ -5037,6 +5067,7 @@ async function aiActions(list){
       else if(a.do === 'music'){ const p = {}; if(Number.isFinite(+a.volume)) p.mvol = Math.max(0, Math.min(1, +a.volume)); if(Number.isFinite(+a.fadeIn)) p.mfin = Math.max(0, +a.fadeIn);
         if(Number.isFinite(+a.fadeOut)){ p.mfout = Math.max(0, +a.fadeOut); p.mfoutManual = true; } auSet(p); clipMixKey = ''; await ensureMix(); done++; }
       else if(a.do === 'voicefx'){ const b = $('vfx').querySelector('[data-f="' + CSS.escape(String(a.fx)) + '"]'); if(b){ b.click(); done++; } }
+      else if(a.do === 'broll' && aiPicture && kind === 'talk' && !pics){ pics = 9; await brollAuto(); done++; }
       else if(a.do === 'picture' && aiPicture && a.prompt && pics < 2){ pics++; pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); if(await brollAdd(a.prompt, aiPicture.styles.some(s => s.id === a.style) ? a.style : 'photo', false)) done++; }
       else if(a.do === 'voiceover' && tts && tts.voices.length && a.text){ pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); await addTtsAtPlayhead(a.text, a.voice || tts.voices[0].key); done++; }
       else if(a.do === 'sound' && SFX_NAMES[a.kind] && buf){ sfxList.push({ id: ++sfxSeq, at: +Math.max(0, Math.min(reelLen(), +a.at || 0)).toFixed(2), kind: a.kind }); sfxUI(); clipMixKey = ''; await ensureMix(); done++; }

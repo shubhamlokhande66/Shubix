@@ -181,6 +181,7 @@ export const ACTIONS = {
   beatmark: `your own beat markers (a cut can land on each, as on the beats of the song): {"do":"beatmark","at":[seconds of the Reel],"clear":true|false}`,
   template: `a ready-made animated title (several texts that come in together, each with its own style, font, entrance and loop): {"do":"template","name":"${Object.keys(TEXT_TEMPLATES).join("|")}","words":["<main words>","<second words or empty>"],"at":seconds of the Reel,"len":seconds}`,
   voiceover: `a spoken voice-over (text to speech) at a time of the Reel: {"do":"voiceover","text":"<what is said>","at":seconds}`,
+  broll: `pictures over a Talking Reel for what is said (B-roll: Shubix picks the moments and makes the pictures; only when the creator asks for pictures or B-roll in a talking video; credits): {"do":"broll"}`,
   picture: `a new picture made by AI (B-roll: shown on the whole frame for 3 s, e.g. what the person is talking about; only when the creator asks for a picture or B-roll; at most 2 per answer, each costs a credit): {"do":"picture","prompt":"<what the picture shows, in English, no text in it>","at":seconds,"style":"photo|cinematic|anime|watercolor|comic|classical"}`,
 } as const;
 const Action = z.object({ do: z.preprocess(lower, z.string()) }).passthrough();
