@@ -57,9 +57,24 @@ const posts = async () => (await db()).collection<PostDoc>("social_posts");
 const COOKIE = "s_oauth";
 const go = (to: string, cookie?: string) => new Response(null, { status: 302, headers: { Location: to, "Cache-Control": "no-store", ...(cookie ? { "Set-Cookie": cookie } : {}) } });
 const stateCookie = (v: string, age: number) => `${COOKIE}=${v}; Max-Age=${age}; Path=/api/social; HttpOnly; SameSite=Lax${settings.cookieSecure ? "; Secure" : ""}`;
-const back = (p: Platform, result: string) => go(`${base()}/reels?tab=saved&social=${p}&result=${encodeURIComponent(result)}`, stateCookie("", 0));
+/** back to My Reels with the result: the website's page, or the Android app's (its own link, `shubix://reels`) */
+const back = (p: Platform, result: string, app = false) => go(`${app ? "shubix://reels" : `${base()}/reels`}?tab=saved&social=${p}&result=${encodeURIComponent(result)}`, stateCookie("", 0));
 
-export function connect(p: Platform) {
+/** The Android app connects in the phone's browser, where nobody is signed in: the app (signed in, its token) asks for
+ * this link first. It carries who is connecting, sealed, for 10 minutes. */
+export function connectLink(p: Platform) {
+  const uid = currentUser();
+  if (settings.authEnabled && !uid) throw new AppError("Sign in first.", { code: "AUTH_REQUIRED", status: 401 });
+  if (!ready(p)) throw new AppError(`${p === "youtube" ? "YouTube" : "Instagram"} is not connected on this server yet.`, { code: "SOCIAL_OFF", status: 404 });
+  return { url: `${base()}/api/social/${p}/connect?t=${encodeURIComponent(seal(JSON.stringify({ uid: uid ?? "", exp: Date.now() + 600_000 })))}` };
+}
+const ticketUser = (sealed: string): string | null => {
+  try { const t = JSON.parse(open(sealed)) as { uid?: string; exp?: number }; return typeof t.uid === "string" && Number(t.exp) > Date.now() ? t.uid : null; } catch { return null; }
+};
+
+export function connect(p: Platform, req?: Request) {
+  const t = req ? new URL(req.url).searchParams.get("t") : null, who = t ? ticketUser(t) : null;
+  if (t && who === null) return back(p, "expired", true);
   if (!ready(p)) throw new AppError(`${p === "youtube" ? "YouTube" : "Instagram"} is not connected on this server yet.`, { code: "SOCIAL_OFF", status: 404 });
   const state = crypto.randomBytes(18).toString("base64url");
   const url = p === "youtube"
@@ -67,7 +82,7 @@ export function connect(p: Platform) {
       scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly" })}`
     : `https://www.instagram.com/oauth/authorize?${new URLSearchParams({ client_id: settings.instagramAppId, redirect_uri: callbackUrl(p), response_type: "code", state,
       scope: "instagram_business_basic,instagram_business_content_publish" })}`;
-  return go(url, stateCookie(`${p}.${state}`, 600));
+  return go(url, stateCookie(`${p}.${state}${t ? `.${t}` : ""}`, 600));   // (the app's ticket rides along to the callback)
 }
 
 type Fetch = typeof fetch;
@@ -81,19 +96,19 @@ async function json<T>(r: Response, what: string): Promise<T> {
 }
 
 export async function callback(p: Platform, req: Request, f: Fetch = fetch) {
-  const q = new URL(req.url).searchParams, [cp, state] = (/(?:^|;\s*)s_oauth=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? "").split(".");
-  if (cp !== p || !state || q.get("state") !== state) return back(p, "state");
-  if (q.get("error") || !q.get("code")) return back(p, "cancelled");
-  if (settings.authEnabled && !currentUser()) return back(p, "signin");
+  const q = new URL(req.url).searchParams, [cp, state, ...rest] = decodeURIComponent(/(?:^|;\s*)s_oauth=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? "").split(".");
+  const ticket = rest.join("."), app = !!ticket, who = app ? ticketUser(ticket) : currentUser() ?? null;
+  if (cp !== p || !state || q.get("state") !== state) return back(p, "state", app);
+  if (q.get("error") || !q.get("code")) return back(p, "cancelled", app);
+  if (app ? who === null : settings.authEnabled && !who) return back(p, app ? "expired" : "signin", app);
   try {
     const acc = p === "youtube" ? await youtubeTokens(q.get("code")!, f) : await instagramTokens(q.get("code")!, f);
-    const col = await accounts();
-    await col.deleteMany({ platform: p });
-    await col.insertOne({ _id: new ObjectId(), platform: p, ...acc, connectedAt: new Date() });
-    return back(p, "ok");
+    const keep = async () => { const col = await accounts(); await col.deleteMany({ platform: p }); await col.insertOne({ _id: new ObjectId(), platform: p, ...acc, connectedAt: new Date() }); };
+    await (app && who ? withUser(who, keep) : keep());
+    return back(p, "ok", app);
   } catch (e) {
     console.warn(`social ${p} connect:`, (e as Error).message);
-    return back(p, "failed");
+    return back(p, "failed", app);
   }
 }
 

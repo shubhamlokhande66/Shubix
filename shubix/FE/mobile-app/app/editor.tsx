@@ -9,7 +9,9 @@ import { errorMessage } from "@mobile/api-client";
 import { clipDuration, projectDuration, splitClip, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
 import { evaluateSpeedRamp, recordEdit, slipClip, stepEditHistory } from "@mobile/video-engine";
 import { getProject, keepPickedAssets, keepPickedFile, saveProject, setNewReelSeed } from "../lib/projects";
+import * as FileSystem from "expo-file-system/legacy";
 import { pickSong } from "../lib/songs";
+import { mobileApi } from "../lib/api";
 import { useLocked } from "../lib/data";
 import { AskShubix, styleFromWords } from "../components/organisms/AskShubix";
 import { ExportScreen } from "../components/organisms/ExportScreen";
@@ -380,6 +382,25 @@ export default function EditorScreen() {
       tell(words("Overlay layer added"), "success");
     } catch (e) { tell(errorMessage(e), "danger"); }
   };
+  // an AI picture (B-roll): a few words → the server makes the picture (/api/studio/broll, credits), kept on the phone and
+  // put on the whole frame at the playhead, as the website's "AI picture"
+  const [picDraft, setPicDraft] = useState(""), [picBusy, setPicBusy] = useState(false);
+  const addAiPicture = async () => {
+    if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Overlay layers need a Reel made by Shubix Studio."), "info");
+    const prompt = picDraft.trim();
+    if (prompt.length < 3) return tell(words("Describe the picture in a few words."), "info");
+    setPicBusy(true);
+    try {
+      const made = await mobileApi.aiPicture(prompt), uri = `${FileSystem.documentDirectory}ai-picture-${Date.now()}.jpg`;
+      await FileSystem.writeAsStringAsync(uri, made.image.split(",")[1] ?? "", { encoding: FileSystem.EncodingType.Base64 });
+      await engine.addLayer(uri, "AI picture.jpg");
+      const list = await refreshStudioLayers(), index = Math.max(0, list.length - 1);
+      setStudioLayerIndex(index); await engine.tool("layerSelect", { index });
+      for (const [key, value] of [["x", 0.5], ["y", 0.5], ["s", 1], ["fin", 0.25], ["fout", 0.25]] as const) await engine.tool("layerSet", { key, value });
+      setPicDraft(""); tell(words("AI picture added"), "success");
+    } catch (e) { tell(errorMessage(e), "danger"); }
+    setPicBusy(false);
+  };
   const studioLayerAction = async (op: string, args: Record<string, unknown> = {}) => {
     if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Layer editing needs a Reel made by Shubix Studio."), "info");
     try {
@@ -660,6 +681,9 @@ export default function EditorScreen() {
       </View>;
       case "layers": return <View className="gap-2">
         <Button full icon="image" title={words("Add photo / video layer")} onPress={() => void addStudioLayer()} />
+        <TextInput value={picDraft} onChangeText={setPicDraft} maxLength={400} multiline placeholder={words("AI picture: describe it (a chai stall in the rain at night…)")} placeholderTextColor={look.muted}
+          className="min-h-[64px] rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground" />
+        <Button full variant="secondary" icon="sparkle" loading={picBusy} disabled={picBusy} title={words("Make AI picture and add it here")} onPress={() => void addAiPicture()} />
         <Text className="text-[11px] leading-[16px] text-muted">{words("Layers are composited by the Studio renderer for export. The Android preview currently shows the base shot and text overlays; complex layer blends and masks are visible in the final Studio render.")}</Text>
         {studioLayers.length > 0 && <>
           <Label>Overlay layers</Label>

@@ -71,6 +71,23 @@ export function wavOf(buf: { length: number; sampleRate: number; numberOfChannel
   return out;
 }
 
+/** A WAV file's sound as one channel of samples (16-bit PCM, as the server's AI voices come: /api/studio/speak). */
+export function pcmOfWav(bytes: ArrayBuffer): { pcm: Float32Array; sr: number } {
+  const v = new DataView(bytes), tag = (o: number) => String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3));
+  if (bytes.byteLength < 44 || tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new Error("The voice could not be read. Please try again.");
+  let ch = 1, sr = 24000, bits = 16, at = -1, size = 0;
+  for (let o = 12; o + 8 <= bytes.byteLength;) {
+    const id = tag(o), n = v.getUint32(o + 4, true);
+    if (id === "fmt ") { ch = v.getUint16(o + 10, true) || 1; sr = v.getUint32(o + 12, true) || sr; bits = v.getUint16(o + 22, true) || 16; }
+    if (id === "data") { at = o + 8; size = Math.min(n, bytes.byteLength - at); break; }
+    o += 8 + n + (n & 1);
+  }
+  if (at < 0 || bits !== 16) throw new Error("The voice could not be read. Please try again.");
+  const frames = Math.floor(size / (2 * ch)), pcm = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) { let s = 0; for (let c = 0; c < ch; c++) s += v.getInt16(at + (i * ch + c) * 2, true); pcm[i] = s / ch / 32768; }
+  return { pcm, sr };
+}
+
 export function createNativeEngine(io: NativeIo) {
   const make = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
   let host = make(), signedIn = false;
@@ -109,8 +126,22 @@ export function createNativeEngine(io: NativeIo) {
     if (!res.ok) throw new Error(await res.text());
     return (await res.json() as (string | null)[]).map((image, i) => image ? { t: +ts[i].toFixed(2), image } : null).filter(Boolean);
   }
-  /** the phone's own voice speaks: its samples and rate (SystemVoice.kt) */
+  // the server's AI voices (OpenAI, Gemini: /api/studio/speak, 1 credit a piece), offered after the phone's own languages
+  let aiVoices: { key: string; label: string; lang: string }[] | null = null;
+  async function voicesNow() {
+    if (!aiVoices) try {
+      const r = await apiFetch("/api/studio/speak"), j = (r.ok ? await r.json() : {}) as { available?: boolean; voices?: { key: string; label: string }[] };
+      aiVoices = j.available ? (j.voices ?? []).map((x) => ({ key: x.key, label: `AI · ${x.label}`, lang: "AI voice" })) : [];
+    } catch { return TTS_VOICES; }   // (not reached now: asked again the next time the list is opened)
+    return [...TTS_VOICES, ...aiVoices];
+  }
+  /** the phone's own voice speaks: its samples and rate (SystemVoice.kt); an AI voice ("openai:nova") comes from the server */
   async function speak(text: string, voice: string) {
+    if (voice.includes(":")) {
+      const r = await apiFetch("/api/studio/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})) as { error?: { message?: string } }; throw new Error(j.error?.message || (r.status === 402 ? "AI voices are part of the Editor and Pro plans, or use credits." : "The AI voice could not be made. Please try again.")); }
+      return pcmOfWav(await r.arrayBuffer());
+    }
     const res = await io.fetch(url("speak", `&v=${encodeURIComponent(voiceLanguage(voice))}`), { method: "POST", body: text });
     if (!res.ok) throw new Error(await res.text());
     return { pcm: new Float32Array(await res.arrayBuffer()), sr: Number((res as unknown as { headers?: { get(k: string): string | null } }).headers?.get("X-Sample-Rate")) || 22050 };
@@ -313,7 +344,7 @@ export function createNativeEngine(io: NativeIo) {
     layerSelect: async (a) => ({ ok: !!(await host.brain.lySelect(Number(a.index))), selected: Number(a.index) }),
     layerSet: (a) => { host.brain.lySet(String(a.key), a.value); return { ok: true }; },
     layerDelete: () => ({ ok: host.brain.lyDelete() }),
-    ttsVoices: () => TTS_VOICES,
+    ttsVoices: () => voicesNow(),
     ttsAdd: (a) => host.addTtsAtPlayhead(String(a.text || ""), String(a.voice || "")),
     ttsClear: () => ({ ok: host.brain.clearTts() }),
     captions: (a) => host.setCaptions(!!a.enabled, a.language === undefined ? undefined : String(a.language), a.translation === undefined ? undefined : String(a.translation)),

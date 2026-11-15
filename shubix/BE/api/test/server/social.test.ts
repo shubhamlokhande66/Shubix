@@ -50,3 +50,22 @@ describe("posting", () => {
     expect(S.PostIn.parse({ reelId: "665f1c2b9d3e4a0012345678", platforms: ["instagram", "youtube"], at: "2026-12-01T10:00:00.000Z" }).at).toBe("2026-12-01T10:00:00.000Z");
   });
 });
+
+describe("connecting from the Android app (the phone's browser, where nobody is signed in)", () => {
+  it("the app's link carries who connects; the answer goes back to the app", async () => {
+    const { url } = S.connectLink("youtube"), link = new URL(url);
+    expect(link.pathname).toBe("/api/social/youtube/connect");
+    const t = link.searchParams.get("t")!;
+    expect(t).not.toContain("uid");                                  // sealed
+    const r = S.connect("youtube", new Request(url)), to = new URL(r.headers.get("location")!);
+    expect(to.host).toBe("accounts.google.com");
+    const cookie = r.headers.get("set-cookie")!.split(";")[0];
+    expect(cookie).toBe(`s_oauth=youtube.${to.searchParams.get("state")}.${t}`);
+    const no = await S.callback("youtube", new Request(`https://shubix.in/api/social/youtube/callback?error=access_denied&state=${to.searchParams.get("state")}`, { headers: { cookie } }));
+    expect(no.headers.get("location")).toBe("shubix://reels?tab=saved&social=youtube&result=cancelled");
+  });
+  it("a changed or old link is refused, back in the app", () => {
+    const r = S.connect("instagram", new Request("https://shubix.in/api/social/instagram/connect?t=abc.def.ghi"));
+    expect(r.headers.get("location")).toBe("shubix://reels?tab=saved&social=instagram&result=expired");
+  });
+});
