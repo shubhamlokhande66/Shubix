@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import sharp from "sharp";
 import { z } from "zod";
 import { AppError } from "../core/errors";
+import { getProvider, type ManagedProvider } from "../ai";
 import { chargeOnce, refund } from "../credits";
 import { ART_STYLES, flux, freeAi, paid, paidAi } from "./story";
 
@@ -52,4 +53,30 @@ export async function makeBroll(p: BrollInput, makers?: { free?: Maker | null; h
     }
   }
   throw new AppError(`The picture could not be made right now. Please try again. ${errors.join(" · ").slice(0, 160)}`, { code: "BROLL_FAILED", status: 502 });
+}
+
+// ------------------------------------------------------------------ pictures for what is said (a Talking Reel's B-roll)
+export const BrollPlanIn = z.object({
+  lines: z.array(z.object({ i: z.number().int().min(0).max(999), text: z.string().trim().min(1).max(200) })).min(1).max(80),
+  count: z.number().int().min(1).max(6).default(3),
+});
+const Plan = z.object({ picks: z.array(z.object({ i: z.number().int(), prompt: z.string().max(300), style: z.string().max(20).optional() })).max(10) });
+const PLAN_SYSTEM = `You are the editor of a talking video (a vlog, a tutorial, a review). You get its sentences, numbered. Choose the sentences where a picture of what is said would help the viewer (a thing, a place, a food, an action, a feeling shown as a scene), as B-roll that covers the speaker for a moment. Not the first sentence (the speaker's face hooks the viewer), never two sentences in a row, spread over the video. For each, write the picture: a short English prompt for an image generator, concrete, no text or letters in the picture, Indian context when the speech suggests it. style: photo (default), cinematic, anime, watercolor or comic.`;
+/** Which sentences get a picture, and what each picture shows. `provider` is the AI (tests give their own). */
+export async function planBroll(p: z.infer<typeof BrollPlanIn>, provider: () => ManagedProvider = () => getProvider("studio_broll")) {
+  const c = await chargeOnce("studio_chat_small", crypto.randomUUID(), "Pictures for what is said");
+  try {
+    const out = await provider().structured(PLAN_SYSTEM, `Pictures wanted: ${p.count}\n\n${p.lines.map((l) => `#${l.i} ${l.text}`).join("\n")}`, Plan, { task: "studio_broll", temperature: 0.4, maxOutputTokens: 1200 });
+    const ids = new Set(p.lines.map((l) => l.i)), first = p.lines[0].i, styles = new Set(ART_STYLES.map((s) => s.id));
+    const picks: { i: number; prompt: string; style: string }[] = [];
+    for (const x of out.picks) {
+      if (!ids.has(x.i) || x.i === first || !x.prompt.trim() || picks.some((y) => Math.abs(y.i - x.i) < 2)) continue;   // known, not the opening, never two in a row
+      picks.push({ i: x.i, prompt: x.prompt.trim().slice(0, 300), style: styles.has(x.style ?? "") ? x.style! : "photo" });
+      if (picks.length >= p.count) break;
+    }
+    return { picks: picks.sort((a, b) => a.i - b.i), charged: c.taken };
+  } catch (e) {
+    if (c.taken) await refund(c.ref);
+    throw e;
+  }
 }

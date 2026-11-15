@@ -610,3 +610,12 @@ spoken, the talk rebuilt with the dub; `tests/studio-dub.test.ts` (sentences, 1.
 
 Checked in Chrome on real clips: a music Reel of 6 clips opened on "WAIT FOR IT 🔥" (0-2.2 s) with sound effects on; a
 Talking Reel had its captions on by itself (11 lines). The Android engine runs the same code (`tests/tools.test.ts`).
+
+## Pictures for what you say (a Talking Reel's B-roll)
+
+Talking Reel → Captions → "Add pictures for what you say" (shown when the server makes AI pictures), or ask Shubix AI's
+chat for pictures / B-roll. What is said (the captions, in sentences) goes to `/api/studio/broll/plan`: Shubix AI picks
+the sentences a picture helps (never the opening one, never two in a row; one picture per 15 s of the Reel, at most 4)
+and writes each picture; each is made (`/api/studio/broll`) and laid over the speaker from that sentence for up to 3 s,
+full frame, fading in and out, as a layer the creator can move, trim or delete. Credits: the plan (1) and each picture.
+Checked in Chrome with the API stood in for: a 10.5 s talk got one picture at 3.8-6.1 s, no page errors.

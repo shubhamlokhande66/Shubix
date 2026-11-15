@@ -32,3 +32,20 @@ describe("AI pictures", () => {
     await expect(makeBroll(BrollIn.parse({ prompt: "a red scooter" }), { free: async () => { throw new Error("down"); } })).rejects.toMatchObject({ code: "BROLL_FAILED" });
   });
 });
+
+describe("pictures for what is said (a Talking Reel's B-roll)", () => {
+  const lines = ["Hello friends, welcome back.", "Today I made masala chai at home.", "First boil the water with ginger.", "Then add the tea leaves and milk.", "My grandmother taught me this in Pune.", "Try it and tell me."].map((text, i) => ({ i, text }));
+  const fake = (picks: unknown) => () => ({ structured: async (_s: string, _u: string, schema: { parse: (v: unknown) => unknown }) => schema.parse({ picks }) }) as never;
+  it("keeps the AI's picks that are allowed: known, not the opening, never two in a row, as many as asked", async () => {
+    const { planBroll, BrollPlanIn } = await import("../../src/server/studio/broll");
+    const r = await planBroll(BrollPlanIn.parse({ lines, count: 2 }), fake([
+      { i: 0, prompt: "a person waving" }, { i: 1, prompt: "a cup of masala chai, steam" }, { i: 2, prompt: "ginger in boiling water" },
+      { i: 9, prompt: "unknown" }, { i: 4, prompt: "an old Pune house", style: "watercolor" }, { i: 5, prompt: "more" }]));
+    expect(r.picks).toEqual([{ i: 1, prompt: "a cup of masala chai, steam", style: "photo" }, { i: 4, prompt: "an old Pune house", style: "watercolor" }]);
+  });
+  it("an unknown style becomes photo; empty prompts are dropped", async () => {
+    const { planBroll, BrollPlanIn } = await import("../../src/server/studio/broll");
+    const r = await planBroll(BrollPlanIn.parse({ lines, count: 3 }), fake([{ i: 2, prompt: "  " }, { i: 3, prompt: "milk poured into tea", style: "vaporwave" }]));
+    expect(r.picks).toEqual([{ i: 3, prompt: "milk poured into tea", style: "photo" }]);
+  });
+});
