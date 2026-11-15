@@ -174,7 +174,8 @@ function CreateFlowScreen() {
     if (await readClips(old.media, old.song)) { await engine.keptOldReel().catch(() => undefined); setStep("clips"); router.push({ pathname: "/editor", params: { id: old.id } }); }
   }
   async function addMedia() {
-    const got = await pickInOrder({ kind: photos ? "image" : "video", limit: Math.max(1, 30 - media.length) }); // in the order tapped ("In my order")
+    // a Beat Reel takes videos and photos together (each photo a shot); the Photos tab keeps to photos
+    const got = await pickInOrder({ kind: photos ? "image" : "both", limit: Math.max(1, 30 - media.length) }); // in the order tapped ("In my order")
     if (!got) return;
     // the very same file twice: out at once, before any work on it
     const keyOf1 = (m: ImagePicker.ImagePickerAsset) => m.assetId || m.uri, seen = new Set(media.map(keyOf1));

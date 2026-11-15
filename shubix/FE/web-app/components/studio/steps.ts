@@ -19,7 +19,10 @@ export function initSteps(root: HTMLElement): () => void {
   // Music Reel with no song: the clips' own sound becomes the song (or, when people talk in them, a talking Reel)
   let clipSound = false, clipSoundAsked = false;
   const vfile = $("vfile") as HTMLInputElement;
-  const VIDEO_ACCEPT = vfile.accept;
+  // videos and photos together, in every kind of Reel: a photo becomes a short moving shot (photoClip) beside the videos
+  const IMAGES = "image/*,.jpg,.jpeg,.png,.webp,.heic";
+  const VIDEO_ACCEPT = `video/*,.mov,.mp4,.m4v,${IMAGES}`;   // (not read from the input: the studio can start twice on a page)
+  vfile.accept = VIDEO_ACCEPT;
 
   const press = (which: "music" | "talk" | "photo" | "copy" | null) => {
     root.querySelectorAll<HTMLButtonElement>("#kind button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === which)));
@@ -28,7 +31,7 @@ export function initSteps(root: HTMLElement): () => void {
   };
   const setPhoto = (on: boolean) => {
     root.classList.toggle("photomode", on);
-    vfile.accept = on ? "image/*,.jpg,.jpeg,.png,.webp,.heic" : VIDEO_ACCEPT;
+    vfile.accept = on ? `${IMAGES},video/*,.mov,.mp4,.m4v` : VIDEO_ACCEPT;   // photos first, videos too
     const h = $("s2").querySelector("h2")!, st = $("s2st");
     const idle = (t: string) => /^(Several clips or one long video|Add your photos.*)$/.test(t);
     if (on) {
@@ -92,16 +95,19 @@ export function initSteps(root: HTMLElement): () => void {
   // photos: turn them into short moving shots, then hand them to the engine as clips
   let feeding = false;
   const feed = async (list: File[]) => {
-    const imgs = list.filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
-    const rest = list.filter((f) => !imgs.includes(f));
-    const out: File[] = [...rest];
+    const isImg = (f: File) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+    const imgs = list.filter(isImg);
+    // in the order they were chosen, videos and photos mixed ("In my order" plays them so)
+    const out: File[] = [];
     const st = $("s2st");
-    for (let i = 0; i < imgs.length; i++) {
-      st.textContent = `Turning photo ${i + 1} of ${imgs.length} into a moving shot…`;
+    let k = 0;
+    for (const f of list) {
+      if (!isImg(f)) { out.push(f); continue; }
+      st.textContent = `Turning photo ${++k} of ${imgs.length} into a moving shot…`;
       try {
-        out.push(await photoClip(imgs[i]));
+        out.push(await photoClip(f));
       } catch {
-        st.textContent = `${imgs[i].name} could not be read. Use JPG, PNG or WEBP.`;
+        st.textContent = `${f.name} could not be read. Use JPG, PNG or WEBP.`;
       }
     }
     if (!out.length) return;

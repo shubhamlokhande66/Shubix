@@ -637,3 +637,11 @@ your Reel in 4 s… Tap anywhere to wait") and presses Generate (computers) or M
 `autoAt`). Everything Generate asks still comes (Shubix AI's price, sign-in, too long a clip set). A tap anywhere during
 the countdown waits: the creator is adding or changing something and presses Generate when done; it is not offered
 again on that page. Checked in Chrome: no tap -> Generate pressed (computer and phone screens); a tap -> not pressed.
+
+## Videos and photos together
+
+Every kind of Reel takes videos and photos in one go (`steps.ts`: the clip picker accepts both; Photo Reel lists photos
+first). Each photo becomes a 3 s moving shot (`photoClip`, a slow push-in, made on the device) and takes its place in
+the order the files were chosen, so "In my order" plays them as picked. The Android app's Beat Reel picker takes both
+too (its Photos tab keeps to photos). Checked in Chrome: 2 videos and 2 photos, chosen video, photo, video, photo ->
+4 shots in that order, quality 90/100. Android: not run on a phone.
