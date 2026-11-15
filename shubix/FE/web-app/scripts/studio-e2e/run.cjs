@@ -64,6 +64,8 @@ async function scenario(browser, sc) {
         const vis = (el) => { const r = el.getBoundingClientRect(), st = getComputedStyle(el); return r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight && st.visibility !== 'hidden' && st.display !== 'none'; };
         for (const d of [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis)) {
           const text = d.innerText.replace(/\s+/g, ' ').slice(0, 160);
+          // the answer to this check's own "Pop out the subject" on clips that have none (one colour each): read, then closed
+          if (/No shot has one clear subject|could not be cut out/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^ok$/i.test(x.innerText.trim())); if (b) { b.click(); return 'OK · ' + text.slice(0, 60); } }
           if (/not answering right now/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^close$/i.test(x.innerText.trim())); if (b) { b.click(); return 'Close · ' + text.slice(0, 60); } }
           // too little good video for the song: the shorter Reel Shubix offers is taken (not "Add clips")
           if (/Not enough clips/i.test(text)) { const no = d.querySelector('#cconfno'); if (no && vis(no)) { const t = no.innerText.trim(); no.click(); return t + ' · ' + text.slice(0, 60); } }
