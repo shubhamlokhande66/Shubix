@@ -4,6 +4,8 @@
 // measure. Nothing here is a guess about the page: a step that cannot be done is reported with what the page showed.
 //   BASE=http://localhost:3001 MEDIA=<make-media.mjs out> OUT=<folder> node run.cjs
 // PLAYWRIGHT=<path to playwright or playwright-core> and CHANNEL=chrome (the installed Chrome) can be set.
+// how long the Reel may take to open after Generate (OPEN_MIN, default 5 minutes; a slow machine reading many clips needs more)
+const OPEN_TRIES = Math.round(Number(process.env.OPEN_MIN || 5) * 30);
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require(process.env.PLAYWRIGHT || 'playwright');
@@ -117,12 +119,12 @@ async function scenario(browser, sc) {
     await p.evaluate((id) => document.getElementById(id).click(), GEN);
     // what comes after Generate is watched and said, popup by popup, until the Reel can be played
     const tGen = now(); let opened = false;
-    for (let k = 0; k < 150 && !opened; k++) {
+    for (let k = 0; k < OPEN_TRIES && !opened; k++) {
       await p.waitForTimeout(2000); await settle();
       opened = (await openDialogs()).filter((t) => !/Crafting your Reel/.test(t)).length === 0 && await p.evaluate(() => { const pl = document.getElementById('play'), r = pl && pl.getBoundingClientRect(); return !!pl && !pl.disabled && r.width > 0 && r.height > 0 && (document.querySelector('.brs').__studio.edit || []).length > 0; });
       if (!opened && (k < 6 || k % 10 === 0)) { const v = await see('after-generate-' + (k * 2) + 's'); if (k === 2 || (v && v.dialogs.length && k < 12)) await shot('after-generate-' + (k * 2) + 's'); }
     }
-    if (!opened) { await see('reel-not-opened'); throw new Error('the Reel did not open within 5 minutes of Generate'); }
+    if (!opened) { await see('reel-not-opened'); throw new Error(`the Reel did not open within ${OPEN_TRIES * 2 / 60} minutes of Generate`); }
     const editMs = readMs + (now() - tGen);
     step('reel opened', { msAfterGenerate: now() - tGen, popups: answered.slice() });
     await see('reel-opened'); await shot('reel-opened');

@@ -22,7 +22,7 @@ function snap(t, w){
    // the template's kind of Reel (car, wedding...): with Shubix AI its trend leads the AI's guide
 // Style: Auto follows the music as analysed; Smooth keeps fewer, longer shots on the strong beats; Fast cuts on every beat.
 // (a copied Reel keeps its short shots: no flash-cut merging; another song puts them on its beats, copyPlan)
-function adaptPlan(){ return EH.copyTimed() ? copyPlanTimed() : ES.mode === 'copy' && ES.refProfile ? endWell(adaptPlan0()) : beatEdit(endWell(noFlashCuts(adaptPlan0()))); }
+function adaptPlan(){ return EH.copyTimed() ? copyPlanTimed() : ES.mode === 'copy' && ES.refProfile ? endWell(adaptPlan0()) : paceWell(beatEdit(endWell(noFlashCuts(adaptPlan0())))); }
 /* ---- the beat edit of car, bike and sports Reels (measured on such Reels: cuts land on the drum hits, 88% of them) ----
  * Where the song's strong drum hits are dense (5 a second or more, for 2 s or longer: a fast verse, a dhol or snare roll,
  * a build-up) a cut on every hit, never closer than a third of a beat; where it stays loud with no strong hits for 1.5 s
@@ -52,7 +52,7 @@ function beatEdit(p, ai){
   // a drop's own cut stays where it is inside a burst (the hits beside it give way): an editor never misses the drop
   const keep = p.slice(1).filter(x => x.type === 'drop' && inR(x.start, burst) && !inR(x.start, flick)).map(x => x.start);
   let pts = p.slice(1).map(x => x.start).filter(t => !inR(t, burst) && !inR(t, flick)).concat(keep);
-  const gap = Math.max(0.13, ES.period/3);
+  const gap = Math.max(0.3, ES.period/2);   // creators' shortest shots: about 0.33 s (a third of a beat made 0.17 s flashes)
   burst.forEach(([a, b]) => { let last = -9; H.forEach(h => { const t = h - 1/30; if(t > a && t < b && t - last >= gap && !inR(t, flick) && !keep.some(k => Math.abs(k - t) < gap)){ pts.push(t); last = t; } }); });
   flick.forEach(([a, b]) => { pts.push(a, b); });
   pts = pts.filter(t => t > 0.12 && t < dur - 0.15).sort((x,y)=>x-y).filter((t, i, A) => !i || t - A[i-1] >= 0.1);
@@ -67,6 +67,27 @@ function noFlashCuts(p){
     if(keepStart && p[i+1] && !(p[i+1].type === 'drop' || p[i+1].type === 'break' || EH.isPartStart(p[i+1].start + 1/30))){ s.end = p[i+1].end; p.splice(i+1, 1); i--; }
     else if(!keepStart){ p[i-1].end = s.end; p.splice(i, 1); i--; } }
   return p;
+}
+/* ---- the pace of creators' beat Reels (measured on 19 of them: scripts/studio-references/README.md) ----
+ * The opening shot holds about 4 beats (median 2.7 s) before the cutting starts; the shots get longer toward the end
+ * (0.63 cuts a second in the first third, 0.48 in the middle, 0.2 in the last); few shots are under 0.5 s (8%), the
+ * shortest about 0.33 s. Auto only (Fast cuts on every beat on purpose, Smooth and Natural are long already, a copied
+ * Reel keeps its own edit); a drop, a break and a flicker montage keep their cut. */
+function paceWell(p){
+  if(ES.mode !== 'auto' || p.length < 3 || !(ES.period > 0) || !ES.buf) return p;
+  const dur = ES.buf.duration, hard = s => s.type === 'drop' || s.type === 'break' || s.flick;
+  // the opening: no cut before about 4 beats (when the next shot is long, it starts on the beat nearest 4 beats instead)
+  const open = Math.min(3, Math.max(1.6, 4*ES.period));
+  while(p.length > 2 && p[1].start < open - 0.1 && !hard(p[1])){
+    if(p[1].end <= open + 2*ES.period){ p[0].end = p[1].end; p.splice(1, 1); continue; }
+    const b = gridOf(dur).map(x => x - 1/30).filter(x => x >= open - 0.1 && x < p[1].end - 0.4)[0];
+    if(b !== undefined){ p[0].end = b; p[1].start = b; }
+    break;
+  }
+  // the last fifth: no shot shorter than two beats (it joins the shot before)
+  const tail = 0.8*dur, least = Math.max(0.9, 2*ES.period);
+  for(let i = p.length - 1; i > 1 && p[i].start >= tail; i--) if(!hard(p[i]) && p[i].end - p[i].start < least){ p[i-1].end = p[i].end; p.splice(i, 1); }
+  return endWell(p);
 }
 function adaptPlan0(){
   if(ES.mode==='copy' && ES.refProfile) return copyPlan();
@@ -1155,5 +1176,5 @@ function remakeOk(){ if(!ES.restoring) ES.keepSaved = false; }
 function editOf(){
   return ES.kind === 'talk' ? [] : ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: EH.speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
-  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
+  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
 }

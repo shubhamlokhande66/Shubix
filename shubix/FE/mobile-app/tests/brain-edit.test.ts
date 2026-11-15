@@ -63,3 +63,41 @@ describe("In my order: each clip its share of the Reel's time", () => {
     expect(run(song, clips).seq).toEqual(run(song, clips).seq);
   });
 });
+
+// The pace of creators' beat Reels (19 measured: web-app/scripts/studio-references): the opening holds about 4 beats, the
+// last fifth slows down, a drop keeps its cut. Auto only.
+describe("the pace of a beat Reel, as creators cut it", () => {
+  const P = 0.5, D = 20;   // 120 BPM, a 20 s Reel
+  const beats = Array.from({ length: 40 }, (_, i) => i * P);
+  const cutEvery = (len: number, drop = -1) => { const out = []; for (let t = 0, i = 0; t < D - 1e-9; t += len, i++) out.push({ start: t, end: Math.min(D, t + len), type: i === drop ? "drop" : "cut" }); return out; };
+  const pace = (p: { start: number; end: number; type: string }[], mode = "auto") => {
+    const ES: Record<string, unknown> = { seed: 1, mode, period: P, beats, buf: { duration: D } };
+    return createEditBrain(ES, {}).paceWell(p) as { start: number; end: number; type: string }[];
+  };
+  it("holds the opening shot about 4 beats", () => {
+    const p = pace(cutEvery(0.5));
+    expect(p[0].end).toBeGreaterThanOrEqual(1.9);
+    expect(p[0].end).toBeLessThanOrEqual(3.1);
+  });
+  it("slows down in the last fifth: no shot there shorter than two beats", () => {
+    const p = pace(cutEvery(0.5));
+    for (const s of p.filter((x) => x.start >= 0.8 * D)) expect(s.end - s.start).toBeGreaterThanOrEqual(2 * P - 1e-9);
+    expect(p.at(-1)!.end).toBe(D);
+    const mid = p.filter((x) => x.start > 4 && x.start < 14);
+    expect(Math.min(...mid.map((x) => x.end - x.start))).toBeCloseTo(0.5);   // the middle keeps its pace
+  });
+  it("a drop keeps its cut, even in the opening", () => {
+    const p = pace(cutEvery(0.5, 2));                                       // the drop at 1 s
+    expect(p.some((s) => s.type === "drop" && Math.abs(s.start - 1) < 1e-9)).toBe(true);
+  });
+  it("Fast and Smooth are left as they are", () => {
+    const p = cutEvery(0.5);
+    expect(pace(p.map((s) => ({ ...s })), "fast")).toEqual(p);
+  });
+  it("covers the whole Reel with no gap", () => {
+    const p = pace(cutEvery(0.75));
+    expect(p[0].start).toBe(0);
+    p.slice(1).forEach((s, i) => expect(s.start).toBeCloseTo(p[i].end));
+    expect(p.at(-1)!.end).toBe(D);
+  });
+});
