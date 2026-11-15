@@ -4990,7 +4990,7 @@ const BLENDS = ['source-over','multiply','screen','overlay','darken','lighten','
 // shot steps change the shots' numbers: the last shot's first, so each step's number is the shot the AI meant
 const SHOT_OPS = ['split','dup','freeze','delete','reverse'];
 async function aiActions(list){
-  let done = 0;
+  let done = 0, pics = 0;
   const steps = (Array.isArray(list) ? list : []).slice().sort((a, b) => a.do === 'shot' && b.do === 'shot' ? (+b.i || 0) - (+a.i || 0) : 0);
   for(const a of steps){
     try{
@@ -4999,6 +4999,7 @@ async function aiActions(list){
       else if(a.do === 'music'){ const p = {}; if(Number.isFinite(+a.volume)) p.mvol = Math.max(0, Math.min(1, +a.volume)); if(Number.isFinite(+a.fadeIn)) p.mfin = Math.max(0, +a.fadeIn);
         if(Number.isFinite(+a.fadeOut)){ p.mfout = Math.max(0, +a.fadeOut); p.mfoutManual = true; } auSet(p); clipMixKey = ''; await ensureMix(); done++; }
       else if(a.do === 'voicefx'){ const b = $('vfx').querySelector('[data-f="' + CSS.escape(String(a.fx)) + '"]'); if(b){ b.click(); done++; } }
+      else if(a.do === 'picture' && aiPicture && a.prompt && pics < 2){ pics++; pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); if(await brollAdd(a.prompt, aiPicture.styles.some(s => s.id === a.style) ? a.style : 'photo', false)) done++; }
       else if(a.do === 'voiceover' && tts && tts.voices.length && a.text){ pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); await addTtsAtPlayhead(a.text, a.voice || tts.voices[0].key); done++; }
       else if(a.do === 'sound' && SFX_NAMES[a.kind] && buf){ sfxList.push({ id: ++sfxSeq, at: +Math.max(0, Math.min(reelLen(), +a.at || 0)).toFixed(2), kind: a.kind }); sfxUI(); clipMixKey = ''; await ensureMix(); done++; }
       else if(a.do === 'shot' && SHOT_OPS.includes(a.op) && edit[+a.i]){ const e = edit[+a.i], len = e.end - e.start;

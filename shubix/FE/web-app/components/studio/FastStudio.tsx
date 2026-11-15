@@ -101,7 +101,12 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
         if (!engine && new URLSearchParams(location.search).get("from") === "clips") {
           const clip = await import("@/lib/clips/media").then((m) => m.takeForStudio());
           const input = root.current?.querySelector<HTMLInputElement>("#vfile");
-          if (clip && input && !cancelled) { const dt = new DataTransfer(); dt.items.add(clip); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true })); }
+          if (clip && input && !cancelled) {
+            const dt = new DataTransfer(); dt.items.add(clip); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true }));
+            // one tap: the Reel is made as soon as the clip is read (the Generate button presses itself, once)
+            const gen = root.current?.querySelector<HTMLButtonElement>("#fgen");
+            void (async () => { for (let i = 0; gen && i < 240 && !cancelled; i++) { if (!gen.disabled) { gen.click(); break; } await new Promise((ok) => setTimeout(ok, 250)); } })();
+          }
           const u = new URL(location.href); u.searchParams.delete("from"); history.replaceState(history.state, "", u);
         }
         if (engine && root.current) { const { initBridge } = await import("@/components/studio/bridge"); const stop = initBridge(root.current), stopStudio = cleanup; cleanup = () => { stop(); stopStudio?.(); }; }
