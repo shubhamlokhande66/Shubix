@@ -23,7 +23,9 @@ const SCENARIOS = [
   { id: 'B-5clips-bhangra-mix', song: 'bhangra_dhol_98', clips: [0, 3, 5, 8, 10], mix: true, wholeSong: true, res: '720p', why: 'a computer, Mix all clips for the whole song: 5 clips (one half dark), bhangra; the edit reviews and repairs itself here' },
   ...((media.talk || []).length ? [{ id: 'D-talking-vlog', talk: true, res: '720p', path: '/create/talking', why: 'a computer, a Talking Reel (a vlog, a tutorial): three clips of speech in English, Hindi and Marathi with known pauses, no song' }] : []),
   { id: 'C-phone-8clips-dembow', song: 'bollywood_dembow_96', clips: [1, 2, 4, 5, 6, 7, 9, 11], phone: true, res: '720p', why: 'a phone-sized screen with touch, as it comes: 8 clips, a dembow song' },
-].filter((s) => !process.env.ONLY || process.env.ONLY.split(',').some((o) => s.id.startsWith(o.trim())));
+].filter((s) => !process.env.ONLY || process.env.ONLY.split(',').some((o) => s.id.startsWith(o.trim())))
+  // CLIPS=1,4,17: these clips instead of the scenario's own (a look at a feature on chosen footage)
+  .map((s) => (process.env.CLIPS && !s.talk ? { ...s, clips: process.env.CLIPS.split(',').map(Number) } : s));
 
 const now = () => Date.now();
 const studio = () => document.querySelector('.brs');
@@ -35,6 +37,7 @@ async function scenario(browser, sc) {
   const p = await ctx.newPage();
   p.on('pageerror', (e) => rep.errors.push(String(e.message).slice(0, 300)));
   p.on('console', (m) => { if (m.type() === 'error' && rep.consoleErrors.length < 40) rep.consoleErrors.push(m.text().slice(0, 200)); });
+  p.on('console', (m) => { if (/subject pop|vision model|u2net/i.test(m.text())) console.log(`[${sc.id}]   console ${m.type()}: ${m.text().slice(0, 300)}`); });
   p.on('requestfailed', () => { rep.failedRequests++; });
   await p.addInitScript(() => {
     window.__long = [];
@@ -81,6 +84,10 @@ async function scenario(browser, sc) {
     let t0 = now();
     // no API runs behind this website: the one thing the Create flow must know from it is that nobody has to sign in
     await ctx.route('**/api/auth/me', (route) => route.fulfill({ json: { authEnabled: false, user: null } }));
+    // the model files the page downloads (beats, speech, faces, the subject pop), from the API's folder as the API serves them
+    const API = path.resolve(__dirname, '../../../../BE/api'), MODELS = JSON.parse(fs.readFileSync(path.join(API, 'src/server/studio/model-files.json'), 'utf8')).files;
+    await ctx.route('**/api/studio/model/*', (route) => { const m = MODELS.find((f) => route.request().url().endsWith('/' + f.name));
+      return m ? route.fulfill({ body: fs.readFileSync(path.join(API, m.dir, m.name)), contentType: 'application/octet-stream' }) : route.fulfill({ status: 404, body: '' }); });
     await p.goto(BASE + (sc.path || process.env.STUDIO_PATH || '/create/music'), { waitUntil: 'domcontentloaded', timeout: 120000 });
     await p.waitForFunction(() => document.querySelector('.brs') && document.querySelector('.brs').__studio, null, { timeout: 120000 });
     step('studio open', { ms: now() - t0, ...(await long()) });
@@ -145,6 +152,19 @@ async function scenario(browser, sc) {
     });
     step('reel made', { ms: editMs, shots: made.edit.length, status: made.status, clipsUsed: new Set(made.edit.map((s) => s.src)).size, clipsGiven: files.length,
       review: made.review ? { score: made.review.score, status: made.review.status, beatSync: made.review.metrics.beatSync, drops: made.review.metrics.drops, issues: made.review.issues.map((i) => i.code + (i.shot === undefined ? '' : '@' + i.shot)) } : null, ...(await long()) });
+    // the subject pop Shubix offers by itself (a beat Reel of 8 s or more with a clear subject): wait for it a little
+    if (!sc.talk) {
+      const popAt = Date.now();
+      await p.waitForFunction(() => (document.querySelector('.brs').__studio.layers || []).some((L) => L.pop), null, { timeout: 90000 }).catch(() => {});
+      made.pop = await p.evaluate(() => { const L = (document.querySelector('.brs').__studio.layers || []).find((x) => x.pop); return L ? { t0: +L.t0.toFixed(3), t1: +L.t1.toFixed(3), x: +L.x.toFixed(3), y: +L.y.toFixed(3), s: +L.s.toFixed(3), grow: L.grow, shade: L.shade, by: L.pop } : null; });
+      if (!made.pop) { made.popAsked = await p.evaluate(async () => { const S = document.querySelector('.brs').__studio; let r = null, err = null; try { r = await S.subjectPop(false); } catch (e) { err = String(e); } return { r, err, auto: document.querySelector('.brs').__lastPop || null }; }).catch((e) => ({ err: String(e) }));
+        made.pop = await p.evaluate(() => { const L = (document.querySelector('.brs').__studio.layers || []).find((x) => x.pop); return L ? { t0: +L.t0.toFixed(3), t1: +L.t1.toFixed(3), x: +L.x.toFixed(3), y: +L.y.toFixed(3), s: +L.s.toFixed(3), grow: L.grow, shade: L.shade, by: L.pop } : null; }); }
+      step('subject pop', { ms: Date.now() - popAt, pop: made.pop, asked: made.popAsked || null, looked: await p.evaluate(() => document.querySelector('.brs').__lastPop || null) });
+      if (made.pop) for (const [k, t] of [['start', made.pop.t0 + 0.05], ['middle', (made.pop.t0 + made.pop.t1) / 2], ['end', made.pop.t1 - 0.05], ['after', made.pop.t1 + 0.05], ['later', made.pop.t1 + 0.5]]) {
+        await p.evaluate((x) => { const S = document.querySelector('.brs').__studio; if (S.seek) S.seek(x); }, t).catch(() => {});
+        await p.waitForTimeout(1500); await shot(`pop-${k}`);
+      }
+    }
     rep.made = made;
     fs.writeFileSync(path.join(OUT, `${sc.id}-made.json`), JSON.stringify(made));   // the edit, kept as soon as it is made
     if (process.env.STOP_AFTER === 'made') { rep.ok = true; rep.stopped = 'after the Reel was made (STOP_AFTER=made)'; return rep; }

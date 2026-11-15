@@ -232,6 +232,7 @@ async function aiActions(list){
       else if(a.do === 'beatmark'){ const ts = (Array.isArray(a.at) ? a.at : [a.at]).map(Number).filter(Number.isFinite); if(a.clear) EH.clearMarks(); for(const t of ts.slice(0, 32)) if(EH.addMark(Math.max(0, t))) done++; }
       else if(a.do === 'template' && TEXT_TEMPLATES[a.name]){ if(EH.addTemplate(a.name, Array.isArray(a.words) ? a.words : [], +a.at || 0, Number.isFinite(+a.len) && +a.len > 0 ? +a.len : undefined, true)) done++; }
       else if(a.do === 'background' && ['none','blur','color'].includes(a.mode)){ EH.pickBackground(a.mode, a.color); done++; }
+      else if(a.do === 'pop'){ if(await EH.subjectPop(false)) done++; }
       else if(a.do === 'layer'){
         const s = ES.sources[parseInt(String(a.clip).replace(/\D/g, ''), 10) - 1]; if(!s || !s.file || !ES.edit.length) continue;
         const M = await EH.addLayerMedia(s.file), D = EH.reelLen(), t0 = Math.max(0, Math.min(D - 0.1, +a.start || 0)), mask = ['circle', 'rect'].includes(a.mask) ? a.mask : 'none';

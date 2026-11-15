@@ -73,7 +73,7 @@ internal fun readFrames(file: File, w: Int, h: Int, times: DoubleArray, out: Out
 }
 
 /** Frames as they are decoded: each answer of readFrames handed over instead of written */
-private class FrameSink(private val size: Int, private val onFrame: (Int, ByteArray?) -> Unit) : OutputStream() {
+internal class FrameSink(private val size: Int, private val onFrame: (Int, ByteArray?) -> Unit) : OutputStream() {
   private var k = 0
   override fun write(b: Int) { if (b == 0) onFrame(k++, null) }
   override fun write(b: ByteArray, off: Int, len: Int) { if (len == size) onFrame(k++, b) }

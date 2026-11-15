@@ -25,6 +25,7 @@ describe("the website's engine and the Android app's brain pick the same moments
     ["a clip's black part", "function blackPart(src){", "pure.ts"],
     ["a clip's black start and end", "function blackEnds(src){", "pure.ts"],
     ["cuts too close together", "function noFlashCuts(", "edit.ts"],
+    ["the pace of creators' beat Reels", "function paceWell(p){", "edit.ts"],
   ];
   for (const [what, head, file] of alike) {
     it(what, () => { expect(norm(fn(brain(file), head.replace("function ", "function "))) === norm(fn(web, head))).toBe(true); });

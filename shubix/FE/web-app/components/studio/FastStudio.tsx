@@ -96,6 +96,7 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           },
           personMask: (rgba: Uint8ClampedArray) => import("@/lib/vision/client").then((m) => m.personMask(rgba)),
           findFaces: (squares: Uint8ClampedArray[]) => import("@/lib/vision/client").then((m) => m.findFaces(squares)),
+          subjectMask: (rgba: Uint8ClampedArray) => import("@/lib/vision/client").then((m) => m.subjectMask(rgba)),
         });
         // the clips sent from Vlog / Talking video (/create/talking?from=clips): a moment cut out of a long video, or the
         // creator's own talking clips; they wait in this browser and are put in as the clips
