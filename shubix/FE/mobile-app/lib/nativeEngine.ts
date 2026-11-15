@@ -89,7 +89,7 @@ export function pcmOfWav(bytes: ArrayBuffer): { pcm: Float32Array; sr: number } 
 }
 
 export function createNativeEngine(io: NativeIo) {
-  const make = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  const make = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
   let host = make(), signedIn = false;
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: { name: string; path: string; w: number; h: number }[] = [];
@@ -145,6 +145,20 @@ export function createNativeEngine(io: NativeIo) {
     const res = await io.fetch(url("speak", `&v=${encodeURIComponent(voiceLanguage(voice))}`), { method: "POST", body: text });
     if (!res.ok) throw new Error(await res.text());
     return { pcm: new Float32Array(await res.arrayBuffer()), sr: Number((res as unknown as { headers?: { get(k: string): string | null } }).headers?.get("X-Sample-Rate")) || 22050 };
+  }
+  /** the subject pop: a clip's frame at `t` (320x320) and its subject, read by the phone (SubjectPop.kt); null: no frame */
+  async function popMask(path: string, t: number) {
+    const res = await io.fetch(url("popmask", `&p=${encodeURIComponent(path)}&t=${Math.max(0, t).toFixed(3)}`), { method: "POST", body: "" });
+    if (!res.ok) throw new Error(await res.text());
+    const b = new Uint8Array(await res.arrayBuffer()), n = 320 * 320;
+    if (b[0] !== 1 || b.length < 1 + n * 5) return null;
+    return { mask: b.slice(1, 1 + n), rgba: b.slice(1 + n, 1 + n * 5) };
+  }
+  /** the subject cut out of that frame at w x h with the brain's alpha, kept as a PNG on the phone */
+  async function popCut(path: string, t: number, w: number, h: number, alpha: Uint8Array, box: number[]) {
+    const res = await io.fetch(url("popcut", `&p=${encodeURIComponent(path)}&t=${Math.max(0, t).toFixed(3)}&w=${w}&h=${h}&box=${box.map((x) => x.toFixed(4)).join(",")}`), { method: "POST", body: alpha });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json() as { path: string; w: number; h: number };
   }
   async function analyse(mono: Float32Array, sr: number, opts: Args = {}) {
     const head = new TextEncoder().encode(JSON.stringify({ ...opts, sr })), body = new Uint8Array(4 + head.length + mono.byteLength);
@@ -333,7 +347,7 @@ export function createNativeEngine(io: NativeIo) {
       const M = host.ES.lmedia[L.m as number] as { path?: string; kind?: string } | undefined;
       return { index, id: L.id, t0: L.t0, t1: L.t1, x: L.x, y: L.y, scale: L.s, opacity: L.op, rotation: L.r, mask: L.mask, blend: L.blend || "source-over", follow: L.follow || "none", followOffsetX: L.followOffsetX || 0, followOffsetY: L.followOffsetY || 0,
         maskWidth: L.mk?.w ?? 0.8, maskHeight: L.mk?.h ?? 0.8, maskThreshold: L.mk?.th ?? 0.5, maskFeather: L.mk?.f ?? 0.12, maskAngle: L.mk?.a ?? 0, maskInverted: !!L.mk?.inv, chromaKey: !!L.key?.on, chromaColor: L.key?.c ?? "#00FF00", chromaTolerance: L.key?.tol ?? 0.35,
-        native: M?.path ? { path: M.path, kind: M.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend } : null };
+        native: M?.path ? { path: M.path, kind: M.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend, ...(L.grow ? { grow: L.grow } : {}), ...(L.shade ? { shade: L.shade } : {}) } : null, pop: L.pop || null };
     }),
     layerAdd: async (a) => {
       const path = String(a.path), name = String(a.name || "overlay"), p = await io.fetch(url("probe", `&p=${encodeURIComponent(path)}`));
@@ -341,6 +355,7 @@ export function createNativeEngine(io: NativeIo) {
       await host.brain.layerAdd([{ kind: video ? "video" : "photo", path, name, ...facts }]);
       return { ok: true, count: host.ES.layers.length };
     },
+    subjectPop: async () => { const r = await host.brain.subjectPop(false); return { ok: !!r, ...(r || {}), count: host.ES.layers.length }; },
     layerSelect: async (a) => ({ ok: !!(await host.brain.lySelect(Number(a.index))), selected: Number(a.index) }),
     layerSet: (a) => { host.brain.lySet(String(a.key), a.value); return { ok: true }; },
     layerDelete: () => ({ ok: host.brain.lyDelete() }),

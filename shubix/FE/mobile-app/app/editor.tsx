@@ -401,6 +401,18 @@ export default function EditorScreen() {
     } catch (e) { tell(errorMessage(e), "danger"); }
     setPicBusy(false);
   };
+  // Pop out: the subject of the best shot cut out, growing over the shot before it (the brain's subjectPop)
+  const [popBusy, setPopBusy] = useState(false);
+  const popOut = async () => {
+    if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Layer editing needs a Reel made by Shubix Studio."), "info");
+    setPopBusy(true);
+    try {
+      const r = await engine.tool("subjectPop") as { ok?: boolean };
+      const list = await refreshStudioLayers();
+      if (r?.ok) { setStudioLayerIndex(Math.max(0, list.length - 1)); tell(words("The subject pops out before its shot"), "success"); }
+    } catch (e) { tell(errorMessage(e), "danger"); }
+    setPopBusy(false);
+  };
   const studioLayerAction = async (op: string, args: Record<string, unknown> = {}) => {
     if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Layer editing needs a Reel made by Shubix Studio."), "info");
     try {
@@ -681,6 +693,8 @@ export default function EditorScreen() {
       </View>;
       case "layers": return <View className="gap-2">
         <Button full icon="image" title={words("Add photo / video layer")} onPress={() => void addStudioLayer()} />
+        <Button full variant="secondary" icon="sparkle" loading={popBusy} disabled={popBusy} title={words("Pop out the subject")} onPress={() => void popOut()} />
+        <Text className="text-[11px] leading-[16px] text-muted">{words("A car, a bike or a person cut out of a shot: small at first while the Reel plays behind it, growing until the Reel cuts to it.")}</Text>
         <TextInput value={picDraft} onChangeText={setPicDraft} maxLength={400} multiline placeholder={words("AI picture: describe it (a chai stall in the rain at night…)")} placeholderTextColor={look.muted}
           className="min-h-[64px] rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground" />
         <Button full variant="secondary" icon="sparkle" loading={picBusy} disabled={picBusy} title={words("Make AI picture and add it here")} onPress={() => void addAiPicture()} />

@@ -17,6 +17,8 @@ export function soundOf(channels, sampleRate){
 export function createHost(initial, io = {}){
   const brain = brainFromCopy(initial), { ES, values } = brain, analyse = io.analyse;
   if(io.getCtx) values.getCtx = io.getCtx;
+  // the subject pop: the phone reads a frame, finds its subject and cuts it out (SubjectPop.kt)
+  if(io.popMask && io.popCut) Object.assign(values, { popMask: io.popMask, popCut: io.popCut });
   // a clip's and a layer's own sound, read by the phone (null: it has none)
   if(io.readSound){
     values.decodeAnyAudio = async (f) => { const r = await io.readSound(f.path); return soundOf(r.channels, r.sampleRate); };

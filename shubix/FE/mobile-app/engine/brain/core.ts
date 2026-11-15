@@ -6,6 +6,7 @@ import { srcPos, whatClip, velocitySpeed, rampSpeed, keyframesFor, crossesScene,
 import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { autoHook } from '@mobile/core/lib/text-templates';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady } from '@mobile/video-engine';
 
 export function createCoreBrain(ES, EH){
 // the preview: the video's own frame times (requestVideoFrameCallback), the picture mixed toward the next one
@@ -340,6 +341,9 @@ function makeEdit(){
 // given again. When Shubix AI's plan brings its own texts, these go.
 function autoFinish(){
   if(ES.kind === 'talk' || ES.mode === 'copy' || !ES.edit.length || ES.keepSaved) return;
+  // a subject pop before the hero shot, when one has a clear subject (an old one of Shubix's went with the old edit)
+  if(ES.layers.some(L => L.pop === 'auto') && ES.popKey !== String(ES.editGen)){ ES.layers = ES.layers.filter(L => L.pop !== 'auto'); EH.lyUI(); }
+  if(!ES.popOff && EH.popMask && !ES.layers.some(isPop) && (ES.buf ? ES.buf.duration : 0) >= 8) subjectPop(true);
   const had = ES.overlays.some(o => o.auto);
   if(ES.autoHookUsed && !had) ES.autoHookOff = true;
   if(had && ES.director && !ES.director.interim && ES.overlays.some(o => !o.auto)){ ES.overlays = ES.overlays.filter(o => !o.auto); EH.renderOvList(); return; }
@@ -583,8 +587,52 @@ function lySelect(i){
   if(!EH.lyOn(ES.layers[i], ES.pos)) ES.pos = ES.layers[i].t0 + 0.05;
   return EH.prepare(EH.segAt(ES.pos), ES.pos).then(() => EH.prepLayers(ES.pos)).then(EH.redrawFrame).then(() => true);
 }
+/* ---- Subject pop (Shared/video-engine/src/pop.ts), as the website's engine.ts subjectPop: the subject of a shot cut
+ * out of the shot's first frame (the phone reads it and runs the subject model: SubjectPop.kt), small in the middle
+ * while the shot before plays on darker, growing to its own size and place; then the cut to its shot. ---- */
+const isPop = L => !!(L && L.pop);
+async function subjectPop(auto = false){
+  if(!EH.popMask){ if(!auto) EH.notify('Pop out is not available here.', 'err'); return null; }
+  if(!ES.edit.length || ES.kind === 'talk' || ES.popBusy){ if(!auto && !ES.edit.length) EH.notify('Make the Reel first, then Pop out.'); return null; }
+  const gen = ES.editGen, shots = popShots(ES.edit, ES.period, auto ? 3 : 5);
+  if(!shots.length){ if(!auto) EH.notify('This Reel has no shot long enough for a pop. A longer song part or longer clips help.'); return null; }
+  ES.popBusy = true; if(!auto) EH.tasks.start('pop', 'clips', 'Pop out', 'Finding the subject…');
+  try{
+    let best = null;
+    for(const i of shots){
+      const e = ES.edit[i], src = ES.sources[e.src], c0 = EH.csOf(e, 0); if(!src || c0.rot || c0.fh || c0.fv || e.flick || e.black || crossesScene(src, srcPos(e, 0) - 0.05, srcPos(e, 0) + 0.6)) continue;   // a turned or mirrored picture, or a scene change at the shot's start: its cut-out would not line up
+      let r = null; try{ r = await EH.popMask(src.path, srcPos(e, 0)); }catch(err){ continue; }
+      if(!r || ES.editGen !== gen) continue;
+      const f = popScore(r.mask, r.rgba);
+      if(f.score < (auto ? 0.45 : 0.2) || (best && f.score <= best.f.score)) continue;
+      // the picture a moment later must be the same one (a cut inside the clip there would show something else)
+      let later = null; try{ later = await EH.popMask(src.path, srcPos(e, Math.min(0.3, (e.end - e.start)/3))); }catch(err){ later = null; }
+      if(!later || !popSteady(r.rgba, later.rgba)) continue;
+      best = { i, f, mask: r.mask };
+      if(f.score >= 0.7) break;   // clear enough: no need to look further
+    }
+    if(ES.editGen !== gen) return null;   // a new edit meanwhile: its own pop comes with it
+    if(!best || best.f.score < (auto ? 0.45 : 0.2)){ if(!auto) EH.tasks.fail('pop', 'No shot has one clear subject (a car, a person, a sign) whole in its picture.'); return null; }
+    const e = ES.edit[best.i], src = ES.sources[e.src], b = best.f.box, m = 0.015;
+    const box = [Math.max(0, b[0] - m), Math.max(0, b[1] - m), Math.min(1, b[2] + m), Math.min(1, b[3] + m)];
+    const k = Math.min(1, 1440/Math.max(src.w, src.h)), W = Math.max(2, Math.round(src.w*k/2)*2), H = Math.max(2, Math.round(src.h*k/2)*2);
+    const cut = await EH.popCut(src.path, srcPos(e, 0), W, H, popAlpha(best.mask), box); if(!cut || ES.editGen !== gen) return null;
+    const M = await EH.addLayerMedia({ kind: 'photo', path: cut.path, name: 'Subject pop.png', w: cut.w, h: cut.h });
+    ES.layers = ES.layers.filter(L => !isPop(L));   // one pop at a time: a new one replaces the last
+    ES.lmedia.push(M);
+    const win = popWindow(ES.edit, best.i, ES.period), P = popLayer(box, layerOf(e, 0, { noFx: true }).rect, { w: EH.out.width, h: EH.out.height }, win);
+    ES.layers.push({ id: ++ES.lySeq, m: ES.lmedia.length - 1, in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), ...P, pop: auto ? 'auto' : 'mine' });
+    e.tr = 'hard';   // the cut from the pop to its shot is a plain cut: the subject is already where the shot shows it
+    if(!auto) ES.lySel = ES.layers.length - 1;
+    ES.popKey = String(gen); EH.lyUI(); await EH.prepLayers(ES.pos); EH.redrawFrame(); if(EH.saveNow) EH.saveNow();
+    if(!auto) EH.tasks.done('pop', 'The subject of shot ' + (best.i + 1) + ' pops out at ' + win.t0.toFixed(1) + ' s');
+    return { shot: best.i, t0: win.t0, t1: win.t1, score: best.f.score };
+  }catch(err){ console.warn('subject pop', err); if(!auto) EH.tasks.fail('pop', 'The subject could not be cut out. Please try again.'); return null; }
+  finally{ ES.popBusy = false; }
+}
 function lyDelete(){
   if(!ES.layers[ES.lySel]) return false;
+  if(ES.layers[ES.lySel].pop === 'auto') ES.popOff = true;   // Shubix's own pop, deleted: not given again for this Reel
   ES.layers.splice(ES.lySel, 1); ES.lySel = Math.min(ES.lySel, ES.layers.length - 1); ES.clipMixKey = ''; EH.lyUI(); EH.redrawFrame(); return true;
 }
 function lySet(k, v){ const L = ES.layers[ES.lySel]; if(!L) return;
@@ -1032,5 +1080,5 @@ async function forgetSong(fp, quiet){
   if(!used) await idb('files', 'readwrite', s => s.delete('f:' + fp));
   if(!quiet) EH.listRecent();
 }
-  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
+  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
 }

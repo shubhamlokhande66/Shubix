@@ -11,6 +11,7 @@
  */
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE } from '@shubix/video-engine';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -34,7 +35,7 @@ import { parseDirectorVisualIntent } from './visualIntent';
 import { bootPart } from '../../lib/boot';
 
 export function initStudio(root, deps) {
-  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, loadRnnoise = null, cloud = null, tts = null, aiPicture = null } = deps;
+  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, subjectMask = null, loadRnnoise = null, cloud = null, tts = null, aiPicture = null } = deps;
 
 const $ = id => root.querySelector('#'+id);
 const tasks = createTasks(root);   // what is happening now, always in view (components/studio/tasks.ts)
@@ -3795,6 +3796,9 @@ function makeEdit(){
 // given again. When Shubix AI's plan brings its own texts, these go.
 function autoFinish(){
   if(kind === 'talk' || mode === 'copy' || !edit.length || keepSaved) return;
+  // a subject pop before the hero shot, when one has a clear subject (an old one of Shubix's went with the old edit)
+  if(layers.some(L => L.pop === 'auto') && popKey !== String(editGen)){ layers = layers.filter(L => L.pop !== 'auto'); lyUI(); }
+  if(!popOff && subjectMask && !layers.some(isPop) && reelLen() >= 8) subjectPop(true);
   const had = overlays.some(o => o.auto);
   if(autoHookUsed && !had) autoHookOff = true;
   if(had && director && !director.interim && overlays.some(o => !o.auto)){ overlays = overlays.filter(o => !o.auto); renderOvList(); return; }
@@ -4638,7 +4642,8 @@ function drawLayers(g, t){
     if(!src || (M.kind === 'video' && !exporting && M.el.readyState < 2)) continue;
     const W = out.width, H = out.height, c = L.crop, sw0 = src.videoWidth || src.naturalWidth || src.width, sh0 = src.videoHeight || src.naturalHeight || src.height;
     const sx = sw0*c.l, sy = sh0*c.t, sw = Math.max(2, sw0*(1 - c.l - c.r)), sh = Math.max(2, sh0*(1 - c.t - c.b));
-    const dw = Math.max(2, Math.round(L.s*W)), dh = Math.max(2, Math.round(dw*sh/sw*(M.h && M.w ? (M.w/M.h)/(sw0/sh0) : 1)));
+    const P = popAt(L, t);   // a subject pop grows from small in the middle to its own size and place
+    const dw = Math.max(2, Math.round(P.s*W)), dh = Math.max(2, Math.round(dw*sh/sw*(M.h && M.w ? (M.w/M.h)/(sw0/sh0) : 1)));
     if(!lyBuf){ lyBuf = document.createElement('canvas'); lyG = lyBuf.getContext('2d'); }
     if(lyBuf.width !== dw || lyBuf.height !== dh){ lyBuf.width = dw; lyBuf.height = dh; }
     const q = lyG; q.save(); q.globalCompositeOperation = 'source-over'; q.clearRect(0, 0, dw, dh); q.drawImage(src, sx, sy, sw, sh, 0, 0, dw, dh);
@@ -4647,7 +4652,8 @@ function drawLayers(g, t){
     q.restore();
     const life = t - L.t0, left = L.t1 - t, a = L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
     const face = L.follow === 'face' ? facePosOnScreen(t) : null;
-    const lx = face ? face.x + (L.followOffsetX || 0) : L.x, ly = face ? face.y + (L.followOffsetY || 0) : L.y;
+    const lx = face ? face.x + (L.followOffsetX || 0) : P.x, ly = face ? face.y + (L.followOffsetY || 0) : P.y;
+    if(L.shade > 0){ g.save(); g.globalAlpha = Math.max(0, Math.min(1, a*L.shade)); g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.restore(); }   // the Reel darker behind it
     // a matte: the layer is a window; the Reel shows only through it (matte) or only outside it (matte-inv), black elsewhere
     const matte = L.blend === 'matte' || L.blend === 'matte-inv';
     g.save(); g.globalAlpha = Math.max(0, Math.min(1, a)); g.globalCompositeOperation = matte ? (L.blend === 'matte' ? 'destination-in' : 'destination-out') : (L.blend || 'source-over'); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.scale(L.fh ? -1 : 1, L.fv ? -1 : 1);
@@ -4764,6 +4770,7 @@ function lySelect(i){
 }
 function lyDelete(){
   if(!layers[lySel]) return false;
+  if(layers[lySel].pop === 'auto') popOff = true;   // Shubix's own pop, deleted: not given again for this Reel
   layers.splice(lySel, 1); lySel = Math.min(lySel, layers.length - 1); clipMixKey = ''; lyUI(); redrawFrame(); return true;
 }
 function lySet(k, v){ const L = layers[lySel]; if(!L) return;
@@ -4796,6 +4803,74 @@ async function brollAdd(prompt, style, hd){
     return { id: L.id, t0: L.t0, t1: L.t1 };
   }catch(err){ tasks.fail('broll', (err && err.message) || 'The picture could not be made. Please try again.'); return null; }
 }
+/* ---- Subject pop (Shared/video-engine/src/pop.ts): the subject of a shot (a car, a bike, a person, a sign) cut out of
+ * the shot's first frame by the subject model on the phone, small in the middle while the shot before plays on darker
+ * behind it, growing slowly to its own size and place; then the cut to its shot. The edit offers one by itself (autoFinish)
+ * when a shot has a whole, clear subject; Pop out makes one on demand (the best shot, or a better one again). Deleting
+ * Shubix's own pop is kept: it is not offered again for this Reel. ---- */
+let popBusy = false, popOff = false, popKey = '';
+// one frame of a shot's clip at the shot's start: side x side RGBA for the model, or the whole frame (up to 1440 px)
+async function popFrames(e, sides, local = 0){
+  const s = sources[e.src], mb = await loadMediabunny(), input = new mb.Input({ source: new mb.BlobSource(decFile(s)), formats: mb.ALL_FORMATS });
+  try{
+    const track = await input.getPrimaryVideoTrack(), first = await track.getFirstTimestamp(), at = first + Math.max(0, Math.min(s.dur - 0.05, srcPos(e, local)));
+    const outs = [];
+    for(const side of sides){
+      const sc = Math.min(1, 1440/Math.max(s.w, s.h)), w = side || Math.max(2, Math.round(s.w*sc/2)*2), h = side || Math.max(2, Math.round(s.h*sc/2)*2);
+      const sink = new mb.CanvasSink(track, { width: w, height: h, fit: 'fill', poolSize: 1 }), wc = await sink.getCanvas(at);
+      if(!wc) { outs.push(null); continue; }
+      const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: !!side }); g.drawImage(wc.canvas, 0, 0, w, h);
+      outs.push(side ? g.getImageData(0, 0, w, h).data : c);
+    }
+    return outs;
+  } finally { try{ input.dispose(); }catch(err){} }
+}
+const isPop = L => !!(L && L.pop);
+async function subjectPop(auto = false){
+  if(!subjectMask){ if(!auto) notify('Pop out needs the subject tools, which this browser cannot run.', 'err'); return null; }
+  if(!edit.length || kind === 'talk' || popBusy){ if(!auto && !edit.length) notify('Make the Reel first, then Pop out.'); return null; }
+  const gen = editGen, shots = popShots(edit, period, auto ? 3 : 5);
+  if(!shots.length){ if(!auto) notify('This Reel has no shot long enough for a pop. A longer song part or longer clips help.'); return null; }
+  popBusy = true; if(!auto) tasks.start('pop', 'clips', 'Pop out', 'Finding the subject…');
+  try{
+    let best = null; const tried = []; root.__lastPop = { auto, tried };   // what was looked at (the studio's tests read it)
+    for(const i of shots){
+      const e = edit[i], c0 = csOf(e, 0); if(c0.rot || c0.fh || c0.fv || e.flick || e.black || crossesScene(sources[e.src], srcPos(e, 0) - 0.05, srcPos(e, 0) + 0.6)) continue;   // a turned or mirrored picture, or a scene change at the shot's start: its cut-out would not line up
+      let px; try{ [px] = await popFrames(e, [POP_SIDE]); }catch(err){ tried.push({ shot: i, error: String(err && err.message || err) }); continue; }
+      if(!px || editGen !== gen){ tried.push({ shot: i, none: !px, newEdit: editGen !== gen }); continue; }
+      const mask = await subjectMask(new Uint8ClampedArray(px)), f = popScore(mask, px); tried.push({ shot: i, score: f.score, cover: f.cover });
+      if(f.score < (auto ? 0.45 : 0.2) || (best && f.score <= best.f.score)) continue;
+      // the picture a moment later must be the same one (a cut inside the clip there would show something else)
+      let later = null; try{ [later] = await popFrames(e, [POP_SIDE], Math.min(0.3, (e.end - e.start)/3)); }catch(err){ later = null; }
+      if(!later || !popSteady(px, later)){ tried[tried.length - 1].unsteady = true; continue; }
+      best = { i, f, mask };
+      if(f.score >= 0.7) break;   // clear enough: no need to look further
+    }
+    if(editGen !== gen) return null;   // a new edit meanwhile: its own pop comes with it
+    if(!best || best.f.score < (auto ? 0.45 : 0.2)){ if(!auto) tasks.fail('pop', 'No shot has one clear subject (a car, a person, a sign) whole in its picture.'); return null; }
+    // the cut-out: the whole frame, the subject's alpha from the mask (smoothly enlarged), cropped to it with a little room
+    const e = edit[best.i], [frame] = await popFrames(e, [0]); if(!frame || editGen !== gen) return null;
+    const W = frame.width, H = frame.height, a = popAlpha(best.mask), am = document.createElement('canvas'); am.width = am.height = POP_SIDE;
+    const id = new ImageData(POP_SIDE, POP_SIDE); for(let k = 0; k < a.length; k++){ id.data[k*4 + 3] = a[k]; } am.getContext('2d').putImageData(id, 0, 0);
+    const g = frame.getContext('2d'); g.globalCompositeOperation = 'destination-in'; g.imageSmoothingQuality = 'high'; g.drawImage(am, 0, 0, W, H); g.globalCompositeOperation = 'source-over';
+    const b = best.f.box, m = 0.015, x0 = Math.max(0, b[0] - m), y0 = Math.max(0, b[1] - m), x1 = Math.min(1, b[2] + m), y1 = Math.min(1, b[3] + m);
+    const cut = document.createElement('canvas'); cut.width = Math.max(2, Math.round((x1 - x0)*W)); cut.height = Math.max(2, Math.round((y1 - y0)*H));
+    cut.getContext('2d').drawImage(frame, x0*W, y0*H, cut.width, cut.height, 0, 0, cut.width, cut.height);
+    const blob = await new Promise(r => cut.toBlob(r, 'image/png')); if(!blob || editGen !== gen) return null;
+    const file = new File([blob], 'Subject pop.png', { type: 'image/png' }), M = await addLayerMedia(file);
+    layers = layers.filter(L => !isPop(L));   // one pop at a time: a new one replaces the last
+    lmedia.push(M);
+    const win = popWindow(edit, best.i, period), P = popLayer([x0, y0, x1, y1], layerOf(e, 0, { noFx: true }).rect, { w: out.width, h: out.height }, win);
+    layers.push({ id: ++lySeq, m: lmedia.length - 1, in: 0, ...JSON.parse(JSON.stringify(LY0)), ...P, pop: auto ? 'auto' : 'mine' });
+    e.tr = 'hard';   // the cut from the pop to its shot is a plain cut: the subject is already where the shot shows it
+    if(!auto) lySel = layers.length - 1;
+    popKey = String(gen); lyUI(); await prepLayers(pos); redrawFrame(); saveNow();
+    if(!auto) tasks.done('pop', 'The subject of shot ' + (best.i + 1) + ' pops out at ' + fmt(win.t0).replace(/\.\d+$/, ''));
+    rlog('pop', 'Subject pop · shot ' + (best.i + 1) + ' · score ' + best.f.score, { shot: best.i, score: best.f.score, cover: best.f.cover, t0: win.t0, t1: win.t1, auto });
+    return { shot: best.i, t0: win.t0, t1: win.t1, score: best.f.score };
+  }catch(err){ console.warn('subject pop', err); if(!auto) tasks.fail('pop', 'The subject could not be cut out. Please try again.'); return null; }
+  finally{ popBusy = false; }
+}
 // A Talking Reel's B-roll: what is said (its captions) in sentences; Shubix AI picks the moments a picture helps and
 // writes each picture (/api/studio/broll/plan), each is made (aiPicture) and laid over the speaker for up to 3 s with a
 // fade, as an editor cuts away to what is talked about. One tap; credits for the plan and each picture.
@@ -4825,6 +4900,7 @@ async function brollAuto(){
     tasks.done('brollauto', done + ' picture' + (done > 1 ? 's' : '') + ' added over what you say · each one in Layers');
   }catch(err){ if(err && err.name === 'AbortError') return; tasks.fail('brollauto', (err && err.message) || 'The pictures could not be made. Please try again.'); }
 }
+$('popout').addEventListener('click', async () => { const b = $('popout'); b.disabled = true; try{ await subjectPop(false); } finally{ b.disabled = false; } }, SIG);
 $('brollauto').addEventListener('click', async () => { const b = $('brollauto'); b.disabled = true; try{ await brollAuto(); } finally{ b.disabled = false; } }, SIG);
 $('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; } }, SIG);
 $('lyedit').addEventListener('input', e => { const el = e.target, k = el.dataset && el.dataset.ly; if(!k) return; const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' ? el.value : +el.value; lySet(k, v); const o = el.parentElement.querySelector('output'); if(o && el.type !== 'checkbox') o.textContent = lyFmt(k, v); }, SIG);
@@ -5112,6 +5188,7 @@ async function aiActions(list){
         if(Number.isFinite(+a.fadeOut)){ p.mfout = Math.max(0, +a.fadeOut); p.mfoutManual = true; } auSet(p); clipMixKey = ''; await ensureMix(); done++; }
       else if(a.do === 'voicefx'){ const b = $('vfx').querySelector('[data-f="' + CSS.escape(String(a.fx)) + '"]'); if(b){ b.click(); done++; } }
       else if(a.do === 'broll' && aiPicture && kind === 'talk' && !pics){ pics = 9; await brollAuto(); done++; }
+      else if(a.do === 'pop'){ if(await subjectPop(false)) done++; }
       else if(a.do === 'picture' && aiPicture && a.prompt && pics < 2){ pics++; pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); if(await brollAdd(a.prompt, aiPicture.styles.some(s => s.id === a.style) ? a.style : 'photo', false)) done++; }
       else if(a.do === 'voiceover' && tts && tts.voices.length && a.text){ pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); await addTtsAtPlayhead(a.text, a.voice || tts.voices[0].key); done++; }
       else if(a.do === 'sound' && SFX_NAMES[a.kind] && buf){ sfxList.push({ id: ++sfxSeq, at: +Math.max(0, Math.min(reelLen(), +a.at || 0)).toFixed(2), kind: a.kind }); sfxUI(); clipMixKey = ''; await ensureMix(); done++; }
@@ -8531,13 +8608,13 @@ async function pickRecent(fp){
 listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
-root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
+root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
   snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry,
   // Make Reel waits for Shubix's plan and nothing is running (flow.ts): its next step is tried again, then it is said (Retry / Close)
   aiKick: () => { if(sources.some(s => !s.ai && !s.aiFailed && !s.removed)) aiRun(); else if(buf && sources.length && !recording){ paceMaybe(); directorMaybe(); } }, aiStalled: () => { dirFailedKey = dirKey(); aiDown(); }, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
   get work(){ return { song: !!song || kind === 'talk', songReady: kind === 'talk' || !!(song && buf && song.r), beats: beatsBusy, pending, clips: sources.length, shots: edit.length, ai: aiBusy, dir: dirBusy, pace: paceBusy,
     // Shubix AI is on for this Reel and its plan has not come yet (nor failed): the Reel is not final (the phone app waits)
-    aiWait: !!(aiOn && !planIsFinal() && !aiHeldBack() && aiReelOk() && aiGaveUp !== reelIdNow() && edit.length && !(director && director.key === dirKey() && !director.interim) && dirFailedKey !== dirKey()), speech: speechBusy, exporting: exportBusy, exportP }; }, shotExtract: () => edit.length && extractAudio(edit[segAt(pos)].src), get au(){ return au; }, setAudioMix: async patch => { auSet(patch); clipMixKey = ''; await ensureMix(); return au; }, remix: remixNow, ensureMix, get canUndo(){ return hist.u.length > 0; }, get layers(){ return layers; }, get lmedia(){ return lmedia; }, layerAdd, layerSelect: lySelect, layerSet: lySet, layerDelete: lyDelete, get ttsVoices(){ return tts ? tts.voices : []; }, addTts: addTtsAtPlayhead, clearTts, setCaptions, setCaptionStyle, get canRedo(){ return hist.r.length > 0; },
+    aiWait: !!(aiOn && !planIsFinal() && !aiHeldBack() && aiReelOk() && aiGaveUp !== reelIdNow() && edit.length && !(director && director.key === dirKey() && !director.interim) && dirFailedKey !== dirKey()), speech: speechBusy, exporting: exportBusy, exportP }; }, shotExtract: () => edit.length && extractAudio(edit[segAt(pos)].src), get au(){ return au; }, setAudioMix: async patch => { auSet(patch); clipMixKey = ''; await ensureMix(); return au; }, remix: remixNow, ensureMix, get canUndo(){ return hist.u.length > 0; }, get layers(){ return layers; }, get lmedia(){ return lmedia; }, layerAdd, subjectPop, layerSelect: lySelect, layerSet: lySet, layerDelete: lyDelete, get ttsVoices(){ return tts ? tts.voices : []; }, addTts: addTtsAtPlayhead, clearTts, setCaptions, setCaptionStyle, get canRedo(){ return hist.r.length > 0; },
   frameAt: async t => { const i = segAt(t); await prepare(i, t); drawFrame(t); return i; }, camAt,
   // the phone app (bridge.ts): the account known after the start, Ask Shubix, the clips' smooth copies
   account, chatApp, get aiOn(){ return aiOn; },

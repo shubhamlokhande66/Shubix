@@ -517,6 +517,7 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="layers">${panelHead("layers")}
             <div class="row"><button type="button" class="${Button.secondary}" id="lyadd">${IC.plus}Add a video or photo on top</button><input id="lyfile" type="file" accept="video/*,image/*,.mov,.mp4,.jpg,.jpeg,.png,.webp" multiple hidden></div>
             <p class="hint">It starts at the playhead. Picture in picture, split screen, a masked shape, a logo…</p>
+            <div class="row musiconly" id="poprow"><button type="button" class="${Button.secondary}" id="popout">${IC.plus}Pop out the subject</button><span class="hint">A car, a bike or a person cut out of a shot: small at first while the Reel plays behind it, growing until the Reel cuts to it.</span></div>
             <div class="aibroll" id="brbox" hidden>
               <label class="label" for="brtext">AI picture (B-roll) · made by AI</label>
               <textarea id="brtext" rows="2" maxlength="400" placeholder="Describe the picture: a chai stall in the Mumbai rain at night, warm lights…"></textarea>

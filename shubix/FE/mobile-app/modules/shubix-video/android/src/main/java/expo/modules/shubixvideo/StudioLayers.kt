@@ -60,15 +60,22 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
 
   private fun draw(g: Canvas, L: JSONObject, pic: Bitmap, t: Double) {
     val W = w.toFloat(); val H = h.toFloat()
-    val place = followed(L, t)
+    // a subject pop grows from small in the middle to its own size and place, slow at first (pop.ts popAt)
+    val grow = L.optJSONObject("grow"); val t0 = L.optDouble("t0"); val t1 = L.optDouble("t1")
+    val ease = ((t - t0) / max(1e-3, t1 - t0)).coerceIn(0.0, 1.0).let { it * it * (3 - 2 * it) }
+    val own = followed(L, t)
+    val place = if (grow == null) own else Pair((grow.optDouble("x", 0.5) + (own.first - grow.optDouble("x", 0.5)) * ease).toFloat(), (grow.optDouble("y", 0.5) + (own.second - grow.optDouble("y", 0.5)) * ease).toFloat())
+    val size = L.optDouble("s", 0.5) * (if (grow == null) 1.0 else grow.optDouble("s", 1.0) + (1 - grow.optDouble("s", 1.0)) * ease)
     val crop = L.optJSONObject("crop")
     fun cut(k: String) = crop?.optDouble(k, 0.0) ?: 0.0
     val from = Rect((pic.width * cut("l")).toInt(), (pic.height * cut("t")).toInt(), (pic.width * (1 - cut("r"))).toInt(), (pic.height * (1 - cut("b"))).toInt())
     if (from.width() < 2 || from.height() < 2) return
-    val dw = maxOf(2f, L.optDouble("s", 0.5).toFloat() * W); val dh = dw * from.height() / from.width()
+    val dw = maxOf(2f, size.toFloat() * W); val dh = dw * from.height() / from.width()
     val fadeIn = L.optDouble("fin", 0.0); val fadeOut = L.optDouble("fout", 0.0)
     val fade = min(if (fadeIn > 0) min(1.0, (t - L.optDouble("t0")) / fadeIn) else 1.0, if (fadeOut > 0) min(1.0, (L.optDouble("t1") - t) / fadeOut) else 1.0)
     val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { alpha = (L.optDouble("op", 1.0) * fade * 255).toInt().coerceIn(0, 255) }
+    val shade = L.optDouble("shade", 0.0)   // the Reel darker behind it
+    if (shade > 0) g.drawRect(0f, 0f, W, H, Paint().apply { color = Color.BLACK; alpha = (L.optDouble("op", 1.0) * fade * shade * 255).toInt().coerceIn(0, 255) })
     g.save()
     g.translate(place.first * W, place.second * H)
     g.rotate(L.optDouble("r", 0.0).toFloat())

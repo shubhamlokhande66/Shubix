@@ -18,7 +18,7 @@ type Sample = { t: number; m: number; b: number; sh: number };
 type Shot = { start: number; end: number; src: number; in: number; scaleR: number; sp: { pos: (l: number) => number }; byDir?: boolean };
 type State = { edit: Shot[]; sources: { dur: number; shMed?: number; samples: Sample[] }[]; beats: number[]; editTakes: { tried: number; kept: number; fixedDark: number; addedClips: number } };
 
-export function world(nClips: number, seed: number) {
+export function world(nClips: number, seed: number, o: { pop?: boolean } = {}) {
   let r = seed; const rnd = () => { r = (r * 16807) % 2147483647; return (r - 1) / 2147483646; };
   const mono = song(30), clips: Record<string, { dur: number; samples: Record<string, number>[] }> = {}, paths: { path: string; name: string }[] = [];
   for (let c = 0; c < nClips; c++) {
@@ -39,6 +39,11 @@ export function world(nClips: number, seed: number) {
     if (path === "probe") return ok({ dur: clips[p].dur, w: 1080, h: 1920 });
     if (path === "scan") return ok(`0.5\n${JSON.stringify({ samples: clips[p].samples, scenes: [] })}\n`);
     if (path === "faces") return ok("[]\n");
+    // the subject pop (SubjectPop.kt), when asked: a car-like subject in the middle of every frame, cut out as a PNG
+    if (o.pop && path === "popmask") { const n = 320 * 320, b = new Uint8Array(1 + n * 5); b[0] = 1;
+      for (let y = 0; y < 320; y++) for (let x = 0; x < 320; x++) b[1 + y * 320 + x] = x > 60 && x < 260 && y > 150 && y < 250 ? 250 : 5;
+      b.fill(120, 1 + n); return ok(b.buffer); }
+    if (o.pop && path === "popcut") return ok({ path: "/pop.png", w: 640, h: 320 });
     return { ok: false, status: 404, text: async () => "no", json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
   };
   return { e: createNativeEngine({ base: "http://phone", key: "k", apiWait: 0, fetch: fetcher }), paths, clips };
