@@ -12,7 +12,7 @@
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -3572,6 +3572,9 @@ const goodExact = () => sources.reduce((t, s) => t + goodSecs(s), 0);
 const goodHave = () => Math.floor(goodExact());   // whole seconds, said the same way everywhere
 // the Reel of very little video, by the song (null: enough video for the usual way, or too little for any Reel)
 const shortReel = () => { const g = goodExact(); return g < SHORT_REEL.enough && songLen() ? shortReelFor(g, (song.r && song.r.period) || 0, songLen()) : null; };
+// one clip is one take, part of it in slow motion (seqPick): the Reel it fills is longer than the clip
+const oneTake = () => sources.length === 1 && mode !== 'copy' && kind !== 'talk';
+const reach = have => oneTake() ? Math.max(have, oneTakeLength(goodExact())) : have;
 const shortNote = sr => 'Your Reel: ' + fmtS(sr.len) + (sr.speed < 0.9 ? ', your video in slow motion to suit the song.' : ', as long as your good video.');
 function lenLock(){
   const on = fitOn() && kind !== 'talk';
@@ -3582,12 +3585,13 @@ function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
   const have = goodHave(), full = songLen(), sr = have < 5 ? shortReel() : null;
   if(fitOn() && full){
-    if(have >= 5){ const target = have < full * 0.95 ? have : 0;   // 0: the whole song
+    if(have >= 5){ const target = reach(have) < full * 0.95 ? reach(have) : 0;   // 0: the whole song
       if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len) setLen(target); }
     else if(sr){ const target = sr.len < full * 0.95 ? sr.len : 0;
       if(target ? Math.abs((sec.len || full) - target) >= 0.2 : sec.len) setLen(target); }
     $('fitnote').hidden = false;
     $('fitnote').textContent = sr ? shortNote(sr) : have < 5 ? 'Add more clips: your clips have ' + fmtS(have) + ' of good video.'
+      : oneTake() && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clip as filmed, then in slow motion with the song.'
       : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
       : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
       : 'Your Reel: the whole song (' + fmtS(full) + ').';
@@ -3628,7 +3632,7 @@ async function askShort(){
       if(v !== true) return 'stop';
       longOk = key;
     }
-    const target = have < full * 0.95 ? have : 0;
+    const target = reach(have) < full * 0.95 ? reach(have) : 0;
     // as long as the clips: no question. Make Reel goes on once the shorter Reel is made (it went on at once, found the old
     // length still there and asked again)
     if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len){ await setLen(target); return 'again'; }
@@ -3727,11 +3731,23 @@ function seqSlots(n){
 // preview steps through the frames above 16x: rawRate), back to normal after it.
 // A clip is never slowed down to fill the song: slow motion only where the style or Shubix AI chose it for a shot; too
 // little good video makes the Reel shorter (Make the Reel as long as my clips), the rest of the song is left out.
+// One clip is one take, as a creator edits it: the clip plays on without a jump, as filmed up to the song's moment
+// (its drop; else its break; else where a new part of the song begins) and in slow motion (half speed) from there. Where
+// in the clip the take begins is chosen as any moment is: the stretch that scores best over all its shots. A song part
+// with no such moment (after 1.5 s, with 2 s left): the walk below, as before.
 const SEQ_FAST = 0.5, SEQ_MAX = 40;
 let seqFloor = 0.4;   // the slowest a clip plays "In my order" (lower only when the clips are far shorter than the song)
 function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
+  const t0 = n ? plan[0].start : 0, tEnd = n ? plan[n-1].end : 0, room = s => s.start - t0 >= 1.5 && tEnd - s.start >= 2;
+  let slowAt = -1;
+  if(sources.length === 1 && n > 1) for(const is of [s => s.type === 'drop', s => s.type === 'break', s => isPartStart(s.start) || isPartStart(s.start + 1/30)]){
+    slowAt = plan.findIndex((s, k) => k > 0 && is(s) && room(s)); if(slowAt > 0) break; }
+  if(slowAt < 0 && sources.length === 1 && n > 1){   // the song part names no moment: where a phrase of it begins (8 beats), nearest 40% of the Reel
+    const T = tEnd - t0, ph = 8*period, off = s => { const x = (s.start + 1/30 - t0)/ph; return ph > 0 ? Math.abs(x - Math.round(x))*ph : 0; };
+    let b = Infinity; plan.forEach((s, k) => { if(k > 0 && room(s)){ const c = Math.abs(s.start - t0 - ONE_TAKE.slowFrom*T) + (off(s) > 0.12 ? T : 0); if(c < b){ b = c; slowAt = k; } } });
+  }
   for(const si of [...new Set(seq)]){
     // a clip that opens or ends on black (a fade in, the lens covered) is walked from its first picture to its last: the
     // black is not footage, so as for a shorter clip its shots play a little slower rather than show it
@@ -3744,6 +3760,22 @@ function seqPick(seq, res, gmax){
     const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
     let cur = from;
+    // (far too little video for the take, a 4 s clip under an 8 s Reel: the walk below, slower all through)
+    const want = ids.map(i => lenOf(i)*(i >= slowAt ? ONE_TAKE.slow : 1)), all = sum(want);
+    if(slowAt > 0 && all*0.8 <= foot){
+      // the take: every shot runs straight on from the one before; a clip a little short for it plays a little slower all through
+      const f = all > foot ? foot/all*0.98 : 1;
+      const run = want.map(x => x*f), total = sum(run), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
+      let bestA = from, bs = -Infinity;
+      for(let a = from; a <= Math.max(from, end - total) + 1e-6; a += stepT){
+        let sc = rng()*0.15, c = a; ids.forEach((i, k) => { sc += scoreWindow(i, src, c, run[k], gmax).sc*lenOf(i); c += run[k]; });
+        if(sc > bs){ bs = sc; bestA = a; }
+      }
+      ids.forEach((i, k) => { const w = scoreWindow(i, src, bestA, run[k], gmax), st = w.st;
+        res[i] = { src: si, in: bestA, scaleR: run[k]/Math.max(1e-6, need[k]), cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false, take: i >= slowAt ? 'slow' : 'filmed' };
+        bestA += run[k]; });
+      continue;
+    }
     ids.forEach((i, k) => {
       cur = Math.min(cur, Math.max(from, end - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
       const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, end - nd - rest);

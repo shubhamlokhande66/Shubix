@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { songAnalysis } from "@mobile/core/engine/studio/song";
-import { shortReelFor } from "@mobile/video-engine";
+import { shortReelFor, oneTakeLength } from "@mobile/video-engine";
 import { createNativeEngine } from "../lib/nativeEngine";
 
 // One 4 s clip and a song, in the app's own engine with no page: the Reel is made (nobody is sent back for more
@@ -11,7 +11,7 @@ function song(seconds: number, bpm: number) {
   for (let b = 0; b * step < n; b++) for (let i = 0; i < 2000 && b * step + i < n; i++) x[b * step + i] = Math.exp(-i / 300) * Math.sin(i * 0.05);
   return x;
 }
-type Shot = { start: number; end: number; src: number; in: number; scaleR: number; sp: { pos: (l: number) => number } };
+type Shot = { start: number; end: number; src: number; in: number; scaleR: number; take?: string; sp: { pos: (l: number) => number } };
 function world(durs: number[], bpm: number) {
   const mono = song(30, bpm), clips: Record<string, { dur: number; samples: Record<string, number>[] }> = {}, paths: { path: string; name: string }[] = [];
   durs.forEach((dur, c) => {
@@ -40,7 +40,9 @@ async function reelOf(durs: number[], bpm: number) {
   await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths });
   const f = await w.e.call("footage") as { have: number; exact: number; period: number };
   const short = shortReelFor(f.exact, f.period, 30);
-  if (short) await w.e.call("choose", { length: short.len });
+  // (one clip of 5 s and more is one take: its Reel is longer than the clip, as the create flow sets it)
+  const f1 = f as typeof f & { clips: number };
+  if (short) await w.e.call("choose", { length: f1.have >= 5 && f1.clips === 1 ? Math.min(30, Math.max(f1.have, oneTakeLength(f1.exact))) : short.len });
   await w.e.call("ready");
   const edit = (w.e.host() as unknown as { ES: { edit: Shot[] } }).ES.edit, len = edit[edit.length - 1].end - edit[0].start;
   const used = edit.map((s) => ({ src: s.src, a: s.in, b: s.in + s.sp.pos(s.end - s.start) * (s.scaleR || 1), time: s.end - s.start }));
@@ -76,5 +78,30 @@ describe("a Reel from one short clip", () => {
     await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths });
     const f = await w.e.call("footage") as { exact: number; period: number };
     expect(shortReelFor(f.exact, f.period, 30)).toBeNull();
+  });
+});
+
+// One clip of 5 s and more is one take, as a creator edits it: as filmed up to the song's moment, slow motion from there.
+describe("one clip is one take", () => {
+  for (const [name, dur, bpm] of [["a 12 s clip, 120 BPM", 12, 120], ["a 20 s clip, 100 BPM", 20, 100], ["a 9 s clip, 140 BPM", 9, 140], ["a 6 s clip, 120 BPM", 6, 120]] as const) {
+    it(`${name}: as filmed, then slow motion, running on without a jump, and a Reel longer than the clip`, async () => {
+      const r = await reelOf([dur], bpm);
+      const at = r.edit.findIndex((s) => s.take === "slow");
+      expect(at).toBeGreaterThan(0);                                             // it begins as filmed
+      expect(r.edit.slice(0, at).every((s) => s.take === "filmed")).toBe(true);
+      expect(r.edit.slice(at).every((s) => s.take === "slow")).toBe(true);        // and stays slow to the end
+      const slowFrom = r.edit[at].start - r.edit[0].start;
+      expect(slowFrom).toBeGreaterThanOrEqual(1.5); expect(r.len - slowFrom).toBeGreaterThanOrEqual(2);
+      r.used.forEach((u, i) => {
+        const speed = (u.b - u.a) / u.time;
+        if (i < at) { expect(speed).toBeGreaterThan(0.84); expect(speed).toBeLessThan(1.02); } else { expect(speed).toBeGreaterThan(0.42); expect(speed).toBeLessThan(0.52); }
+        if (i) expect(Math.abs(u.a - r.used[i - 1].b)).toBeLessThan(0.02);        // one take: no moment left out, none twice
+        expect(u.b).toBeLessThanOrEqual(dur + 0.001);
+      });
+      expect(r.len).toBeGreaterThan(dur * 1.1);
+    });
+  }
+  it("a Reel one clip fills: the clip's length and its slow part's half speed", () => {
+    expect(oneTakeLength(7)).toBe(10); expect(oneTakeLength(11.85)).toBe(16); expect(oneTakeLength(20, 25)).toBe(25); expect(oneTakeLength(NaN)).toBe(0);
   });
 });

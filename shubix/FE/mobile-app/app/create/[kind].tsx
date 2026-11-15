@@ -11,7 +11,7 @@ import { PlanGate } from "../../components/templates/PlanGate";
 import type { ProjectClip } from "@mobile/validations";
 import { engine, engineOn, keepAwake, onClipRead, shotsOf, type SongAnalysis } from "../../lib/engine";
 import { errorMessage } from "@mobile/api-client";
-import { shortReelFor, SHORT_REEL, type ShortReel } from "@mobile/video-engine";
+import { shortReelFor, SHORT_REEL, oneTakeLength, type ShortReel } from "@mobile/video-engine";
 import { forgetKeptFiles, keepPickedAssets, keepPickedFile, removeProject, saveProject, takeNewReelSeed } from "../../lib/projects";
 import { notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
@@ -204,7 +204,7 @@ function CreateFlowScreen() {
   /* "Make the Reel as long as my clips" (on): the clips decide the length. Good video shorter than the song: the Reel is that
    * long (the song's best part); as long or longer: the whole song; much longer: the person chooses (a longer song, fewer
    * clips, or Shubix picks the best). 2 to 5 s: the Reel the song asks for (slow motion under a slow song). Less than 2 s: more clips. */
-  async function fitLength(have: number, short: ShortReel | null = null): Promise<"stop" | "go"> {
+  async function fitLength(have: number, short: ShortReel | null = null, take = 0): Promise<"stop" | "go"> {
     const secs = Math.floor(have), full = now.current.music?.duration || song?.duration || 0;
     if (secs < 5 || !full) return tooShort(have, length || full, full ? short : null);
     const key = `${secs}:${Math.round(full)}`;
@@ -216,7 +216,9 @@ function CreateFlowScreen() {
       if (v !== 0) return "stop";
       longOk.current = key;
     }
-    const target = secs < full * 0.95 ? secs : 0;   // 0: the whole song
+    // one clip is one take, part of it in slow motion (the engine's seqPick): the Reel it fills is longer than the clip
+    const reach = take ? Math.max(secs, oneTakeLength(take)) : secs;
+    const target = reach < full * 0.95 ? reach : 0;   // 0: the whole song
     if (target !== length) { lengthChosen.current = true; if (now.current.music) await lengthTo(target); else { setLength(target); lengthLater.current = target || -1; } await new Promise((ok) => setTimeout(ok, 0)); }
     return "go";
   }
@@ -271,7 +273,7 @@ function CreateFlowScreen() {
       // very little video: the Reel the song asks for, with no "add more clips" (2 s of good video and up)
       const full = now.current.music?.duration || song?.duration || 0;
       const short = f && f.have < SHORT_REEL.enough && full ? shortReelFor(f.exact ?? f.have, f.period ?? 0, full) : null;
-      if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have, short)) === "stop") return; }
+      if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have, short, f.clips === 1 && kind === "music" ? (f.exact ?? f.have) : 0)) === "stop") return; }
       else if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need, short)) === "stop") return;
     }
     const id = draft.current, { sources } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
