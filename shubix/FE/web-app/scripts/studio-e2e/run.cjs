@@ -14,6 +14,8 @@ const BASE = process.env.BASE || 'http://localhost:3001';
 const MEDIA = path.resolve(process.env.MEDIA || 'media'), OUT = path.resolve(process.env.OUT || 'e2e-out');
 const media = JSON.parse(fs.readFileSync(path.join(MEDIA, 'media.json'), 'utf8'));
 fs.mkdirSync(OUT, { recursive: true });
+// ONLY=look: not a Reel, a look at the phone screens of the Create flow (look.cjs)
+if (/^look/i.test(process.env.ONLY || '')) { require('./look.cjs'); return; }
 
 // what each run is: the song, which clips, and why it is here
 const PHONE = { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
