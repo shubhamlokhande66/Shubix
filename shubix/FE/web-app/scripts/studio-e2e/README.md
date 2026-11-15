@@ -11,6 +11,9 @@ BASE=http://localhost:3001 MEDIA=/tmp/media OUT=/tmp/e2e CHANNEL=chrome node run
 python3 analyze.py /tmp/media /tmp/e2e
 ```
 
+`STOP_AFTER=made` stops each run once the Reel is made (no preview, no export: seconds instead of minutes); the edit is
+kept as `<run>-made.json` (its shots, the song's cuts, the plan, the review) either way.
+
 `run.cjs` needs Playwright (`PLAYWRIGHT=<path to playwright-core>`); `CHANNEL=chrome` uses the installed Chrome, which
 has the H.264 encoder the export wants. `ONLY=A,C` runs some of the runs.
 
