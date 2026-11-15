@@ -11,6 +11,7 @@ import { PlanGate } from "../../components/templates/PlanGate";
 import type { ProjectClip } from "@mobile/validations";
 import { engine, engineOn, keepAwake, onClipRead, shotsOf, type SongAnalysis } from "../../lib/engine";
 import { errorMessage } from "@mobile/api-client";
+import { shortReelFor, SHORT_REEL, type ShortReel } from "@mobile/video-engine";
 import { forgetKeptFiles, keepPickedAssets, keepPickedFile, removeProject, saveProject, takeNewReelSeed } from "../../lib/projects";
 import { notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
@@ -188,10 +189,11 @@ function CreateFlowScreen() {
   // Next after the clips: Free or Add more credits (a plan without Shubix AI), or Shubix AI's question and its work in the popup; the
   // draft saved, then the editor with the Reel. Without the engine (Expo Go) the clips play in turn.
   // too little good video for the Reel: nothing was taken; more clips, or a Reel as long as they are
-  async function tooShort(have: number, need: number): Promise<"stop" | "go"> {
-    const secs = Math.floor(have), can = secs >= 5;
+  async function tooShort(have: number, need: number, short: ShortReel | null = null): Promise<"stop" | "go"> {
+    // very little video (2 to 5 s): the Reel the song asks for (short.ts), slow motion under a slow song
+    const secs = short ? short.len : Math.floor(have), can = !!short || secs >= 5;
     // "Make the Reel as long as my clips" (on by default): no question, the rest of the song is left out
-    const v = can && settings.fit !== false ? 1 : await askAction({ title: words("Not enough clips"), body: words("Your clips have {h} s of good video. Your Reel is {n} s. No credits were used.", { h: secs, n: Math.round(need) }), ok: words("Add clips"), ...(can ? { cancel: words("Make a {h} s Reel", { h: secs }) } : {}) });
+    const v = can && settings.fit !== false ? 1 : await askAction({ title: words("Not enough clips"), body: words("Your clips have {h} s of good video. Your Reel is {n} s. No credits were used.", { h: Math.floor(have), n: Math.round(need) }), ok: words("Add clips"), ...(can ? { cancel: words("Make a {h} s Reel", { h: Math.round(secs) }) } : {}) });
     if (v === 0) { void addMedia(); return "stop"; }
     if (v !== 1 || !can) return "stop";
     lengthChosen.current = true;
@@ -201,10 +203,10 @@ function CreateFlowScreen() {
   }
   /* "Make the Reel as long as my clips" (on): the clips decide the length. Good video shorter than the song: the Reel is that
    * long (the song's best part); as long or longer: the whole song; much longer: the person chooses (a longer song, fewer
-   * clips, or Shubix picks the best). Less than 5 s: more clips. */
-  async function fitLength(have: number): Promise<"stop" | "go"> {
+   * clips, or Shubix picks the best). 2 to 5 s: the Reel the song asks for (slow motion under a slow song). Less than 2 s: more clips. */
+  async function fitLength(have: number, short: ShortReel | null = null): Promise<"stop" | "go"> {
     const secs = Math.floor(have), full = now.current.music?.duration || song?.duration || 0;
-    if (secs < 5 || !full) return tooShort(have, length || full);
+    if (secs < 5 || !full) return tooShort(have, length || full, full ? short : null);
     const key = `${secs}:${Math.round(full)}`;
     if (secs > full * 1.1 && longOk.current !== key) {
       const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")} min` : `${Math.round(s)} s`);
@@ -266,8 +268,11 @@ function CreateFlowScreen() {
     }
     if (engineOn && song) {
       const f = await engine.footage().catch(() => null);
-      if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have)) === "stop") return; }
-      else if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need)) === "stop") return;
+      // very little video: the Reel the song asks for, with no "add more clips" (2 s of good video and up)
+      const full = now.current.music?.duration || song?.duration || 0;
+      const short = f && f.have < SHORT_REEL.enough && full ? shortReelFor(f.exact ?? f.have, f.period ?? 0, full) : null;
+      if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have, short)) === "stop") return; }
+      else if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need, short)) === "stop") return;
     }
     const id = draft.current, { sources } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
     let clips = read.current!.clips, studio = false;

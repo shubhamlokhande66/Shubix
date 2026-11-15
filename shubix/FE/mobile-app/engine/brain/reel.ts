@@ -2,9 +2,9 @@
 // the website's studio: its state is the object ES, and what is the app's own comes through EH.
 // The golden test (scripts/engine-golden.mjs) says it still makes the same Reel.
 // @ts-nocheck
-import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats, blackPart } from './pure';
+import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats, blackPart, goodSecs } from './pure';
 import { repace } from '../components/studio/soundmap';
-import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
+import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, SHORT_REEL } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 
 export function createReelBrain(ES, EH){
@@ -75,11 +75,13 @@ function makeEditNow(){
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
   // one clip always plays forward (its shots out of order jump back and forth in time)
-  let seq = (ES.seqOn || ES.sources.length === 1) && ES.sources.length ? EH.seqSlots(ES.plan.length) : null; ES.seqFloor = 0.4;
+  // several clips that are very little video together (under 5 s) play in order too: mixed, their moments showed twice
+  const thin = ES.sources.length > 1 && ES.sources.reduce((t, s) => t + goodSecs(s), 0) < SHORT_REEL.enough;
+  let seq = (ES.seqOn || thin || ES.sources.length === 1) && ES.sources.length ? EH.seqSlots(ES.plan.length) : null; ES.seqFloor = 0.4;
   // In my order, each clip is one shot (1 2 3 4…): the song's cuts that would fall inside a clip are let go, so its
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
   // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
-  if(seq && ES.seqOn && ES.sources.length > 1 && !EH.copyExact()){
+  if(seq && (ES.seqOn || thin) && ES.sources.length > 1 && !EH.copyExact()){
     for(let i = ES.plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       ES.plan[i-1] = { ...ES.plan[i-1], end: ES.plan[i].end, sp: EH.SPEED.normal }; ES.plan.splice(i, 1); seq.splice(i, 1);
     }

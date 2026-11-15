@@ -19,10 +19,15 @@ fs.mkdirSync(OUT, { recursive: true });
 const PHONE = { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2,
   userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' };
 const SCENARIOS = [
-  { id: 'A-12clips-fourfloor', song: 'four_floor_124', clips: media.clips.map((c) => c.index), why: 'a computer, as it comes (clips in my order, 1080p): 12 clips, a steady 124 BPM song' },
+  { id: 'A-12clips-fourfloor', song: 'four_floor_124', clips: media.clips.filter((c) => !c.short).map((c) => c.index), why: 'a computer, as it comes (clips in my order, 1080p): 12 clips, a steady 124 BPM song' },
   { id: 'B-5clips-bhangra-mix', song: 'bhangra_dhol_98', clips: [0, 3, 5, 8, 10], mix: true, wholeSong: true, res: '720p', why: 'a computer, Mix all clips for the whole song: 5 clips (one half dark), bhangra; the edit reviews and repairs itself here' },
   ...((media.talk || []).length ? [{ id: 'D-talking-vlog', talk: true, res: '720p', path: '/create/talking', why: 'a computer, a Talking Reel (a vlog, a tutorial): three clips of speech in English, Hindi and Marathi with known pauses, no song' }] : []),
   { id: 'C-phone-8clips-dembow', song: 'bollywood_dembow_96', clips: [1, 2, 4, 5, 6, 7, 9, 11], phone: true, res: '720p', why: 'a phone-sized screen with touch, as it comes: 8 clips, a dembow song' },
+  // one clip of 4 s: its Reel is made with no "add more clips", and the song decides how (video-engine short.ts)
+  ...(media.clips.some((c) => c.short) && media.songs.some((s) => s.name === 'slow_72') ? [
+    { id: 'E-1clip-4s-slow-song', song: 'slow_72', clips: [media.clips.find((c) => c.short).index], res: '720p', why: 'one clip of 4 s under a slow song (72 BPM): a slow motion Reel of about 8 s' },
+    { id: 'F-1clip-4s-fast-song', song: 'four_floor_124', clips: [media.clips.find((c) => c.short).index], res: '720p', why: 'one clip of 4 s under a fast song (124 BPM): a Reel about as long as the clip, nearly as filmed' },
+  ] : []),
 ].filter((s) => !process.env.ONLY || process.env.ONLY.split(',').some((o) => s.id.startsWith(o.trim())))
   // CLIPS=1,4,17: these clips instead of the scenario's own (a look at a feature on chosen footage)
   .map((s) => (process.env.CLIPS && !s.talk ? { ...s, clips: process.env.CLIPS.split(',').map(Number) } : s));
@@ -65,7 +70,7 @@ async function scenario(browser, sc) {
         for (const d of [...document.querySelectorAll('[role=dialog],[aria-modal=true],dialog[open]')].filter(vis)) {
           const text = d.innerText.replace(/\s+/g, ' ').slice(0, 160);
           // the answer to this check's own "Pop out the subject" on clips that have none (one colour each): read, then closed
-          if (/No shot has one clear subject|could not be cut out/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^ok$/i.test(x.innerText.trim())); if (b) { b.click(); return 'OK · ' + text.slice(0, 60); } }
+          if (/No shot has one clear subject|could not be cut out|no shot long enough for a pop/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^ok$/i.test(x.innerText.trim())); if (b) { b.click(); return 'OK · ' + text.slice(0, 60); } }
           if (/not answering right now/i.test(text)) { const b = [...d.querySelectorAll('button')].find((x) => /^close$/i.test(x.innerText.trim())); if (b) { b.click(); return 'Close · ' + text.slice(0, 60); } }
           // too little good video for the song: the shorter Reel Shubix offers is taken (not "Add clips")
           if (/Not enough clips/i.test(text)) { const no = d.querySelector('#cconfno'); if (no && vis(no)) { const t = no.innerText.trim(); no.click(); return t + ' · ' + text.slice(0, 60); } }
@@ -144,7 +149,7 @@ async function scenario(browser, sc) {
     const made = await p.evaluate(() => {
       const root = document.querySelector('.brs'), S = root.__studio, e = S.edit || [], x = S.section || {};
       const srcs = (S.sources || []).map((s) => ({ name: s.name, dur: s.dur, samples: (s.samples || []).length }));
-      return { status: document.getElementById('s3st').textContent, sources: srcs,
+      return { status: document.getElementById('s3st').textContent, sources: srcs, fitnote: (document.getElementById('fitnote') || {}).textContent || '',
         section: { start: x.start, len: x.len }, songStatus: document.getElementById('s1st').textContent, beatSource: (S.songR || {}).beatSource || null,
         beats: (S.beats || []).map((b) => +b.toFixed(4)),
         plan: (S.plan || []).map((x) => ({ start: +x.start.toFixed(3), end: +x.end.toFixed(3), type: x.type })), songCuts: ((S.songR || {}).cuts || []).map((c, k) => ({ t: +c.toFixed(3), type: ((S.songR || {}).cutType || [])[k] })), parts: S.parts || null, mode: S.mode,
@@ -152,7 +157,8 @@ async function scenario(browser, sc) {
         review: root.__lastEditReview || null,
         talk: S.talk ? { seconds: +S.talk.parts.reduce((q, x) => q + x.b - x.a, 0).toFixed(3), parts: S.talk.parts.length, detector: [...new Set((S.sources || []).map((x) => x.voice && x.voice.how))] } : null };
     });
-    step('reel made', { ms: editMs, shots: made.edit.length, status: made.status, clipsUsed: new Set(made.edit.map((s) => s.src)).size, clipsGiven: files.length,
+    step('reel made', { ms: editMs, shots: made.edit.length, status: made.status, length: +(made.edit[made.edit.length - 1].end - made.edit[0].start).toFixed(2), fitnote: made.fitnote,
+      videoPerSecond: +(made.edit.reduce((t, s) => t + s.need, 0) / Math.max(0.01, made.edit[made.edit.length - 1].end - made.edit[0].start)).toFixed(2), clipsUsed: new Set(made.edit.map((s) => s.src)).size, clipsGiven: files.length,
       review: made.review ? { score: made.review.score, status: made.review.status, beatSync: made.review.metrics.beatSync, drops: made.review.metrics.drops, issues: made.review.issues.map((i) => i.code + (i.shot === undefined ? '' : '@' + i.shot)) } : null, ...(await long()) });
     // the subject pop Shubix offers by itself (a beat Reel of 8 s or more with a clear subject): wait for it a little
     if (!sc.talk) {

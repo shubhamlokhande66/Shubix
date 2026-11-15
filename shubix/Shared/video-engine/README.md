@@ -52,6 +52,24 @@ are 0.9-2.7 s, the drop is cut on, the review says 88.5 (`FE/mobile-app/tests/br
 
 The website writes each review to the Reel's log (Admin → Logs, step `review`) and keeps it in `root.__lastEditReview`.
 
+## A Reel from very little video
+
+`shortReelFor` (`src/short.ts`) answers what to make of 2 to 5 s of good video (one 4 s clip). Nobody is sent back for
+more clips and nothing is asked: the song decides.
+
+| the song | the video plays | 4 s of video becomes |
+|---|---|---|
+| slow (95 BPM or under), or no steady beat | at half speed | a Reel of about 8 s |
+| in between | in between | 5 to 7 s |
+| fast (130 BPM or over) | as filmed | a Reel of about 4 s |
+
+Never slower than half speed (a phone's 30 pictures a second stutter below it), never shorter than 3 s, never longer
+than the song. Under 2 s of good video: more clips are asked for, as before. The website's studio (`footCheck`,
+`askShort` in `engine.ts`) and the Android app's create flow (`app/create/[kind].tsx`) set the Reel's length by it;
+the engines then play the clip forward once, slower (the "In my order" walk, also for several clips that are under
+5 s together). Checked by `FE/web-app/tests/video-engine-short.test.ts`, `FE/mobile-app/tests/short-clip.test.ts`
+(the Android engine with no page) and runs E and F of the start-to-end check.
+
 ## Shared editing primitives
 
 - Typed keyframe tracks and easing, with numeric and compact Studio transform interpolation shared by web and Android

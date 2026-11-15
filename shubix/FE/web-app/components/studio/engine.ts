@@ -12,7 +12,7 @@
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -3549,7 +3549,9 @@ function suitFx(e){
 /* ---- Enough clips for the Reel? (Create) Once the clips are read, and again when the Reel's length or part changes:
  * the good footage (sharp, lit moments: the clip's own reading) against the Reel's length. Enough: said once, OK. Not
  * enough: said plainly, with the way out (a shorter Reel on the music page, or more clips), so the Reel is never filled
- * by repeating moments or slowing clips down. ---- */
+ * by repeating moments.
+ * Very little video (2 to 5 s: one short clip): no question and no "add more clips". The song decides
+ * (video-engine short.ts): slow motion under a slow song, as filmed under a fast one. Under 2 s: more clips. ---- */
 const fmtS = s => s >= 60 ? Math.floor(s/60) + ':' + String(Math.round(s % 60)).padStart(2, '0') + ' min' : Math.round(s) + ' s';
 function goodSecs(src){
   const S = src.samples || [], med = src.shMed || 1, usable = Math.max(0, (src.dur || 0) - TAIL);
@@ -3566,7 +3568,11 @@ function footCheckSoon(){ if(kind === 'talk') return;   // in Create and in the 
  * the Reel is that long (the song's best part of it); as long as the song or longer: the whole song (Make Reel asks what to
  * do when the clips are much longer: askShort). Unticked: the length is the person's, as before. */
 const songLen = () => song && song.buf ? song.buf.duration : 0;
-const goodHave = () => Math.floor(sources.reduce((t, s) => t + goodSecs(s), 0));   // whole seconds, said the same way everywhere
+const goodExact = () => sources.reduce((t, s) => t + goodSecs(s), 0);
+const goodHave = () => Math.floor(goodExact());   // whole seconds, said the same way everywhere
+// the Reel of very little video, by the song (null: enough video for the usual way, or too little for any Reel)
+const shortReel = () => { const g = goodExact(); return g < SHORT_REEL.enough && songLen() ? shortReelFor(g, (song.r && song.r.period) || 0, songLen()) : null; };
+const shortNote = sr => 'Your Reel: ' + fmtS(sr.len) + (sr.speed < 0.9 ? ', your video in slow motion to suit the song.' : ', as long as your good video.');
 function lenLock(){
   const on = fitOn() && kind !== 'talk';
   [...$('slen').children].forEach(b => { b.disabled = on; }); $('slenc').disabled = on;
@@ -3574,12 +3580,14 @@ function lenLock(){
 }
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
-  const have = goodHave(), full = songLen();
+  const have = goodHave(), full = songLen(), sr = have < 5 ? shortReel() : null;
   if(fitOn() && full){
     if(have >= 5){ const target = have < full * 0.95 ? have : 0;   // 0: the whole song
       if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len) setLen(target); }
+    else if(sr){ const target = sr.len < full * 0.95 ? sr.len : 0;
+      if(target ? Math.abs((sec.len || full) - target) >= 0.2 : sec.len) setLen(target); }
     $('fitnote').hidden = false;
-    $('fitnote').textContent = have < 5 ? 'Add more clips: your clips have ' + fmtS(have) + ' of good video.'
+    $('fitnote').textContent = sr ? shortNote(sr) : have < 5 ? 'Add more clips: your clips have ' + fmtS(have) + ' of good video.'
       : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
       : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
       : 'Your Reel: the whole song (' + fmtS(full) + ').';
@@ -3603,7 +3611,13 @@ async function askShort(){
     badTold = bad;
   }
   if(!buf || !sources.length || kind === 'talk') return 'go';
-  const need = buf.duration, have = goodHave(), full = songLen();
+  const need = buf.duration, have = goodHave(), full = songLen(), sr = have < 5 ? shortReel() : null;
+  // very little video: its Reel is made, as the song asks (slow motion under a slow song), with no question
+  if(fitOn() && full && sr){
+    const target = sr.len < full * 0.95 ? sr.len : 0;
+    if(target ? Math.abs((sec.len || full) - target) >= 0.2 : sec.len){ await setLen(target); return 'again'; }
+    return 'go';
+  }
   if(fitOn() && full && have >= 5){
     // much more good video than song: what to do is the person's (a longer song, fewer clips, or Shubix picks the best)
     const key = have + ':' + Math.round(full);
@@ -3623,10 +3637,11 @@ async function askShort(){
   if(have >= need * 0.95) return 'go';
   // 'Make a 7s Reel' already chosen for these clips and this song: asked once, not at every Make Reel (2026-11-12)
   const sk = Math.round(have*10) + ':' + (song ? song.key : '');
-  if(shortOk === sk && sec.len && Math.abs(sec.len - Math.max(5, Math.floor(have))) < 0.01) return 'go';
-  const v = await askCredits({ title: 'Not enough clips', text: 'Your clips have ' + fmtS(have) + ' of good video. Your Reel is ' + fmtS(need) + '. No credits were used.', ok: 'Add clips', ...(have >= 5 ? { no: 'Make a ' + fmtS(have) + ' Reel' } : {}) });
+  const mine = sr ? sr.len : Math.max(5, Math.floor(have));   // the Reel these clips make
+  if(shortOk === sk && sec.len && Math.abs(sec.len - mine) < 0.01) return 'go';
+  const v = await askCredits({ title: 'Not enough clips', text: 'Your clips have ' + fmtS(have) + ' of good video. Your Reel is ' + fmtS(need) + '. No credits were used.', ok: 'Add clips', ...(have >= 5 || sr ? { no: 'Make a ' + fmtS(mine) + ' Reel' } : {}) });
   if(v === true){ $('vfile').click(); return 'stop'; }
-  if(v === false){ shortOk = sk; await setLen(Math.max(5, Math.floor(have))); return 'again'; }
+  if(v === false){ shortOk = sk; await setLen(mine); return 'again'; }
   return 'stop';
 }
 function clipFlaw(src){
@@ -3826,11 +3841,13 @@ function makeEditNow(){
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
   // "In my order": each shot has its clip and its part of that clip (seqSlots), so the clips play one after another
   // one clip always plays forward (its shots out of order jump back and forth in time)
-  let seq = (seqOn || sources.length === 1) && sources.length ? seqSlots(plan.length) : null; seqFloor = 0.4;
+  // several clips that are very little video together (under 5 s) play in order too: mixed, their moments showed twice
+  const thin = sources.length > 1 && sources.reduce((t, s) => t + goodSecs(s), 0) < SHORT_REEL.enough;
+  let seq = (seqOn || thin || sources.length === 1) && sources.length ? seqSlots(plan.length) : null; seqFloor = 0.4;
   // In my order, each clip is one shot (1 2 3 4…): the song's cuts that would fall inside a clip are let go, so its
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
   // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
-  if(seq && seqOn && sources.length > 1 && !copyExact()){
+  if(seq && (seqOn || thin) && sources.length > 1 && !copyExact()){
     for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
     }
