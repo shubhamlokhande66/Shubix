@@ -594,4 +594,47 @@ Save your best B-roll in a folder sorted by theme: workplace, products, city, na
 ## In Shubix
 Add your B-roll with your main clips and Shubix cuts it in on the beat. In a Talking Reel you can add B-roll on top of your speech as a layer, and every clip can be trimmed, reordered or swapped for another moment from the same clip.`,
   },
+  {
+    slug: "vlog-to-reels",
+    title: "Turn a long vlog into Reels",
+    description: "How to find the moments of a long video that stand on their own, cut them into vertical Reels and give each one a hook, subtitles and an ending.",
+    minutes: 5,
+    body: `A vlog, a podcast, a class or a live session holds many short videos inside it. One hour of talking usually has five to ten moments that make sense without the rest: a tip, a story, a strong opinion, a funny answer. Cutting those out as Reels brings new viewers to the long video, and it is far less work than filming something new.
+
+## What makes a moment stand on its own
+A good short clip is a complete thought. Before you cut, check that the moment:
+- **Starts clean:** the first sentence makes sense to someone who has seen nothing else. A moment that begins with "and", "so" or "like I said" needs an earlier start.
+- **Has a hook:** a question, a surprising claim or the result comes in the first sentence. See [hook the first second](/guides/hook-the-first-second).
+- **Finishes the thought:** it ends on a finished sentence, ideally the point or the punchline, not in the middle of an explanation.
+- **Keeps moving:** steady talking with no long silences, no searching for words, no waiting for something to load.
+
+## How long each Reel should be
+- **15 to 35 seconds:** one tip, one joke, one answer. The easiest length to watch to the end.
+- **30 to 60 seconds:** a short story or a tip with its example.
+- **55 to 90 seconds:** an explanation that needs its steps. Only when every part earns its place.
+When in doubt, choose the shorter cut. A Reel people finish does more for you than a longer one they leave.
+
+## Finding the moments
+Watching an hour of your own video again is slow. Faster ways:
+- **Mark while recording:** clap or say "clip that" when something good happens, and look for those marks later.
+- **Read, do not watch:** a transcript shows the strong sentences in minutes. Look for questions, numbers, lists and stories.
+- **Listen for energy:** laughter, a raised voice, a pause before a point. These are where viewers lean in.
+- **Ask your comments:** the parts people quote or ask about in the comments of the long video are proven moments.
+
+## From wide to vertical
+Most vlogs are filmed wide and Reels are tall. Keep the speaker's face in the frame when you crop: eyes about a third from the top, a little space above the head. If two people talk, crop to whoever is speaking, or stack the two faces one above the other. [Reel size and length](/guides/reel-size-and-length) has the numbers.
+
+## Make each clip a finished Reel
+A cut-out moment is raw material. To finish it:
+- **Tighten it:** remove long pauses and restarts, as in any [Talking Reel](/guides/talking-reels).
+- **Add subtitles:** many people watch without sound. [Captions and text](/guides/captions-and-text-on-reels) explains how to keep them readable.
+- **Give it a title on screen:** a few words in the first second that say what this clip is about.
+- **End with where to find more:** one line pointing to the full video is enough.
+
+## How many, and when
+Do not post every moment in one day. Three to five Reels from one long video, spread over a week or two, is a good rhythm, and each one can use a different hook to reach different viewers. A [content calendar](/guides/planning-a-content-calendar) keeps this easy.
+
+## In Shubix
+[Clips from a Video](/create/clips) does the searching for you. Choose a long video, up to two hours, pick the language and the length you want (15 to 35, 30 to 60 or 55 to 90 seconds), and Shubix reads the speech and lists the moments that stand on their own, each with a score, a title and a hook. The long video itself is not uploaded; only its sound is read to find the words. Play any moment right there, then choose "Make Reel" to open it as a Talking Reel, where pauses are cut, the frame follows the face and you can add subtitles and music, or "Download" to save the cut clip as it is.`,
+  },
 ];

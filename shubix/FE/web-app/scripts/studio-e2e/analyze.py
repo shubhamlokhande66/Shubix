@@ -16,6 +16,7 @@ import numpy as np
 media_dir, out_dir = sys.argv[1], sys.argv[2]
 report = json.load(open(os.path.join(out_dir, 'report.json')))
 clips = report['media']['clips']
+talk_clips = report['media'].get('talk', [])
 W, H = 54, 96
 
 
@@ -73,7 +74,9 @@ for sc in report['scenarios']:
     res['length'] = {'planned': round(reel, 3), 'file': round(info['seconds'], 3), 'differenceMs': round((info['seconds'] - reel) * 1000)}
 
     # ---- which clip every frame shows
-    given = [next(c for c in clips if c['file'] == s['name']) for s in made['sources']]      # the studio's clip order
+    is_talk = bool(sc.get('isTalk'))
+    pool = talk_clips if is_talk else clips
+    given = [next(c for c in pool if os.path.basename(c['file']) == s['name']) for s in made['sources']]      # the studio's clip order
     hues = np.array([c['hue'] for c in given])
     F = frames_of(path, fps)
     mid = F[:, H // 4:3 * H // 4, W // 4:3 * W // 4].reshape(len(F), -1, 3)
@@ -81,7 +84,7 @@ for sc in report['scenarios']:
     h, s, v = hue_of(med)
     dist = np.abs((h[:, None] - hues[None, :] + 180) % 360 - 180)
     who = dist.argmin(1); far = dist.min(1)
-    known = (s > 0.25) & (v > 0.15) & (far < 360 / len(clips) / 2 + 3)
+    known = (s > 0.25) & (v > 0.15) & (far < 360 / len(clips) / 2 + 3)      # (the talking rooms are 44 degrees apart or more)
     who = np.where(known, who, -1)
     # a dissolve between two clips passes through colours that are neither's (and can look like a third clip's for a
     # frame or two): a clip counts where it holds for 4 frames or more, the rest is the way from one to the next
@@ -126,19 +129,39 @@ for sc in report['scenarios']:
         jpg = subprocess.run(['ffmpeg', '-loglevel', 'error', '-ss', f'{t_at:.3f}', '-i', path, '-frames:v', '16', '-vf', 'scale=120:-2,tile=16x1', '-q:v', '6', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'], capture_output=True).stdout
         if jpg: print(f"SHOT {sc['id']}-frames-from-{t_at:.2f}s {base64.b64encode(jpg).decode()} END")
 
-    # ---- the cuts in the file against the song's true beats (the whole point: a cut on the beat, in the file)
-    name = sc.get('song') or {'A': 'four_floor_124', 'B': 'bhangra_dhol_98'}.get(sc['id'][0])
-    truth = next(x['beats'] for x in report['media']['songs'] if x['name'] == name)
-    sec = made['section'].get('start') or 0.0
-    beats_in_reel = [b - sec - t0 for b in truth]
-    file_cut_times = [c['t'] for c in cuts if c['soft'] <= 2 and any(p['to'] == c['to'] and abs(c['t'] - p['t']) < 0.35 for p in seen_changes)]   # the planned cuts, where the file has them
-    # the studio cuts one frame before the beat on purpose (1/30 s): measured both as it is and with that taken off
-    raw = [nearest(beats_in_reel, t) * 1000 for t in file_cut_times]
-    lead = [nearest(beats_in_reel, t + 1 / 30) * 1000 for t in file_cut_times]
-    res['beats'] = {'song': name, 'sectionStart': sec, 'hardCutsInFile': len(file_cut_times),
-                    'cutToTrueBeat': stat(raw) and {**stat(raw), 'within40ms': round(float(np.mean(np.array(raw) <= 40)), 3)},
-                    'cutPlusOneFrameToTrueBeat': stat(lead) and {**stat(lead), 'within40ms': round(float(np.mean(np.array(lead) <= 40)), 3)},
-                    'studioBeatsToTruth': (lambda sb: stat([nearest(truth, b + sec) * 1000 for b in sb]) if sb else None)([b for b in made['beats'] if 0 <= b - t0 <= reel])}
+    if is_talk:
+        # ---- the voice in the file against the clip it comes from, shot by shot: is the picture's sound its own, and when
+        whole = audio_of(path)
+        sync = []
+        for e in edit[:14]:
+            L = min(0.6, e['end'] - e['start'] - 0.1)
+            if L < 0.25: continue
+            src = audio_of(os.path.join(media_dir, given[e['src']]['file']), start=max(0.0, e['in'] + 0.05 - 0.2), dur=L + 0.4)      # 0.2 s either side to slide in
+            a0 = int((e['start'] - t0 + 0.05) * 8000); x = whole[a0:a0 + int(L * 8000)]
+            if len(x) < 1600 or len(src) < len(x): continue
+            best, lag = -1.0, 0
+            for d in range(0, len(src) - len(x) + 1, 8):                                  # 1 ms steps
+                y = src[d:d + len(x)]; c = float(np.dot(x, y) / (np.sqrt(np.dot(x, x) * np.dot(y, y)) + 1e-12))
+                if c > best: best, lag = c, d
+            sync.append({'shot': edit.index(e), 'match': round(best, 2), 'voiceLateMs': round((1600 - lag) / 8)})
+        good = [q for q in sync if q["match"] >= 0.4]
+        res['voice'] = {'shotsMeasured': len(sync), 'shotsMatched': len(good), 'voiceLateMs': stat([abs(q['voiceLateMs']) for q in good]), 'medianSignedMs': round(float(np.median([q['voiceLateMs'] for q in good])), 1) if good else None,
+                        'unmatched': [q for q in sync if q["match"] < 0.4][:6]}
+        res['talk'] = sc.get('talk')
+    else:
+        # ---- the cuts in the file against the song's true beats (the whole point: a cut on the beat, in the file)
+        name = sc.get('song') or {'A': 'four_floor_124', 'B': 'bhangra_dhol_98'}.get(sc['id'][0])
+        truth = next(x['beats'] for x in report['media']['songs'] if x['name'] == name)
+        sec = made['section'].get('start') or 0.0
+        beats_in_reel = [b - sec - t0 for b in truth]
+        file_cut_times = [c['t'] for c in cuts if c['soft'] <= 2 and any(p['to'] == c['to'] and abs(c['t'] - p['t']) < 0.35 for p in seen_changes)]   # the planned cuts, where the file has them
+        # the studio cuts one frame before the beat on purpose (1/30 s): measured both as it is and with that taken off
+        raw = [nearest(beats_in_reel, t) * 1000 for t in file_cut_times]
+        lead = [nearest(beats_in_reel, t + 1 / 30) * 1000 for t in file_cut_times]
+        res['beats'] = {'song': name, 'sectionStart': sec, 'hardCutsInFile': len(file_cut_times),
+                        'cutToTrueBeat': stat(raw) and {**stat(raw), 'within40ms': round(float(np.mean(np.array(raw) <= 40)), 3)},
+                        'cutPlusOneFrameToTrueBeat': stat(lead) and {**stat(lead), 'within40ms': round(float(np.mean(np.array(lead) <= 40)), 3)},
+                        'studioBeatsToTruth': (lambda sb: stat([nearest(truth, b + sec) * 1000 for b in sb]) if sb else None)([b for b in made['beats'] if 0 <= b - t0 <= reel])}
 
     # ---- the clips really in the picture; the black part of clip 5
     shown = sorted(set(int(x) for x in who if x >= 0))
@@ -152,7 +175,9 @@ for sc in report['scenarios']:
                            'blackFramesInFile': res['frames']['dark']}
 
     # ---- sound against picture: the song in the file against the song where the edit put it
-    if info['audio']:
+    if is_talk:
+        pass
+    elif info['audio']:
         a = np.abs(audio_of(path)); b = np.abs(audio_of(os.path.join(media_dir, name + '.wav'), start=sec + t0, dur=reel))
         n = min(len(a), len(b)) // 8 * 8
         if n > 8000:
@@ -172,6 +197,7 @@ for r in out['scenarios']:
     f = r['file']; print('  stream starts:', json.dumps(f.get('starts'))); print(f"  file: {f['video']['codec']} {f['video']['width']}x{f['video']['height']} {f['video']['fps']} fps, sound {f['audio'] and f['audio']['codec']}, {f['seconds']:.2f} s (planned {r['length']['planned']} s)")
     print('  frames told apart:', r['frames']['toldApart'], '· black frames:', r['frames']['dark'])
     print('  cuts:', json.dumps(r['cuts']))
-    print('  beats:', json.dumps(r['beats']))
+    if r.get('beats'): print('  beats:', json.dumps(r['beats']))
+    if r.get('voice'): print('  talk:', json.dumps(r.get('talk'))); print('  voice:', json.dumps(r['voice']))
     print('  clips:', json.dumps(r['clips']), '· dark part:', json.dumps(r.get('darkPart')))
     print('  sound:', json.dumps(r.get('sound')))

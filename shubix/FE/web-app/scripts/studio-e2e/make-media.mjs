@@ -30,5 +30,17 @@ for (const [set, name] of [['set2', 'four_floor_124'], ['set3', 'bhangra_dhol_98
   fs.copyFileSync(wav, path.join(out, name + '.wav'));
   songs.push({ file: name + '.wav', name, beats: truth });
 }
-fs.writeFileSync(path.join(out, 'media.json'), JSON.stringify({ clips, songs }, null, 1));
-console.log('made ' + clips.length + ' clips and ' + songs.length + ' songs in ' + out);
+// Talking clips (a vlog, a tutorial): ../studio-talk/make_talk.py speaks known phrases with known pauses (espeak-ng) over
+// a room of one colour each. Without espeak-ng they are left out, and said so.
+const talk = [];
+if (spawnSync('espeak-ng', ['--version'], { stdio: 'ignore' }).status === 0) {
+  const py = ['python3', 'python'].find((c) => spawnSync(c, ['-c', 'import numpy'], { stdio: 'ignore' }).status === 0);
+  const r3 = spawnSync(py, [path.join(path.dirname(new URL(import.meta.url).pathname), '../studio-talk/make_talk.py')], { cwd: out, stdio: ['ignore', 'ignore', 'inherit'] });
+  if (r3.status !== 0) { console.error('make_talk.py failed'); process.exit(1); }
+  const truth = JSON.parse(fs.readFileSync(path.join(out, 'out/talk_truth.json'), 'utf8')), rooms = ['3a5f7d', '6d4c3d', '2f5d50'];
+  const hueOf = (hex) => { const [r, g, b] = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16) / 255), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+    return ((mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60 + 360) % 360; };
+  Object.keys(truth).forEach((name, n) => talk.push({ file: 'out/' + name + '.webm', name, hue: Math.round(hueOf(rooms[n]) * 10) / 10, ...truth[name] }));
+} else console.log('espeak-ng not found: the talking clips were not made');
+fs.writeFileSync(path.join(out, 'media.json'), JSON.stringify({ clips, songs, talk }, null, 1));
+console.log('made ' + clips.length + ' clips, ' + songs.length + ' songs and ' + talk.length + ' talking clips in ' + out);

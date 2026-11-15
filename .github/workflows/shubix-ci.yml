@@ -146,7 +146,7 @@ jobs:
       - name: Install FFmpeg, numpy and Playwright (it drives the Chrome already on the runner)
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get install --yes ffmpeg espeak-ng
           python3 -m pip install --quiet --user --break-system-packages numpy || python3 -m pip install --quiet --user numpy
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright-core@1.56.1
           google-chrome --version
