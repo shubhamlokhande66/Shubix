@@ -21,6 +21,7 @@ has the H.264 encoder the export wants. `ONLY=A,C` runs some of the runs.
 | A | a computer, as it comes (clips In my order, 1080p): 12 clips, a steady 124 BPM song |
 | B | a computer, Mix all clips for the whole song, 720p: 5 clips (one mostly black), bhangra |
 | C | a phone-sized screen with touch, as it comes, 720p: 8 clips, a dembow song |
+| D | a computer, a Talking Reel (a vlog, a tutorial), 720p: three clips of speech in English, Hindi and Marathi with known pauses (`../studio-talk/make_talk.py`, needs espeak-ng), no song |
 
 No API runs behind the website here: `/api/auth/me` is answered "accounts are off" so Generate goes on, the popup
 "Shubix is not answering right now" is closed, and what needs an account or the cloud (Shubix AI's plan, saving to My
@@ -37,6 +38,8 @@ From the exported file (`analysis.json`):
   against the song's true beats, in ms (one frame is 33 ms; the studio cuts one frame before the beat on purpose);
 - the clips really in the picture; black frames; whether the black part of clip 5 is shown;
 - sound against picture: how far the song in the file is from where the edit put it.
+- a Talking Reel: how much of the speech is in the Reel and how much of the long pauses (against the phrases really
+  spoken), and shot by shot whether the voice in the file is the clip's own and how late it is against the picture.
 
 The runner has no graphics card: the preview's frame rate and the export's time there say nothing about a phone.
 Screenshots are written into the log too (small JPEGs between `SHOT` and `END`), for a run whose files cannot be fetched.
