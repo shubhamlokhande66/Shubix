@@ -9,6 +9,10 @@ import { toast } from "@/lib/toast";
 import { cutClip, fmt, keepForStudio, PART_SECONDS, probe, voiceParts } from "@/lib/clips/media";
 
 /**
+ * Vlog / Talking video (also Clips from a Video): one entry for talking videos. Up to 3 minutes of talking (one video,
+ * or several clips): one Reel, made at once in the Talking Reel studio (pauses cut, captions, music). A longer video: its
+ * best moments, each a Reel (below). A video of 45 s to 3 minutes can go either way.
+ *
  * Clips from a Video (like Opus Clip): one long video (a podcast, a talk, a vlog, a class) in, its best moments out as
  * Reels. The voice is read on this phone part by part and transcribed (/api/studio/transcribe); Shubix finds the moments
  * that stand on their own (/api/studio/moments: a score, a title and a hook each). Every moment plays right here; "Make
@@ -23,7 +27,8 @@ type Stage = { label: string; pct: number } | null;
 
 const LENGTHS: { value: Length; label: string }[] = [{ value: "short", label: "15–35 s" }, { value: "medium", label: "30–60 s" }, { value: "long", label: "55–90 s" }];
 const LANGS = [["", "Auto"], ["en", "English"], ["hi", "Hindi"], ["mr", "Marathi"], ["gu", "Gujarati"], ["ta", "Tamil"], ["te", "Telugu"], ["bn", "Bengali"]] as const;
-const MAX_MINUTES = 120;
+const MAX_MINUTES = 120, ONE_REEL_MAX = 180;   // one Reel: up to 3 minutes of talking (its captions are read in one part)
+type Way = "one" | "many";
 
 async function api<T>(url: string, init: RequestInit, signal: AbortSignal): Promise<T> {
   for (let n = 1; ; n++) {
@@ -42,8 +47,10 @@ async function api<T>(url: string, init: RequestInit, signal: AbortSignal): Prom
 const scoreTone = (s: number) => (s >= 80 ? "text-emerald-600" : s >= 60 ? "text-accent" : "text-muted");
 
 export function ClipsFinder() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
   const [meta, setMeta] = useState<{ duration: number; audio: boolean } | null>(null);
+  const [way, setWay] = useState<Way>("one");
   const [length, setLength] = useState<Length>("medium");
   const [count, setCount] = useState(6);
   const [lang, setLang] = useState("");
@@ -62,16 +69,31 @@ export function ClipsFinder() {
   useEffect(() => () => ac.current?.abort(), []);
   const key = file ? `${file.name}|${file.size}|${file.lastModified}` : "";
 
-  async function pick(f: File) {
-    ac.current?.abort(); setClips(null); setError(null); setMeta(null); setBy(null); words.current = null; setFile(f);
+  async function pick(fs: File[]) {
+    ac.current?.abort(); setClips(null); setError(null); setMeta(null); setBy(null); words.current = null; setFiles(fs);
     try {
-      const m = await probe(f);
-      if (!m.audio) setError("This video has no sound. Clips are found from what people say, so pick a video with talking.");
+      const all = await Promise.all(fs.map((f) => probe(f)));
+      const m = { duration: all.reduce((a, x) => a + x.duration, 0), audio: all.some((x) => x.audio) };
+      // up to 3 minutes: one Reel at once; longer: its best moments (one video only: several clips over 3 minutes are too
+      // long for one Reel and are not one talk to cut into moments)
+      if (!m.audio) setError("These videos have no sound. Pick a video where someone talks (a vlog, a tutorial, a review).");
+      else if (fs.length > 1 && m.duration > ONE_REEL_MAX) setError(`These clips are ${fmt(m.duration)} in all: one Reel takes up to 3 minutes of talking. Pick fewer clips, or one long video to cut into several Reels.`);
       else if (m.duration > MAX_MINUTES * 60) setError(`This video is ${Math.round(m.duration / 60)} minutes long. Pick one up to ${MAX_MINUTES} minutes.`);
-      else if (m.duration < 45) setError("This video is under 45 seconds: it is already Reel length. Open it in Talking Reel instead.");
+      setWay(m.duration <= ONE_REEL_MAX ? "one" : "many");
       setMeta(m);
     } catch { setError("This video could not be read in this browser. Try an MP4 or MOV, in Chrome or Edge."); }
   }
+  // one Reel of the whole talk: the clips go to the Talking Reel studio as they are, and it is made at once
+  async function oneReel() {
+    if (!files.length) return;
+    setBusy(-1);
+    try {
+      await keepForStudio(files);
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- the studio needs a full load (isolated page)
+      location.assign("/create/talking?from=clips");
+    } catch (e) { setError((e as Error).message || "The videos could not be handed to the studio. Please try again."); setBusy(null); }
+  }
+  const canOne = !!meta && meta.duration <= ONE_REEL_MAX, canMany = !!meta && files.length === 1 && meta.duration >= 45;
 
   async function find() {
     if (!file || !meta) return;
@@ -153,22 +175,33 @@ export function ClipsFinder() {
   const working = !!stage;
   return (
     <div className="mx-auto grid w-full max-w-3xl gap-4 px-4 pb-24 md:px-0">
-      <PageHeader title="Clips from a Video" subtitle="A long video in, its best moments out as Reels: scored, titled and ready to edit." />
+      <PageHeader title="Vlog / Talking video" subtitle="Your talking video in, Reels out: pauses cut, captions and music. A long one is cut into its best moments." />
 
       {!file ? (
-        <Dropzone label="Choose a long video" hint={`A podcast, talk, class or vlog · up to ${MAX_MINUTES} minutes · it stays on your phone`} accept="video/*"
-          validate={(f) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name)} onFiles={(f) => f[0] && void pick(f[0])} onReject={() => setError("That is not a video. Pick an MP4, MOV or WebM.")} />
+        <Dropzone label="Choose your talking video" hint={`A vlog, tutorial, review or podcast · one long video (up to ${MAX_MINUTES} minutes) or a few clips · it stays on your phone`} accept="video/*" multiple
+          validate={(f) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name)} onFiles={(f) => f.length && void pick(f)} onReject={() => setError("That is not a video. Pick an MP4, MOV or WebM.")} />
       ) : (
         <Card className="grid gap-3">
           <video ref={video} src={url} controls playsInline preload="metadata" className="max-h-[52vh] w-full rounded-xl bg-black" />
           <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-muted">
-            <span className="min-w-0 truncate font-medium text-foreground">{file.name}{meta && ` · ${fmt(meta.duration)}`}</span>
-            <Button variant="secondary" size="sm" icon="refresh" disabled={working || busy !== null} onClick={() => { ac.current?.abort(); setFile(null); setClips(null); setError(null); setStage(null); }}>Another video</Button>
+            <span className="min-w-0 truncate font-medium text-foreground">{files.length > 1 ? `${files.length} clips` : file.name}{meta && ` · ${fmt(meta.duration)}`}</span>
+            <Button variant="secondary" size="sm" icon="refresh" disabled={working || busy !== null} onClick={() => { ac.current?.abort(); setFiles([]); setClips(null); setError(null); setStage(null); }}>Another video</Button>
           </div>
         </Card>
       )}
 
-      {file && meta?.audio && (
+      {file && meta?.audio && canOne && canMany && (
+        <Segmented label="What to make" options={[{ value: "one", label: "One Reel of it all" }, { value: "many", label: "Several Reels from it" }]} value={way} onChange={(v: Way) => setWay(v)} />
+      )}
+
+      {file && meta?.audio && canOne && way === "one" && (
+        <Card className="grid gap-2">
+          <p className="m-0 text-[13px] text-muted">The whole talk becomes one Reel: the pauses cut, captions of what is said, quiet music, your face kept in the frame.</p>
+          <Button icon="sparkle" full loading={busy === -1} disabled={busy !== null} onClick={() => void oneReel()}>Make the Reel</Button>
+        </Card>
+      )}
+
+      {file && meta?.audio && canMany && way === "many" && (
         <Card className="grid gap-3">
           <div className="grid gap-1.5">
             <span className="text-[13px] font-semibold">Clip length</span>
@@ -192,14 +225,14 @@ export function ClipsFinder() {
               <Button variant="secondary" size="sm" onClick={() => { ac.current?.abort(); setStage(null); }}>Stop</Button>
             </div>
           ) : (
-            <Button icon="sparkle" full onClick={() => void find()} disabled={!meta || busy !== null || (meta.duration < 45 || meta.duration > MAX_MINUTES * 60)}>
+            <Button icon="sparkle" full onClick={() => void find()} disabled={!meta || busy !== null || meta.duration > MAX_MINUTES * 60}>
               {clips ? "Find again" : "Find the best clips"}
             </Button>
           )}
         </Card>
       )}
 
-      {error && <ErrorBanner message={error} onRetry={file && meta?.audio && !stage ? () => void find() : undefined} />}
+      {error && <ErrorBanner message={error} onRetry={file && meta?.audio && !stage && way === "many" && canMany ? () => void find() : undefined} />}
 
       {clips && clips.length > 0 && (
         <section className="grid gap-3" aria-label="Clips found">
@@ -235,7 +268,7 @@ export function ClipsFinder() {
       )}
 
       {!file && (
-        <EmptyState icon="scissors" title="How it works" hint="1. Pick a long video. 2. Shubix listens and finds the moments that work on their own. 3. Each gets a score, a title and a hook: play it, make it a Reel (pauses cut, captions, music) or download it." />
+        <EmptyState icon="mic" title="How it works" hint="Up to 3 minutes of talking: one Reel at once (pauses cut, captions, music). A longer video: Shubix listens, finds the moments that work on their own, gives each a score, a title and a hook; play it, make it a Reel or download it." />
       )}
       <p className="flex items-center gap-1.5 text-[12px] text-muted"><Icon name="lock" size={14} /> Your video stays on this device. Only its sound is sent, to find the words.</p>
     </div>

@@ -527,6 +527,15 @@ Checked: screenshots of every design screen (phone Ivory / Noir, computer) again
 Effect tab shows its 13 choices; the Pro inspector changes the speed; tapping the Pro timeline at 75% moves the playhead
 to 0.75; the menu's Noir and Simple apply and are remembered. `check-keyframes`, `check-overlays`, `check-templates` pass.
 
+## Vlog / Talking video (one entry)
+
+`/create/vlog` (the menu's one entry for talking videos; `/create/clips` is its old link and shows the same page): a
+vlog, tutorial, review or podcast in. Up to 3 minutes of talking (one video, or a few clips): one Reel, made at once in
+the Talking Reel studio (the clips are handed over as they are, `/create/talking?from=clips`, Generate presses itself).
+Longer than 3 minutes (one video): its best moments, below. A video of 45 s to 3 minutes can go either way ("One Reel of
+it all" / "Several Reels from it"). The Android app opens its Talking Reel for this entry. Checked in Chrome: a 4.6 min
+video offers only its best moments; two short clips (0:18) became one Reel in the studio by themselves (5 shots).
+
 ## Clips from a Video (long video → Reels)
 
 `/create/clips` (`components/organisms/ClipsFinder.tsx`, `lib/clips/media.ts`): one long video (up to 2 hours: a podcast,

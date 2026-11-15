@@ -28,7 +28,9 @@ export default function CreateScreen() {
 }
 function CreateFlowScreen() {
   const params = useLocalSearchParams<{ kind: string; templateId?: string }>();
-  const kind: FlowKind = (["music", "talking", "photo", "copy"] as const).find((k) => k === params.kind) ?? "music";
+  // Vlog / Talking video and its old link (the website's one entry for talking videos) are the app's Talking Reel
+  const asked = params.kind === "vlog" || params.kind === "clips" ? "talking" : params.kind;
+  const kind: FlowKind = (["music", "talking", "photo", "copy"] as const).find((k) => k === asked) ?? "music";
   const words = useStudioText(), insets = useSafeAreaInsets(), queryClient = useQueryClient(), order = ORDER[kind];
   const [step, setStep] = useState<FlowStep>("intro");
   const [music, setMusic] = useState<SongAnalysis | null>(null), [song, setSong] = useState<Song | null>(null), [recent, setRecent] = useState<Song[]>([]), [reading, setReading] = useState(false);

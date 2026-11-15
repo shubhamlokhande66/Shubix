@@ -89,20 +89,20 @@ function open(): Promise<IDBDatabase> {
     r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
   });
 }
-export async function keepForStudio(f: File): Promise<void> {
-  const db = await open();
-  await new Promise<void>((ok, no) => { const t = db.transaction(STORE, "readwrite"); t.objectStore(STORE).put({ f, at: Date.now() }, KEY); t.oncomplete = () => ok(); t.onerror = () => no(t.error); });
+export async function keepForStudio(f: File | File[]): Promise<void> {
+  const db = await open(), fs = Array.isArray(f) ? f : [f];
+  await new Promise<void>((ok, no) => { const t = db.transaction(STORE, "readwrite"); t.objectStore(STORE).put({ fs, at: Date.now() }, KEY); t.oncomplete = () => ok(); t.onerror = () => no(t.error); });
   db.close();
 }
-/** The clip waiting for the studio (once: it is removed), if it was kept in the last 10 minutes. */
-export async function takeForStudio(): Promise<File | null> {
+/** The clips waiting for the studio (once: they are removed), if they were kept in the last 10 minutes. */
+export async function takeForStudio(): Promise<File[]> {
   try {
     const db = await open();
-    const got = await new Promise<{ f: File; at: number } | undefined>((ok, no) => {
+    const got = await new Promise<{ f?: File; fs?: File[]; at: number } | undefined>((ok, no) => {
       const t = db.transaction(STORE, "readwrite"), s = t.objectStore(STORE), r = s.get(KEY);
-      r.onsuccess = () => { s.delete(KEY); ok(r.result as { f: File; at: number } | undefined); }; r.onerror = () => no(r.error);
+      r.onsuccess = () => { s.delete(KEY); ok(r.result as { f?: File; fs?: File[]; at: number } | undefined); }; r.onerror = () => no(r.error);
     });
     db.close();
-    return got && Date.now() - got.at < 10 * 60_000 ? got.f : null;
-  } catch { return null; }
+    return got && Date.now() - got.at < 10 * 60_000 ? got.fs ?? (got.f ? [got.f] : []) : [];
+  } catch { return []; }
 }

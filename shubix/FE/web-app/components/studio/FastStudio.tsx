@@ -97,12 +97,13 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           personMask: (rgba: Uint8ClampedArray) => import("@/lib/vision/client").then((m) => m.personMask(rgba)),
           findFaces: (squares: Uint8ClampedArray[]) => import("@/lib/vision/client").then((m) => m.findFaces(squares)),
         });
-        // a moment cut out in Clips from a Video (/create/talking?from=clips): it waits in this browser, put in as the clip
+        // the clips sent from Vlog / Talking video (/create/talking?from=clips): a moment cut out of a long video, or the
+        // creator's own talking clips; they wait in this browser and are put in as the clips
         if (!engine && new URLSearchParams(location.search).get("from") === "clips") {
-          const clip = await import("@/lib/clips/media").then((m) => m.takeForStudio());
+          const clips = await import("@/lib/clips/media").then((m) => m.takeForStudio());
           const input = root.current?.querySelector<HTMLInputElement>("#vfile");
-          if (clip && input && !cancelled) {
-            const dt = new DataTransfer(); dt.items.add(clip); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true }));
+          if (clips.length && input && !cancelled) {
+            const dt = new DataTransfer(); for (const c of clips) dt.items.add(c); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true }));
             // one tap: the Reel is made as soon as the clip is read (the Generate button presses itself, once)
             const gen = root.current?.querySelector<HTMLButtonElement>("#fgen");
             void (async () => { for (let i = 0; gen && i < 240 && !cancelled; i++) { if (!gen.disabled) { gen.click(); break; } await new Promise((ok) => setTimeout(ok, 250)); } })();
