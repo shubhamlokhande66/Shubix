@@ -46,3 +46,11 @@ From the exported file (`analysis.json`):
 
 The runner has no graphics card: the preview's frame rate and the export's time there say nothing about a phone.
 Screenshots are written into the log too (small JPEGs between `SHOT` and `END`), for a run whose files cannot be fetched.
+
+## The editing tools (`tools.cjs`)
+
+The website's preview with real clips: a Reel made from a song and four clips, then keyframes (a 2.5x zoom at the end of
+the longest shot) and a red square photo as a layer with each mask shape. Run on 2026-11-15 (the user's clips): the
+keyframed frame changed (88 of 255 on average), and every shape kept the photo's middle and cut its box's corner
+(`none` and `line` keep the corner, as they should: no mask, a straight wipe). No page errors. The same tools are run
+on the Android engine with no page in `FE/mobile-app/tests/tools.test.ts`.

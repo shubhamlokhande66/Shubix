@@ -321,7 +321,7 @@ export function createNativeEngine(io: NativeIo) {
     kfSet: (a) => { host.brain.kfSet(a.values); return { ok: true }; },
     audioMix: (a) => { host.ES.au = { ...host.ES.au, ...(a as object), ...("mfout" in a ? { mfoutManual: true } : {}) }; host.ES.clipMixKey = ""; host.brain.applyVo(); return host.ES.au; },
     sfx: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); host.brain.sfxAdd(String(a.kind)); return { ok: true }; },
-    mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; f(); return { ok: true, state: state() }; },
+    mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; const ok = (f as (t: number) => unknown)(host.ES.pos) !== false; return { ok, state: state() }; },
     shotStyle: (a) => { const i = host.brain.segAt(host.ES.pos), e = host.ES.edit[i]; if (!e) throw new Error("There is no selected shot"); if (a.kind === "transition") e.tr = String(a.value); else if (a.kind === "effect") e.efx = String(a.value); return { ok: true, state: state() }; },
     exportOptions: async (a) => {
       const base = host.exportOptions(a) as Args, u = await myReelsRoom();
@@ -388,6 +388,13 @@ export function createNativeEngine(io: NativeIo) {
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
     fresh: () => { stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
-    call: async (op: string, a: Args = {}) => { const f = ops[op]; if (!f) throw new Error(`Not on the phone's own engine yet: ${op}`); return f(a); },
+    // Undo: the website keeps a step whenever the Reel stops changing (a ticker, every 500 ms); here there is no ticker,
+    // so each tool's change is kept as its step around the call (Undo did nothing on the phone: no step was ever kept)
+    call: async (op: string, a: Args = {}) => {
+      const f = ops[op]; if (!f) throw new Error(`Not on the phone's own engine yet: ${op}`);
+      const tick = () => { try { host.brain.histTick(); } catch { /* not ready: no Reel yet */ } };
+      tick(); const out = await f(a); tick(); tick();
+      return out;
+    },
   };
 }
