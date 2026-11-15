@@ -374,7 +374,7 @@ export function initFlow(root: HTMLElement): () => void {
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
     if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
-    const autoCan = !autoOff && !autoGo && !wantGen && !checking && ready && !busy && working.size === 0 && !has("opening") && !revealed && !inEngine;
+    const autoCan = !autoOff && !autoGo && !wantGen && !checking && ready && !busy && working.size === 0 && !has("opening") && !revealed && !inEngine && !made();   // a Reel made is never made again by itself (it counted down in the editor)
     if (autoCan && !autoAt) {
       autoAt = Date.now() + AUTO_MS;
       autoTick = setInterval(() => {

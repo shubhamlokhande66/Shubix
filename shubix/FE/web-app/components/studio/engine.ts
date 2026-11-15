@@ -243,7 +243,7 @@ const refDone = () => refReading ? new Promise(r => refWaiters.push(r)) : Promis
 let tplKind = '';   // the template's kind of Reel (car, wedding...): with Shubix AI its trend leads the AI's guide
 // Style: Auto follows the music as analysed; Smooth keeps fewer, longer shots on the strong beats; Fast cuts on every beat.
 // (a copied Reel keeps its short shots: no flash-cut merging; another song puts them on its beats, copyPlan)
-function adaptPlan(){ return copyTimed() ? copyPlanTimed() : mode === 'copy' && refProfile ? endWell(adaptPlan0()) : beatEdit(endWell(noFlashCuts(adaptPlan0()))); }
+function adaptPlan(){ return copyTimed() ? copyPlanTimed() : mode === 'copy' && refProfile ? endWell(adaptPlan0()) : paceWell(beatEdit(endWell(noFlashCuts(adaptPlan0())))); }
 /* ---- the beat edit of car, bike and sports Reels (measured on such Reels: cuts land on the drum hits, 88% of them) ----
  * Where the song's strong drum hits are dense (5 a second or more, for 2 s or longer: a fast verse, a dhol or snare roll,
  * a build-up) a cut on every hit, never closer than a third of a beat; where it stays loud with no strong hits for 1.5 s
@@ -273,7 +273,7 @@ function beatEdit(p, ai){
   // a drop's own cut stays where it is inside a burst (the hits beside it give way): an editor never misses the drop
   const keep = p.slice(1).filter(x => x.type === 'drop' && inR(x.start, burst) && !inR(x.start, flick)).map(x => x.start);
   let pts = p.slice(1).map(x => x.start).filter(t => !inR(t, burst) && !inR(t, flick)).concat(keep);
-  const gap = Math.max(0.13, period/3);
+  const gap = Math.max(0.3, period/2);   // creators' shortest shots: about 0.33 s (a third of a beat made 0.17 s flashes)
   burst.forEach(([a, b]) => { let last = -9; H.forEach(h => { const t = h - 1/30; if(t > a && t < b && t - last >= gap && !inR(t, flick) && !keep.some(k => Math.abs(k - t) < gap)){ pts.push(t); last = t; } }); });
   flick.forEach(([a, b]) => { pts.push(a, b); });
   pts = pts.filter(t => t > 0.12 && t < dur - 0.15).sort((x,y)=>x-y).filter((t, i, A) => !i || t - A[i-1] >= 0.1);
@@ -281,6 +281,27 @@ function beatEdit(p, ai){
   const starts = [0, ...pts], out = starts.map((a, i) => { const b = i + 1 < starts.length ? starts[i+1] : dur, src = of(a), own = Math.abs(src.start - a) < 0.02;
     return { ...src, start: a, end: b, type: own ? src.type : 'cut', fx: own ? src.fx : 'Hard cut', flick: flick.some(([fa, fb]) => Math.abs(fa - a) < 0.02 && Math.abs(fb - b) < 0.02) || undefined }; });
   return out;
+}
+/* ---- the pace of creators' beat Reels (measured on 19 of them: scripts/studio-references/README.md) ----
+ * The opening shot holds about 4 beats (median 2.7 s) before the cutting starts; the shots get longer toward the end
+ * (0.63 cuts a second in the first third, 0.48 in the middle, 0.2 in the last); few shots are under 0.5 s (8%), the
+ * shortest about 0.33 s. Auto only (Fast cuts on every beat on purpose, Smooth and Natural are long already, a copied
+ * Reel keeps its own edit); a drop, a break and a flicker montage keep their cut. */
+function paceWell(p){
+  if(mode !== 'auto' || p.length < 3 || !(period > 0) || !buf) return p;
+  const dur = buf.duration, hard = s => s.type === 'drop' || s.type === 'break' || s.flick;
+  // the opening: no cut before about 4 beats (when the next shot is long, it starts on the beat nearest 4 beats instead)
+  const open = Math.min(3, Math.max(1.6, 4*period));
+  while(p.length > 2 && p[1].start < open - 0.1 && !hard(p[1])){
+    if(p[1].end <= open + 2*period){ p[0].end = p[1].end; p.splice(1, 1); continue; }
+    const b = gridOf(dur).map(x => x - 1/30).filter(x => x >= open - 0.1 && x < p[1].end - 0.4)[0];
+    if(b !== undefined){ p[0].end = b; p[1].start = b; }
+    break;
+  }
+  // the last fifth: no shot shorter than two beats (it joins the shot before)
+  const tail = 0.8*dur, least = Math.max(0.9, 2*period);
+  for(let i = p.length - 1; i > 1 && p[i].start >= tail; i--) if(!hard(p[i]) && p[i].end - p[i].start < least){ p[i-1].end = p[i].end; p.splice(i, 1); }
+  return endWell(p);
 }
 function noFlashCuts(p){
   for(let i=1;i<p.length;i++){ const s = p[i], pt = partAt(s.start + 0.05); if(s.end - s.start >= (pt === 'drop' || pt === 'up' ? 0.4 : 0.6)) continue;
