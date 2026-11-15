@@ -10,6 +10,7 @@ export const ACCESS_PAGES = [
   { path: "/create/music", label: "Beat Reel" },
   { path: "/create/talking", label: "Talking Reel" },
   { path: "/create/clips", label: "Clips from a Video" },
+  { path: "/create/vlog", label: "Vlog / Talking video" },
   { path: "/create/photo", label: "Photo Reel" },
   { path: "/create/copy", label: "Match a Reel's Style" },
   { path: "/editor", label: "Reel editor" },

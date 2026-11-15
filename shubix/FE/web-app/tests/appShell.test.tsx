@@ -54,7 +54,7 @@ describe("AppShell: pages open before anyone is known", () => {
 describe("AppShell navigation", () => {
   it("shows people the product: the ways to make a Reel, My Reels, templates and brands", () => {
     const nav = renderShell();
-    for (const [name, href] of [["Beat Reel", "/create/music"], ["Talking Reel", "/create/talking"], ["Photo Reel", "/create/photo"], ["My Reels", "/reels"], ["Templates", "/templates"], ["Brands", "/brands"]]) {
+    for (const [name, href] of [["Beat Reel", "/create/music"], ["Vlog / Talking video", "/create/vlog"], ["Photo Reel", "/create/photo"], ["My Reels", "/reels"], ["Templates", "/templates"], ["Brands", "/brands"]]) {
       expect(nav.getByRole("link", { name: new RegExp(name) })).toHaveAttribute("href", href);
     }
     expect(screen.getAllByText("me@example.com").length).toBeGreaterThan(0); // the sidebar and the phone menu
