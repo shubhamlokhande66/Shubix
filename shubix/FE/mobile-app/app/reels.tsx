@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Modal, Pressable, Share, Text, View, useWindowDimensions } from "react-native";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { Badge, Button, Card, EmptyState, Gold, Icon, IconButton, Page, ReelCove
 import type { CloudReel } from "@mobile/types";
 import { clock, formatRelative, megabytes, videoQuality } from "@mobile/utils";
 import { AdBanner } from "../components/molecules/AdBanner";
+import { PublishPanel } from "../components/organisms/PublishPanel";
 import { mobileApi } from "../lib/api";
 import { useDraftThumbs } from "../lib/thumbs";
 import { useDraftActions, useDrafts } from "../lib/data";
@@ -21,6 +22,14 @@ export default function ReelsScreen() {
   const text = useText(), drafts = useDrafts();
   const [tab, setTab] = useState<"drafts" | "saved">(useLocalSearchParams<{ tab?: string }>().tab === "saved" ? "saved" : "drafts");
   const saved = useQuery({ queryKey: ["cloud-reels"], queryFn: mobileApi.reels, staleTime: 0, retry: false });
+  // back from connecting Instagram or YouTube in the browser (shubix://reels?tab=saved&social=…&result=…)
+  const { social, result } = useLocalSearchParams<{ social?: string; result?: string }>();
+  useEffect(() => {
+    if (!social || !result) return;
+    const name = social === "youtube" ? "YouTube" : "Instagram";
+    tell(result === "ok" ? `${name} connected. Choose a Reel and press its Publish button.` : result === "cancelled" ? `${name} was not connected.` : `${name} could not be connected. Please try again.`, result === "ok" ? "info" : "danger");
+    setTab("saved");
+  }, [social, result]);
   return (
     <Page>
       <View className="gap-4">
@@ -66,6 +75,7 @@ function Drafts({ drafts }: { drafts: MobileProject[] | null }) {
 
 function Saved({ query }: { query: ReturnType<typeof useQuery<Awaited<ReturnType<typeof mobileApi.reels>>>> }) {
   const text = useText(), column = useColumn(), [watching, setWatching] = useState<{ uri: string; name: string } | null>(null);
+  const [publishing, setPublishing] = useState<CloudReel | null>(null);
   if (query.isError) return (
     <Card className="gap-3 border-danger/35"><Text className="text-[13px] text-danger">{query.error instanceof Error ? query.error.message : text("reels.failed")}</Text><Button size="sm" variant="secondary" title={text("common.retry")} onPress={() => void query.refetch()} /></Card>
   );
@@ -85,15 +95,16 @@ function Saved({ query }: { query: ReturnType<typeof useQuery<Awaited<ReturnType
       </Card>
       {!reels.length ? <EmptyState icon="upload" title={text("reels.noSaved")} hint={text("reels.noSavedText")} action={<MakeReel />} /> : (
         <View className="flex-row flex-wrap gap-3">
-          {reels.map((reel) => <View key={reel.id} style={{ width: column }}><SavedCard reel={reel} onWatch={(uri) => setWatching({ uri, name: reel.name })} onChange={() => void query.refetch()} /></View>)}
+          {reels.map((reel) => <View key={reel.id} style={{ width: column }}><SavedCard reel={reel} onWatch={(uri) => setWatching({ uri, name: reel.name })} onChange={() => void query.refetch()} onPublish={() => setPublishing(reel)} /></View>)}
         </View>
       )}
       {watching && <Player {...watching} onClose={() => setWatching(null)} />}
+      <PublishPanel key={publishing?.id ?? "none"} reel={publishing} onClose={() => setPublishing(null)} />
     </View>
   );
 }
 
-function SavedCard({ reel, onWatch, onChange }: { reel: CloudReel; onWatch: (uri: string) => void; onChange: () => void }) {
+function SavedCard({ reel, onWatch, onChange, onPublish }: { reel: CloudReel; onWatch: (uri: string) => void; onChange: () => void; onPublish: () => void }) {
   const text = useText(), [busy, setBusy] = useState(false), [note, setNote] = useState<string | null>(null);
   const flash = (s: string) => { setNote(s); setTimeout(() => setNote(null), 2500); };
   const run = async (work: () => Promise<void>) => { setBusy(true); try { await work(); } catch (e) { flash(e instanceof Error ? e.message : text("reels.failed")); } finally { setBusy(false); } };
@@ -122,6 +133,7 @@ function SavedCard({ reel, onWatch, onChange }: { reel: CloudReel; onWatch: (uri
       </View>
       <View className="flex-row items-center gap-1 rounded-xl border border-border bg-surface p-1">
         <IconButton icon="download" look="plain" size={32} iconSize={15} disabled={busy} label={`${text("reels.download")} ${reel.name}`} onPress={() => void save()} className="flex-1 rounded-lg" />
+        <IconButton icon="send" look="plain" size={32} iconSize={15} disabled={busy} label={`Publish ${reel.name} to Instagram or YouTube`} onPress={onPublish} className="flex-1 rounded-lg" />
         <IconButton icon="share" look="plain" size={32} iconSize={15} disabled={busy} label={`${text("reels.share")}: ${reel.name}`} onPress={() => void shareLink()} className="flex-1 rounded-lg" />
         <IconButton icon="trash" look="danger" size={32} iconSize={15} disabled={busy} label={`${text("reels.delete")} ${reel.name}`} onPress={remove} className="flex-1 rounded-lg" />
       </View>

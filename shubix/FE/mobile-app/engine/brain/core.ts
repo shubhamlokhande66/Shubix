@@ -865,7 +865,7 @@ async function ttsMake(c, quiet){
   if(!quiet) EH.tasks.start(id, 'voice', 'Making the voice', '"' + c.text.slice(0, 40) + (c.text.length > 40 ? '…' : '') + '"');
   try{ const r = await EH.tts.speak(c.text, c.voice, (pr) => { if(!quiet) EH.tasks.update(id, pr.p, 'Speaking'); });
     c.pcm = r.pcm; c.sr = r.sr; if(!quiet) EH.tasks.done(id, 'Voice ready'); }
-  catch(err){ console.warn('tts', err); if(!quiet) EH.tasks.fail(id, 'Could not make the voice. Add this language in the phone\'s Settings, under Text-to-speech, and try again.'); throw err; }
+  catch(err){ console.warn('tts', err); if(!quiet) EH.tasks.fail(id, String(c.voice).includes(':') ? ((err && err.message) || 'The AI voice could not be made. Please try again.') : 'Could not make the voice. Add this language in the phone\'s Settings, under Text-to-speech, and try again.'); throw err; }
 }
 function clearTts(){
   if(!ES.ttsClips.length) return false;
