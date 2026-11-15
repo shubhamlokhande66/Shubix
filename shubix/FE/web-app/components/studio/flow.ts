@@ -58,6 +58,12 @@ export function initFlow(root: HTMLElement): () => void {
   // back from signing in (?go=1): Generate is pressed by itself once the saved Reel is read again; signInOk: the account
   // check before Generate is done
   let autoGo = q.get("go") === "1", signInOk = false;
+  // Shubix makes the Reel by itself: once the song and the clips are read (and the edit is made behind the screen), a
+  // short countdown, then Generate as if pressed (Shubix AI's price, sign-in and the other questions still come). A tap
+  // anywhere in the studio during it waits: the creator is adding or changing something, and presses Generate when done.
+  const AUTO_MS = 4000;
+  let autoAt = 0, autoOff = false, autoTick: ReturnType<typeof setInterval> | null = null;
+  const autoStop = (off: boolean) => { autoAt = 0; if (autoTick) { clearInterval(autoTick); autoTick = null; } if (off) autoOff = true; };
   if (autoGo) { const u = new URL(location.href); u.searchParams.delete("go"); history.replaceState(history.state, "", u); }
   let lengthTouched = false;
   const phone = () => window.matchMedia("(max-width: 1023px)").matches;
@@ -368,6 +374,17 @@ export function initFlow(root: HTMLElement): () => void {
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
     if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
+    const autoCan = !autoOff && !autoGo && !wantGen && !checking && ready && !busy && working.size === 0 && !has("opening") && !revealed && !inEngine;
+    if (autoCan && !autoAt) {
+      autoAt = Date.now() + AUTO_MS;
+      autoTick = setInterval(() => {
+        if (!autoAt) return;
+        // the button the creator would press: Generate (computers), Make Reel on the clips screen (phones)
+        if (Date.now() >= autoAt) { autoStop(true); const g = [$<HTMLButtonElement>("fclipsnext"), $<HTMLButtonElement>("fgen")].find((x) => x.offsetParent !== null) ?? $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); apply(); return; }
+        apply();
+      }, 250);
+    } else if (autoAt && !autoCan) autoStop(false);
+    if (autoAt) setText($("freadys"), `Shubix makes your Reel in ${Math.max(1, Math.ceil((autoAt - Date.now()) / 1000))} s… Tap anywhere to wait.`);
     // waiting for the song and clips with nothing running for 20 s: on to Shubix if the Reel is made, else said; never a
     // popup open for ever
     if (wantGen && !waitTimer) waitTimer = setInterval(() => {
@@ -607,6 +624,8 @@ export function initFlow(root: HTMLElement): () => void {
   // Shubix AI could not be reached (its popup says so): the steps stop waiting, Make Reel is on again
   root.addEventListener("studio-ai-down", () => { aiRunNo++; aiGo = false; wantGen = false; if (step === "analyse") go("clips"); else apply(); }, sig);
   // its Retry: as Make Reel again (the same Reel, no new question), so the editor opens by itself when Shubix is done
+  // a tap during the countdown: the creator is still working; Generate is theirs to press
+  document.addEventListener("pointerdown", () => { if (autoAt) { autoStop(true); apply(); } }, { ...sig, capture: true });   // (the whole page: the menu too)
   root.addEventListener("studio-ai-retry", (e) => { if (revealed || inEngine) return; e.preventDefault(); const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, sig);
   root.addEventListener("studio-ai-cancel",() => { aiRunNo++; aiGo = false; if (step === "analyse") go("clips"); else apply(); }, sig);
   // a song that is ready moves the phones on to adjusting it

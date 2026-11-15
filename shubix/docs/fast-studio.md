@@ -629,3 +629,11 @@ files under `songs/` in the bucket). In the studio's first step, "Choose a song 
 songs) asks `/api/songs/pick` for one: by the clips' energy (their movement, once read), the template's kind (a wedding:
 romantic; Ganpati: devotional; a festival: festive; gym / car: energetic), long enough, never the song chosen last; the
 studio reads it as if the creator had added it and says its licence. Checked in Chrome with the API stood in for.
+
+## The Reel makes itself (song and clips in, nothing to press)
+
+Once the song and the clips are read and the edit is made behind the screen, the studio counts down 4 s ("Shubix makes
+your Reel in 4 s… Tap anywhere to wait") and presses Generate (computers) or Make Reel (phones) itself (`flow.ts`,
+`autoAt`). Everything Generate asks still comes (Shubix AI's price, sign-in, too long a clip set). A tap anywhere during
+the countdown waits: the creator is adding or changing something and presses Generate when done; it is not offered
+again on that page. Checked in Chrome: no tap -> Generate pressed (computer and phone screens); a tap -> not pressed.
