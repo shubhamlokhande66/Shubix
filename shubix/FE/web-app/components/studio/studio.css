@@ -1419,7 +1419,8 @@
 .brs .fref .fsongt small{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .brs .fref .frefbtns{display:flex;flex-wrap:wrap;gap:8px}
 /* Copy a Reel: its song comes with the Reel copied, so the Music card shows only after "Different song?" (.pickown) */
-.brs.fopen[data-fkind="copy"]:not(.pickown) #s1{display:none !important}
+/* (not on Adjust Music: there the card is the song being adjusted; hidden, the screen was empty) */
+.brs.fopen[data-fkind="copy"]:not(.pickown):not([data-fstep="adjust"]) #s1{display:none !important}
 /* phones: the box with the screens it belongs to (Music and the clips), not on the first screen or while analysing */
 @media (max-width:1023px){
   .brs.fopen[data-fkind="copy"]:not([data-fstep="choose"]):not([data-fstep="adjust"]):not([data-fstep="clips"]) .fref{display:none !important}
@@ -3644,7 +3645,7 @@ html:has(.brs .cconf:not([hidden])) body,html:has(.brs .xsheet:not([hidden])) bo
 .brs.fopen .clip .cv.on{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;z-index:1;pointer-events:none}
 .brs.fopen .clip .meta{z-index:2}
 .brs.fopen .clip .cnum{top:6px !important;left:6px !important;height:22px;min-width:22px;padding:0 5px;font-size:11px}
-.brs.fopen .clip .clip-status{position:absolute !important;inset:7px auto auto 32px !important;width:20px !important;height:20px !important;min-width:0 !important;font-size:11px !important;z-index:3}
+.brs.fopen .clip .clip-status{position:absolute !important;inset:7px auto auto 36px !important;width:20px !important;height:20px !important;min-width:0 !important;font-size:11px !important;z-index:3}
 .brs.fopen .clip .del{top:6px !important;right:6px !important}
 /* the Create page has Ask Shubix at its top: no floating button over its buttons as well */
 .brs.fopen .chatfab{display:none !important}
