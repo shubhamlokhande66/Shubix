@@ -739,6 +739,29 @@ async function checkBeatsInner(token){
 }
 $('mpick').onclick = () => $('mfile').click();
 $('mfile').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if(f) loadMusic(f); });
+// "Choose a song for me": a song of Shubix's library (Admin → Songs, each with its licence), by the clips' energy when
+// they are read (their movement), the template's kind and never the song chosen last; shown only when the library has songs
+(async () => { try{ const r = await fetch('/api/songs', { signal: ac.signal }); const j = r.ok ? await r.json() : null; if(j && j.songs && j.songs.length) $('mauto').hidden = false; }catch(e){} })();
+async function songForMe(){
+  const btn = $('mauto'); btn.disabled = true;
+  try{
+    const S = sources.filter(s => s.samples && s.samples.length), gmax = Math.max(1e-6, ...S.flatMap(s => s.samples.map(x => x.m)));
+    const energy = S.length ? Math.min(1, S.reduce((a, s) => a + s.samples.reduce((q, x) => q + x.m, 0)/s.samples.length, 0)/S.length/gmax*1.6) : 0.5;
+    let last = ''; try{ last = localStorage.getItem('shubix-song-last') || ''; }catch(e){}
+    const need = sources.reduce((a, s) => a + (s.dur || 0), 0);
+    const r = await apiFetch('/api/songs/pick?' + new URLSearchParams({ energy: energy.toFixed(2), kind: tplKind || '', min: String(Math.min(60, Math.max(8, need*0.6))), last, seed: String(Date.now() % 100000) }), { signal: ac.signal });
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !j.song) throw new Error((j.error && j.error.message) || 'No song in the library yet.');
+    const s = j.song, f = await apiFetch(s.url, { signal: ac.signal });
+    if(!f.ok) throw new Error('The song could not be downloaded (' + f.status + ').');
+    const blob = await f.blob(), name = (s.name + (s.artist ? ' - ' + s.artist : '')).replace(/[\\/:*?"<>|]/g, '') + '.mp3';
+    try{ localStorage.setItem('shubix-song-last', s.id); }catch(e){}
+    await loadMusic(new File([blob], name, { type: blob.type || 'audio/mpeg' }));
+    notify('Song: ' + s.name + (s.artist ? ' · ' + s.artist : '') + ' (' + s.licence + ')');
+  }catch(err){ if(!(err && err.name === 'AbortError')) notify((err && err.message) || 'No song could be chosen. Please try again.', 'err'); }
+  finally{ btn.disabled = false; }
+}
+$('mauto').addEventListener('click', () => songForMe(), SIG);
 window.addEventListener('resize', ()=>{ drawMusic(); sources.forEach(drawSpark); drawTimeline(); }, SIG);
 
 /* =============== STEP 2: VIDEOS =============== */
