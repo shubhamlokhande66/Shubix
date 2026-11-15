@@ -84,7 +84,7 @@ for sc in report['scenarios']:
     h, s, v = hue_of(med)
     dist = np.abs((h[:, None] - hues[None, :] + 180) % 360 - 180)
     who = dist.argmin(1); far = dist.min(1)
-    known = (s > 0.25) & (v > 0.15) & (far < 360 / len(clips) / 2 + 3)      # (the talking rooms are 44 degrees apart or more)
+    known = (s > 0.25) & (v > 0.15) & (far < 360 / len([c for c in clips if not c.get('short')]) / 2 + 3)      # (the talking rooms are 44 degrees apart or more)
     who = np.where(known, who, -1)
     # a dissolve between two clips passes through colours that are neither's (and can look like a third clip's for a
     # frame or two): a clip counts where it holds for 4 frames or more, the rest is the way from one to the next
@@ -94,6 +94,17 @@ for sc in report['scenarios']:
             if k - k0 < 4: who[k0:k] = -1
             k0 = k
     res['frames'] = {'count': int(len(F)), 'fps': fps, 'toldApart': round(float(known.mean()), 3), 'dark': int((v < 0.08).sum())}
+
+    # ---- one short clip (run E, F): how fast its video really plays in the file. Its white box crosses the clip at
+    # 100 px a second of the clip (540 px wide): its step from frame to frame says the speed (1 = as filmed, 0.5 = half)
+    if any(g.get('short') for g in given):
+        white = F[:, H // 5:4 * H // 5].min(axis=3).mean(axis=1)             # per frame, per column: how white
+        wgt = np.clip(white - np.median(white, axis=1, keepdims=True) - 20, 0, None)
+        x = (wgt * np.arange(W)).sum(axis=1) / np.maximum(wgt.sum(axis=1), 1e-6); dx = np.diff(x)   # the box's middle, finer than a pixel
+        dx = dx[(dx > -0.05) & (dx < 1.5)]                                   # (the box starts again at the left; an effect's jump)
+        per_s = 100 * W / 540
+        if len(dx): res['slowMotion'] = {'videoSpeed': round(float(dx.mean()) * fps / per_s, 2), 'framesStandingStill': round(float((np.abs(dx) < 0.02).mean()), 2),
+                                         'planned': round(sum(e['need'] for e in edit) / reel, 2), 'reelSeconds': round(reel, 2), 'clipSeconds': given[0]['dur']}
 
     # ---- where the picture really cuts: the frame a new clip first shows
     cuts = []
@@ -199,5 +210,6 @@ for r in out['scenarios']:
     print('  cuts:', json.dumps(r['cuts']))
     if r.get('beats'): print('  beats:', json.dumps(r['beats']))
     if r.get('voice'): print('  talk:', json.dumps(r.get('talk'))); print('  voice:', json.dumps(r['voice']))
+    if r.get('slowMotion'): print('  one short clip:', json.dumps(r['slowMotion']))
     print('  clips:', json.dumps(r['clips']), '· dark part:', json.dumps(r.get('darkPart')))
     print('  sound:', json.dumps(r.get('sound')))
