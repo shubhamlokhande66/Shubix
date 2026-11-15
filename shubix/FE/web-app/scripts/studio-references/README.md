@@ -38,6 +38,16 @@ These numbers changed the edit in both engines (`paceWell` and the burst gap in 
 
 Auto only: Fast cuts on every beat on purpose, Smooth and Natural are long already, and a copied Reel keeps its own edit.
 
+**The end card.** 14 of the 19 end on 4 to 6 s of black (median 4.4 s) with the creator's @handle and logo; the others
+darken the last shot under them. The scene cuts above count that card, so the cut rate of the last third (0.20 a
+second) is partly the card. Without it the rate is 0.48 / 0.54 / 0.32 a second (first, middle, last third): the end
+still slows down, less. The studio makes the end card itself when the creator sets My brand
+(`Shared/video-engine/src/finish.ts`), with the logo small in a corner through the Reel, as most of these carry.
+
+**Their finish.** Cinematic bars (a 2.39:1 band; the festival Reels), a colour flash on the strong beats (blue, then
+orange; the dance Reel), black and white before the drop: the studio has each as one tap (Look), and Shubix AI's chat
+can set them.
+
 ## What the numbers cannot settle
 
 Cuts "on the beat" (±70 ms) measured 24%, which is about chance at 123 BPM. On the half-beats they measured 66%.

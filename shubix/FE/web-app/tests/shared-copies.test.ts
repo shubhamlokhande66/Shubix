@@ -17,7 +17,7 @@ const DIFFERENT = [
   "validations/src/editor.ts", "types/src/index.ts",
 ];
 /** what the Reel itself is made by: these may never be in DIFFERENT */
-const ENGINE = ["video-engine/src/index.ts", "video-engine/src/review.ts", "video-engine/src/pop.ts", "core/src/engine/studio/song.ts"];
+const ENGINE = ["video-engine/src/index.ts", "video-engine/src/review.ts", "video-engine/src/pop.ts", "video-engine/src/finish.ts", "core/src/engine/studio/song.ts"];
 
 function filesOf(dir: string, base = dir): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? filesOf(path.join(dir, e.name), base) : [path.relative(base, path.join(dir, e.name)).split(path.sep).join("/")]);

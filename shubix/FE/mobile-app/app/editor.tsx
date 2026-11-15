@@ -18,7 +18,7 @@ import { ExportScreen } from "../components/organisms/ExportScreen";
 import { pickInOrder } from "../components/organisms/Gallery";
 import { isNativeEffectSupported, isNativeTransitionSupported, previewSpec, videoEngine } from "../lib/video";
 import { ShubixPreviewView, type PreviewRef } from "../modules/shubix-video";
-import { type AiPlan, engine, textsOf } from "../lib/engine";
+import { type AiPlan, type MyBrand, brandGet, brandSave, engine, textsOf } from "../lib/engine";
 import { TEXT_TEMPLATES } from "@mobile/core/lib/text-templates";
 import { STICKERS as SHAPES } from "@mobile/core/lib/stickers";
 import { SFX_REC } from "@mobile/core/lib/sfx-recorded";
@@ -368,7 +368,9 @@ export default function EditorScreen() {
   const refreshStudioLayers = async () => {
     const result = await engine.tool("layerList");
     const list = Array.isArray(result) ? result as typeof studioLayers : [];
-    setStudioLayers(list); return list;
+    setStudioLayers(list);
+    void engine.tool("finishState").then((f) => setFin(f as { bars: boolean; tint: boolean; bw: boolean })).catch(() => {});
+    return list;
   };
   const addStudioLayer = async () => {
     if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Overlay layers need a Reel made by Shubix Studio."), "info");
@@ -400,6 +402,24 @@ export default function EditorScreen() {
       setPicDraft(""); tell(words("AI picture added"), "success");
     } catch (e) { tell(errorMessage(e), "danger"); }
     setPicBusy(false);
+  };
+  // My brand (the @handle and logo on every Reel: a logo in the corner, an end card) and the finish toggles
+  const [myBrand, setMyBrand] = useState<MyBrand>({ handle: "", logoPath: null, mark: true, end: true });
+  const [fin, setFin] = useState<{ bars: boolean; tint: boolean; bw: boolean }>({ bars: false, tint: false, bw: false });
+  useEffect(() => { void brandGet().then((b) => { if (b) setMyBrand(b); }); }, []);
+  const keepBrand = async (b: MyBrand) => {
+    setMyBrand(b);
+    try { await brandSave(b); await refreshStudioLayers(); } catch (e) { tell(errorMessage(e), "danger"); }
+  };
+  const pickLogo = async () => {
+    const assets = await pickInOrder({ kind: "image", limit: 1 });
+    if (!assets?.length) return;
+    try { const [file] = await keepPickedAssets(`brand-logo-${Date.now()}`, assets.slice(0, 1)); await keepBrand({ ...myBrand, logoPath: decodeURIComponent(file.uri.replace(/^file:\/\//, "")), logoW: assets[0].width || 512, logoH: assets[0].height || 512 }); tell(words("Logo kept for your Reels"), "success"); }
+    catch (e) { tell(errorMessage(e), "danger"); }
+  };
+  const setFinish = async (what: "bars" | "tint" | "bw") => {
+    if (!p || !p.studio || !engine.holds(p.id)) return tell(words("This needs a Reel made by Shubix Studio."), "info");
+    try { const r = await engine.tool("finish", { what, on: !fin[what] }) as { on?: typeof fin }; if (r.on) setFin(r.on); await refreshStudioLayers(); } catch (e) { tell(errorMessage(e), "danger"); }
   };
   // Pop out: the subject of the best shot cut out, growing over the shot before it (the brain's subjectPop)
   const [popBusy, setPopBusy] = useState(false);
@@ -693,6 +713,18 @@ export default function EditorScreen() {
       </View>;
       case "layers": return <View className="gap-2">
         <Button full icon="image" title={words("Add photo / video layer")} onPress={() => void addStudioLayer()} />
+        <Label>{words("Finish")}</Label>
+        <View className="flex-row flex-wrap gap-2">
+          {([["bars", "Cinematic bars"], ["tint", "Colour flash on the beat"], ["bw", "B&W until the drop"]] as const).map(([k, label]) => <Button key={k} size="sm" variant={fin[k] ? "primary" : "secondary"} title={words(label)} onPress={() => void setFinish(k)} />)}
+        </View>
+        <Label>{words("My brand · on every Reel you make here")}</Label>
+        <TextInput defaultValue={myBrand.handle} onEndEditing={(e) => void keepBrand({ ...myBrand, handle: e.nativeEvent.text.trim().slice(0, 40) })} placeholder="@yourname" placeholderTextColor={look.muted} autoCapitalize="none" maxLength={40} className="h-12 rounded-xl border border-border bg-surface-2 px-4 text-[14px] text-foreground" />
+        <View className="flex-row flex-wrap gap-2">
+          <Button size="sm" variant="secondary" icon="image" title={words(myBrand.logoPath ? "Change logo" : "Add logo")} onPress={() => void pickLogo()} />
+          {!!myBrand.logoPath && <Button size="sm" variant="secondary" title={words("Remove logo")} onPress={() => void keepBrand({ ...myBrand, logoPath: null })} />}
+          <Button size="sm" variant={myBrand.mark ? "primary" : "secondary"} title={words("Logo in the corner")} onPress={() => void keepBrand({ ...myBrand, mark: !myBrand.mark })} />
+          <Button size="sm" variant={myBrand.end ? "primary" : "secondary"} title={words("End card")} onPress={() => void keepBrand({ ...myBrand, end: !myBrand.end })} />
+        </View>
         <Button full variant="secondary" icon="sparkle" loading={popBusy} disabled={popBusy} title={words("Pop out the subject")} onPress={() => void popOut()} />
         <Text className="text-[11px] leading-[16px] text-muted">{words("A car, a bike or a person cut out of a shot: small at first while the Reel plays behind it, growing until the Reel cuts to it.")}</Text>
         <TextInput value={picDraft} onChangeText={setPicDraft} maxLength={400} multiline placeholder={words("AI picture: describe it (a chai stall in the rain at night…)")} placeholderTextColor={look.muted}

@@ -506,6 +506,7 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="look">${panelHead("look")}
             <label class="tog aitog"><input type="checkbox" id="aitouch" checked> Shubix touch-ups: fit wide clips, fix dark shots, keep voices, one reversed drop, fade out at the end</label>
             <div class="${Segmented.normal}" id="look"><button data-l="natural" aria-pressed="false">Natural</button><button data-l="vivid" aria-pressed="true">Vivid</button><button data-l="cine" aria-pressed="false">Cinematic</button><button data-l="mono" aria-pressed="false">B&amp;W</button><button data-l="copy" aria-pressed="false" hidden>Copied</button></div>
+            <div class="row" id="finrow" role="group" aria-label="Finish"><label class="tog"><input type="checkbox" id="fxbars"> Cinematic bars</label><label class="tog"><input type="checkbox" id="fxtint"> Colour flash on the beat</label><label class="tog"><input type="checkbox" id="fxbw"> Black and white until the drop</label></div>
           </section>
 
           <section class="panel" data-panel="bg">${panelHead("bg")}
@@ -517,6 +518,12 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="layers">${panelHead("layers")}
             <div class="row"><button type="button" class="${Button.secondary}" id="lyadd">${IC.plus}Add a video or photo on top</button><input id="lyfile" type="file" accept="video/*,image/*,.mov,.mp4,.jpg,.jpeg,.png,.webp" multiple hidden></div>
             <p class="hint">It starts at the playhead. Picture in picture, split screen, a masked shape, a logo…</p>
+            <div class="brandbox" id="brandbox">
+              <span class="label">My brand · on every Reel you make here</span>
+              <div class="row"><input id="brhandle" type="text" maxlength="40" placeholder="@yourname" aria-label="Your @handle"><button type="button" class="${Button.secondary}" id="brlogobtn">${IC.plus}Logo</button><img id="brlogo" alt="Your logo" hidden style="height:36px;width:auto;border-radius:6px"><button type="button" class="${Button.small}" id="brlogodel" hidden>Remove logo</button><input id="brlogofile" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
+              <label class="tog"><input type="checkbox" id="brmark" checked> My logo small in the corner</label>
+              <label class="tog"><input type="checkbox" id="brend" checked> End card: my logo, my @handle, Follow for more</label>
+            </div>
             <div class="row musiconly" id="poprow"><button type="button" class="${Button.secondary}" id="popout">${IC.plus}Pop out the subject</button><span class="hint">A car, a bike or a person cut out of a shot: small at first while the Reel plays behind it, growing until the Reel cuts to it.</span></div>
             <div class="aibroll" id="brbox" hidden>
               <label class="label" for="brtext">AI picture (B-roll) · made by AI</label>

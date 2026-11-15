@@ -1,4 +1,5 @@
 import { AppRegistry, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
 import { ShubixVideo } from "../modules/shubix-video";
 import { clipDuration, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
@@ -53,6 +54,19 @@ const native = files ? createNativeEngine({
   tell: (text) => tell(text, "danger"),
   task: (state, id, title, detail, kind, p) => onTask({ event: "task", id, state, p: p ?? null, title, detail, kind: kind as TaskKind | undefined }),
 }) : null;
+
+/** My brand: the @handle and the logo (a file kept on the phone), on every Reel made here: the logo small in a corner and
+ * an end card (the brain's brandFinish, as the website's). Kept in the app's storage; the engine gets it at start. */
+const BRAND_KEY = "shubix.brand";
+export type MyBrand = { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean };
+export async function brandGet(): Promise<MyBrand | null> { try { return JSON.parse((await AsyncStorage.getItem(BRAND_KEY)) || "null") as MyBrand | null; } catch { return null; } }
+export async function brandSave(b: MyBrand | null) {
+  const keep = b && (b.handle.trim() || b.logoPath) ? b : null;
+  if (keep) await AsyncStorage.setItem(BRAND_KEY, JSON.stringify(keep)); else await AsyncStorage.removeItem(BRAND_KEY);
+  if (native) await native.call("brandSet", (keep ?? {}) as Record<string, unknown>);
+  return keep;
+}
+if (native) void brandGet().then((b) => (b ? native.call("brandSet", b as unknown as Record<string, unknown>) : null)).catch(() => {});
 
 async function call<T>(op: string, args: Record<string, unknown> = {}): Promise<T> {
   if (!native) throw new Error("Making Reels needs the Shubix app (not Expo Go).");

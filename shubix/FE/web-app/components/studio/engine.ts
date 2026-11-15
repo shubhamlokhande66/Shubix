@@ -11,7 +11,7 @@
  */
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
-import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE } from '@shubix/video-engine';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -3787,7 +3787,7 @@ function makeEdit(){
     // the review's score beside the shot count the creator already reads (makeEditNow has just written that line anew)
     const st = $('s3st'); if(st && !/quality \d/.test(st.textContent)) st.textContent += ' · quality ' + Math.round(R.score) + '/100';
     rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
-  if(edit.length && editGen !== gen) autoFinish();
+  if(edit.length && editGen !== gen){ autoFinish(); brandFinish(); finishUI(); }
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
 }
@@ -3802,7 +3802,7 @@ function autoFinish(){
   const had = overlays.some(o => o.auto);
   if(autoHookUsed && !had) autoHookOff = true;
   if(had && director && !director.interim && overlays.some(o => !o.auto)){ overlays = overlays.filter(o => !o.auto); renderOvList(); return; }
-  if(autoHookOff || had || overlays.length || hookText || (director && !director.interim)) return;
+  if(autoHookOff || had || overlays.some(o => !o.brand) || hookText || (director && !director.interim)) return;
   const t0 = edit[0].start, drops = (cuts || []).filter((c, k) => cutType[k] === 'drop').map(c => c - t0).filter(c => c > 0.5);
   const h = autoHook({ firstDrop: drops.length ? drops[0] : null, kind: tplKind, seed: seed });
   const n = addTemplate(h.key, h.words, 0, h.len, false);
@@ -4636,8 +4636,21 @@ const lyOn = (L, t) => t >= L.t0 && t < L.t1;
 const lyTime = (L, t) => L.in + (t - L.t0);
 // the layer's picture, cropped, masked and faded, in its own canvas; then placed on the frame
 const gifFrame = (M, t) => { const T = ((t % M.gdur) + M.gdur) % M.gdur; let k = 0; while(k + 1 < M.times.length && M.times[k + 1] <= T) k++; return M.frames[k]; };
+/* ---- the finish (Shared/video-engine/src/finish.ts): layers that need no file ---- */
+const FILLS = ['shade', 'bars', 'tint'];
+const fillMedia = kind => ({ kind, name: { shade: 'End card (dark)', bars: 'Cinematic bars', tint: 'Colour flash on the beat' }[kind], w: 2, h: 2, dur: Infinity, file: null });
+function fillLayer(g, L, M, t){
+  const W = out.width, H = out.height, life = t - L.t0, left = L.t1 - t, clamp = v => Math.max(0, Math.min(1, v));
+  const a = L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
+  g.save(); g.fillStyle = '#000';
+  if(M.kind === 'shade'){ g.globalAlpha = clamp(a*(L.shade ?? 0.9)); g.fillRect(0, 0, W, H); }
+  else if(M.kind === 'bars'){ const [y, h] = barsBand(W, H, L.ratio || 2.39); g.globalAlpha = clamp(a); g.fillRect(0, 0, W, Math.ceil(y)); g.fillRect(0, Math.floor(y + h), W, H); }
+  else { const k = tintAt(L.pulses, t); if(k.a > 0){ g.globalAlpha = clamp(a*k.a*0.6); g.globalCompositeOperation = 'overlay'; g.fillStyle = k.c; g.fillRect(0, 0, W, H); } }
+  g.restore();
+}
 function drawLayers(g, t){
   for(const L of layers){ if(!lyOn(L, t)) continue; const M = lmedia[L.m]; if(!M) continue;
+    if(FILLS.includes(M.kind)){ fillLayer(g, L, M, t); continue; }   // the end card's black, cinematic bars, a colour flash
     const src = M.kind === 'photo' ? M.img : M.kind === 'gif' ? gifFrame(M, t - L.t0) : exporting ? L.fc : M.el;
     if(!src || (M.kind === 'video' && !exporting && M.el.readyState < 2)) continue;
     const W = out.width, H = out.height, c = L.crop, sw0 = src.videoWidth || src.naturalWidth || src.width, sh0 = src.videoHeight || src.naturalHeight || src.height;
@@ -4771,6 +4784,11 @@ function lySelect(i){
 function lyDelete(){
   if(!layers[lySel]) return false;
   if(layers[lySel].pop === 'auto') popOff = true;   // Shubix's own pop, deleted: not given again for this Reel
+  const gone = layers[lySel];
+  if(gone.brand === 'auto'){   // My brand's logo or end card, deleted: not given again for this Reel (the whole end card goes)
+    if(gone.role === 'mark') brandOff.mark = true;
+    else { brandOff.end = true; layers = layers.filter(L => L === gone || !(L.brand === 'auto' && L.role === 'end')); overlays = overlays.filter(o => o.brand !== 'auto'); renderOvList(); lySel = layers.indexOf(gone); }
+  }
   layers.splice(lySel, 1); lySel = Math.min(lySel, layers.length - 1); clipMixKey = ''; lyUI(); redrawFrame(); return true;
 }
 function lySet(k, v){ const L = layers[lySel]; if(!L) return;
@@ -4871,6 +4889,90 @@ async function subjectPop(auto = false){
   }catch(err){ console.warn('subject pop', err); if(!auto) tasks.fail('pop', 'The subject could not be cut out. Please try again.'); return null; }
   finally{ popBusy = false; }
 }
+/* ---- My brand: the creator's @handle and logo, kept in this browser. Shubix puts the logo small in a corner all through
+ * and ends the Reel on an end card (dark, the logo, the @handle, Follow for more), as creators do (finish.ts). Made again
+ * with every new edit; deleting one is kept for this Reel. ---- */
+const BRAND_KEY = 'shubix.brand';
+let brand = (() => { try{ return JSON.parse(localStorage.getItem(BRAND_KEY) || 'null'); }catch(e){ return null; } })(), brandOff = { mark: false, end: false }, brandLogo = null, brandBusy = 0;
+async function logoMedia(){
+  if(!brand || !brand.logo) return null;
+  if(brandLogo && brandLogo.key === brand.logo.length + ':' + brand.logo.slice(-40)) return brandLogo.M;
+  const blob = await (await fetch(brand.logo)).blob(), M = await addLayerMedia(new File([blob], 'My logo.png', { type: blob.type || 'image/png' }));
+  brandLogo = { key: brand.logo.length + ':' + brand.logo.slice(-40), M }; return M;
+}
+const mediaIndex = M => { let i = lmedia.indexOf(M); if(i < 0){ lmedia.push(M); i = lmedia.length - 1; } return i; };
+async function brandFinish(){
+  if(!edit.length || mode === 'copy' || keepSaved) return;
+  const gen = editGen, run = ++brandBusy, D = reelLen(); if(!D) return;
+  const B = brand, h = B ? handleOf(B.handle) : '', end = B && B.end && !brandOff.end && (h || B.logo) ? endCardTime(D, (beats || []).map(b => b - edit[0].start)) : null;
+  const M = B && B.logo && ((B.mark && !brandOff.mark) || end) ? await logoMedia().catch(() => null) : null;
+  if(editGen !== gen || run !== brandBusy) return;
+  layers = layers.filter(L => L.brand !== 'auto'); overlays = overlays.filter(o => o.brand !== 'auto');
+  // the logo through the Reel (until the end card)
+  if(M && B.mark && !brandOff.mark) layers.push({ id: ++lySeq, m: mediaIndex(M), in: 0, ...JSON.parse(JSON.stringify(LY0)), t0: 0, t1: end ? end.t0 : D, x: MARK.x, y: MARK.y, s: MARK.s, op: MARK.op, brand: 'auto', role: 'mark' });
+  if(end){
+    // the end card: the Reel goes dark (0.35 s), the logo settles in, the @handle and Follow for more come in under it
+    layers.push({ id: ++lySeq, m: mediaIndex(fillMedia('shade')), in: 0, ...JSON.parse(JSON.stringify(LY0)), t0: end.t0, t1: end.t1, shade: 0.9, fin: 0.35, brand: 'auto', role: 'end' });
+    if(M) layers.push({ id: ++lySeq, m: mediaIndex(M), in: 0, ...JSON.parse(JSON.stringify(LY0)), t0: end.t0 + 0.15, t1: end.t1, x: END_LOGO.x, y: END_LOGO.y, s: END_LOGO.s, grow: { ...END_LOGO.grow }, fin: 0.35, brand: 'auto', role: 'end' });
+    const n = addTemplate(M ? 'endcard' : 'endtext', [h, h ? 'Follow for more' : ''], end.t0, end.t1 - end.t0, false);
+    overlays.slice(-n).forEach(o => { o.brand = 'auto'; });
+    ovSel = -1;
+  }
+  lyUI(); renderOvList(); await prepLayers(pos); redrawFrame();
+}
+function brandSave(next){
+  brand = next && (next.handle || next.logo) ? { handle: String(next.handle || '').slice(0, 40), logo: next.logo || null, mark: next.mark !== false, end: next.end !== false } : null;
+  try{ if(brand) localStorage.setItem(BRAND_KEY, JSON.stringify(brand)); else localStorage.removeItem(BRAND_KEY); }catch(e){ notify('Your brand could not be kept in this browser (storage full).', 'err'); }
+  brandOff = { mark: false, end: false }; brandUI(); return brandFinish();
+}
+function brandUI(){
+  const b = brand || { handle: '', logo: null, mark: true, end: true };
+  if($('brhandle') && document.activeElement !== $('brhandle')) $('brhandle').value = b.handle || '';
+  if($('brmark')) $('brmark').checked = b.mark !== false; if($('brend')) $('brend').checked = b.end !== false;
+  if($('brlogo')){ $('brlogo').hidden = !b.logo; if(b.logo) $('brlogo').src = b.logo; }
+  if($('brlogodel')) $('brlogodel').hidden = !b.logo;
+}
+// a logo picked: kept as a PNG of at most 512 px on its long side (transparent stays transparent)
+async function brandLogoPick(f){
+  if(!f) return;
+  try{
+    const img = new Image(), url = URL.createObjectURL(f); img.src = url; await img.decode();
+    const k = Math.min(1, 512/Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas'); c.width = Math.max(2, Math.round(img.naturalWidth*k)); c.height = Math.max(2, Math.round(img.naturalHeight*k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    await brandSave({ ...(brand || { mark: true, end: true }), handle: (brand && brand.handle) || $('brhandle').value, logo: c.toDataURL('image/png') });
+  }catch(err){ notify('This picture cannot be used as a logo. A PNG or JPG works.', 'err'); }
+}
+$('brhandle').addEventListener('change', () => brandSave({ ...(brand || { mark: true, end: true }), handle: $('brhandle').value }), SIG);
+$('brmark').addEventListener('change', () => brandSave({ ...(brand || { end: true }), handle: (brand && brand.handle) || $('brhandle').value, mark: $('brmark').checked }), SIG);
+$('brend').addEventListener('change', () => brandSave({ ...(brand || { mark: true }), handle: (brand && brand.handle) || $('brhandle').value, end: $('brend').checked }), SIG);
+$('brlogobtn').addEventListener('click', () => $('brlogofile').click(), SIG);
+$('brlogofile').addEventListener('change', e => { brandLogoPick(e.target.files && e.target.files[0]); e.target.value = ''; }, SIG);
+$('brlogodel').addEventListener('click', () => brandSave({ ...brand, logo: null }), SIG);
+brandUI();
+
+/* ---- Cinematic bars, a colour flash on the beat, black and white until the drop (finish.ts): one tap each ---- */
+function finishOn(what){ return what === 'bw' ? edit.some(e => e.bw) : layers.some(L => L.finish === what); }
+function finishSet(what, on){
+  if(!edit.length){ notify('Make the Reel first.'); return false; }
+  const D = reelLen(), t0 = edit[0].start;
+  if(what === 'bw'){
+    for(const e of edit) if(e.bw){ e.cs = { ...(e.cs || {}), sat: 0 }; delete e.bw; }
+    if(on){ const drop = (cuts || []).filter((c, k) => cutType[k] === 'drop').map(c => c - t0).filter(c => c > 0.5)[0] ?? null, idx = bwShots(edit, drop);
+      if(!idx.length){ notify('This song part has no drop after its opening: black and white until the drop needs one.'); return false; }
+      for(const i of idx){ edit[i].cs = { ...(edit[i].cs || {}), sat: -1 }; edit[i].bw = true; } }
+  } else {
+    layers = layers.filter(L => L.finish !== what);
+    if(on){
+      const L = { id: ++lySeq, m: mediaIndex(fillMedia(what)), in: 0, ...JSON.parse(JSON.stringify(LY0)), t0: 0, t1: D, finish: what };
+      if(what === 'bars') L.ratio = 2.39;
+      else { strongHit(0); const endAt = (layers.find(x => x.brand === 'auto' && x.role === 'end') || { t0: D }).t0; L.pulses = tintPulses(strongList.map(h => h - t0), 0.3, endAt); if(!L.pulses.length){ notify('This song part has no strong beats to flash on.'); return false; } }
+      layers.unshift(L); if(lySel >= 0) lySel++;   // under the other layers: My brand's logo and the end card show over the bars
+    }
+  }
+  lyUI(); redrawFrame(); saveNow(); return true;
+}
+for(const [id, what] of [['fxbars', 'bars'], ['fxtint', 'tint'], ['fxbw', 'bw']]) $(id).addEventListener('change', e => { if(!finishSet(what, e.target.checked)) e.target.checked = finishOn(what); }, SIG);
+function finishUI(){ for(const [id, what] of [['fxbars', 'bars'], ['fxtint', 'tint'], ['fxbw', 'bw']]) if($(id)) $(id).checked = finishOn(what); }
 // A Talking Reel's B-roll: what is said (its captions) in sentences; Shubix AI picks the moments a picture helps and
 // writes each picture (/api/studio/broll/plan), each is made (aiPicture) and laid over the speaker for up to 3 s with a
 // fade, as an editor cuts away to what is talked about. One tap; credits for the plan and each picture.
@@ -5189,6 +5291,7 @@ async function aiActions(list){
       else if(a.do === 'voicefx'){ const b = $('vfx').querySelector('[data-f="' + CSS.escape(String(a.fx)) + '"]'); if(b){ b.click(); done++; } }
       else if(a.do === 'broll' && aiPicture && kind === 'talk' && !pics){ pics = 9; await brollAuto(); done++; }
       else if(a.do === 'pop'){ if(await subjectPop(false)) done++; }
+      else if(a.do === 'finish' && ['bars', 'tint', 'bw'].includes(a.what)){ if(finishSet(a.what, a.on !== false)){ finishUI(); done++; } }
       else if(a.do === 'picture' && aiPicture && a.prompt && pics < 2){ pics++; pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); if(await brollAdd(a.prompt, aiPicture.styles.some(s => s.id === a.style) ? a.style : 'photo', false)) done++; }
       else if(a.do === 'voiceover' && tts && tts.voices.length && a.text){ pos = Math.max(0, Math.min(reelLen() - 0.5, +a.at || 0)); await addTtsAtPlayhead(a.text, a.voice || tts.voices[0].key); done++; }
       else if(a.do === 'sound' && SFX_NAMES[a.kind] && buf){ sfxList.push({ id: ++sfxSeq, at: +Math.max(0, Math.min(reelLen(), +a.at || 0)).toFixed(2), kind: a.kind }); sfxUI(); clipMixKey = ''; await ensureMix(); done++; }
@@ -8378,7 +8481,7 @@ function stateOf(){
     clips: sources.map(s => ({ fp: fileFp(s.file), name: s.name })),
     settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), dub: dubLang ? { lang: dubLang, voice: dubVoice } : null, trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-CHAT_KEEP), reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
     overlays: overlays.map(o => { const c = { ...o }; delete c.box; return c; }),
-    lmedia: lmedia.map(M => ({ fp: fileFp(M.file), name: M.name })), layers: lyOf(),
+    lmedia: lmedia.map(M => FILLS.includes(M.kind) ? { fill: M.kind, name: M.name } : ({ fp: fileFp(M.file), name: M.name })), layers: lyOf(),
     edit: editOf(),
     kfs: kind === 'talk' && edit.some(e => e.uk && e.uk.length) ? edit.map(e => e.uk && e.uk.length ? e.uk : null) : undefined,
     caps: capAll && capKeyNow ? { key: capKeyNow, all: capAll } : null, vo: vo ? { key: vo.key, sr: vo.sr, fp: fileFp(voFile()) } : null,
@@ -8412,7 +8515,7 @@ async function saveProject(st, sig){
     if(song && song.file) await putFile(song.file);
     for(const s of sources) if(s.file) await putFile(s.file);
     if(bgFile) await putFile(bgFile);
-    for(const M of lmedia) await putFile(M.file);
+    for(const M of lmedia) if(M.file) await putFile(M.file);
     if(vo) await putFile(voFile());
     if(!reelTitle){ reelTitle = await nextUntitled(); st = { ...st, settings: { ...st.settings, title: reelTitle } }; sig = JSON.stringify(st); }
     const name = reelTitle;
@@ -8511,7 +8614,7 @@ async function openProject(id){
       $('s3').classList.remove('locked'); $('s3').classList.add('done'); $('s3st').textContent = edit.length + ' shots · ' + fmt(buf ? buf.duration : 0);
       ['play','remix','export','cover'].forEach(id => $(id).disabled = false); }
     else if(keepSaved){ keepSaved = false; if(buf && sources.length) makeEdit(); }   // the saved edit does not fit (a clip is missing): a new one
-    if(st.layers && st.layers.length){ const ms = []; for(const c of st.lmedia || []){ const f = await getF(c.fp, c.name); try{ ms.push(f ? await addLayerMedia(f) : null); }catch(e){ ms.push(null); } }
+    if(st.layers && st.layers.length){ const ms = []; for(const c of st.lmedia || []){ if(c.fill){ ms.push(fillMedia(c.fill)); continue; } const f = await getF(c.fp, c.name); try{ ms.push(f ? await addLayerMedia(f) : null); }catch(e){ ms.push(null); } }
       lmedia = ms.filter(Boolean); const idx = ms.map((m, i) => m ? ms.slice(0, i).filter(Boolean).length : -1);
       layers = st.layers.filter(L => idx[L.m] >= 0).map(L => ({ ...L, m: idx[L.m] })); lySeq = layers.reduce((q, L) => Math.max(q, L.id), 0); lyUI(); }
     if(S.capsOn && !capsOn){ $('caps').checked = true; capsOn = true; $('caprow').hidden = false; loadCaptions(); }
@@ -8608,7 +8711,7 @@ async function pickRecent(fp){
 listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
-root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
+root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, finishSet, brandSave, get brandLayers(){ return layers.filter(L => L.brand || L.finish).map(L => ({ kind: (lmedia[L.m] || {}).kind, role: L.role, finish: L.finish, t0: L.t0, t1: L.t1 })); }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
   snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry,
   // Make Reel waits for Shubix's plan and nothing is running (flow.ts): its next step is tried again, then it is said (Retry / Close)
   aiKick: () => { if(sources.some(s => !s.ai && !s.aiFailed && !s.removed)) aiRun(); else if(buf && sources.length && !recording){ paceMaybe(); directorMaybe(); } }, aiStalled: () => { dirFailedKey = dirKey(); aiDown(); }, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
