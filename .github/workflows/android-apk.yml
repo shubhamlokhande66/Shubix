@@ -1,9 +1,16 @@
 name: Android test APK
 
 # A release APK to install on a phone by hand (signed with the debug key, never for Google Play). Run it by hand:
-# Actions, Android test APK, Run workflow; download it from the run's Artifacts.
+# Actions, Android test APK, Run workflow; download it from the run's Artifacts. `target` picks the server the app talks
+# to (qa: api-qa.shubix.in, the code of the branch it is built from; prod: api.shubix.in) and the branch it is built from.
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Server the app talks to, and the branch it is built from (qa, uat or prod = main)"
+        type: choice
+        options: [prod, qa, uat]
+        default: prod
 
 jobs:
   apk:
@@ -12,14 +19,16 @@ jobs:
       run:
         working-directory: shubix
     env:
-      EXPO_PUBLIC_API_URL: https://api.shubix.in
-      EXPO_PUBLIC_SITE_URL: https://shubix.in
+      EXPO_PUBLIC_API_URL: ${{ inputs.target == 'qa' && 'https://api-qa.shubix.in' || inputs.target == 'uat' && 'https://api-uat.shubix.in' || 'https://api.shubix.in' }}
+      EXPO_PUBLIC_SITE_URL: ${{ inputs.target == 'qa' && 'https://qa.shubix.in' || inputs.target == 'uat' && 'https://uat.shubix.in' || 'https://shubix.in' }}
       ADMOB_ANDROID_APP_ID: ca-app-pub-5459735473283681~7574692434
     steps:
       - name: Free disk space
         working-directory: /
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/local/lib/node_modules/@angular "$AGENT_TOOLSDIRECTORY/PyPy" "$AGENT_TOOLSDIRECTORY/Ruby" "$AGENT_TOOLSDIRECTORY/go" || true
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target == 'qa' && 'qa' || inputs.target == 'uat' && 'uat' || 'main' }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0
@@ -44,6 +53,6 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
       - uses: actions/upload-artifact@v4
         with:
-          name: shubix-release-apk
+          name: shubix-release-apk-${{ inputs.target || 'prod' }}
           path: shubix/FE/mobile-app/android/app/build/outputs/apk/release/*.apk
           retention-days: 7
