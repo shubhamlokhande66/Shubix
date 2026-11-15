@@ -145,7 +145,7 @@ function Saved({ data, error, retry, setData }: { data: { reels: CloudReel[]; us
     const q = new URLSearchParams(location.search), p = q.get("social"), res = q.get("result");
     if (!p || !res) return;
     const name = p === "youtube" ? "YouTube" : "Instagram";
-    if (res === "ok") toast.success(`${name} connected. Choose a Reel and press Publish.`);
+    if (res === "ok") toast.info(`${name} connected. Choose a Reel and press the Publish button on it.`);
     else toast.error(res === "cancelled" ? `${name} was not connected.` : `${name} could not be connected. Please try again.`);
     q.delete("social"); q.delete("result"); history.replaceState(history.state, "", `${location.pathname}${q.size ? `?${q}` : ""}`);
   }, []);

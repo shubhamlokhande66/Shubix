@@ -575,3 +575,12 @@ AI voice (talking Reels; shown when the server has AI voices). `makeDub` in `eng
 
 Checked in Chromium (`next dev`, the API stood in for): a 9.3 s talking clip, Hindi → listened, translated, 4 sentences
 spoken, the talk rebuilt with the dub; `tests/studio-dub.test.ts` (sentences, 1.3× faster at the same pitch, placing).
+
+## One tap from a clip, and pictures from the chat
+
+- A moment sent from Clips from a Video ("Make Reel") is made into the Reel by itself: once the clip is read, the
+  Generate button presses itself (`FastStudio.tsx`, once). Checked in Chromium: the clip handed over, 3 shots made, no tap.
+- Shubix AI's chat can add AI pictures: action `{"do":"picture","prompt","at","style"}` (`direct.ts` ACTIONS; the engine
+  runs `brollAdd`, at most 2 per answer, each charged as an AI picture).
+- Publish panel checked in Chromium (the API stood in for): caption written by Shubix AI, "Publish now", the post shown
+  as Published with its views, likes and comments. Coming back from connecting an account says so in a popup.
