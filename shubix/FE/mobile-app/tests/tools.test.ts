@@ -121,3 +121,24 @@ describe("texts, templates, sounds, beat markers, music", () => {
     expect((ES as unknown as { userMarks: number[] }).userMarks).toHaveLength(0);
   });
 });
+
+describe("what a Reel gets by itself, with no Shubix AI", () => {
+  it("opening words in its first seconds, once: deleted, they do not come back", async () => {
+    const { ES, brain } = await made();
+    const auto = ES.overlays.filter((o) => (o as { auto?: boolean }).auto);
+    expect(auto.length).toBeGreaterThan(0);
+    expect(Math.min(...auto.map((o) => o.t0 ?? 9))).toBeLessThan(0.1);
+    ES.overlays = []; (brain.makeEdit as () => void)();
+    expect(ES.overlays).toHaveLength(0);
+  });
+  it("a few sound effects: a boom on each drop, the rest rationed (one every 6 s at most)", async () => {
+    const { ES, brain } = await made();
+    const ev = (brain.sfxEvents as () => { at: number; kind: string }[])(), len = ES.edit[ES.edit.length - 1].end - ES.edit[0].start;
+    expect(ES.au.sfx).toBe(true);
+    expect(ev.length).toBeLessThanOrEqual(Math.max(2, Math.round(len / 6)));
+    const whooshes = ev.filter((e) => e.kind === "whoosh").map((e) => e.at).sort((a, b) => a - b);
+    whooshes.forEach((t, i) => { if (i) expect(t - whooshes[i - 1]).toBeGreaterThanOrEqual(4 - 1e-9); });
+    ES.au = { ...ES.au, sfx: false };
+    expect((brain.sfxEvents as () => unknown[])()).toHaveLength(0);
+  });
+});

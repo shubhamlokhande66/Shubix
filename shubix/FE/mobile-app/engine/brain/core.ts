@@ -5,6 +5,7 @@
 import { srcPos, whatClip, velocitySpeed, rampSpeed, keyframesFor, crossesScene, srcPosF, TAIL, buildCapLines, panClamp, shotBeats, windowStats } from './pure';
 import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
+import { autoHook } from '@mobile/core/lib/text-templates';
 
 export function createCoreBrain(ES, EH){
 // the preview: the video's own frame times (requestVideoFrameCallback), the picture mixed toward the next one
@@ -330,8 +331,23 @@ async function account(){ EH.planLoad(); await EH.aiCheck(); }
 function makeEdit(){
   const was = (ES.playing || ES.starting) && !ES.recording && !ES.exportBusy && ES.kind !== 'talk', at = ES.playing ? EH.curTime() : ES.pos, gen = ES.editGen;
   EH.makeEditNow();
+  if(ES.edit.length && ES.editGen !== gen) autoFinish();
   if(ES.editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && ES.buf && ES.edit.length && !ES.playing && !ES.starting && !ES.recording) EH.startPlayback(Math.min(Math.max(0, at), Math.max(0, ES.buf.duration - 0.2)));
+}
+// No text of the creator's and no Shubix AI plan with texts: the Reel still opens on words (autoHook, the first two
+// seconds that stop the scroll), as an editor's does. A text like any other; once the creator deletes it, it is not
+// given again. When Shubix AI's plan brings its own texts, these go.
+function autoFinish(){
+  if(ES.kind === 'talk' || ES.mode === 'copy' || !ES.edit.length || ES.keepSaved) return;
+  const had = ES.overlays.some(o => o.auto);
+  if(ES.autoHookUsed && !had) ES.autoHookOff = true;
+  if(had && ES.director && !ES.director.interim && ES.overlays.some(o => !o.auto)){ ES.overlays = ES.overlays.filter(o => !o.auto); EH.renderOvList(); return; }
+  if(ES.autoHookOff || had || ES.overlays.length || ES.hookText || (ES.director && !ES.director.interim)) return;
+  const t0 = ES.edit[0].start, drops = (ES.cuts || []).filter((c, k) => ES.cutType[k] === 'drop').map(c => c - t0).filter(c => c > 0.5);
+  const h = autoHook({ firstDrop: drops.length ? drops[0] : null, kind: ES.tplKind, seed: ES.seed });
+  const n = EH.addTemplate(h.key, h.words, 0, h.len, false);
+  if(n){ ES.overlays.slice(-n).forEach(o => { o.auto = true; }); ES.autoHookUsed = true; ES.ovSel = -1; EH.renderOvList(); }   // (not selected: the tools stay on the shots)
 }
 async function showShot(i){ ES.pos = ES.edit[i].start + Math.min(0.4, (ES.edit[i].end-ES.edit[i].start)*0.5);
   await Promise.all([ES.edit[i-1]?EH.prepare(i-1,ES.edit[i-1].end-0.01):0, EH.prepare(i, ES.pos)]); EH.drawFrame(ES.pos); EH.drawTimeline(); }

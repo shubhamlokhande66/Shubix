@@ -65,6 +65,9 @@ export const settings = {
   /** auto | off | h264_nvenc | h264_qsv | h264_amf | h264_videotoolbox (CPU fallback) */
   hwAccel: env("HW_ACCEL", "auto"),
   whisperModel: env("WHISPER_MODEL", "base"),
+  // captions for every plan (Free too): speech recognition costs the server (OpenAI: about ₹0.5 a minute of speech; local
+  // Whisper: its own processor time). Off: captions stay part of the Editor and Pro plans.
+  freeCaptions: env("FREE_CAPTIONS", "") === "true",
   whisperDevice: env("WHISPER_DEVICE", "cpu"),
   whisperComputeType: env("WHISPER_COMPUTE_TYPE", "int8"),
   whisperLanguage: env("WHISPER_LANGUAGE", ""),

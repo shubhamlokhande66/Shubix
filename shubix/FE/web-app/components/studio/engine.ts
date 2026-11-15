@@ -13,7 +13,7 @@ import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
-import { TEXT_TEMPLATES, templateTexts } from '@shubix/core/lib/text-templates';
+import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
 import { SFX_REC, sfxRecorded } from '@shubix/core/lib/sfx-recorded';
 import { MAIN_VERT, MAIN_FRAG, PASS_VERT, GRADE_FRAG, PIC_FRAG, PIC_FX, TR_DUR } from '@shubix/core/lib/shaders';
@@ -1766,6 +1766,7 @@ async function buildTalk(){
   talkKfs = null;
   captureLoop(); editGen++;
   if(dubLang && tts && !dubbed) makeDub();   // the clips or the pauses changed: the dub follows (speech already made is kept in the browser)
+  autoCaptions();
 }
 // AI dub: the words of the talk (its own voice), in sentences, translated, each spoken by an AI voice where it was said
 async function makeDub(){
@@ -1898,7 +1899,7 @@ $('aspect').addEventListener('click', e=>{ const b=e.target.closest('button'); i
   [...$('aspect').children].forEach(x=>x.setAttribute('aria-pressed', x===b)); setCanvas(); if(edit.length && !playing && !recording) captureLoop(); });
 
 /* =============== STEP 3: AUTO-EDIT =============== */
-let edit = [], seed = 1;
+let edit = [], seed = 1, autoHookUsed = false, autoHookOff = false;   // autoFinish: the opening words
 function rng(){ seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; }
 // Window statistics in O(log n): prefix sums over the clip's samples and faces (built once per clip). The edit scores
 // thousands of windows, so a plain loop here froze the page on long videos.
@@ -3741,8 +3742,23 @@ function makeEdit(){
     // the review's score beside the shot count the creator already reads (makeEditNow has just written that line anew)
     const st = $('s3st'); if(st && !/quality \d/.test(st.textContent)) st.textContent += ' · quality ' + Math.round(R.score) + '/100';
     rlog('review', 'Edit review · ' + describeEditReview(R) + (editTakes.tried > 1 ? ' · take ' + editTakes.kept + ' of ' + editTakes.tried + ' kept' : ''), { status: R.status, score: R.score, takes: editTakes, metrics: R.metrics, issues: R.issues.slice(0, 40), repairs: R.repairs }, R.status === 'pass' ? 'info' : 'warn'); }catch(e){} }
+  if(edit.length && editGen !== gen) autoFinish();
   if(editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && buf && edit.length && !playing && !starting && !recording) startPlayback(Math.min(Math.max(0, at), Math.max(0, buf.duration - 0.2)));
+}
+// No text of the creator's and no Shubix AI plan with texts: the Reel still opens on words (autoHook, the first two
+// seconds that stop the scroll), as an editor's does. A text like any other; once the creator deletes it, it is not
+// given again. When Shubix AI's plan brings its own texts, these go.
+function autoFinish(){
+  if(kind === 'talk' || mode === 'copy' || !edit.length || keepSaved) return;
+  const had = overlays.some(o => o.auto);
+  if(autoHookUsed && !had) autoHookOff = true;
+  if(had && director && !director.interim && overlays.some(o => !o.auto)){ overlays = overlays.filter(o => !o.auto); renderOvList(); return; }
+  if(autoHookOff || had || overlays.length || hookText || (director && !director.interim)) return;
+  const t0 = edit[0].start, drops = (cuts || []).filter((c, k) => cutType[k] === 'drop').map(c => c - t0).filter(c => c > 0.5);
+  const h = autoHook({ firstDrop: drops.length ? drops[0] : null, kind: tplKind, seed: seed });
+  const n = addTemplate(h.key, h.words, 0, h.len, false);
+  if(n){ overlays.slice(-n).forEach(o => { o.auto = true; }); autoHookUsed = true; ovSel = -1; renderOvList(); }   // (not selected: the tools stay on the shots)
 }
 function makeEditNow(){
   if(refReading) return;   // the Reel to copy is being read: its copy is made right after (no ordinary Reel meanwhile)
@@ -5484,9 +5500,17 @@ async function loadCaptions(){
 (async () => {   // is speech recognition set up on this server?
   try{ const r = await fetch('/api/studio/transcribe', { signal: ac.signal }); if(!r.ok) return; const j = await r.json(); if(!j || !j.available) return;
     if(j.planAi === false){ $('capwrap').hidden = false; $('caps').disabled = true; $('capwrap').title = 'Captions from the song are part of the Editor and Pro plans'; $('capwrap').lastChild.textContent = ' Captions from the song · Editor and Pro plans'; return; }
-    $('capwrap').hidden = false; if(j.credits) $('capwrap').title = 'Uses ' + j.credits + ' credit' + (j.credits > 1 ? 's' : '') + ' per song'; }catch(e){}
+    $('capwrap').hidden = false; if(j.credits) $('capwrap').title = 'Uses ' + j.credits + ' credit' + (j.credits > 1 ? 's' : '') + ' per song';
+    autoCaptions(); }catch(e){}
 })();
-$('caps').addEventListener('change', e=>{ capsOn = e.target.checked; $('caprow').hidden = !capsOn; if(capsOn) loadCaptions(); else { capStat(''); redraw(); } });
+// a Talking Reel gets its captions by itself (what is said, on screen: most people watch with the sound off), once the
+// server can make them for this person; a creator who turns them off is not given them again
+let capsTouched = false;
+function autoCaptions(){
+  if(capsTouched || capsOn || kind !== 'talk' || !talk || keepSaved || $('capwrap').hidden || $('caps').disabled) return;
+  setCaptions(true);
+}
+$('caps').addEventListener('change', e=>{ if(e.isTrusted) capsTouched = true; capsOn = e.target.checked; $('caprow').hidden = !capsOn; if(capsOn) loadCaptions(); else { capStat(''); redraw(); } });
 $('caplang').addEventListener('change', ()=>{ if(capsOn) loadCaptions(); });
 $('tstyle').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; textStyle = b.dataset.t; [...$('tstyle').children].forEach(x=>x.setAttribute('aria-pressed', x===b)); redraw(); });
 function drawSafe(){
@@ -7673,9 +7697,9 @@ function voStat(t){ $('vostat').textContent = t; }
  * the voice changer; the song steps back while it speaks) and each shot's own sound at its volume (cs.vol). ---- */
 // clip: the clips' own sound under the song: mute (the default: no wind, traffic or chatter), voices (only where
 // people speak), all (every shot's sound, a little under the song)
-// sfx: the automatic sound effects (a whoosh into a swipe, a boom on a drop...) are off by default: a whoosh on every
-// swipe is what makes an edit sound home-made; they are one tap away (Music → Sound effects) and can be added by hand
-const AU0 = { mvol: 1, mfin: 0, mfout: 0, mfoutManual: false, vfx: 'none', ai: true, clip: 'mute', sfx: false, sfxv: 0.6 };
+// sfx: the automatic sound effects, on by default and few (sfxEvents: a boom on the drop, a whoosh now and then, at most
+// one every 6 s); off in one tap (Music → Sound effects), and more can be added by hand
+const AU0 = { mvol: 1, mfin: 0, mfout: 0, mfoutManual: false, vfx: 'none', ai: true, clip: 'mute', sfx: true, sfxv: 0.6 };
 const musicOut = () => au.mfoutManual ? au.mfout : (au.ai ? 0.8 : 0);
 let au = { ...AU0 }, clipMixKey = '';
 const fxCache = new Map();
@@ -7800,12 +7824,17 @@ function sfxSynth(kind, sr){
 const WHOOSH_TR = ['whip','swipeup','slideleft','slideright','slideup','slidedown','zoom','spin','zoomout','dropin'];
 function sfxEvents(){
   const out = sfxList.map(x => ({ at: x.at, kind: x.kind }));
-  if(au.sfx && kind !== 'talk'){ let lastW = -9;
-    edit.forEach((e, i) => { if(!i) return;
-      if(WHOOSH_TR.includes(e.tr) && e.start - lastW > 0.8){ out.push({ at: Math.max(0, e.start - 0.2), kind: 'whoosh' }); lastW = e.start; }
-      else if((e.tr === 'flash' || e.tr === 'burn') && e.type === 'drop') out.push({ at: e.start, kind: 'boom' });
-      if(e.efx === 'snap' || (e.sp && e.sp.label === 'Freeze frame')) out.push({ at: e.start, kind: 'click' }); });
-    for(const o of overlays) if(o.anim === 'pop' && !o.all && o.t0 > 0.05) out.push({ at: o.t0, kind: 'pop' }); }
+  // the automatic sounds, as an editor uses them: a boom on the drop, a whoosh into a whip or a swipe now and then (4 s
+  // apart at least), a click on a photo snap or a freeze, a pop on a text that pops in; at most one every 6 s of the
+  // Reel in all (a whoosh on every swipe is what made them sound home-made, so they were off until now)
+  if(au.sfx && kind !== 'talk' && edit.length){
+    const len = edit[edit.length-1].end - edit[0].start, cap = Math.max(2, Math.round(len/6)), t0 = edit[0].start;
+    let n = 0, lastW = -9;
+    edit.forEach((e, i) => { if(!i || n >= cap) return;
+      if(e.type === 'drop'){ out.push({ at: e.start, kind: 'boom' }); n++; lastW = e.start; }
+      else if(WHOOSH_TR.includes(e.tr) && e.start - lastW >= 4){ out.push({ at: Math.max(0, e.start - 0.2), kind: 'whoosh' }); lastW = e.start; n++; }
+      if(n < cap && (e.efx === 'snap' || (e.sp && e.sp.label === 'Freeze frame'))){ out.push({ at: e.start, kind: 'click' }); n++; } });
+    for(const o of overlays) if(n < cap && o.anim === 'pop' && !o.all && o.t0 > 0.05 && o.t0 < t0 + len){ out.push({ at: o.t0, kind: 'pop' }); n++; } }
   return out;
 }
 function sfxAdd(k){ if(!SFX_NAMES[k] || !buf) return; sfxList.push({ id: ++sfxSeq, at: +(playing ? curTime() : pos).toFixed(2), kind: k }); sfxUI(); clipMixKey = ''; ensureMix(); notify(SFX_NAMES[k] + ' added at ' + (playing ? curTime() : pos).toFixed(1) + ' s'); }

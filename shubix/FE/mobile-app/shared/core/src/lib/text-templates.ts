@@ -34,3 +34,19 @@ export function templateTexts(key: string, words: string[] = [], at = 0, len?: n
   return T.parts.map((p) => ({ ...p, text: p.text.replace("{1}", w[0]).replace("{2}", w[1]).trim(), start: at + Math.min(p.t, L - 0.3), end: at + L }))
     .filter((p) => p.text && p.text !== "—" && p.text !== "“”" && p.text !== "📍");
 }
+
+/** The opening words a Reel gets when nobody wrote any (no text of the creator's, no Shubix AI plan): what editors put
+ * in the first two seconds to stop the scroll. Chosen from what is known without the AI: the song (a drop in the first
+ * 10 s), the template's kind of Reel (car, wedding, festival…), and the Reel's own number (`seed`), so one Reel keeps
+ * its words and the next one gets others. A text like any other: the creator edits or deletes it. */
+export function autoHook(o: { firstDrop: number | null; kind?: string; seed: number }): { key: string; words: string[]; len: number } {
+  const pick = <T,>(a: T[]) => a[Math.abs(Math.round(o.seed)) % a.length];
+  const k = (o.kind || "").toLowerCase();
+  if (/wedding|love|couple|engag/.test(k)) return { key: "love", words: pick([["Forever us", ""], ["Our day", "♥"], ["Just married", ""]]), len: 2.4 };
+  if (/car|bike|ride|auto/.test(k)) return { key: "glitch", words: pick([["NEW RIDE", ""], ["DREAM CAR", ""], ["KEYS ARE HERE", ""]]), len: 2.2 };
+  if (/festival|diwali|ganpati|puja|holi|navratri/.test(k)) return { key: "festival", words: pick([["शुभ दीपावली", "🪔"], ["गणपती बाप्पा मोरया", "🙏"], ["Happy festival", "✨"]]), len: 2.6 };
+  if (/gym|fitness|workout/.test(k)) return { key: "glitch", words: pick([["NO DAYS OFF", ""], ["GRIND MODE", ""]]), len: 2.2 };
+  if (/travel|trip/.test(k)) return { key: "vlog", words: pick([["Trip diaries", ""], ["Weekend escape", ""]]), len: 2.6 };
+  if (o.firstDrop !== null && o.firstDrop <= 10) return { key: "headline", words: pick([["WAIT FOR THE DROP", "sound on 🔊"], ["WAIT FOR IT", "🔥"], ["DON'T SKIP", "the best part is coming"]]), len: 2.2 };
+  return { key: "headline", words: pick([["SOUND ON", "🔊"], ["WATCH TILL THE END", ""], ["THIS VIBE", "✨"]]), len: 2.2 };
+}

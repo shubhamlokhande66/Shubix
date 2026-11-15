@@ -584,3 +584,20 @@ spoken, the talk rebuilt with the dub; `tests/studio-dub.test.ts` (sentences, 1.
   runs `brollAdd`, at most 2 per answer, each charged as an AI picture).
 - Publish panel checked in Chromium (the API stood in for): caption written by Shubix AI, "Publish now", the post shown
   as Published with its views, likes and comments. Coming back from connecting an account says so in a popup.
+
+## What a Reel gets by itself (no Shubix AI needed)
+
+- **Opening words** (`autoFinish` in both engines, `autoHook` in `Shared/core/src/lib/text-templates.ts`): a Reel with no
+  text of the creator's and no Shubix AI plan with texts opens on 2 s of words, as an editor's does: chosen from the song
+  (a drop in the first 10 s: "WAIT FOR IT 🔥"), the template's kind (car, wedding, festival, gym, travel) and the Reel's
+  number. A text like any other (not selected, so the tools stay on the shots); deleted once, it does not come back; a
+  Shubix AI plan with its own texts replaces it. Not in Talking Reels (their captions say what is said) or Copy a Reel.
+- **Sound effects** on by default, few (`sfxEvents`, both engines): a boom on each drop, a whoosh into a whip or swipe at
+  most every 4 s, a click on a snap or freeze, a pop on a text that pops; at most one every 6 s in all. Music → Sound
+  effects turns them off. Reels saved before keep their own setting.
+- **Captions in Talking Reels** turn on by themselves when the server can make them for this person (website); a creator
+  who turns them off is not given them again. `FREE_CAPTIONS=true` on the API gives captions to every plan (speech
+  recognition costs the server: OpenAI about ₹0.5 a minute of speech); without it they stay Editor and Pro.
+
+Checked in Chrome on real clips: a music Reel of 6 clips opened on "WAIT FOR IT 🔥" (0-2.2 s) with sound effects on; a
+Talking Reel had its captions on by itself (11 lines). The Android engine runs the same code (`tests/tools.test.ts`).
