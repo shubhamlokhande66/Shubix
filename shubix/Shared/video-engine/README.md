@@ -81,6 +81,15 @@ that scores best over all its shots. Because part of it is slow, the Reel one cl
 Checked by `FE/mobile-app/tests/short-clip.test.ts` and run G of the start-to-end check (the speed before and after
 the moment is measured in the exported file).
 
+## Slow motion asked for in words
+
+"clip slow kar", "slow motion", "video हळू कर" typed to Shubix (`slowWish` in both engines) is done at once, with no
+Shubix AI and no credits: every shot plays at half speed, whatever the style gave it, and stays so while the Reel is
+made again. On the website the Reel also gets longer where the clips allow ("Make the Reel as long as my clips": slow
+motion needs half the video); in the Android app its length stays. "normal speed" takes it back. Before, "slow" only
+switched to the Smooth style (longer shots, no slow motion) and the answer still said Done. Free plan on the website:
+the chat changes nothing there, as before. Checked by `FE/mobile-app/tests/short-clip.test.ts` and run H.
+
 ## Shared editing primitives
 
 - Typed keyframe tracks and easing, with numeric and compact Studio transform interpolation shared by web and Android

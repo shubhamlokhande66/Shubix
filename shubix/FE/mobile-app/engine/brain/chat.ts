@@ -49,6 +49,20 @@ async function chatSend(text){
   const ready = ES.buf && ES.sources.length && ES.edit.length && !ES.recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
   // a model round-trip, a credit check or a server upload; verify the full scope before replying.
+  // slow motion asked for in words: done here at once, for everyone, with no Shubix AI and no credits. The Reel's
+  // length is the create flow's on the phone, so it stays as it is (the website makes it longer where the clips allow)
+  const slow = EH.slowWish(text);
+  if(ready && ES.kind !== 'talk' && ES.mode !== 'copy' && slow !== null){
+    if(slow === !!ES.slowAll){ chatAnswer(slow ? 'Your Reel is already in slow motion. Say "normal speed" to take it back.' : 'Your Reel already plays at normal speed.'); return; }
+    if(ES.playing) EH.stopAll();
+    ES.slowAll = slow; EH.makeEdit();
+    const n = ES.edit.filter(e => e.sp === EH.SPEED.slow).length;
+    if(slow && !n){ ES.slowAll = false; chatAnswer('I could not put this Reel in slow motion.'); return; }
+    EH.saveNow();
+    chatAnswer(slow ? 'Done ✓ ' + (n === ES.edit.length ? 'Every shot' : n + ' of ' + ES.edit.length + ' shots') + ' now plays in slow motion (half speed). Your Reel stays as long as it was. No Shubix AI credits used. Say "normal speed" to take it back.'
+      : 'Done ✓ Your Reel plays at normal speed again. No Shubix AI credits used.');
+    return;
+  }
   const localVisualIntent = EH.parseDirectorVisualIntent(text);
   const hasLocalVisualIntent = !!(localVisualIntent.openingText || localVisualIntent.squareFrameAll
     || localVisualIntent.transitionAll || localVisualIntent.effectsAll);

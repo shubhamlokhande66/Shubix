@@ -30,6 +30,8 @@ const SCENARIOS = [
     { id: 'E-1clip-4s-slow-song', song: 'slow_72', clips: [media.clips.find((c) => c.short).index], res: '720p', why: 'one clip of 4 s under a slow song (72 BPM): a slow motion Reel of about 8 s' },
     { id: 'F-1clip-4s-fast-song', song: 'four_floor_124', clips: [media.clips.find((c) => c.short).index], res: '720p', why: 'one clip of 4 s under a fast song (124 BPM): a Reel about as long as the clip, nearly as filmed' },
   ] : []),
+  // "clip slow kar" typed to Shubix: real slow motion on every shot, and a longer Reel where the clips allow
+  { id: 'H-5clips-slow-asked', song: 'bhangra_dhol_98', clips: [0, 2, 4, 6, 8], res: '720p', say: 'clip slow kar', why: 'five clips, then "clip slow kar" typed to Shubix: every shot at half speed' },
   // one clip of 10 s is one take: as filmed up to the song's moment, in slow motion from there, the Reel longer than the clip
   ...(media.clips.some((c) => c.file === 'take10.webm') ? [
     { id: 'G-1clip-10s-one-take', song: 'bhangra_dhol_98', clips: [media.clips.find((c) => c.file === 'take10.webm').index], res: '720p', why: 'one clip of 10 s: one take, as filmed and then in slow motion from the song\'s moment, a Reel of about 14 s' },
@@ -152,6 +154,13 @@ async function scenario(browser, sc) {
     let gen = -1, same = 0;
     for (let k = 0; k < 60 && same < 4; k++) { const g = await p.evaluate(() => document.querySelector('.brs').__studio.editGen); same = g === gen ? same + 1 : 0; gen = g; await p.waitForTimeout(500); }
     await settle();
+    // words typed to Shubix once the Reel is made (run H: "clip slow kar"): what it answers and what changed
+    if (sc.say) {
+      const said = await p.evaluate(async (t) => { const S = document.querySelector('.brs').__studio, sp = () => S.edit.map((s) => +((s.sp && s.sp.pos ? s.sp.pos(s.end - s.start) : s.end - s.start) * (s.scaleR || 1) / (s.end - s.start)).toFixed(2));
+        const before = { len: +S.dur.toFixed(2), speeds: sp() }; let r = null, err = null; try { r = await S.chatApp(t); } catch (e) { err = String(e); }
+        return { asked: t, answer: r && r.answer, err, before, after: { len: +S.dur.toFixed(2), speeds: sp() } }; }, sc.say);
+      step('said to Shubix', said); await settle();
+    }
     const made = await p.evaluate(() => {
       const root = document.querySelector('.brs'), S = root.__studio, e = S.edit || [], x = S.section || {};
       const srcs = (S.sources || []).map((s) => ({ name: s.name, dur: s.dur, samples: (s.samples || []).length }));

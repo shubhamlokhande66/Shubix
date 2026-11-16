@@ -751,7 +751,7 @@ function seqPick(seq, res, gmax){
     const use = need.map((x, k) => x*scale[k]);
     let cur = from;
     // (far too little video for the take, a 4 s clip under an 8 s Reel: the walk below, slower all through)
-    const want = ids.map(i => lenOf(i)*(i >= slowAt ? ONE_TAKE.slow : 1)), all = sum(want);
+    const want = ids.map(i => lenOf(i)*(i >= slowAt || ES.slowAll ? ONE_TAKE.slow : 1)), all = sum(want);
     if(slowAt > 0 && all*0.8 <= foot){
       // the take: every shot runs straight on from the one before; a clip a little short for it plays a little slower all through
       const f = all > foot ? foot/all*0.98 : 1;
