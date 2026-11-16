@@ -284,7 +284,7 @@ export function createNativeEngine(io: NativeIo) {
     return { clips: host.ES.sources.length, names: host.ES.sources.map((s: { name: string }) => s.name), failed };
   }
   const kfRow = () => { const T = host.brain.kfTarget(); return T ? { ok: true, index: T.i, what: T.what, a: T.a, b: T.b, keyframes: ((T.obj.uk || []) as Args[]).map((k) => ({ ...k })) } : null; };
-  function state(){ return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
+  function state(){ host.brain.clearTexts?.(); return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
   const work = () => ({ clips: host.ES.sources.length, shots: host.ES.edit.length, songReady: !!host.ES.song?.r, pending: reading });
 
   const ops: Record<string, (a: Args) => unknown> = {

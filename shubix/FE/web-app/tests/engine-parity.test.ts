@@ -9,8 +9,10 @@ import { describe, expect, it } from "vitest";
  * other gives the website and the app different Reels from the same clips and song ("In my order" had drifted this
  * way before this test). Comments and spacing may differ; the code may not. */
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const web = fs.readFileSync(path.join(root, "FE/web-app/components/studio/engine.ts"), "utf8");
-const brain = (f: string) => fs.readFileSync(path.join(root, "FE/mobile-app/engine/brain", f), "utf8");
+// (Windows checkouts have CRLF line ends: without this, no function was found and both sides were "" - always alike)
+const read = (f: string) => fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+const web = read(path.join(root, "FE/web-app/components/studio/engine.ts"));
+const brain = (f: string) => read(path.join(root, "FE/mobile-app/engine/brain", f));
 const norm = (t: string) => t.replace(/\/\/.*$/gm, "").replace(/\bexport /g, "").replace(/\bE[SH]\./g, "").replace(/\s+/g, " ").trim();
 /** a function's text: from its first line to the first line that is only "}" */
 const fn = (text: string, head: string) => { const i = text.indexOf(head); if (i < 0) return "(not found: " + head + ")"; const j = text.indexOf("\n}\n", i); return text.slice(i, j + 2); };

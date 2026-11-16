@@ -645,3 +645,15 @@ first). Each photo becomes a 3 s moving shot (`photoClip`, a slow push-in, made 
 the order the files were chosen, so "In my order" plays them as picked. The Android app's Beat Reel picker takes both
 too (its Photos tab keeps to photos). Checked in Chrome: 2 videos and 2 photos, chosen video, photo, video, photo ->
 4 shots in that order, quality 90/100. Android: not run on a phone.
+
+## Words that never sit on a face
+
+Shubix's own texts (the opening words, Shubix AI's texts) are moved off faces by themselves (`Shared/video-engine/src/clear.ts`,
+`clearTexts` in both engines): for the time a text shows, the faces on screen are read (BlazeFace's track, where the
+camera crop puts it) and the text (a template's parts together, keeping their spacing) moves up or down just enough to
+clear them, inside Instagram's safe area; when no place clears every face, the place covering the least. The creator's
+own texts, and any the creator dragged, set to follow the person or keyframed, stay where they are. Captions already
+moved up over a face. On Android the brain had no frame size, so every position on the frame was NaN there: captions
+and texts never moved off faces on the phone until this (the brain now takes the frame's size from the aspect).
+Checked: `tests/text-clear.test.ts` (web: the placement rules; Android: a Reel whose clips have a face where the
+opening words go: they move below it, the 🔊 with them, inside the safe area).

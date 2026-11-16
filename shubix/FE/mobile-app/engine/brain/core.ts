@@ -6,7 +6,7 @@ import { srcPos, whatClip, velocitySpeed, rampSpeed, keyframesFor, crossesScene,
 import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { autoHook } from '@mobile/core/lib/text-templates';
-import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots } from '@mobile/video-engine';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate } from '@mobile/video-engine';
 
 export function createCoreBrain(ES, EH){
 // the preview: the video's own frame times (requestVideoFrameCallback), the picture mixed toward the next one
@@ -723,9 +723,29 @@ function facePosOnScreen(t){
   if(!near.length) return null;
   const f = near.reduce((q,x)=>Math.abs(x.t-st) < Math.abs(q.t-st) ? x : q, near[0]);
   const W=EH.out.width, H=EH.out.height, r = Math.max(W/src.w, H/src.h), dw=src.w*r, dh=src.h*r, [ccx, ccy] = EH.camAt(e, local);
-  return { x: Math.max(0, Math.min(1, 0.5 + (f.fx-ccx)*dw/W)), y: Math.max(0, Math.min(1, 0.5 + (f.fy-ccy)*dh/H)) };
+  return { x: Math.max(0, Math.min(1, 0.5 + (f.fx-ccx)*dw/W)), y: Math.max(0, Math.min(1, 0.5 + (f.fy-ccy)*dh/H)), s: (f.fs || 0)*dw/W };
 }
 function faceYOnScreen(t){ const face = facePosOnScreen(t); return face ? face.y : null; }
+// Shubix's own texts never sit on a face (Shared/video-engine clear.ts), as the website's engine.ts clearTexts: each
+// group moves up or down just enough, inside Instagram's safe area; the creator's own texts and keyframed ones stay.
+let clearKey = '';
+function clearTexts(){
+  const key = ES.editGen + '|' + ES.aspect + '|' + ES.overlays.map(o => o.id + ':' + o.t0 + ':' + o.t1 + ':' + (o.placed ? 1 : 0)).join(',');
+  if(key === clearKey) return; clearKey = key;
+  if(!ES.edit.length) return;
+  const W = EH.out.width, H = EH.out.height, groups = new Map();
+  for(const o of ES.overlays){
+    if(!(o.auto || o.aiIntent) || o.placed || o.track || o.uk || o.all || o.kind) continue;
+    if(o.y0 === undefined) o.y0 = o.y;
+    const k = (o.tpl || o.id) + '|' + o.t1; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(o);
+  }
+  for(const list of groups.values()){
+    const a = Math.min(...list.map(o => o.t0)), b = Math.max(...list.map(o => o.t1)), faces = [];
+    for(let t = a; t < b; t += 0.25){ const f = facePosOnScreen(t); if(f && f.s > 0) faces.push(f); }
+    const dy = clearOfFaces(list.map(o => textBoxEstimate(o.text, o.size, !!o.emoji, o.x, o.y0, W, H)), faces, { W, H });
+    for(const o of list) o.y = +(o.y0 + dy).toFixed(4);
+  }
+}
 function drawCaptions(t){
   if(!ES.capsOn || !ES.capLines) return;
   const line = ES.capLines.find(l => t >= l.a && t < l.b); if(!line) return;
@@ -760,7 +780,7 @@ async function aiApply(d){ if(!d) return; ES.layers = ES.layers.filter(L => L.ai
   const k0 = EH.dirKey(), mine = !!ES.director && ES.director.key === k0;
   await EH.aiActions(d.actions);
   const k1 = EH.dirKey(); if(mine && k1 !== k0){ ES.director = { ...ES.director, key: k1 }; ES.dirCache.set(k1, ES.director); } }
-function drawOverlays(t){ for(const ov of ES.overlays) if(!ov.behind || !EH.personMask || !ES.bgMask) EH.drawOverlay(EH.og, ov, t); }
+function drawOverlays(t){ clearTexts(); for(const ov of ES.overlays) if(!ov.behind || !EH.personMask || !ES.bgMask) EH.drawOverlay(EH.og, ov, t); }
 function kfNow(){ return Math.max(0, ES.playing ? EH.curTime() : ES.pos || 0); }
 function kfTarget(){
   if(!ES.edit.length) return null;
@@ -1139,5 +1159,5 @@ async function forgetSong(fp, quiet){
   if(!used) await idb('files', 'readwrite', s => s.delete('f:' + fp));
   if(!quiet) EH.listRecent();
 }
-  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, slowWish, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
+  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, slowWish, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, clearTexts, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
 }

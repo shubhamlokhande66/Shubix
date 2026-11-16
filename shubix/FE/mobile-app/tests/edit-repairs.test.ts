@@ -18,7 +18,7 @@ type Sample = { t: number; m: number; b: number; sh: number };
 type Shot = { start: number; end: number; src: number; in: number; scaleR: number; sp: { pos: (l: number) => number }; byDir?: boolean };
 type State = { edit: Shot[]; sources: { dur: number; shMed?: number; samples: Sample[] }[]; beats: number[]; editTakes: { tried: number; kept: number; fixedDark: number; addedClips: number } };
 
-export function world(nClips: number, seed: number, o: { pop?: boolean } = {}) {
+export function world(nClips: number, seed: number, o: { pop?: boolean; face?: { x: number; y: number; s: number } } = {}) {
   let r = seed; const rnd = () => { r = (r * 16807) % 2147483647; return (r - 1) / 2147483646; };
   const mono = song(30), clips: Record<string, { dur: number; samples: Record<string, number>[] }> = {}, paths: { path: string; name: string }[] = [];
   for (let c = 0; c < nClips; c++) {
@@ -38,7 +38,8 @@ export function world(nClips: number, seed: number, o: { pop?: boolean } = {}) {
     }
     if (path === "probe") return ok({ dur: clips[p].dur, w: 1080, h: 1920 });
     if (path === "scan") return ok(`0.5\n${JSON.stringify({ samples: clips[p].samples, scenes: [] })}\n`);
-    if (path === "faces") return ok("[]\n");
+    // a face in every frame (BlazeFace's finds, as ClipFaces.kt gives them), when asked
+    if (path === "faces") return ok(`${JSON.stringify(o.face ? Array.from({ length: clips[p].dur * 5 }, (_, i) => ({ t: i / 5, rects: [{ ...o.face, sc: 0.9 }] })) : [])}\n`);
     // the subject pop (SubjectPop.kt), when asked: a car-like subject in the middle of every frame, cut out as a PNG
     if (o.pop && path === "popmask") { const n = 320 * 320, b = new Uint8Array(1 + n * 5); b[0] = 1;
       for (let y = 0; y < 320; y++) for (let x = 0; x < 320; x++) b[1 + y * 320 + x] = x > 60 && x < 260 && y > 150 && y < 250 ? 250 : 5;
