@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { ManagedProvider } from "../../src/server/ai";
-import { candidates, findMoments, MomentsIn, pickApart, plainScore, sentences } from "../../src/server/studio/moments";
+import { candidates, findMoments, MomentsIn, momentsKey, pickApart, plainScore, sentences } from "../../src/server/studio/moments";
 
 /** Clips from a long video: the words in sentences, whole-sentence moments inside the length, the best ones apart,
  * Shubix AI's judgement when it answers and the plain scoring when it does not. */
@@ -84,5 +84,12 @@ describe("finding the clips", () => {
     expect(MomentsIn.safeParse({ words: talk().slice(0, 5), duration: 10, key: "k123" }).success).toBe(false);
     const short = MomentsIn.parse({ words: talk(0.2), duration: 12, key: "k123", length: "long" });
     await expect(findMoments(short, false)).rejects.toMatchObject({ code: "MOMENTS_TOO_SHORT" });
+  });
+
+  it("charges by the video's words, not by the key the phone sends", () => {
+    const a = talk(), b = talk(3);
+    expect(momentsKey(a)).toBe(momentsKey(talk()));            // the same video again: the same charge (free)
+    expect(momentsKey(a)).not.toBe(momentsKey(b));             // another video: charged, whatever key the phone sends
+    expect(momentsKey(a)).toMatch(/^[0-9a-f]{24}$/);
   });
 });

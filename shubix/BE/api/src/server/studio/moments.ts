@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { getProvider, type ManagedProvider } from "../ai";
 import { ValidationFailed } from "../core/errors";
@@ -19,9 +20,13 @@ export const MomentsIn = z.object({
   duration: z.number().positive().max(4 * 3600),
   length: z.enum(["short", "medium", "long"]).default("medium"),
   count: z.number().int().min(1).max(10).default(6),
-  /** the video's fingerprint on the phone: finding its clips again is not charged again */
+  /** the video's fingerprint on the phone (kept for older apps; the charge goes by the words themselves, momentsKey) */
   key: z.string().min(4).max(120),
 });
+/** What "the same video" is for the charge: its words and their times, worked out here. The phone's own `key` is not
+ * trusted for it: one key sent for every video would make every video after the first free. */
+export const momentsKey = (words: { text: string; start: number }[]) =>
+  crypto.createHash("sha1").update(words.map((w) => `${w.start.toFixed(1)}|${w.text}`).join("\n")).digest("hex").slice(0, 24);
 export type MomentsInput = z.infer<typeof MomentsIn>;
 type W = z.infer<typeof Word>;
 
@@ -130,7 +135,7 @@ export async function findMoments(p: MomentsInput, ai = true, provider: () => Ma
   if (ai) {
     let ref = "";
     try {
-      const c = await chargeOnce(COST_ACTION, p.key, "Clips from a long video");
+      const c = await chargeOnce(COST_ACTION, momentsKey(p.words), "Clips from a long video");
       ref = c.taken ? c.ref : "";
       const list = pool.map((c, i) => `#${i} [${c.start.toFixed(0)}s–${c.end.toFixed(0)}s] ${c.parts.map((s) => s.text).join(" ").slice(0, 700)}`).join("\n\n");
       const out = await provider().structured(SYSTEM, `Candidates (${pool.length}):\n\n${list}`, Judged, { task: "studio_moments", temperature: 0.3, maxOutputTokens: 4000 });
