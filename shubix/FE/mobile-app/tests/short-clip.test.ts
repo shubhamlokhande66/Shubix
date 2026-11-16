@@ -111,10 +111,12 @@ describe("one clip is one take", () => {
 describe("slow motion asked for in words", () => {
   const speeds = (e: ReturnType<typeof world>["e"]) => { const edit = (e.host() as unknown as { ES: { edit: Shot[] } }).ES.edit;
     return edit.map((s) => s.sp.pos(s.end - s.start) * (s.scaleR || 1) / (s.end - s.start)); };
-  for (const [name, durs, words] of [["three clips", [8, 9, 7], "clip slow kar"], ["one clip", [14], "make it slow motion"], ["three clips, in Marathi", [8, 9, 7], "video हळू कर"]] as const) {
+  for (const [name, durs, words] of [["three clips", [8, 9, 7], "clip slow kar"], ["three long clips (their shots joined, one a clip)", [16, 18, 15], "clip slow kar"], ["one clip", [14], "make it slow motion"], ["three clips, in Marathi", [8, 9, 7], "video हळू कर"]] as const) {
     it(`${name}, "${words}": every shot at half speed, and "normal speed" takes it back`, async () => {
       const w = world([...durs], 120);
-      await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths }); await w.e.call("ready");
+      await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths });
+      await w.e.call("choose", { order: "order" });   // "In my order", as the website has it by default: long clips' shots are joined there
+      await w.e.call("ready");
       const before = speeds(w.e);
       expect(Math.max(...before)).toBeGreaterThan(0.8);
       const said = await w.e.call("chat", { text: words }) as { answer: string };
