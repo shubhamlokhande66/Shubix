@@ -70,6 +70,17 @@ the engines then play the clip forward once, slower (the "In my order" walk, als
 5 s together). Checked by `FE/web-app/tests/video-engine-short.test.ts`, `FE/mobile-app/tests/short-clip.test.ts`
 (the Android engine with no page) and runs E and F of the start-to-end check.
 
+## One clip is one take
+
+One clip of 5 s and more is edited as a creator edits a single take: it plays on without a jump, as filmed up to the
+song's moment and in slow motion (half speed) from there. The moment is the song part's drop; else its break; else
+where a new part of the song begins; else where a phrase begins (8 beats) nearest 40% of the Reel. It is never in the
+first 1.5 s and leaves at least 2 s. Both engines' `seqPick` do it; where in the clip the take begins is the stretch
+that scores best over all its shots. Because part of it is slow, the Reel one clip fills is longer than the clip
+(`oneTakeLength` in `src/short.ts`: a 10 s clip, a 14 s Reel), and "Make the Reel as long as my clips" sets that.
+Checked by `FE/mobile-app/tests/short-clip.test.ts` and run G of the start-to-end check (the speed before and after
+the moment is measured in the exported file).
+
 ## Shared editing primitives
 
 - Typed keyframe tracks and easing, with numeric and compact Studio transform interpolation shared by web and Android

@@ -27,6 +27,7 @@ has the H.264 encoder the export wants. `ONLY=A,C` runs some of the runs.
 | D | a computer, a Talking Reel (a vlog, a tutorial), 720p: three clips of speech in English, Hindi and Marathi with known pauses (`../studio-talk/make_talk.py`, needs espeak-ng), no song |
 | E | a computer, one clip of 4 s under a slow song (72 BPM), 720p: a slow motion Reel of about 8 s, no "add more clips" |
 | F | a computer, the same clip under a fast song (124 BPM), 720p: a Reel about as long as the clip |
+| G | a computer, one clip of 10 s, 720p: one take, as filmed up to the song's moment and in slow motion from there (the speed before and after is measured in the file) |
 
 No API runs behind the website here: `/api/auth/me` is answered "accounts are off" so Generate goes on, the popup
 "Shubix is not answering right now" is closed, and what needs an account or the cloud (Shubix AI's plan, saving to My

@@ -45,3 +45,21 @@ export function shortReelFor(goodSeconds: number, beatPeriod: number, songSecond
   const len = tenth(Math.min(most, Math.max(shortest, have / want)));
   return { len, speed: Math.min(1, Math.round(have / len * 100) / 100) };
 }
+
+/**
+ * One clip is one take (both engines' seqPick): it plays as filmed up to the song's moment, in slow motion from there.
+ * So its Reel is longer than the clip: the first part as filmed, the rest at half speed.
+ */
+export const ONE_TAKE = {
+  /** where the slow motion begins when the song names no moment (share of the Reel) */
+  slowFrom: 0.4,
+  /** the speed from there on */
+  slow: 0.5,
+} as const;
+
+/** How long a Reel one clip with `goodSeconds` of good video makes as one take, under a song of `songSeconds` (whole seconds). */
+export function oneTakeLength(goodSeconds: number, songSeconds = Infinity): number {
+  const have = Number.isFinite(goodSeconds) && goodSeconds > 0 ? goodSeconds : 0;
+  const reel = have / (ONE_TAKE.slowFrom + (1 - ONE_TAKE.slowFrom) * ONE_TAKE.slow);
+  return Math.floor(Math.min(songSeconds > 0 ? songSeconds : Infinity, reel));
+}

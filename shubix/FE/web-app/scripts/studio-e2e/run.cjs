@@ -30,6 +30,10 @@ const SCENARIOS = [
     { id: 'E-1clip-4s-slow-song', song: 'slow_72', clips: [media.clips.find((c) => c.short).index], res: '720p', why: 'one clip of 4 s under a slow song (72 BPM): a slow motion Reel of about 8 s' },
     { id: 'F-1clip-4s-fast-song', song: 'four_floor_124', clips: [media.clips.find((c) => c.short).index], res: '720p', why: 'one clip of 4 s under a fast song (124 BPM): a Reel about as long as the clip, nearly as filmed' },
   ] : []),
+  // one clip of 10 s is one take: as filmed up to the song's moment, in slow motion from there, the Reel longer than the clip
+  ...(media.clips.some((c) => c.file === 'take10.webm') ? [
+    { id: 'G-1clip-10s-one-take', song: 'bhangra_dhol_98', clips: [media.clips.find((c) => c.file === 'take10.webm').index], res: '720p', why: 'one clip of 10 s: one take, as filmed and then in slow motion from the song\'s moment, a Reel of about 14 s' },
+  ] : []),
 ].filter((s) => !process.env.ONLY || process.env.ONLY.split(',').some((o) => s.id.startsWith(o.trim())))
   // CLIPS=1,4,17: these clips instead of the scenario's own (a look at a feature on chosen footage)
   .map((s) => (process.env.CLIPS && !s.talk ? { ...s, clips: process.env.CLIPS.split(',').map(Number) } : s));
@@ -155,11 +159,12 @@ async function scenario(browser, sc) {
         section: { start: x.start, len: x.len }, songStatus: document.getElementById('s1st').textContent, beatSource: (S.songR || {}).beatSource || null,
         beats: (S.beats || []).map((b) => +b.toFixed(4)),
         plan: (S.plan || []).map((x) => ({ start: +x.start.toFixed(3), end: +x.end.toFixed(3), type: x.type })), songCuts: ((S.songR || {}).cuts || []).map((c, k) => ({ t: +c.toFixed(3), type: ((S.songR || {}).cutType || [])[k] })), parts: S.parts || null, mode: S.mode,
-        edit: e.map((s) => ({ start: +s.start.toFixed(4), end: +s.end.toFixed(4), src: s.src, in: +(+s.in).toFixed(3), need: +((s.sp && s.sp.pos ? s.sp.pos(s.end - s.start) : s.end - s.start) * (s.scaleR || 1)).toFixed(3), type: s.type, tr: s.tr || 'hard', efx: s.efx || 'none' })),
+        edit: e.map((s) => ({ start: +s.start.toFixed(4), end: +s.end.toFixed(4), src: s.src, in: +(+s.in).toFixed(3), need: +((s.sp && s.sp.pos ? s.sp.pos(s.end - s.start) : s.end - s.start) * (s.scaleR || 1)).toFixed(3), type: s.type, tr: s.tr || 'hard', efx: s.efx || 'none', ...(s.take ? { take: s.take } : {}) })),
         review: root.__lastEditReview || null,
         talk: S.talk ? { seconds: +S.talk.parts.reduce((q, x) => q + x.b - x.a, 0).toFixed(3), parts: S.talk.parts.length, detector: [...new Set((S.sources || []).map((x) => x.voice && x.voice.how))] } : null };
     });
     step('reel made', { ms: editMs, shots: made.edit.length, status: made.status, length: +(made.edit[made.edit.length - 1].end - made.edit[0].start).toFixed(2), fitnote: made.fitnote,
+      ...(made.edit.some((s) => s.take) ? { take: { slowFrom: +((made.edit.find((s) => s.take === 'slow') || made.edit[0]).start - made.edit[0].start).toFixed(2), runsOn: made.edit.every((s, i) => !i || Math.abs(s.in - (made.edit[i - 1].in + made.edit[i - 1].need)) < 0.02) } } : {}),
       videoPerSecond: +(made.edit.reduce((t, s) => t + s.need, 0) / Math.max(0.01, made.edit[made.edit.length - 1].end - made.edit[0].start)).toFixed(2), clipsUsed: new Set(made.edit.map((s) => s.src)).size, clipsGiven: files.length,
       review: made.review ? { score: made.review.score, status: made.review.status, beatSync: made.review.metrics.beatSync, drops: made.review.metrics.drops, issues: made.review.issues.map((i) => i.code + (i.shot === undefined ? '' : '@' + i.shot)) } : null, ...(await long()) });
     // the subject pop Shubix offers by itself (a beat Reel of 8 s or more with a clear subject): wait for it a little

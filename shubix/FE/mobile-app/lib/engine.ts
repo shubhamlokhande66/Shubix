@@ -185,7 +185,7 @@ export const engine = {
   newReel: () => call<{ ok: boolean }>("newReel"),
   keptOldReel: () => call<{ ok: boolean }>("keptOldReel"),
   /** the good footage in the clips read (whole seconds; `exact`: not rounded), the Reel's length, and the song's beat (seconds apart, 0: none) */
-  footage: () => call<{ have: number; need: number; exact?: number; period?: number }>("footage"),
+  footage: () => call<{ have: number; need: number; exact?: number; period?: number; clips?: number }>("footage"),
   /** Shubix AI's price for this Reel and the balance */
   aiPrice: () => call<{ on: boolean; cost: number; balance: number | null; paid: boolean }>("aiPrice"),
   /** whether this person's plan has Shubix AI */

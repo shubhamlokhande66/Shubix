@@ -24,14 +24,15 @@ for (let i = 0; i < N; i++) {
   if (r2.status !== 0) { console.error('ffmpeg failed for ' + file); process.exit(1); }
   clips.push({ file, index: i, hue: hue(i), rgb: [r, g, b], dur, ...(i === 5 ? { darkUntil: 3 } : {}) });
 }
-// one clip of 4 s, by itself too little for the usual Reel (5 s of good video): its own runs (E, F), not among the 12
-{ const h = 15, [r, g, b] = rgb(h), hex = '0x' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join(''), file = 'short4.webm';
-  const r2 = spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${hex}:s=540x960:r=30:d=4`, '-f', 'lavfi', '-i', 'color=c=white:s=100x160:r=30:d=4',
+// one clip of 4 s, by itself too little for the usual Reel (5 s of good video): its own runs (E, F), not among the 12;
+// and one of 10 s, one take (run G). Their box really moves, so the speed they play at can be measured in the file
+for (const [file, secs, h] of [['short4.webm', 4, 15], ['take10.webm', 10, 195]]) { const [r, g, b] = rgb(h), hex = '0x' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+  const r2 = spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `color=c=${hex}:s=540x960:r=30:d=${secs}`, '-f', 'lavfi', '-i', `color=c=white:s=100x160:r=30:d=${secs}`,
     // (a box laid over the picture moves with the time; drawbox's own "t" is its thickness, so the 12 clips' boxes stand still)
     '-filter_complex', "[0][1]overlay=x='mod(t*100,440)':y=260,noise=alls=10:allf=t",
     '-c:v', 'libvpx', '-b:v', '1500k', '-deadline', 'realtime', '-cpu-used', '8', '-g', '15', '-an', path.join(out, file)], { stdio: 'inherit' });
   if (r2.status !== 0) { console.error('ffmpeg failed for ' + file); process.exit(1); }
-  clips.push({ file, index: N, hue: h, rgb: [r, g, b], dur: 4, short: true }); }
+  clips.push({ file, index: clips.length, hue: h, rgb: [r, g, b], dur: secs, short: true }); }
 const songs = [];
 for (const [set, name] of [['set2', 'four_floor_124'], ['set3', 'bhangra_dhol_98'], ['set3', 'bollywood_dembow_96'], ['set1', 'slow_72']]) {
   const wav = path.join(beats, set, name + '.wav'), truth = JSON.parse(fs.readFileSync(path.join(beats, set, 'truth.json'), 'utf8'))[name];

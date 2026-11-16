@@ -103,6 +103,13 @@ for sc in report['scenarios']:
         x = (wgt * np.arange(W)).sum(axis=1) / np.maximum(wgt.sum(axis=1), 1e-6); dx = np.diff(x)   # the box's middle, finer than a pixel
         dx = dx[(dx > -0.05) & (dx < 1.5)]                                   # (the box starts again at the left; an effect's jump)
         per_s = 100 * W / 540
+        # one take: the speed before and after the moment the plan slows from (half a second left out around it)
+        slow_from = next((e['start'] - edit[0]['start'] for e in edit if e.get('take') == 'slow'), None)
+        if slow_from is not None:
+            def spd(a, b):
+                d = np.diff(x[int(a * fps):int(b * fps)]); d = d[(d > -0.05) & (d < 1.5)]
+                return round(float(d.mean()) * fps / per_s, 2) if len(d) > 5 else None
+            res['oneTake'] = {'slowFromSeconds': round(slow_from, 2), 'speedBefore': spd(0.3, slow_from - 0.3), 'speedAfter': spd(slow_from + 0.3, reel - 0.3)}
         if len(dx): res['slowMotion'] = {'videoSpeed': round(float(dx.mean()) * fps / per_s, 2), 'framesStandingStill': round(float((np.abs(dx) < 0.02).mean()), 2),
                                          'planned': round(sum(e['need'] for e in edit) / reel, 2), 'reelSeconds': round(reel, 2), 'clipSeconds': given[0]['dur']}
 
@@ -211,5 +218,6 @@ for r in out['scenarios']:
     if r.get('beats'): print('  beats:', json.dumps(r['beats']))
     if r.get('voice'): print('  talk:', json.dumps(r.get('talk'))); print('  voice:', json.dumps(r['voice']))
     if r.get('slowMotion'): print('  one short clip:', json.dumps(r['slowMotion']))
+    if r.get('oneTake'): print('  one take:', json.dumps(r['oneTake']))
     print('  clips:', json.dumps(r['clips']), '· dark part:', json.dumps(r.get('darkPart')))
     print('  sound:', json.dumps(r.get('sound')))
