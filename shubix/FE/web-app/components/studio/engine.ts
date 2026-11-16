@@ -2735,13 +2735,23 @@ function chatRestore(list){
   $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep, m.at)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text, false, m.at); });
   wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800);
 }
+// "slow it down", "slow motion", "clip slow kar", "हळू कर": slow motion asked for (true), "normal speed", "slow nako": taken
+// back (false); anything else: null. It is done here at once, for everyone, with no Shubix AI and no credits (before,
+// "slow" only switched to the Smooth style: longer shots, no slow motion, and the answer still said Done).
+function slowWish(t){
+  const x = ' ' + String(t || '').toLowerCase().replace(/[.,!?]/g, ' ') + ' ';
+  if(/normal speed|original speed|no slow|not slow|slow (motion )?(off|nako|mat|nahi|nko)|slow kadh|speed normal|नॉर्मल स्पीड|स्लो नको/.test(x)) return false;
+  if(/slow[\s-]?mo|slowmo|slow (it )?down|slow (kar|kara|kr|karo|kelas|pahije|hava|havi)|(clip|clips|video|videos|reel|shot|shots|it|everything|all) (ko |la |ch |cha |)?slow|make (it|them|the \w+) slow|slower|स्लो|हळू कर|halu kar|dhima|धीमा|dheere|धीरे/.test(x)) return true;
+  return null;
+}
 // plain words the phone understands by itself (with or without the AI)
 function chatLocal(t){
   const x = t.toLowerCase(), did = [];
   const has = (...w) => w.some(k => x.includes(k));
   if(!aiOn && has('new version', 'different version', 'another version', 'dusra', 'navin', 'नवीन')){ seed = (seed*7919 + 13) % 2147483647 || 7; mixNo++; did.push('a new version'); }
   if(has('faster', 'fast', 'energetic', 'energy', 'jalad', 'जलद', 'speed up', 'quick')){ if(mode !== 'fast'){ setModeQuiet('fast'); did.push('the Fast style'); } }
-  else if(has('calm', 'slow', 'smooth', 'cinematic', 'halu', 'हळू', 'shant', 'शांत')){ if(mode !== 'smooth'){ setModeQuiet('smooth'); did.push('the Smooth style'); } }
+  else if(has('calm', 'smooth', 'cinematic', 'shant', 'शांत')){ if(mode !== 'smooth'){ setModeQuiet('smooth'); did.push('the Smooth style'); } }
+  { const slow = slowWish(t); if(slow !== null && slow !== slowAll){ slowAll = slow; did.push(slow ? 'slow motion on every shot' : 'normal speed'); } }   // (the Reel is not made yet, or Shubix AI plans it: kept for when it is made)
   return did;
 }
 function setModeQuiet(m){ mode = m; [...$('mode').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m)); modeWords(m); if(buf) plan = adaptPlan(); }
@@ -2783,6 +2793,21 @@ async function chatSend(text){
   const ready = buf && sources.length && edit.length && !recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
   // a model round-trip, a credit check or a server upload; verify the full scope before replying.
+  const slow = slowWish(text);
+  if(ready && kind !== 'talk' && mode !== 'copy' && slow !== null){
+    if(slow === slowAll){ chatAnswer(slow ? 'Your Reel is already in slow motion. Say "normal speed" to take it back.' : 'Your Reel already plays at normal speed.'); return; }
+    if(playing) stopAll();
+    const was = reelLen(); slowAll = slow; makeEditNow();
+    // slow motion needs half the video, so the Reel can be longer ("as long as my clips"); taken back, it is shorter again
+    const have = goodHave(), full = songLen();
+    if(fitOn() && full && have >= 5){ const target = reach(have) < full * 0.95 ? reach(have) : 0; if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len) await setLen(target); }
+    const now2 = reelLen(), n = edit.filter(e => e.sp === SPEED.slow).length;
+    if(slow && !n){ slowAll = false; chatAnswer('I could not put this Reel in slow motion.'); return; }
+    saveNow();
+    chatAnswer(slow ? 'Done ✓ ' + (n === edit.length ? 'Every shot' : n + ' of ' + edit.length + ' shots') + ' now plays in slow motion (half speed). ' + (now2 > was + 0.5 ? 'Your Reel is now ' + fmtS(now2) + ' (it was ' + fmtS(was) + ').' : 'Your Reel stays ' + fmtS(now2) + ' long: ' + (fitOn() ? 'your song part is not longer.' : 'that is the length you chose. Tick "Make the Reel as long as my clips" for a longer Reel.')) + ' No Shubix AI credits used. Say "normal speed" to take it back.'
+      : 'Done ✓ Your Reel plays at normal speed again' + (now2 < was - 0.5 ? ' and is ' + fmtS(now2) + ' long.' : '.') + ' No Shubix AI credits used.');
+    return;
+  }
   const localVisualIntent = parseDirectorVisualIntent(text);
   const hasLocalVisualIntent = !!(localVisualIntent.openingText || localVisualIntent.squareFrameAll
     || localVisualIntent.transitionAll || localVisualIntent.effectsAll);
@@ -2880,6 +2905,7 @@ $('chatchips').addEventListener('click', e => { const b = e.target.closest('butt
    rule choice. One plan per edit (style, mix and clips); a new mix or style asks again. */
 let director = null, dirBusy = false, dirFailedKey = '', dirCands = null, dirPlannedReel = '', aiGaveUp = '';   // dirPlannedReel: this Reel got a plan (its credits are spent)
 const dirKey = () => [wish, tplKind, mode, mode === 'copy' && refProfile ? refProfile.name + '|' + refProfile.dur : '', mixNo, plan.length, plan.map(s=>s.start.toFixed(2)).join(','), sources.map(fpOf).join(';')].join('#');
+let slowAll = false;   // slow motion on every shot, asked for in words (slowWish): kept while this Reel is made again
 let mixNo = 0;   // which mix: 0 = the AI's plan, 1-4 = its other mixes (one call), then the phone's own mixes in its style
 const dirSlotOf = i => { const d = (aiOn && director && director.key===dirKey() && director.slots[i]) || null; return d && !d.auto ? d : null; };   // an auto cut: the phone picks its moment too
 const dirShot = i => { const d = dirSlotOf(i); return d && d.cand ? d.cand : null; };
@@ -3574,7 +3600,7 @@ const goodHave = () => Math.floor(goodExact());   // whole seconds, said the sam
 const shortReel = () => { const g = goodExact(); return g < SHORT_REEL.enough && songLen() ? shortReelFor(g, (song.r && song.r.period) || 0, songLen()) : null; };
 // one clip is one take, part of it in slow motion (seqPick): the Reel it fills is longer than the clip
 const oneTake = () => sources.length === 1 && mode !== 'copy' && kind !== 'talk';
-const reach = have => oneTake() ? Math.max(have, oneTakeLength(goodExact())) : have;
+const reach = have => slowAll ? Math.max(have, Math.floor(goodExact()/SPEED.slow.at())) : oneTake() ? Math.max(have, oneTakeLength(goodExact())) : have;   // (slow motion asked for: twice the video)
 const shortNote = sr => 'Your Reel: ' + fmtS(sr.len) + (sr.speed < 0.9 ? ', your video in slow motion to suit the song.' : ', as long as your good video.');
 function lenLock(){
   const on = fitOn() && kind !== 'talk';
@@ -3591,6 +3617,7 @@ function footCheck(){
       if(target ? Math.abs((sec.len || full) - target) >= 0.2 : sec.len) setLen(target); }
     $('fitnote').hidden = false;
     $('fitnote').textContent = sr ? shortNote(sr) : have < 5 ? 'Add more clips: your clips have ' + fmtS(have) + ' of good video.'
+      : slowAll && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clips in slow motion, as you asked.'
       : oneTake() && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clip as filmed, then in slow motion with the song.'
       : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
       : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
@@ -3761,7 +3788,7 @@ function seqPick(seq, res, gmax){
     const use = need.map((x, k) => x*scale[k]);
     let cur = from;
     // (far too little video for the take, a 4 s clip under an 8 s Reel: the walk below, slower all through)
-    const want = ids.map(i => lenOf(i)*(i >= slowAt ? ONE_TAKE.slow : 1)), all = sum(want);
+    const want = ids.map(i => lenOf(i)*(i >= slowAt || slowAll ? ONE_TAKE.slow : 1)), all = sum(want);
     if(slowAt > 0 && all*0.8 <= foot){
       // the take: every shot runs straight on from the one before; a clip a little short for it plays a little slower all through
       const f = all > foot ? foot/all*0.98 : 1;
@@ -3868,6 +3895,7 @@ function makeEditNow(){
   // no shot in the plan (the song's beats not known yet): no Reel yet. It threw here, and with it the song's reading
   // stopped: "Reading the song…" for ever (2026-11-12)
   if(!plan || !plan.length) return;
+  if(slowAll) plan.forEach(s => { s.sp = SPEED.slow; });   // slow motion asked for in words: every shot, whatever the style gave it
   const gmax = Math.max(1e-6, ...sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = sources.map(()=>[]);
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
@@ -4079,12 +4107,12 @@ function makeEditNow(){
           });
         }
       }
-      if(!natural && e.type === 'drop' && shared.speed > 1.05 && (e.end - e.start) >= 0.4) e.sp = rampSpeed(e.end - e.start);
+      if(!natural && !slowAll && e.type === 'drop' && shared.speed > 1.05 && (e.end - e.start) >= 0.4) e.sp = rampSpeed(e.end - e.start);
     }
     if(shared && !e.why) e.why = shared.reason;
     if(natural){   // the clip as it was filmed: the AI's own explicit choices stay
       if(!e.fxByDir){ e.efx = 'none'; e.why = 'natural: the clip as filmed'; }
-      if(!e.byDir){ e.ak = []; e.sp = SPEED.normal; }
+      if(!e.byDir){ e.ak = []; if(!slowAll) e.sp = SPEED.normal; }
       if(!e.trByDir) e.tr = i > 0 && (e.type === 'drop' || e.type === 'break' || isPartStart(e.start)) && e.end - e.start >= 1.2 ? 'dissolve' : 'hard';
     }
     e.kf = keyframesFor(e);

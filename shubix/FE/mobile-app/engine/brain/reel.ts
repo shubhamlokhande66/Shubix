@@ -70,6 +70,7 @@ function makeEditNow(){
   if(!ES.buf || !ES.sources.length) return;
   const keptUk = EH.ukKeep();
   EH.stopAll(); ES.plan = EH.adaptPlan(); { const pc = EH.paceNow(); if(pc) ES.plan = EH.beatEdit(endWell(EH.noFlashCuts(EH.withPartCuts(repace(ES.basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), ES.beats, ES.buf.duration, ES.mode, ES.downbeats || [])))), pc.secs); } EH.styleEdit(); const dirInfo = EH.applyDirectorStyle(); if(!dirInfo) EH.finishTransitions(); EH.tastePlan();
+  if(ES.slowAll && ES.plan) ES.plan.forEach(s => { s.sp = EH.SPEED.slow; });   // slow motion asked for in words: every shot, whatever the style gave it
   const gmax = Math.max(1e-6, ...ES.sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = ES.sources.map(()=>[]);
   // the opening shot picks first (the first 2 seconds decide if people keep watching), then drops, hits, breaks, the rest
@@ -280,7 +281,7 @@ function makeEditNow(){
           });
         }
       }
-      if(e.type === 'drop' && shared.speed > 1.05 && (e.end - e.start) >= 0.4) e.sp = rampSpeed(e.end - e.start);
+      if(!ES.slowAll && e.type === 'drop' && shared.speed > 1.05 && (e.end - e.start) >= 0.4) e.sp = rampSpeed(e.end - e.start);
     }
     if(shared && !e.why) e.why = shared.reason;
     e.kf = keyframesFor(e);

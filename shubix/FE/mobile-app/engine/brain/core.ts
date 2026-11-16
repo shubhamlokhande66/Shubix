@@ -227,13 +227,23 @@ function applyChatVisualIntent(intent, slots = []){
 }
 function chatDone(story){ if(!ES.chatWaiting) return; EH.chatAnswer('Done ✓ Your Reel is edited the way you asked' + (story ? ': ' + story : '.') + ' Tell me if you want anything else.'); }
 function chatFail(msg){ if(ES.chatWaiting) EH.chatAnswer(msg); }
+// "slow it down", "slow motion", "clip slow kar", "हळू कर": slow motion asked for (true), "normal speed", "slow nako": taken
+// back (false); anything else: null. It is done here at once, for everyone, with no Shubix AI and no credits (before,
+// "slow" only switched to the Smooth style: longer shots, no slow motion, and the answer still said Done).
+function slowWish(t){
+  const x = ' ' + String(t || '').toLowerCase().replace(/[.,!?]/g, ' ') + ' ';
+  if(/normal speed|original speed|no slow|not slow|slow (motion )?(off|nako|mat|nahi|nko)|slow kadh|speed normal|नॉर्मल स्पीड|स्लो नको/.test(x)) return false;
+  if(/slow[\s-]?mo|slowmo|slow (it )?down|slow (kar|kara|kr|karo|kelas|pahije|hava|havi)|(clip|clips|video|videos|reel|shot|shots|it|everything|all) (ko |la |ch |cha |)?slow|make (it|them|the \w+) slow|slower|स्लो|हळू कर|halu kar|dhima|धीमा|dheere|धीरे/.test(x)) return true;
+  return null;
+}
 // plain words the phone understands by itself (with or without the AI)
 function chatLocal(t){
   const x = t.toLowerCase(), did = [];
   const has = (...w) => w.some(k => x.includes(k));
   if(!ES.aiOn && has('new version', 'different version', 'another version', 'dusra', 'navin', 'नवीन')){ ES.seed = (ES.seed*7919 + 13) % 2147483647 || 7; ES.mixNo++; did.push('a new version'); }
   if(has('faster', 'fast', 'energetic', 'energy', 'jalad', 'जलद', 'speed up', 'quick')){ if(ES.mode !== 'fast'){ EH.setModeQuiet('fast'); did.push('the Fast style'); } }
-  else if(has('calm', 'slow', 'smooth', 'cinematic', 'halu', 'हळू', 'shant', 'शांत')){ if(ES.mode !== 'smooth'){ EH.setModeQuiet('smooth'); did.push('the Smooth style'); } }
+  else if(has('calm', 'smooth', 'cinematic', 'shant', 'शांत')){ if(ES.mode !== 'smooth'){ EH.setModeQuiet('smooth'); did.push('the Smooth style'); } }
+  { const slow = slowWish(t); if(slow !== null && slow !== !!ES.slowAll){ ES.slowAll = slow; did.push(slow ? 'slow motion on every shot' : 'normal speed'); } }   // (the Reel is not made yet, or Shubix AI plans it: kept for when it is made)
   return did;
 }
 // the director's transitions / effects / speeds, each checked; returns how many were used and how many were corrected
@@ -1129,5 +1139,5 @@ async function forgetSong(fp, quiet){
   if(!used) await idb('files', 'readwrite', s => s.delete('f:' + fp));
   if(!quiet) EH.listRecent();
 }
-  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
+  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, slowWish, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
 }
