@@ -730,26 +730,42 @@ on (`Shared/video-engine/src/lookFit.ts`, `dirLookFit` in the website's engine a
 A shot whose picture is unknown (no frames looked at, an answer cached before this change) keeps the director's
 settings. Tests: `FE/mobile-app/tests/look-fit.test.ts`; the server's `studio-direct` and `studio-rank-shots` tests.
 
-## The Reel tells a story (hook, setup, peak, close)
+## The Reel tells a story, measured against human editors
 
-An editor does not only cut on the beat: the Reel opens on its hook, sets the scene, builds, reaches its peak on the
-drop and closes. Shubix now lays every Reel out the same way, on every plan and on the phone, with no AI
-(`Shared/video-engine/src/story.ts`, `storyRole` and `scoreWindow` in the website's engine and the Android brain):
+An editor lays a Reel out as a story: it opens on its hook, builds, peaks on the drop and closes. Shubix names each
+shot's part (`Shared/video-engine/src/story.ts`: hook, setup, build, peak, close; `storyRole` in the website's engine
+and the Android brain) and nudges the moment a shot takes only where human edits showed it helps.
 
-- **hook**: the first shot, chosen as before (the most movement, faces, sharp)
-- **setup**: the first fifth of a Reel of 5 shots or more, before the first drop: a wide, steady moment (the place,
-  who is there) over a close-up
-- **peak**: the drops, and hits late in the Reel (60-90%): people close up (their faces carry the feeling)
-- **close**: the last shot: calm when the song settles, strong when it ends on a hit
-- a copied Reel follows its reference instead
+**Measured (2026-11-17), the rebuild test** (`FE/mobile-app/tests/human-rebuild.test.ts`): 17 human-edited Reels (245
+shots) cut at their own cuts; for each place in the Reel Shubix's scorer ranks all of that Reel's shots, and we look
+where the human's own shot lands (100% = Shubix's first choice, 50% = a random pick). No raw footage is needed; it
+measures placement, not choosing from raw clips.
 
-Each part only nudges which moment a shot takes (at most 0.6, where a dark moment costs 1 and a blurry one 0.9), so the
-footage's quality and Shubix AI's own choices still decide.
+| part | shots | Shubix now | before the story nudges |
+|---|---|---|---|
+| opening | 17 | 31% | 31% |
+| setup (first fifth) | 41 | 37% | 37% |
+| middle | 159 | 50% | 50% |
+| drops | 11 | 50% | 50% |
+| last shot | 17 | 39% | 35% |
+| all | 245 | 46% | 45% |
 
-**Teaser ("In my order", 3 clips or more)**: when the opening the clips' order gives is clearly weaker than a moment
-further on (by 0.6 or more), the Reel opens on that moment for about a second, cut on a beat (0.9-1.9 s in, from an
-opening shot of 2.8 s or more), then plays the clips from the start, as an editor's flash-forward. The teaser's moment
-is shown nowhere else in the Reel (0.3 s apart at least), and is sharp and light enough. Not with Shubix AI on (its plan
-goes by the cuts), slow motion asked for in words, or a copied Reel. The shot's note says "teaser" in the Reel log.
-Tests: `FE/web-app/tests/video-engine-story.test.ts`, `FE/mobile-app/tests/story-teaser.test.ts`, and the engine
-parity test (`teaserOpen`, `storyRole`).
+So only the **close** is nudged: a calm last shot when the song settles, a strong one when it ends on a hit. A wide,
+steady setup made it worse (editors' early shots move more) and close-ups on the drops changed nothing, so neither
+gives a bonus.
+
+What it says beyond that, plainly:
+- **The middle is a coin toss.** No measure the phone has (movement, light, faces, sharpness) orders the middle shots
+  the way editors did (each alone: 47-53%). Where a shot goes there follows what it shows (the car, then its wheels,
+  then the logo...), which needs the footage understood: Shubix AI's look at the frames (rank-shots) is the way to it.
+- **The opening is the weakest (31%).** Editors' openings here move about as much as their other shots and show fewer
+  faces; Shubix opens on the most movement and on faces. Part of it is the finished Reels themselves (5 of 17 fade in
+  from black, which the scorer counts as dark), so the hook score was not changed on this alone.
+- **The teaser is off** (`STORY_ON.teaser`): it would open an In my order Reel on the moment that hook score likes
+  best, and the score is not yet trusted for that.
+
+Run it: put the Reels outside the repository, then `HUMAN_REELS=<folder> CACHE=<folder> npx vitest run
+tests/human-rebuild.test.ts` in `FE/mobile-app` (ffmpeg on the PATH; `<reel>.faces.json` beside a Reel adds its faces;
+`ONLY=<file>` runs one Reel, for machines low on memory; with CACHE a second run takes seconds). Tests:
+`FE/web-app/tests/video-engine-story.test.ts`, `FE/mobile-app/tests/story-teaser.test.ts`, and the engine parity test
+(`teaserOpen`, `storyRole`).

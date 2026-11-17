@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STORY, storyBonus, storyRoles, teaserCut, teaserFree, teaserWorth } from "@shubix/video-engine";
+import { STORY, STORY_ON, storyBonus, storyRoles, teaserCut, teaserFree, teaserWorth } from "@shubix/video-engine";
 
 // The Reel as a story (Shared/video-engine story.ts): hook, setup, build, peak, close.
 const slots = (kinds: string[], len = 1) => kinds.map((kind, i) => ({ kind, start: i * len, end: (i + 1) * len }));
@@ -26,18 +26,15 @@ describe("each shot's part in the story", () => {
 
 describe("what suits each part", () => {
   const wide = { motion: 0.3, face: 0, faceSize: 0 }, closeUp = { motion: 0.3, face: 1, faceSize: 0.3 };
-  it("the setup prefers a wide, steady shot to a close-up", () => {
-    expect(storyBonus("setup", wide)).toBeGreaterThan(storyBonus("setup", closeUp));
-    expect(storyBonus("setup", { ...wide, motion: 1 })).toBeLessThan(storyBonus("setup", wide));
-  });
-  it("the peak prefers people close up", () => {
-    expect(storyBonus("peak", closeUp)).toBeGreaterThan(storyBonus("peak", wide));
-    expect(storyBonus("peak", { ...closeUp, face: 0.2 })).toBe(0);   // a face in a frame or two is not a close-up
+  it("the setup and the peak get nothing: measured on human Reels, they did not help", () => {
+    for (const m of [wide, closeUp, { motion: 1, face: 1, faceSize: 0.5 }]) { expect(storyBonus("setup", m)).toBe(0); expect(storyBonus("peak", m)).toBe(0); }
   });
   it("the last shot is calm when the song settles, strong when it ends on a hit", () => {
     const calm = { motion: 0.1, face: 0, faceSize: 0 }, busy = { motion: 0.9, face: 0, faceSize: 0 };
     expect(storyBonus("close", { ...calm, kind: "cut" })).toBeGreaterThan(storyBonus("close", { ...busy, kind: "cut" }));
     expect(storyBonus("close", { ...busy, kind: "hit" })).toBeGreaterThan(storyBonus("close", { ...calm, kind: "hit" }));
+    // a face in a frame or two is not a close-up
+    expect(storyBonus("close", { motion: 0.5, face: 0.2, faceSize: 0.4, kind: "hit" })).toBeCloseTo(0.1);
   });
   it("never more than a nudge, and nothing for the hook or the build", () => {
     for (const role of ["setup", "peak", "close"] as const) for (const m of [wide, closeUp, { motion: 9, face: 9, faceSize: 9 }, { motion: NaN, face: -1, faceSize: NaN }])
@@ -58,10 +55,15 @@ describe("the teaser", () => {
     expect(teaserCut(0, 4, [0.3, 2.5, 3.5])).toBeNull();   // no beat 0.9-1.9 s in
     expect(teaserCut(0, 3, [1.8])).toBeNull();             // too little of the opening left after it
   });
-  it("only when clearly stronger than the opening", () => {
-    expect(teaserWorth(1, 1.2)).toBe(false);
-    expect(teaserWorth(1, 1 + STORY.teaserBetter)).toBe(true);
-    expect(teaserWorth(1, NaN)).toBe(false);
+  it("is off unless switched on, and then only when clearly stronger than the opening", () => {
+    expect(STORY_ON.teaser).toBe(false);
+    expect(teaserWorth(1, 9)).toBe(false);
+    STORY_ON.teaser = true;
+    try {
+      expect(teaserWorth(1, 1.2)).toBe(false);
+      expect(teaserWorth(1, 1 + STORY.teaserBetter)).toBe(true);
+      expect(teaserWorth(1, NaN)).toBe(false);
+    } finally { STORY_ON.teaser = false; }
   });
   it("never shows a moment the Reel shows elsewhere", () => {
     expect(teaserFree(5, 6, [[0, 4], [8, 9]])).toBe(true);

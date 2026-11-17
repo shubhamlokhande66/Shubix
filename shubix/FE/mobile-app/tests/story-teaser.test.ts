@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { STORY_ON } from "@mobile/video-engine";
 import { createEditBrain } from "../engine/brain/edit";
 
 // The teaser (shared/video-engine story.ts) in the brain: "In my order" opens on the clips' strongest unused moment
-// for about a second when the clips' own opening is clearly weaker, then plays the clips from the start.
+// for about a second when the clips' own opening is clearly weaker, then plays the clips from the start. It is switched
+// off (STORY_ON.teaser) until the hook score matches editors' openings; these tests switch it on to check how it works.
 const normal = { pos: (l: number) => l, at: () => 1 };
 /** a clip of `dur` s read every 0.1 s: movement `m(t)`, mid light, typical sharpness */
 const clip = (dur: number, m: (t: number) => number) => ({
@@ -22,7 +24,17 @@ function run(opening: (t: number) => number, more: Record<string, unknown> = {})
   return { did, ES, seq, res };
 }
 
-describe("the teaser that opens an In my order Reel", () => {
+describe("the teaser, switched off", () => {
+  it("changes nothing", () => {
+    const { did, ES } = run(() => 0.05);
+    expect(did).toBe(false);
+    expect(ES.plan).toHaveLength(3);
+  });
+});
+
+describe("the teaser that opens an In my order Reel (switched on)", () => {
+  beforeAll(() => { STORY_ON.teaser = true; });
+  afterAll(() => { STORY_ON.teaser = false; });
   it("opens on the strongest moment the Reel does not show elsewhere, then the clips from the start", () => {
     const { did, ES, seq, res } = run(() => 0.05);   // the first clip is almost still
     expect(did).toBe(true);
