@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
 import { ShubixVideo } from "../modules/shubix-video";
 import { clipDuration, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
-import { buildSpeedRampSegments } from "@mobile/video-engine";
+import { buildSpeedRampSegments, type ExportVerdict } from "@mobile/video-engine";
 import { tokenStore } from "./device";
 import { API_URL } from "./session";
 import { fitShot } from "./shotFit";
@@ -169,6 +169,8 @@ export const engine = {
   },
   /** for the native export: the Reel's whole sound as a WAV on the phone (null: no sound), and what the studio decided from the plan and these choices */
   exportMix: (name: string, o: ExportChoice = {}) => call<{ path: string | null; plan: StudioExportPlan }>("exportMix", { name, ...o }),
+  /** the finished video read back and checked against the edit: retake says making it again should fix it */
+  checkExport: (uri: string) => call<{ verdict: ExportVerdict | null }>("checkExport", { path: pathOf(uri) }),
   /** a finished Reel saved to My Reels too */
   saveToMyReels: (uri: string, name: string) => call("saveToMyReels", { path: pathOf(uri), name }),
   /** the website's Export sheet with these choices: what the plan and the phone allow, the size, the file name, My Reels */

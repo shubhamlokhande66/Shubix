@@ -1,6 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
-import { goodSecs, limitStereo } from "../engine/brain/pure";
+import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
+import { checkExportedReel, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -305,6 +306,26 @@ export function createNativeEngine(io: NativeIo) {
     ready: () => ({ work: work(), state: state() }),
     // the edit's own review (shared/video-engine review.ts) and how many takes and repairs it had: read only
     review: () => ({ review: host.brain.editReview?.() ?? null, takes: host.ES.editTakes ?? null }),
+    // the finished video read back on this phone (its clip scan) and checked against the edit (video-engine
+    // exportCheck.ts): a stalled decoder, black where footage belongs or a short file. null: no edit to check against
+    checkExport: async (a) => {
+      type Shot = { start: number; end: number; src: number; in: number; scaleR?: number; sp?: { pos: (l: number) => number } };
+      const edit = (host.ES.edit ?? []) as Shot[];
+      if (!edit.length) return { verdict: null };
+      const t0 = edit[0].start, want: ExportExpect = { dur: edit[edit.length - 1].end - t0, cuts: edit.slice(1).map((e) => e.start - t0), dark: [] };
+      for (const e of edit) {   // the shots the edit knows are dark (a night clip): black there is the footage
+        const src = host.ES.sources[e.src], need = (e.sp ? e.sp.pos(e.end - e.start) : e.end - e.start) * (e.scaleR || 1);
+        if (src && windowStats(src, e.in, e.in + Math.max(need, 0.05)).dark > 0.5) want.dark!.push([e.start - t0, e.end - t0]);
+      }
+      const p = `&p=${encodeURIComponent(String(a.path))}`;
+      try {
+        const probe = await io.fetch(url("probe", p));
+        if (!probe.ok) return { verdict: checkExportedReel({ dur: 0, w: 0, h: 0, samples: [] }, want) };
+        const { dur, w, h } = await probe.json() as { dur: number; w: number; h: number };
+        const scan = lastLine(await (await io.fetch(url("scan", `${p}&dur=${dur}`), { method: "POST" })).text(), "{") as { samples?: { t: number; b: number; m: number }[]; scenes?: { t0: number; t1: number }[] };
+        return { verdict: checkExportedReel({ dur, w, h, samples: scan.samples ?? [], scenes: scan.scenes ?? [] }, want) };
+      } catch { return { verdict: checkExportedReel({ dur: 0, w: 0, h: 0, samples: [] }, want) }; }
+    },
     state,
     edit: (a) => { const list = a.shots as Args[]; if (list.length) { const last = list[list.length - 1]; if (Number(last.end) < host.ES.buf.duration) last.end = host.ES.buf.duration; } const ok = !!host.brain.restoreEdit(list) || true; if (Array.isArray(a.overlays)) host.ES.overlays = a.overlays; return { ok }; },
     shotCs: () => host.brain.shotCs(),

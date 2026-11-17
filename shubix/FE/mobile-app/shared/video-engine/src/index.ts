@@ -1286,3 +1286,4 @@ export * from "./pop";
 export * from "./finish";
 export * from "./short";
 export * from "./clear";
+export * from "./exportCheck";

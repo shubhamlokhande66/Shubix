@@ -657,3 +657,20 @@ moved up over a face. On Android the brain had no frame size, so every position 
 and texts never moved off faces on the phone until this (the brain now takes the frame's size from the aspect).
 Checked: `tests/text-clear.test.ts` (web: the placement rules; Android: a Reel whose clips have a face where the
 opening words go: they move below it, the 🔊 with them, inside the safe area).
+
+## The exported video is checked before you see it (Android)
+
+A phone's video encoder can fail without an error: a decoder stalls and one picture stays over the cuts after it, a
+clip does not open and leaves black, or the file comes out short. After a Studio Reel is exported, the app reads the
+finished video back with its own clip scan and checks it against the edit that made it
+(`Shared/video-engine/src/exportCheck.ts`):
+
+- **Length:** within 0.5 s (or 3%) of the edit.
+- **Black:** 0.4 s or more of black where the edit shows footage. Black the edit made is kept: a shot it knows is dark,
+  a dip at a cut, the first moment and the fade at the end.
+- **Frozen:** a picture that does not change for a second or more over a cut the edit made.
+
+When a check fails, the Reel is made once more ("Fixing a glitch in the video…"). A finished Reel is never thrown away:
+if the second take also fails, it is kept and the creator is asked to watch it once. Each failed check goes into the
+Reel's log (Admin → Logs). On the website the export already samples its frames while it encodes and falls back to the
+real-time export when frames are missing.
