@@ -674,3 +674,22 @@ When a check fails, the Reel is made once more ("Fixing a glitch in the video…
 if the second take also fails, it is kept and the creator is asked to watch it once. Each failed check goes into the
 Reel's log (Admin → Logs). On the website the export already samples its frames while it encodes and falls back to the
 real-time export when frames are missing.
+
+## Clips that look like one Reel (colour match)
+
+Clips from different phones, rooms and hours look different side by side: one warm, one blue, one flat. An editor
+evens them out before the look, so the Reel reads as one piece. Shubix does the same on its own
+(`Shared/video-engine/src/colorMatch.ts`, both engines):
+
+- While the clips are read, each moment's colour is read too: how saturated it is, red against blue, and how far its
+  light spreads (contrast). The website reads it in the browser; the app reads it in `ClipStats.kt`.
+- Once the edit is made, the Reel's middle look is the screen-time weighted median of its shots. Each shot moves 60% of
+  the way toward it through its own Adjust (brightness, contrast, saturation, warmth), which both renderers draw.
+- It is never forced:
+  - a difference under 8% is left alone;
+  - a correction is at most 15% brightness, 0.2 contrast, 0.3 saturation and 0.4 warmth;
+  - a night shot is never brightened, a dim shot is never made darker, and a black-and-white shot is never coloured;
+  - a shot the creator adjusted is theirs.
+- It is off for a copied Reel (it has its own look) and for Shubix AI's own plan.
+
+Clips read before this change carry no colour, so their Reels are left as they were.

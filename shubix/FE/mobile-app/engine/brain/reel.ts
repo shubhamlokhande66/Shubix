@@ -6,6 +6,7 @@ import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowSta
 import { repace } from '../components/studio/soundmap';
 import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, SHORT_REEL } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
+import { toneOf, matchTones } from '@mobile/video-engine';
 
 export function createReelBrain(ES, EH){
 // The edit's own review (shared/video-engine review.ts), as the website's studio gives it (engine.ts reviewOf): the same
@@ -20,6 +21,15 @@ function reviewOf(list){
   // the song's own drops (its analysis, before the plan was made from it): each should have a cut on it
   const drops = (ES.cuts || []).filter((c, k) => ES.cutType[k] === 'drop').map(c => c - t0);
   return reviewAutonomousEdit({ shots, beats: ES.beats.map(x => x - t0), drops, duration: list[list.length-1].end - t0, sourceCount: ES.sources.length, sourceDurations: ES.sources.map(s => s.dur), cutLead: 1/30 });
+}
+// Colour match (Shared/video-engine colorMatch.ts): each shot pulled part of the way to the Reel's middle look (light,
+// contrast, colour, warmth) through its Adjust (cs), as an editor evens clips from different phones and rooms. Not for a
+// copied Reel (its own look) or Shubix AI's plan; a shot the creator adjusted is left as it is.
+function colourMatch(){
+  if(ES.mode === 'copy' || EH.aiTrusted()) return;
+  const tones = ES.edit.map(e => { const s = ES.sources[e.src]; if(!s || !s.samples || (e.cs && (e.cs.bri || e.cs.con || e.cs.sat || e.cs.warm))) return null;
+    const need = e.sp.pos(e.end - e.start)*(e.scaleR || 1), t = toneOf(s.samples, e.in, e.in + Math.max(need, 0.05)); return t ? { ...t, secs: e.end - e.start } : null; });
+  matchTones(tones).forEach((f, i) => { if(f){ ES.edit[i].cs = { ...(ES.edit[i].cs || {}), ...f }; ES.edit[i].cm = true; } });
 }
 function tasteFx(e, i, t){
   if(ES.mode === 'copy' || EH.aiTrusted()) return;
@@ -252,7 +262,8 @@ function makeEditNow(){
   }
   const useCount = ES.sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   ES.edit = ES.plan.map((s,i)=>({...s, ...res[i], el: ES.sources[res[i].src].els[(useCount[res[i].src]++)%3]}));
-  EH.flickBuild();   // a copied flicker montage: its stills (once per set of clips)
+  EH.flickBuild();
+  colourMatch();   // a copied flicker montage: its stills (once per set of clips)
   const taste = { n: ES.edit.length, moves: 0, prevZoom: false, lastZoom: -99, shape: false, drops: ES.edit.filter(x => x.type === 'drop').map(x => x.start) };
   ES.edit.forEach((e,i)=>{
     const d = EH.dirSlotOf(i), shared = sharedDirector.shots.find(x => x.sourceIndex === e.src);

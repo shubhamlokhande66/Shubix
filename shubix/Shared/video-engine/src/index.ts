@@ -1287,3 +1287,4 @@ export * from "./finish";
 export * from "./short";
 export * from "./clear";
 export * from "./exportCheck";
+export * from "./colorMatch";
