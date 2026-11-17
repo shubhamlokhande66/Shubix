@@ -645,3 +645,21 @@ first). Each photo becomes a 3 s moving shot (`photoClip`, a slow push-in, made 
 the order the files were chosen, so "In my order" plays them as picked. The Android app's Beat Reel picker takes both
 too (its Photos tab keeps to photos). Checked in Chrome: 2 videos and 2 photos, chosen video, photo, video, photo ->
 4 shots in that order, quality 90/100. Android: not run on a phone.
+
+## The AI director's masks, green screens and colour fit the picture
+
+The AI director plans from words, so a mask, a green-screen key, curves or HSL it chose could miss what is in the
+frame. Now it is told what the phone knows of each offered shot (`light`, the main `subject` box and a green or blue
+`backdrop`: the shot-ranking AI, which looks at the frames, now also says when a frame has a chroma-key screen behind
+the subject), and asked to fit those settings to it. The phone checks the answer against the picture before putting it
+on (`Shared/video-engine/src/lookFit.ts`, `dirLookFit` in the website's engine and the Android brain):
+
+- a mask that shows a shape is moved onto the subject and made big enough to hold it (its keyframes move with it); a
+  mask that hides a shape never hides the subject; band shapes (split, film) stay as set
+- a green-screen key stays only on a shot with a green or blue screen, in that colour
+- curves rise (no flipped tones), stay within reach of the shot (colour casts lightly), never darken a dark shot nor
+  brighten a bright one; a dark shot is not made darker with `bri` either
+- HSL hue shifts stay moderate, and on people the skin bands (red, orange) keep their colour
+
+A shot whose picture is unknown (no frames looked at, an answer cached before this change) keeps the director's
+settings. Tests: `FE/mobile-app/tests/look-fit.test.ts`; the server's `studio-direct` and `studio-rank-shots` tests.

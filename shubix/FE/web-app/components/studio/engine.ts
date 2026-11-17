@@ -11,7 +11,7 @@
  */
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
-import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -3089,7 +3089,7 @@ function directorCandidates(){
     const gx = S.length ? S.reduce((q,x)=>q+(x.gx||0),0)/S.length : 0, m = w.m;
     return { id: i + 'abc'[k], si, a, clip: 'c'+(si+1), at: +a.toFixed(2), score: +w.sc.toFixed(2), note: w.ai ? w.ai.note : '',
       roles: w.ai ? Object.keys(w.ai.roles).filter(r=>w.ai.roles[r] > 0.4) : [], motion: m < 0.08 ? 'still' : m < 0.3 ? 'low' : m < 0.6 ? 'medium' : 'high', people: w.st.face > 0.3,
-      camera: Math.abs(gx) < 0.35 ? 'still' : gx > 0 ? 'pans left' : 'pans right' }; };
+      camera: Math.abs(gx) < 0.35 ? 'still' : gx > 0 ? 'pans left' : 'pans right', ...shotPicWords(src, a, a + need, w.st) }; };
   order.forEach(i=>{
     const s = plan[i], e = edit[i], len = s.end - s.start, nb = [edit[i-1], edit[i+1]].filter(Boolean).map(x=>x.src);
     const cur = e.sp.pos(len)*e.scaleR;
@@ -8278,6 +8278,16 @@ const AI_CS = c => { const o = {}, n = (k, a, b) => { const v = Number(c[k]); if
   if(c.rev === true) o.rev = true; n('zoom', 1, 3); n('pitch', -12, 12); for(const k of ['vol','mus']) if(Number.isFinite(Number(c[k])) && c[k] !== undefined) o[k] = Math.min(2, Math.max(0, Number(c[k])));
   for(const k of ['mk','ck','cv','hsl','kx']) if(c[k] && typeof c[k] === 'object') o[k] = JSON.parse(JSON.stringify(c[k]));
   return o; };
+// the shot's picture as the phone knows it (the ranking AI's frames, the faces, the scan's light): told to the director,
+// and its look for the shot fitted to it (Shared/video-engine lookFit.ts)
+function shotPic(s, a, b, st){ return pictureOf(aiOn && s.ai ? s.ai.frames : null, s.faces, a, b, st ? st.b : undefined, out.height/out.width); }
+function shotPicWords(s, a, b, st){ const w = pictureWords(shotPic(s, a, b, st)); return Object.keys(w).length ? w : {}; }
+function dirLookFit(e, look){
+  if(!look.mk && !look.ck && !look.cv && !look.hsl && !(look.bri < 0)) return look;
+  const s = sources[e.src]; if(!s) return look;
+  const need = e.sp.pos(e.end - e.start)*e.scaleR, st = s.samples && s.samples.length ? windowStats(s, e.in, e.in + need) : null;
+  return fitLook(look, shotPic(s, e.in, e.in + need, st)).look;
+}
 function csAutoSet(e, patch){
   e.cs = e.cs || {}; const auto = e.cs.auto || [];
   for(const k in patch){ if(k in e.cs && !auto.includes(k)) continue; e.cs[k] = patch[k]; if(!auto.includes(k)) auto.push(k); }
@@ -8302,7 +8312,8 @@ function autoTools(){
     else if(au.clip === 'voices' && speechShare(s, e.in, e.in + need) > 0.4) csAutoSet(e, { vol: 0.9 });
   });
   // the AI director's own look for a shot (mirror, black and white, a framed photo, a fade...), like a person's clip tools
-  edit.forEach((e, i) => { const d = dirSlotOf(i); if(d && d.cs) csAutoSet(e, AI_CS(d.cs)); });
+  // fitted to the shot's picture first (lookFit.ts): a mask round the subject, a key only on a green screen, gentle curves
+  edit.forEach((e, i) => { const d = dirSlotOf(i); if(d && d.cs) csAutoSet(e, dirLookFit(e, AI_CS(d.cs))); });
   const cand = edit.map((e, i) => ({ e, i })).filter(({ e, i }) => i > 2 && e.start > 3 && (e.type === 'drop' || e.type === 'hit') && e.end - e.start >= 0.5 && e.end - e.start <= 1.6
     && (e.mot || 0) > 0.45 && e.sp.label === '1×' && e.efx !== 'snap' && !(e.cs && 'rev' in e.cs));
   if(cand.length) csAutoSet(cand[Math.floor(cand.length/2)].e, { rev: true });

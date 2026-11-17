@@ -2,7 +2,7 @@
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
-import { ONE_TAKE } from '@mobile/video-engine';
+import { ONE_TAKE, pictureOf, pictureWords } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -493,7 +493,7 @@ function directorCandidates(){
     const gx = S.length ? S.reduce((q,x)=>q+(x.gx||0),0)/S.length : 0, m = w.m;
     return { id: i + 'abc'[k], si, a, clip: 'c'+(si+1), at: +a.toFixed(2), score: +w.sc.toFixed(2), note: w.ai ? w.ai.note : '',
       roles: w.ai ? Object.keys(w.ai.roles).filter(r=>w.ai.roles[r] > 0.4) : [], motion: m < 0.08 ? 'still' : m < 0.3 ? 'low' : m < 0.6 ? 'medium' : 'high', people: w.st.face > 0.3,
-      camera: Math.abs(gx) < 0.35 ? 'still' : gx > 0 ? 'pans left' : 'pans right' }; };
+      camera: Math.abs(gx) < 0.35 ? 'still' : gx > 0 ? 'pans left' : 'pans right', ...pictureWords(pictureOf(ES.aiOn && src.ai ? src.ai.frames : null, src.faces, a, a + need, w.st ? w.st.b : undefined, EH.out.height/EH.out.width)) }; };
   order.forEach(i=>{
     const s = ES.plan[i], e = ES.edit[i], len = s.end - s.start, nb = [ES.edit[i-1], ES.edit[i+1]].filter(Boolean).map(x=>x.src);
     const cur = e.sp.pos(len)*e.scaleR;
