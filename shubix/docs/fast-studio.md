@@ -729,3 +729,27 @@ on (`Shared/video-engine/src/lookFit.ts`, `dirLookFit` in the website's engine a
 
 A shot whose picture is unknown (no frames looked at, an answer cached before this change) keeps the director's
 settings. Tests: `FE/mobile-app/tests/look-fit.test.ts`; the server's `studio-direct` and `studio-rank-shots` tests.
+
+## The Reel tells a story (hook, setup, peak, close)
+
+An editor does not only cut on the beat: the Reel opens on its hook, sets the scene, builds, reaches its peak on the
+drop and closes. Shubix now lays every Reel out the same way, on every plan and on the phone, with no AI
+(`Shared/video-engine/src/story.ts`, `storyRole` and `scoreWindow` in the website's engine and the Android brain):
+
+- **hook**: the first shot, chosen as before (the most movement, faces, sharp)
+- **setup**: the first fifth of a Reel of 5 shots or more, before the first drop: a wide, steady moment (the place,
+  who is there) over a close-up
+- **peak**: the drops, and hits late in the Reel (60-90%): people close up (their faces carry the feeling)
+- **close**: the last shot: calm when the song settles, strong when it ends on a hit
+- a copied Reel follows its reference instead
+
+Each part only nudges which moment a shot takes (at most 0.6, where a dark moment costs 1 and a blurry one 0.9), so the
+footage's quality and Shubix AI's own choices still decide.
+
+**Teaser ("In my order", 3 clips or more)**: when the opening the clips' order gives is clearly weaker than a moment
+further on (by 0.6 or more), the Reel opens on that moment for about a second, cut on a beat (0.9-1.9 s in, from an
+opening shot of 2.8 s or more), then plays the clips from the start, as an editor's flash-forward. The teaser's moment
+is shown nowhere else in the Reel (0.3 s apart at least), and is sharp and light enough. Not with Shubix AI on (its plan
+goes by the cuts), slow motion asked for in words, or a copied Reel. The shot's note says "teaser" in the Reel log.
+Tests: `FE/web-app/tests/video-engine-story.test.ts`, `FE/mobile-app/tests/story-teaser.test.ts`, and the engine
+parity test (`teaserOpen`, `storyRole`).

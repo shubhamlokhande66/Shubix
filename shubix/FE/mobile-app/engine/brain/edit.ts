@@ -2,7 +2,8 @@
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
-import { ONE_TAKE, frameTone, pictureOf, pictureWords } from '@mobile/video-engine';
+import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -669,6 +670,13 @@ function clipFlaw(src){
   const v = (jit >= 1.5 ? 3 : 0) + (soft < 0.15 ? 3 : 0);
   src._flaw = { key, v }; return v;
 }
+// each shot's part in the story, worked out once for the plan as it is (it changes when the cuts change)
+let storyMemo = { p: null, sig: '', r: [] };
+function storyRole(i){
+  const sig = ES.plan.length + ':' + (ES.plan.length ? ES.plan[0].start.toFixed(2) + ':' + ES.plan[ES.plan.length-1].end.toFixed(2) : '');
+  if(storyMemo.p !== ES.plan || storyMemo.sig !== sig) storyMemo = { p: ES.plan, sig, r: storyRoles(ES.plan.map(s => ({ kind: s.type, start: s.start, end: s.end }))) };
+  return storyMemo.r[i];
+}
 function scoreWindow(i, src, a, need, gmax){
   const s = ES.plan[i], st = windowStats(src, a, a+need), m = st.m/gmax;
   let sc;
@@ -684,6 +692,9 @@ function scoreWindow(i, src, a, need, gmax){
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
   const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1);
+  // the shot's part in the story (shared/video-engine story.ts): wide and steady to set the scene, people close up at
+  // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
+  if(ES.mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
   return {sc, st, m, ai};
 }
 // the creator's keyframes stay on their shots when the edit is made again (the AI's scores or the director arriving,
@@ -779,6 +790,32 @@ function seqPick(seq, res, gmax){
       res[i] = best; cur = best.in + nd;
     });
   }
+}
+// The teaser (shared/video-engine story.ts): "In my order" with three clips or more opens as the clips' order gives it.
+// When that opening is clearly weaker than a moment further on in the clips (one the Reel shows nowhere else, sharp and
+// light enough), the Reel opens on that moment for about a second, cut on a beat, then plays the clips from the start:
+// an editor's flash-forward. Not for a copied Reel, slow motion asked for in words, or with Shubix AI on (its plan goes
+// by the cuts' numbers and times, which the teaser would change).
+function teaserOpen(seq, res, gmax){
+  if(!seq || ES.plan.length < 2 || ES.sources.length < 3 || ES.mode === 'copy' || ES.slowAll || ES.aiOn || ES.director || !res[0]) return false;
+  const s0 = ES.plan[0], b = teaserCut(s0.start, s0.end, ES.beats); if(b == null) return false;
+  const L = b - s0.start, open = scoreWindow(0, ES.sources[seq[0]], res[0].in, L, gmax).sc;
+  let best = null;
+  ES.sources.forEach((src, si) => {
+    if(si === seq[0] || src.removed || !(src.samples && src.samples.length) || src.dur - TAIL < L) return;
+    const shown = res.map((r, i) => r && r.src === si ? [r.in, r.in + ES.plan[i].sp.pos(ES.plan[i].end - ES.plan[i].start)*(r.scaleR || 1)] : null).filter(Boolean);
+    const stepT = Math.max(0.1, Math.min(0.5, src.dur/120));
+    for(let a = 0; a <= src.dur - L - TAIL + 1e-6; a += stepT){
+      if(!teaserFree(a, a + L, shown) || crossesScene(src, a, a + L)) continue;
+      const w = scoreWindow(0, src, a, L, gmax), st = w.st;
+      if(st.b < EDIT_REVIEW_LIMITS.dark || (st.dark || 0)*L >= EDIT_REVIEW_LIMITS.darkSeconds || st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft) continue;
+      if(!best || w.sc > best.sc) best = { sc: w.sc, si, r: { src: si, in: a, scaleR: 1, cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false, teaser: true, why: 'teaser: the strongest moment first, then your clips in order' } };
+    }
+  });
+  if(!best || !teaserWorth(open, best.sc)) return false;
+  ES.plan.splice(0, 1, { ...s0, end: b, sp: EH.SPEED.normal }, { ...s0, start: b, type: 'cut', tr: 'hard', efx: 'none' });
+  seq.splice(0, 0, best.si); res.splice(0, 0, best.r);
+  return true;
 }
 // an AI camera move in words: "zoom 1.00→1.18, slides right, turns 4°, fast then settles"
 function kfSummary(e){
@@ -1201,5 +1238,5 @@ function remakeOk(){ if(!ES.restoring) ES.keepSaved = false; }
 function editOf(){
   return ES.kind === 'talk' ? [] : ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: EH.speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
-  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
+  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, storyRole, teaserOpen, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
 }

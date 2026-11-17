@@ -204,7 +204,7 @@ function makeEditNow(){
     return best;
   };
   ES.editTakes = { tried: 1, kept: 1 };
-  if(seq) EH.seqPick(seq, res, gmax);
+  if(seq){ EH.seqPick(seq, res, gmax); EH.teaserOpen(seq, res, gmax); }
   else {
     const take = () => { res.fill(undefined); used.forEach(u => { u.length = 0; }); ES.dupCount = 0;
       order.forEach(i=>{
