@@ -693,3 +693,21 @@ evens them out before the look, so the Reel reads as one piece. Shubix does the 
 - It is off for a copied Reel (it has its own look) and for Shubix AI's own plan.
 
 Clips read before this change carry no colour, so their Reels are left as they were.
+
+## Retakes left out (Talking Reel)
+
+A creator who stumbles stops and says the line again, so a raw talk often has the same sentence twice, or a false
+start ("So today I… So today I want to show you"). An editor keeps the last take. Shubix does too
+(`Shared/video-engine/src/retakes.ts`):
+
+- When the captions' words are heard, each stretch of speech between pauses is compared with the next three within
+  25 s. If one of them opens with the same words in the same order, the earlier stretch is a retake and is left out.
+  A short stretch needs a near-exact repeat; a long one needs most of its words.
+- The talk is made again without them. The words move with their stretches, so the speech is not heard (or charged)
+  twice. The status line says how many retakes were left out.
+- It is careful: the last stretch always stays, at most a third of the talk goes, and a dubbed talk or a Reel reopened
+  from My Reels is left as it is. Changing the clips, the pace or the noise cleanup looks again.
+- Any language: words are compared by their letters, marks and digits (Hindi vowel signs count), without case or
+  punctuation.
+
+The Android app does not make Talking Reels from speech yet; the same `findRetakes` is ready for it.

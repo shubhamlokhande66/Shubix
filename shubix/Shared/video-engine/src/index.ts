@@ -1288,3 +1288,4 @@ export * from "./short";
 export * from "./clear";
 export * from "./exportCheck";
 export * from "./colorMatch";
+export * from "./retakes";
