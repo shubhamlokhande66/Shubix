@@ -75,6 +75,10 @@ export const mobileApi = {
    * connects an account in the phone's browser (it comes back to the app: shubix://reels), Shubix AI's caption */
   /** an AI picture for the studio (B-roll: /api/studio/broll, credits), as a JPEG data URL at the Reel's shape */
   aiPicture: (prompt: string, aspect = "9:16") => json<{ image: string; source: string; charged: number }>("/api/studio/broll", { method: "POST", body: JSON.stringify({ prompt, aspect }) }),
+  /** one line in the Reel's log (Admin → Logs), as the website's studio sends: the export's "Export started" carries how
+   * many changes the creator made after Shubix's edit (Admin → Overview, "Kept as Shubix made it") */
+  reelLog: (reelId: string, line: { step: string; msg: string; data?: unknown }) =>
+    json<{ ok: boolean }>("/api/public/reel-log", { method: "POST", body: JSON.stringify({ reelId, lines: [{ t: Date.now(), seq: 1, level: "info", ...line }] }) }),
   social: () => json<{ platforms: SocialPlatform[]; posts: SocialPost[] }>("/api/social"),
   socialConnectLink: (p: SocialPlatform["id"]) => json<{ url: string }>(`/api/social/${p}/connect`, { method: "POST" }),
   socialDisconnect: (p: SocialPlatform["id"]) => json<{ ok: boolean }>(`/api/social/${p}`, { method: "DELETE" }),
