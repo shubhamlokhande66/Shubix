@@ -2,8 +2,7 @@
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
-import { ONE_TAKE, frameTone } from '@mobile/video-engine';
-import { ONE_TAKE, pictureOf, pictureWords } from '@mobile/video-engine';
+import { ONE_TAKE, frameTone, pictureOf, pictureWords } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
