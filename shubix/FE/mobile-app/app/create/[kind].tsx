@@ -298,7 +298,7 @@ function CreateFlowScreen() {
       void AsyncStorage.removeItem(DRAFT);
       await queryClient.invalidateQueries({ queryKey: ["drafts"] }); making.current = false; tasks.clear("flow"); tasks.unlock();
       notifyAway(words("Your Reel is ready"), words("Open Shubix to see it"), "/");
-      setStep("clips"); router.push({ pathname: "/editor", params: { id } }); // back from the editor: the clips again
+      setStep("clips"); router.push({ pathname: "/editor", params: { id, made: "1" } }); // back from the editor: the clips again (made: Shubix just made it)
     } catch (e) {
       const gone = !making.current; making.current = false; tasks.clear("flow"); tasks.unlock(); setStep("clips");
       // a popup with Retry (Make Reel again, from where it is) and Close (the clips, nothing lost)

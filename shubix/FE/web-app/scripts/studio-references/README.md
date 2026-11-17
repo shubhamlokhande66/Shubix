@@ -11,15 +11,29 @@ folder measures such Reels and keeps only the numbers: no videos, no file names,
   It writes each Reel's numbers and the set's medians with their middle half (25th to 75th percentile).
 - `compare.mjs` measures a Reel Shubix made against `references.json`. It marks each edit number that falls outside
   the references' middle half. Use it as the yardstick for a change to how the edit is cut.
-- `references.json` holds the current set: 19 beat Reels a creator sent, measured on 2026-11-15. The set is cars,
-  weddings, shops and dance, 23-39 s long, at 106-144 BPM.
+- `references.json` holds the current set: 22 human-edited Reels a creator sent (19 measured on 2026-11-15, three
+  more added on 2026-11-17). The set is cars, weddings, shops and dance, mostly 24-36 s long, at 104-142 BPM.
+
+## The human score
+
+`compare.mjs` first scores the reference Reels themselves: how many of the 10 edit numbers each one has inside the
+set's middle half. Every editor has a style, so no human Reel lands all 10. With the 22 Reels a human Reel typically
+scores 6, and the middle half of them scores 2 to 7. A Shubix Reel is then marked:
+
+- **as human as the references** at 6 or more;
+- **close to the references** at 2 to 5;
+- **less human than the references** below 2.
+
+To score Shubix on a creator's own footage, make a Reel from their raw clips and song, export it, and run
+`compare.mjs` on it. The live number from real creators is Admin → Overview → "Kept as Shubix made it": the share of
+exported Reels the creator did not change after Shubix's edit (`BE/api/src/server/studio/accuracy.ts`).
 
 ```
 node analyze.mjs out.json a.mp4 b.mp4 ...            # ANON=1 names them r01, r02... (do this for references.json)
 node compare.mjs references.json shubix-reel.mp4     # Node 22.18+ and ffmpeg
 ```
 
-## What the 19 Reels show (medians)
+## What the first 19 Reels showed (medians)
 
 | | creators | Shubix before (Mix, 5 clips, 98 BPM) | Shubix after |
 |---|---|---|---|
