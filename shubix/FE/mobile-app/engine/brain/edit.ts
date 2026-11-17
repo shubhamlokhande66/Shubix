@@ -2,7 +2,7 @@
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
-import { ONE_TAKE } from '@mobile/video-engine';
+import { ONE_TAKE, frameTone } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -269,7 +269,7 @@ function frameStats(d, d2, prev){
   for(let y=1;y<71;y++) for(let x=1;x<127;x++){ const i=y*128+x, lap = 4*L2[i]-L2[i-1]-L2[i+1]-L2[i-128]-L2[i+128]; sm+=lap; sq+=lap*lap; n++; }
   const sh = sq/n - (sm/n)*(sm/n);
   return { lum, hist, row: { m: prev ? m/lum.length : 0, b:b/lum.length, cx: m>1e-6 ? mx/m : 0.5, sh,
-    sx: sub ? sub.x : -1, sy: sub ? sub.y : -1, sw: sub ? sub.w : 0, gx: sub ? sub.gx : 0, gy: sub ? sub.gy : 0, ax: sal.x, ay: sal.y, aw: sal.w } };
+    sx: sub ? sub.x : -1, sy: sub ? sub.y : -1, sw: sub ? sub.w : 0, gx: sub ? sub.gx : 0, gy: sub ? sub.gy : 0, ax: sal.x, ay: sal.y, aw: sal.w, ...frameTone(d, SW*SH) } };
 }
 function colorHist(d){
   const h = new Float32Array(EH.FEAT), gs = new Float32Array(40); let n = 0;

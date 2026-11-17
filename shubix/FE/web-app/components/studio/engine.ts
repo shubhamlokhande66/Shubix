@@ -12,6 +12,7 @@
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
+import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -858,7 +859,7 @@ async function scanMotion(src, onProgress, faces){
     for(let y=1;y<71;y++) for(let x=1;x<127;x++){ const i=y*128+x, lap = 4*L2[i]-L2[i-1]-L2[i+1]-L2[i-128]-L2[i+128]; sm+=lap; sq+=lap*lap; n++; }
     const sh = sq/n - (sm/n)*(sm/n);
     out.push({t, m: prev ? m/lum.length : 0, b:b/lum.length, cx: m>1e-6 ? mx/m : 0.5, sh,
-      sx: sub ? sub.x : -1, sy: sub ? sub.y : -1, sw: sub ? sub.w : 0, gx: sub ? sub.gx : 0, gy: sub ? sub.gy : 0, ax: sal.x, ay: sal.y, aw: sal.w});
+      sx: sub ? sub.x : -1, sy: sub ? sub.y : -1, sw: sub ? sub.w : 0, gx: sub ? sub.gx : 0, gy: sub ? sub.gy : 0, ax: sal.x, ay: sal.y, aw: sal.w, ...frameTone(d, SW*SH)});
     prev = lum;
   };
   // a frame every 1/30 s for short clips, sparser for long ones (at most every 0.2 s): about what playing the clip at 2-12x
@@ -3015,6 +3016,15 @@ function tastePlan(){
 }
 // per shot, once its footage is chosen (before its keyframes are made): zooms on drops only and never two in a row, gentle
 // moves on long shots, at most a third of the shots moving; photos always move gently (a still photo looks stopped)
+// Colour match (Shared/video-engine colorMatch.ts): each shot pulled part of the way to the Reel's middle look (light,
+// contrast, colour, warmth) through its Adjust (cs), as an editor evens clips from different phones and rooms. Not for a
+// copied Reel (its own look) or Shubix AI's plan; a shot the creator adjusted is left as it is.
+function colourMatch(){
+  if(mode === 'copy' || aiTrusted()) return;
+  const tones = edit.map(e => { const s = sources[e.src]; if(!s || !s.samples || (e.cs && (e.cs.bri || e.cs.con || e.cs.sat || e.cs.warm))) return null;
+    const need = e.sp.pos(e.end - e.start)*(e.scaleR || 1), t = toneOf(s.samples, e.in, e.in + Math.max(need, 0.05)); return t ? { ...t, secs: e.end - e.start } : null; });
+  matchTones(tones).forEach((f, i) => { if(f){ edit[i].cs = { ...(edit[i].cs || {}), ...f }; edit[i].cm = true; } });
+}
 function tasteFx(e, i, t){
   if(mode === 'copy' || aiTrusted()) return;
   const len = e.end - e.start, photo = root.classList.contains('photomode');
@@ -4077,7 +4087,8 @@ function makeEditNow(){
   }
   const useCount = sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   edit = plan.map((s,i)=>({...s, ...res[i], el: sources[res[i].src].els[(useCount[res[i].src]++)%3]}));
-  flickBuild();   // a copied flicker montage: its stills (once per set of clips)
+  flickBuild();
+  colourMatch();   // a copied flicker montage: its stills (once per set of clips)
   const natural = naturalFootage();
   const taste = { n: edit.length, moves: 0, prevZoom: false, lastZoom: -99, shape: false, drops: edit.filter(x => x.type === 'drop').map(x => x.start) };
   edit.forEach((e,i)=>{
