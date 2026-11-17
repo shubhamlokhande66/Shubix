@@ -12,6 +12,7 @@
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
+import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -1732,6 +1733,24 @@ function splitPoint(v, a, b){
   return best;
 }
 function rmsOf(x, gate = 0.01){ let s2 = 0, n = 0; for(let i=0;i<x.length;i+=4){ const v = x[i]; if(Math.abs(v) > gate){ s2 += v*v; n++; } } return Math.sqrt(s2/Math.max(1, n)); }
+// Retakes (Shared/video-engine retakes.ts): a line the creator stopped and said again soon after is left out, the last
+// take kept, as an editor does. Found from the captions' words once they are heard (no second transcription: the words
+// move with their parts), for the clips, pace and cleanup they were heard with; not for a dubbed talk or a saved Reel.
+let talkDrop = { base: '', keys: new Set() };
+const talkBase0 = () => sources.map(s => fpOf(s)).join(',') + '|' + talkPace + '|' + (denoiseOn ? 'clean' : 'raw');
+const partKey = p => p.si + ':' + p.a.toFixed(2);
+function dropRetakes(lang){
+  if(kind !== 'talk' || !talk || keepSaved || dub || !capAll || capAll.from) return false;
+  const base0 = talkBase0(); if(talkDrop.base === base0) return false;   // these clips' words were looked at already
+  talkDrop = { base: base0, keys: new Set() };
+  const parts = talk.parts, { drop } = findRetakes(parts, capAll.words);
+  if(!drop.length) return false;
+  drop.forEach(i => talkDrop.keys.add(partKey(parts[i])));
+  const T = parts.reduce((q, p, i) => drop.includes(i) ? q : q + p.b - p.a, 0);
+  capCache.set('talk|' + base0 + '|' + T.toFixed(2) + '|' + (0).toFixed(2) + '|' + lang, { from: 0, words: wordsWithout(parts, capAll.words, drop) });
+  notify(drop.length + (drop.length > 1 ? ' retakes' : ' retake') + ' left out: the line you said again is kept');
+  buildTalk(); return true;
+}
 async function buildTalk(){
   delete root.dataset.nomake;   // set again below when these clips have no voice (flow.ts shows it on Next)
   const token = ++talkToken;
@@ -1741,6 +1760,9 @@ async function buildTalk(){
   for(const src of sources){ await voiceOf(src); if(token !== talkToken) return; }
   const parts = [];
   sources.forEach((src, si) => { if(!src.voice.has) return; for(const [a,b] of speechParts(src.voice, src.dur, talkPace)) parts.push({ si, a, b }); });
+  // the retakes found in these clips' words (dropRetakes) stay out
+  let retakes = 0;
+  if(talkDrop.base === talkBase0() && talkDrop.keys.size) for(let k = parts.length - 1; k >= 0; k--) if(talkDrop.keys.has(partKey(parts[k]))){ parts.splice(k, 1); retakes++; }
   const mute = sources.filter(s => !s.voice.has).length;
   if(!parts.length){ root.dataset.nomake = 'No voice found: add a clip where you talk'; $('s3st').textContent = 'No voice found in these clips'; showMsg('We could not hear anyone talking in these clips. For a Beat Reel, choose "Beat Reel" at the top.', true); return; }
   const sr = getCtx().sampleRate, T = parts.reduce((q,p)=>q + p.b - p.a, 0), N = Math.round(T*sr); let voice = new Float32Array(N), act = new Float32Array(N);
@@ -1800,7 +1822,7 @@ async function buildTalk(){
   setCanvas(); edit.forEach(e=>camAt(e, 0)); renderEDL(); drawMusic();
   $('s3').classList.remove('locked'); $('s3').classList.add('done');
   const total = sources.reduce((q,s)=>q + s.dur, 0), how = sources.some(s => s.voice.how === 'level') ? ' (by loudness)' : '';
-  $('s3st').textContent = edit.length + ' shots · ' + fmt(T) + ' of talk from ' + fmt(total) + ' of clips' + (talkPace !== 'off' ? ' · ' + fmt(total - T) + ' of pauses cut' + how : '');
+  $('s3st').textContent = edit.length + ' shots · ' + fmt(T) + ' of talk from ' + fmt(total) + ' of clips' + (talkPace !== 'off' ? ' · ' + fmt(total - T) + ' of pauses cut' + how : '') + (retakes ? ' · ' + retakes + ' retake' + (retakes > 1 ? 's' : '') + ' left out' : '');
   $('mdur').textContent = fmt(T);
   $('tinfo').textContent = mute ? mute + ' clip' + (mute > 1 ? 's' : '') + ' without a voice left out' : '';
   $('xmsg').hidden = true;
@@ -5824,7 +5846,9 @@ async function loadCaptions(){
     const res = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Captions failed (' + r.status + ').'));
     if(token !== musicToken) return;
-    capAll = { from, words: Array.isArray(res.words) ? res.words : [] }; capCache.set(key, capAll); capKeyNow = key; shiftCaptions();
+    capAll = { from, words: Array.isArray(res.words) ? res.words : [] }; capCache.set(key, capAll); capKeyNow = key;
+    if(tk && dropRetakes(lang)) return;   // the talk is made again without its retakes (its words already moved with it)
+    shiftCaptions();
     capStat(capWords.length ? capWords.length + ' words found' + (res.language && res.language !== 'auto' ? ' (' + res.language + ')' : '') + (res.charged ? ' · ' + res.charged + ' credit' + (res.charged > 1 ? 's' : '') : '') : 'No words in this song (instrumental?)');
     redraw();
   }catch(err){ if(!(err && err.name === 'AbortError')) { console.warn('captions failed:', err); capStat('Captions could not be made this time. Please try again.', true); } }
