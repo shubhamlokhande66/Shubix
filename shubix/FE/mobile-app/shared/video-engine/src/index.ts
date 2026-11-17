@@ -1285,3 +1285,4 @@ export * from "./review";
 export * from "./pop";
 export * from "./finish";
 export * from "./short";
+export * from "./clear";

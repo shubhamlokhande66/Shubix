@@ -12,7 +12,7 @@
 import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots } from '@shubix/video-engine';
-import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE } from '@shubix/video-engine';
+import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -5167,9 +5167,30 @@ function facePosOnScreen(t){
   if(!near.length) return null;
   const f = near.reduce((q,x)=>Math.abs(x.t-st) < Math.abs(q.t-st) ? x : q, near[0]);
   const W=out.width, H=out.height, r = Math.max(W/src.w, H/src.h), dw=src.w*r, dh=src.h*r, [ccx, ccy] = camAt(e, local);
-  return { x: Math.max(0, Math.min(1, 0.5 + (f.fx-ccx)*dw/W)), y: Math.max(0, Math.min(1, 0.5 + (f.fy-ccy)*dh/H)) };
+  return { x: Math.max(0, Math.min(1, 0.5 + (f.fx-ccx)*dw/W)), y: Math.max(0, Math.min(1, 0.5 + (f.fy-ccy)*dh/H)), s: (f.fs || 0)*dw/W };
 }
 function faceYOnScreen(t){ const face = facePosOnScreen(t); return face ? face.y : null; }
+// Shubix's own texts (the opening words, Shubix AI's) never sit on a face (Shared/video-engine clear.ts): each group (a
+// template's parts, together) moves up or down just enough, inside Instagram's safe area, as an editor would by eye.
+// The creator's own texts, and any the creator dragged, follow-the-person or keyframed, stay where they are.
+let clearKey = '';
+function clearTexts(){
+  const key = editGen + '|' + aspect + '|' + overlays.map(o => o.id + ':' + o.t0 + ':' + o.t1 + ':' + (o.placed ? 1 : 0)).join(',');
+  if(key === clearKey) return; clearKey = key;
+  if(!edit.length) return;
+  const W = out.width, H = out.height, groups = new Map();
+  for(const o of overlays){
+    if(!(o.auto || o.aiIntent) || o.placed || o.track || o.uk || o.all || o.kind) continue;
+    if(o.y0 === undefined) o.y0 = o.y;
+    const k = (o.tpl || o.id) + '|' + o.t1; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(o);
+  }
+  for(const list of groups.values()){
+    const a = Math.min(...list.map(o => o.t0)), b = Math.max(...list.map(o => o.t1)), faces = [];
+    for(let t = a; t < b; t += 0.25){ const f = facePosOnScreen(t); if(f && f.s > 0) faces.push(f); }
+    const dy = clearOfFaces(list.map(o => textBoxEstimate(o.text, o.size, !!o.emoji, o.x, o.y0, W, H)), faces, { W, H });
+    for(const o of list) o.y = +(o.y0 + dy).toFixed(4);
+  }
+}
 function drawCaptions(t){
   if(!capsOn || !capLines) return;
   const line = capLines.find(l => t >= l.a && t < l.b); if(!line) return;
@@ -5517,7 +5538,7 @@ function drawOverlay(g, ov, t){
     const hr = Math.max(16, W*0.022); g.setLineDash([]); g.beginPath(); g.arc((bx + bw)*W, (by + bh)*H, hr, 0, Math.PI*2); g.fillStyle = '#ffd54a'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.55)'; g.stroke();
     g.beginPath(); g.moveTo((bx + bw)*W - hr*0.45, (by + bh)*H + hr*0.45); g.lineTo((bx + bw)*W + hr*0.45, (by + bh)*H - hr*0.45); g.strokeStyle = '#000'; g.lineWidth = 3; g.stroke(); g.restore(); }
 }
-function drawOverlays(t){ for(const ov of overlays) if(!ov.behind || !personMask || !bgMask) drawOverlay(og, ov, t); }
+function drawOverlays(t){ clearTexts(); for(const ov of overlays) if(!ov.behind || !personMask || !bgMask) drawOverlay(og, ov, t); }
 // the list under "Text & stickers": edit the words, style, colour, entrance, size, when it shows
 let ovTab = 'font';   // the text editor's open tab (Font, Style, Animation or Loop), the same for every text
 function renderOvList(){
@@ -5624,7 +5645,7 @@ $('ovpreset').addEventListener('change', e => { const p = OV_PRESETS[e.target.va
       ov.size = Math.round(Math.max(OV_MIN, Math.min(OV_MAX, drag.s0*f))*100)/100; redraw(); return; }
     if(drag.shot){ kfSet({ x: drag.ux + x - drag.x0, y: drag.uy + y - drag.y0 }); return; }
     const ov = overlays[drag.i]; if(!ov) return;
-    ov.x = Math.max(0.05, Math.min(0.95, x - drag.dx)); ov.y = Math.max(0.05, Math.min(0.95, y - drag.dy)); redraw(); }, SIG);
+    ov.x = Math.max(0.05, Math.min(0.95, x - drag.dx)); ov.y = Math.max(0.05, Math.min(0.95, y - drag.dy)); ov.placed = true; redraw(); }, SIG);
   const end = ev => { fingers.delete(ev.pointerId); if(drag && (drag.pinch || drag.handle)){ if(drag.pinch && fingers.size) return; renderOvList(); } drag = null; };
   out.addEventListener('pointerup', end, SIG); out.addEventListener('pointercancel', end, SIG); }
 
