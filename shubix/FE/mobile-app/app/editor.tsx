@@ -169,7 +169,7 @@ function parseBulkVisualCommand(prompt: string): BulkVisualCommand | null {
 /** The editor (the website's studio editor on a phone): the Reel saved on this phone, played shot by shot with its
  * song; the timeline and the tools change it, every change is kept (undo), and it saves itself as it goes. */
 export default function EditorScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>(), words = useStudioText(), look = useColors(), locked = useLocked();
+  const { id, made } = useLocalSearchParams<{ id: string; made?: string }>(), words = useStudioText(), look = useColors(), locked = useLocked();
   const [p, setP] = useState<ReelProject | null>(null), [selected, setSelected] = useState(0), [playing, setPlaying] = useState(false), [local, setLocal] = useState(0);
   const [mixing, setMixing] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
@@ -947,7 +947,9 @@ export default function EditorScreen() {
   const aspect = ASPECT[p.settings?.aspect ?? "9:16"];
   return (
     <View className="flex-1 bg-background">
-      <StudioBar title={p.title} onBack={back} onExport={() => { if (!videoEngine.ready) return tell(words("Export needs the Shubix app (Expo Go has no video engine). Your Reel is saved on this phone."), "info"); setPlaying(false); setExporting(p); }} />
+      <StudioBar title={p.title} onBack={back} onExport={() => { if (!videoEngine.ready) return tell(words("Export needs the Shubix app (Expo Go has no video engine). Your Reel is saved on this phone."), "info"); setPlaying(false); setExporting(p);
+        // the creator's changes after Shubix made it (this editor's Undo steps): Admin's "Kept as Shubix made it"
+        void mobileApi.reelLog(p.id, { step: "export", msg: `Export started · ${p.clips.length} shots`, data: { changes: undo.current.length, opened: made !== "1", platform: "android", shots: p.clips.length } }).catch(() => undefined); }} />
       <ScrollView className="flex-1" contentContainerClassName="pb-3" showsVerticalScrollIndicator={false}>
         <Preview n={selected} of={clips.length} playing={playing} aspect={aspect} error={playError} onToggle={() => setPlaying(!playing)}><ReelPlayer p={p} layers={studioLayers} now={now} playing={playing} sound={sound} onTime={seek} onEnd={() => { setPlaying(false); seek(0); }} onError={setPlayError} /></Preview>
         <View className="mx-4 mt-2">

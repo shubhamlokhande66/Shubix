@@ -4,6 +4,7 @@ import { mainDb, ObjectId, OWNER, parseId } from "./core/db";
 import { NotFoundError } from "./core/errors";
 import { adjustCredits, enabled as billingOn, wallet } from "./credits";
 import { getPricing } from "./workspace";
+import { keptAsMade } from "./studio/accuracy";
 import { adminEmails } from "./core/admin";
 
 /** The admin dashboard (Administration → Overview / Users): who is on the site right now, who signed up, who paid what,
@@ -76,6 +77,7 @@ export async function overview() {
     payments.find({ status: "paid" }).sort({ paidAt: -1 }).limit(6).toArray(),
     getPricing(),
   ]);
+  const kept = await keptAsMade(30).catch(() => null);   // the logs unreadable: the dashboard still opens
   const names = new Map(pricing.plans.map((p) => [p.id, p.name])), payEmails = await emailsById(recentPayments.map((p) => String(p.userId ?? "")));
   const signups = new Map(signupDays.map((d) => [String(d._id), Number(d.n)])), revenue = new Map(revenueMonths.map((m) => [String(m._id), Number(m.total) / 100]));
   const p = paid[0] ?? { total: 0, count: 0, buyers: [], month: 0 };
@@ -87,6 +89,8 @@ export async function overview() {
     revenue: { total: Number(p.total) / 100, month: Number(p.month) / 100, payments: Number(p.count) },
     credits: { left: Number(walletSum[0]?.credits ?? 0), used30d: -Number(used[0]?.credits ?? 0) },
     reels: { total: savedReels },
+    // Shubix's edit, exported as it was made (the creator changed nothing), last 30 days: studio/accuracy.ts
+    keptAsMade: kept,
     plans: plans.map((x) => ({ plan: String(x._id ?? "free"), name: names.get(String(x._id)) ?? String(x._id ?? "Free"), users: Number(x.n) })).sort((a, b) => b.users - a.users),
     signupsByDay: Array.from({ length: 14 }, (_, i) => { const d = dayKey(new Date(twoWeeks.getTime() + i * DAY)); return { day: d, users: signups.get(d) ?? 0 }; }),
     revenueByMonth: Array.from({ length: 12 }, (_, i) => { const m = monthKey(new Date(yearAgo.getFullYear(), yearAgo.getMonth() + i, 1)); return { month: m, rupees: revenue.get(m) ?? 0 }; }),

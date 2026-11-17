@@ -4413,6 +4413,10 @@ function histTick(){
   hist.u.push(hist.cur); if(hist.u.length > HIST_MAX) hist.u.shift(); hist.r = []; hist.cur = now; hist.cand = ''; histUI();
 }
 // a made (or re-made) edit: Undo / Redo hold only what the creator changes from here (the timeline, the tools, the texts)
+// How many changes the creator made after Shubix made the Reel (Undo starts at Shubix's plan: its steps, and a change not
+// yet a step), for the export's log line: Admin → Overview's "Kept as Shubix made it" (BE/api server/studio/accuracy.ts).
+// A Reel reopened from My Reels is not Shubix's edit of today: `opened`, left out of that number.
+function creatorChanges(){ let n = hist.u.length; try{ if(hist.cur && histSnap().sig !== hist.cur.sig) n++; }catch(e){} return { changes: n, opened: !!keepSaved, platform: 'web' }; }
 function histRebase(){ hist.u = []; hist.r = []; hist.cur = edit.length || overlays.length ? histSnap() : null; hist.cand = ''; histUI(); }
 function histGo(back){
   if(exporting || recording || restoring) return;
@@ -7037,7 +7041,7 @@ async function runExport(toCloud){
   if(root.classList.contains('aineed') && !$('aiaskgo').dataset.change){ $('aiaskgo').click(); return; }   // no Reel without its Shubix AI (the creator closed the question)
   exportBusy = true; $('saverow').hidden = true; lastVideo = null;
   const expT0 = performance.now();
-  try{ const L = shotsForLog(); rlog('export', 'Export started · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat', { ...L, clips: sources.length, toCloud: !!toCloud, mem: navigator.deviceMemory || null, ua: navigator.userAgent.slice(0, 200) }); }catch(e){}
+  try{ const L = shotsForLog(); rlog('export', 'Export started · ' + L.shots + ' shots · ' + L.onBeat + '/' + L.cuts + ' cuts on the beat', { ...L, ...creatorChanges(), clips: sources.length, toCloud: !!toCloud, mem: navigator.deviceMemory || null, ua: navigator.userAgent.slice(0, 200) }); }catch(e){}
   tasks.start('export', 'export', 'Exporting your Reel', 'Getting ready');   // in view at once, whatever comes next
   askToNotify();   // once: a notification when the Reel is ready while the person is in another app
   const awake = holdAwake();

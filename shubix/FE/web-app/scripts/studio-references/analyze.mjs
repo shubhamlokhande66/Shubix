@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { songAnalysis } from '../../../../Shared/core/src/engine/studio/song.ts';
 
 const SR = 22050, SCENE = Number(process.env.SCENE || 0.32), LEAD = 1 / 30;
@@ -74,7 +75,8 @@ export function summarize(reels) {
   for (const [k, f] of Object.entries(STYLE)) { const a = reels.map(f).filter((v) => v != null && Number.isFinite(v)); out[k] = { median: r3(q(a, 0.5)), low: r3(q(a, 0.25)), high: r3(q(a, 0.75)) }; }
   return out;
 }
-if (import.meta.url === `file://${process.argv[1]}`) {
+// run as a script (not imported by compare.mjs): pathToFileURL, as a Windows path is file:///C:/… and not file://C:\…
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [outFile, ...files] = process.argv.slice(2);
   if (!outFile || !files.length) { console.error('node analyze.mjs out.json video.mp4 ...'); process.exit(1); }
   const reels = [];

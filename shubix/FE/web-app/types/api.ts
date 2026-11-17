@@ -373,6 +373,8 @@ export interface AdminOverview {
   revenue: { total: number; month: number; payments: number };
   credits: { left: number; used30d: number };
   reels: { total: number }; // saved to My Reels
+  /** Reels exported in 30 days exactly as Shubix made them (BE/api/src/server/studio/accuracy.ts); null: logs unreadable */
+  keptAsMade?: { exported: number; kept: number; share: number | null; medianChanges: number | null; web: number; android: number } | null;
   plans: { plan: string; name: string; users: number }[];
   signupsByDay: { day: string; users: number }[];
   revenueByMonth: { month: string; rupees: number }[];
