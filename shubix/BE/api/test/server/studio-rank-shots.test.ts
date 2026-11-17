@@ -60,6 +60,13 @@ describe("answers are bounded", () => {
     expect(r.summary.length).toBeLessThanOrEqual(140);
     expect(r.mood).toBe("energetic");
   });
+  it("says when a frame has a green or blue screen behind the subject", () => {
+    const r = parseClip("a", [{ t: 0 }, { t: 1 }, { t: 2 }], { frames: [
+      { frame: "f1", score: 0.5, roles: [], issues: [], person: true, backdrop: "Green screen", note: "" },
+      { frame: "f2", score: 0.5, roles: [], issues: [], person: true, backdrop: "blue", note: "" },
+      { frame: "f3", score: 0.5, roles: [], issues: [], person: true, backdrop: "grass", note: "" }], summary: "", mood: "" });
+    expect(r.frames.map((f) => f.backdrop)).toEqual(["green", "blue", null]);
+  });
   it("refuses an answer that scores no frame", () => {
     expect(() => parseClip("a", frames, { frames: [{ frame: "x", score: 1, roles: [], issues: [], subject: null, person: false, note: "" }], summary: "", mood: "" })).toThrow();
   });

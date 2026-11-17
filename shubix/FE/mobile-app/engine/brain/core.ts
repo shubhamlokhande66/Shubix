@@ -7,6 +7,7 @@ import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { autoHook } from '@mobile/core/lib/text-templates';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate } from '@mobile/video-engine';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, pictureOf, fitLook } from '@mobile/video-engine';
 
 export function createCoreBrain(ES, EH){
 // the preview: the video's own frame times (requestVideoFrameCallback), the picture mixed toward the next one
@@ -1078,6 +1079,13 @@ function applyVo(){   // (the name stays: everything that changes the sound call
     } }
   ES.buf = mix; ES.normGain = 1;
 }
+// the director's look for a shot fitted to its picture (Shared/video-engine lookFit.ts), as the website's dirLookFit
+function dirLookFit(e, look){
+  if(!look.mk && !look.ck && !look.cv && !look.hsl && !(look.bri < 0)) return look;
+  const s = ES.sources[e.src]; if(!s) return look;
+  const need = e.sp.pos(e.end - e.start)*e.scaleR, st = s.samples && s.samples.length ? windowStats(s, e.in, e.in + need) : null;
+  return fitLook(look, pictureOf(ES.aiOn && s.ai ? s.ai.frames : null, s.faces, e.in, e.in + need, st ? st.b : undefined, EH.out.height/EH.out.width)).look;
+}
 function autoTools(){
   if(ES.kind === 'talk' || !ES.edit.length) return;
   ES.edit.forEach(EH.csAutoClear);
@@ -1095,7 +1103,8 @@ function autoTools(){
     else if(ES.au.clip === 'voices' && EH.speechShare(s, e.in, e.in + need) > 0.4) EH.csAutoSet(e, { vol: 0.9 });
   });
   // the AI director's own look for a shot (mirror, black and white, a framed photo, a fade...), like a person's clip tools
-  ES.edit.forEach((e, i) => { const d = EH.dirSlotOf(i); if(d && d.cs) EH.csAutoSet(e, EH.AI_CS(d.cs)); });
+  // fitted to the shot's picture first (lookFit.ts): a mask round the subject, a key only on a green screen, gentle curves
+  ES.edit.forEach((e, i) => { const d = EH.dirSlotOf(i); if(d && d.cs) EH.csAutoSet(e, dirLookFit(e, EH.AI_CS(d.cs))); });
   const cand = ES.edit.map((e, i) => ({ e, i })).filter(({ e, i }) => i > 2 && e.start > 3 && (e.type === 'drop' || e.type === 'hit') && e.end - e.start >= 0.5 && e.end - e.start <= 1.6
     && (e.mot || 0) > 0.45 && e.sp.label === '1×' && e.efx !== 'snap' && !(e.cs && 'rev' in e.cs));
   if(cand.length) EH.csAutoSet(cand[Math.floor(cand.length/2)].e, { rev: true });
