@@ -691,7 +691,7 @@ function scoreWindow(i, src, a, need, gmax){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1);
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1, storyRole(i));
   // the shot's part in the story (shared/video-engine story.ts): wide and steady to set the scene, people close up at
   // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
   if(ES.mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
@@ -853,7 +853,7 @@ function repick(i, avoidCurrent, onlySrc){
       let sc = e.type==='drop' ? 2.2*m : e.type==='hit' ? 1.5*m : e.type==='break' ? 1-Math.abs(m-0.18)*2 : 1-Math.abs(m-0.55);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1);
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1, storyRole(i));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });

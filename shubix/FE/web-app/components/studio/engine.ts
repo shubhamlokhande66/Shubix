@@ -2410,13 +2410,19 @@ function aiAt(src, a, b){
   const roles = {}; for(const r in R) roles[r] = R[r]/w;
   return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '' };
 }
-// how much the AI's opinion adds to a candidate moment for this slot
-function aiBonus(ai, slot, last){
-  const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : last ? 'ending' : null;
+// how much the AI's opinion adds to a candidate moment for this slot. Measured on 17 human-edited Reels (the rebuild
+// test, FE/mobile-app/tests/human-rebuild.test.ts, with GPT-5.6 Luna's answers): editors open on a reveal (the subject
+// coming into view) far more than on action, ease in with reveals and details, and end on a shot the AI scores low (a
+// logo, a fade, a quiet look). So the hook goes by reveal, the setup by reveal and detail, and the last shot by the AI's
+// "ending" alone, without its quality score (with it, editors' last shots ranked 26%; without, 41%).
+function aiBonus(ai, slot, last, part){
+  const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : null;
   let fit = 0;
-  if(role) fit = 0.6*(ai.roles[role] || 0) + (role==='hook' ? 0.3*(ai.roles.action || 0) : 0);
-  if(last && role!=='ending') fit += 0.3*(ai.roles.ending || 0);
-  return ai.conf * (2.2*(ai.score - 0.5) + fit);
+  if(slot==='hook') fit = 0.6*(ai.roles.reveal || 0) + 0.3*(ai.roles.hook || 0);
+  else if(last) fit = 0.6*(ai.roles.ending || 0);
+  else if(part==='setup') fit = 0.4*((ai.roles.reveal || 0) + (ai.roles.detail || 0));
+  else if(role) fit = 0.6*(ai.roles[role] || 0);
+  return ai.conf * ((last ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
@@ -3739,7 +3745,7 @@ function scoreWindow(i, src, a, need, gmax){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1);
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1, storyRole(i));
   // the shot's part in the story (Shared/video-engine story.ts): wide and steady to set the scene, people close up at
   // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
   if(mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
@@ -4277,7 +4283,7 @@ function repick(i, avoidCurrent, onlySrc){
       let sc = e.type==='drop' ? 2.2*m : e.type==='hit' ? 1.5*m : e.type==='break' ? 1-Math.abs(m-0.18)*2 : 1-Math.abs(m-0.55);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1);
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });
