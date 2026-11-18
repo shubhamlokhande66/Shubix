@@ -320,7 +320,8 @@ export function initFlow(root: HTMLElement): () => void {
     const at = phone() ? mob : cur;
     steps(at);
     // clips: Videos / Photos
-    root.querySelectorAll<HTMLButtonElement>("#ftabs button").forEach((b) => setAttr(b, "aria-pressed", String((b.dataset.ft === "photos") === has("photomode"))));
+    const ftNow = has("photomode") ? "photos" : has("mixmode") ? "mix" : "videos";
+    root.querySelectorAll<HTMLButtonElement>("#ftabs button").forEach((b) => setAttr(b, "aria-pressed", String(b.dataset.ft === ftNow)));
     setFlag($("ftabs"), "hidden", has("talkmode") || kind === "copy");
     // Next on the clips step, Generate in the preview card: on once the clips are in and the Reel is made, with nothing
     // still being read or decided (a spinner in the button meanwhile)
@@ -543,8 +544,13 @@ export function initFlow(root: HTMLElement): () => void {
     }
     const ft = t.closest<HTMLButtonElement>("#ftabs button");
     if (ft) {
-      const photos = ft.dataset.ft === "photos";
+      // Videos, Photos (a Photo Reel) or Mix (a Beat Reel with both): each takes only what it says (steps.ts)
+      const want = ft.dataset.ft, photos = want === "photos";
       if (photos !== has("photomode")) (photos ? $("photokind") : root.querySelector<HTMLButtonElement>('#kind [data-k="music"]'))?.click();
+      root.classList.toggle("mixmode", want === "mix");
+      const vf = $<HTMLInputElement>("vfile"), IMG = "image/*,.jpg,.jpeg,.png,.webp,.heic", VID = "video/*,.mov,.mp4,.m4v,.3gp";
+      vf.accept = want === "mix" ? `${VID},${IMG}` : photos ? IMG : VID;
+      setTimeout(() => { (live() as { wantPaint?: () => void } | undefined)?.wantPaint?.(); apply(); });
       return;
     }
   }, { capture: true, ...sig });

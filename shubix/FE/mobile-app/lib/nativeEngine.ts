@@ -292,7 +292,7 @@ export function createNativeEngine(io: NativeIo) {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
-    advice: (a) => clipAdvice(host.ES.song?.r ? host.ES.plan : null, !!a.photo),
+    advice: (a) => clipAdvice(host.ES.song?.r ? host.ES.plan : null, a.pick === "photos" || a.pick === "mix" ? a.pick : a.photo === true ? "photos" : "videos"),
     cancel: () => { stops++; return { ok: true }; },
     clips,
     choose: async (a) => {

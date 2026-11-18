@@ -388,16 +388,16 @@ function buildPlan(){
   });
   basePlan = outL; plan = adaptPlan(); clipWantPaint();
 }
-// the clips step says how many clips (and photos) this song asks for: read from the plan before any clip is in (the clips
+// the clips step says how many clips (videos, photos, or either under Mix) this song asks for: read from the plan before any clip is in (the clips
 // change the plan's pace a little, the advice stays), for this song's part and length (video-engine clipAdvice.ts)
 let wantMemo = { key: '', song: '', a: null };
 function clipWantPaint(){
   const el = $('clipwant'); if(!el) return;
-  const photo = root.classList.contains('photomode'), talking = kind === 'talk' || root.classList.contains('talkmode');
+  const pick = root.classList.contains('photomode') ? 'photos' : root.classList.contains('mixmode') ? 'mix' : 'videos', talking = kind === 'talk' || root.classList.contains('talkmode');
   const have = sources.filter(s => !s.removed).length;
-  const key = !talking && song && buf && plan.length ? [mode, photo ? 'p' : 'v', secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
+  const key = !talking && song && buf && plan.length ? [mode, pick, secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
   if(!key) wantMemo = { key: '', song: '', a: null };
-  else if(key !== wantMemo.key && (!have || !wantMemo.a || wantMemo.song !== song.key)) wantMemo = { key, song: song.key, a: clipAdvice(plan, photo) };
+  else if(key !== wantMemo.key && (!have || !wantMemo.a || wantMemo.song !== song.key || wantMemo.key.split('|')[1] !== pick)) wantMemo = { key, song: song.key, a: clipAdvice(plan, pick) };
   const line = adviceLine(wantMemo.a, have);
   if(el.textContent !== line) el.textContent = line;
   el.hidden = !line;
@@ -8921,6 +8921,7 @@ root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ re
   snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry,
   // Make Reel waits for Shubix's plan and nothing is running (flow.ts): its next step is tried again, then it is said (Retry / Close)
   aiKick: () => { if(sources.some(s => !s.ai && !s.aiFailed && !s.removed)) aiRun(); else if(buf && sources.length && !recording){ paceMaybe(); directorMaybe(); } }, aiStalled: () => { dirFailedKey = dirKey(); aiDown(); }, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
+  wantPaint: clipWantPaint,
   get work(){ return { song: !!song || kind === 'talk', songReady: kind === 'talk' || !!(song && buf && song.r), beats: beatsBusy, pending, clips: sources.length, shots: edit.length, ai: aiBusy, dir: dirBusy, pace: paceBusy,
     // Shubix AI is on for this Reel and its plan has not come yet (nor failed): the Reel is not final (the phone app waits)
     aiWait: !!(aiOn && !planIsFinal() && !aiHeldBack() && aiReelOk() && aiGaveUp !== reelIdNow() && edit.length && !(director && director.key === dirKey() && !director.interim) && dirFailedKey !== dirKey()), speech: speechBusy, exporting: exportBusy, exportP }; }, shotExtract: () => edit.length && extractAudio(edit[segAt(pos)].src), get au(){ return au; }, setAudioMix: async patch => { auSet(patch); clipMixKey = ''; await ensureMix(); return au; }, remix: remixNow, ensureMix, get canUndo(){ return hist.u.length > 0; }, get layers(){ return layers; }, get lmedia(){ return lmedia; }, layerAdd, subjectPop, layerSelect: lySelect, layerSet: lySet, layerDelete: lyDelete, get ttsVoices(){ return tts ? tts.voices : []; }, addTts: addTtsAtPlayhead, clearTts, setCaptions, setCaptionStyle, get canRedo(){ return hist.r.length > 0; },
