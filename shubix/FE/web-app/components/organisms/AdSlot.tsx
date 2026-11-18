@@ -9,8 +9,10 @@ import { useSafeQuery as useQuery } from "@/lib/useSafeQuery";
 
 declare global { interface Window { adsbygoogle?: unknown[] } }
 
+export const ADSENSE_PLACES: readonly AdPlace[] = ["home", "homeEnd"];
+
 /** An ad for the plans that show ads (Free by default) in one of the spots (Home twice, My Reels, Invite & earn, My account;
- * each can be switched off in Admin → Settings → Ads): Google AdSense when the administrator set it up, otherwise the
+ * each can be switched off in Admin → Settings → Ads): Google AdSense on Home when the administrator set it up, otherwise the
  * app's own card (Shubix AI on Editor and Pro, or invite friends). Nothing for paid plans, or where credits are not
  * counted (a private studio). The Android / iPhone app never shows AdSense (its policy does not allow it inside an app): the
  * app's own card instead (the app's ads are its own, mobile ads). */
@@ -20,7 +22,9 @@ export function AdSlot({ place }: { place: AdPlace }) {
   const ads = useQuery({ queryKey: ["ads"], queryFn: api.ads, staleTime: 300_000 });
   const c = credits.data, plan = c && c.enabled ? plans.data?.plans.find((p) => p.id === c.plan) : undefined;
   const show = !!c && c.enabled && !!plan && (plan.ads ?? plan.id === "free") && ads.data?.enabled !== false && ads.data?.places?.[place] !== false;
-  const adsense = show && !!ads.data?.client && !!ads.data?.slot;
+  // AdSense only where the page has content of its own (Home): Google does not allow its ads on app screens (My Reels,
+  // Invite & earn, My account), which get the app's own card instead
+  const adsense = show && ADSENSE_PLACES.includes(place) && !!ads.data?.client && !!ads.data?.slot;
   const ins = useRef<HTMLModElement>(null);
   useEffect(() => {
     if (!adsense || !ads.data) return;
