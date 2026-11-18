@@ -14,7 +14,7 @@ import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './d
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
-import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree } from '@shubix/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, clipAdvice, adviceLine } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -386,9 +386,24 @@ function buildPlan(){
     segs.push([a, s.end]);
     segs.forEach(([x,y],k)=>outL.push({start:x, end:y, type: k ? 'cut' : s.type, fx: k ? 'Hard cut' : s.fx}));
   });
-  basePlan = outL; plan = adaptPlan();
+  basePlan = outL; plan = adaptPlan(); clipWantPaint();
+}
+// the clips step says how many clips (and photos) this song asks for: read from the plan before any clip is in (the clips
+// change the plan's pace a little, the advice stays), for this song's part and length (video-engine clipAdvice.ts)
+let wantMemo = { key: '', song: '', a: null };
+function clipWantPaint(){
+  const el = $('clipwant'); if(!el) return;
+  const photo = root.classList.contains('photomode'), talking = kind === 'talk' || root.classList.contains('talkmode');
+  const have = sources.filter(s => !s.removed).length;
+  const key = !talking && song && buf && plan.length ? [mode, photo ? 'p' : 'v', secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
+  if(!key) wantMemo = { key: '', song: '', a: null };
+  else if(key !== wantMemo.key && (!have || !wantMemo.a || wantMemo.song !== song.key)) wantMemo = { key, song: song.key, a: clipAdvice(plan, photo) };
+  const line = adviceLine(wantMemo.a, have);
+  if(el.textContent !== line) el.textContent = line;
+  el.hidden = !line;
 }
 function drawMusic(){
+  clipWantPaint();
   const cv = $('mwave'), dpr = window.devicePixelRatio||1, w = Math.max(1,Math.round(cv.clientWidth*dpr)), h = Math.round(84*dpr);
   cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.clearRect(0,0,w,h);
   const M = song ? song.mono : mono; if(!M) return;
@@ -1243,7 +1258,7 @@ function reorderClips(){
   addEventListener('touchend', end, SIG); addEventListener('touchcancel', end, SIG);
   box.addEventListener('contextmenu', e => { if(drag) e.preventDefault(); }, SIG);
 }
-function updateQ(){ const off = clipsStopped;   // cancelled in the popup: nothing is being read, whatever is still finishing
+function updateQ(){ clipWantPaint(); const off = clipsStopped;   // cancelled in the popup: nothing is being read, whatever is still finishing
   $('qinfo').textContent = pending && !off ? pending + ' clips left to read…' : ''; $('s2st').textContent = off ? 'Clips not analysed yet' : pending ? 'Reading clips…' : (sources.length + ' clips ready'); }
 function setClipStatus(src, status, detail){
   if(!src || !src.card) return;

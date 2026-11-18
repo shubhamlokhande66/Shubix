@@ -1428,6 +1428,8 @@
 /* Clip order (Mix all clips / In my order): not for a talking Reel (its clips are always in order). In my order: each
    clip card shows its place */
 .brs .seqrow{align-items:center;gap:8px}
+/* the clips the song asks for ("For this song: 8 clips + 2 photos", engine.ts clipWantPaint) */
+.brs .clipwant{margin:0;font-weight:600;color:var(--foreground)}
 .brs.talkmode #seqrow{display:none}
 .brs.seqon .clips{counter-reset:clipn}
 .brs.seqon .clips .clip{position:relative}

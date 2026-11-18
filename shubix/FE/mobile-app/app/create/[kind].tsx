@@ -11,7 +11,7 @@ import { PlanGate } from "../../components/templates/PlanGate";
 import type { ProjectClip } from "@mobile/validations";
 import { engine, engineOn, keepAwake, onClipRead, shotsOf, type SongAnalysis } from "../../lib/engine";
 import { errorMessage } from "@mobile/api-client";
-import { shortReelFor, SHORT_REEL, oneTakeLength, type ShortReel } from "@mobile/video-engine";
+import { adviceLine, shortReelFor, SHORT_REEL, oneTakeLength, type ClipAdvice, type ShortReel } from "@mobile/video-engine";
 import { forgetKeptFiles, keepPickedAssets, keepPickedFile, removeProject, saveProject, takeNewReelSeed } from "../../lib/projects";
 import { notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
@@ -308,6 +308,16 @@ function CreateFlowScreen() {
 
   // Shubix AI's price and the balance, on the screen before Make Reel (pressing it is the answer)
   useEffect(() => { if (step === "clips" && focused && engineOn) void engine.aiPrice().then(setPrice).catch(() => setPrice(null)); }, [step, focused]); // eslint-disable-line react-hooks/exhaustive-deps
+  // how many clips (and photos) the song asks for, said on the clips step: read before the clips are in, then kept (the clips
+  // change the plan's pace a little); a new song asks again (video-engine clipAdvice.ts, as the website)
+  const [advice, setAdvice] = useState<ClipAdvice | null>(null);
+  useEffect(() => {
+    if (!music || kind === "talking" || !engineOn) { setAdvice(null); return; }
+    if (media.length && advice) return;
+    let on = true; void engine.advice(photos).then((a) => { if (on) setAdvice(a); }).catch(() => undefined);
+    return () => { on = false; };
+  }, [music, start, length, photos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const adviceText = adviceLine(advice, media.length);
   const priceLine = !price?.on ? "" : !price.cost ? words("Shubix AI: included in your plan") : price.balance === null ? words("Shubix AI: {n} credits", { n: price.cost }) : words("Shubix AI: {n} credits · You have {b}", { n: price.cost, b: price.balance });
   // what the person chose stays: an app that was closed can go on from it
   useEffect(() => {
@@ -361,6 +371,7 @@ function CreateFlowScreen() {
         {step === "choose" && <FlowChoose kind={kind} song={song} recent={recent} busy={reading} onPick={() => void choose(() => pickSong())} onPickReel={() => void choose(() => pickSong("video"))} onRecent={(s) => void pickRecent(s)} onForget={(uri) => { setRecent((r) => r.filter((s) => s.uri !== uri)); if (song?.uri === uri) setSong(null); }} />}
         {step === "adjust" && song && <FlowAdjust song={song} music={music} length={length} start={start} onLength={(n) => void lengthTo(n)} onStart={(t) => void partFrom(t)} locked={settings.fit !== false && kind !== "talking"} />}
         {step === "clips" && song && needSong && <View className="mb-3"><Button variant="secondary" icon="music" title={words("Adjust music")} onPress={() => go("adjust")} /></View>}
+        {step === "clips" && !!adviceText && <Text accessibilityRole="text" className="mb-2 text-[14px] font-semibold text-foreground">{adviceText}</Text>}
         {step === "clips" && <FlowClips kind={kind} photos={photos} onTab={(p) => { setPhotos(p); setMedia([]); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
       </ScrollView>
       {button && <View className="gap-1.5 px-4 pt-2" style={{ paddingBottom: Math.max(12, insets.bottom + 4) }}>{step === "clips" && !!priceLine && <Text className="text-center text-[12.5px] font-semibold text-muted">{priceLine}</Text>}<Button full size="xl" title={button.title} iconAfter={button.on ? "arrow" : undefined} disabled={!button.on} onPress={() => { Keyboard.dismiss(); button.press(); }} /></View>}

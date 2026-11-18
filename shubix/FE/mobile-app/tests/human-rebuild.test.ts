@@ -1,8 +1,10 @@
+// @ts-nocheck: a benchmark run by hand on a computer (Node's files, ffmpeg, a plain .mjs script), skipped without HUMAN_REELS;
+// the app's typecheck has no Node types
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-// @ts-expect-error a plain .mjs script (the reference Reels' measure: the song's beats and drops, the picture's cuts)
+// a plain .mjs script (the reference Reels' measure: the song's beats and drops, the picture's cuts)
 import { measure } from "../../web-app/scripts/studio-references/analyze.mjs";
 import { createEditBrain } from "../engine/brain/edit";
 import { storyRoles, type StoryRole } from "@mobile/video-engine";

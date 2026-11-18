@@ -1,7 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
-import { checkExportedReel, type ExportExpect } from "@mobile/video-engine";
+import { checkExportedReel, clipAdvice, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -292,6 +292,7 @@ export function createNativeEngine(io: NativeIo) {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
+    advice: (a) => clipAdvice(host.ES.song?.r ? host.ES.plan : null, !!a.photo),
     cancel: () => { stops++; return { ok: true }; },
     clips,
     choose: async (a) => {
