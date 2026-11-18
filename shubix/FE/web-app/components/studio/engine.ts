@@ -2593,7 +2593,9 @@ function chatTime(at){
 }
 function chatClearWait(){ $('chatlog').querySelectorAll('.wait').forEach(x => x.remove()); }
 function chatAnswer(text){ chatClearWait(); chatSay('ai', text); chatMsgs.push({ at: Date.now(), who: 'ai', text }); chatWaiting = false; $('chatsend').disabled = false; }
-let chatPending = null, chatReported = '';
+// chatLocalDone: the last chatSend changed the Reel itself, with no Shubix AI plan (slow motion, a change to every clip, the
+// Free plan's style words); chatApp then hands the phone the new shots, or its "Done ✓" changed nothing there
+let chatPending = null, chatReported = '', chatLocalDone = false;
 // the AI's plan arrived: asked for in the chat, it is shown as a report and waits for Generate; otherwise it is used
 function dirArrived(key, d){
   if(chatWaiting){ const ask = chatMsgs.filter(m => m.who === 'me').slice(-1)[0]?.text || ''; chatPending = { key, slots: d.slots, story: d.story || '', texts: d.texts, actions: d.actions, cost: chatCost, intent: parseDirectorVisualIntent(ask) }; chatProposal(chatPending); return false; }
@@ -2787,6 +2789,7 @@ function chatReportAuto(){
 // makes is applied at once (the phone has no Generate button of the studio's), and the answer goes back to the phone
 async function chatApp(text){
   const before = chatMsgs.length;
+  chatLocalDone = false;
   await chatSend(text);
   const t0 = Date.now(), wait = ms => new Promise(r => setTimeout(r, ms));
   while((chatWaiting || dirBusy || paceBusy) && Date.now() - t0 < 240000) await wait(300);
@@ -2798,6 +2801,7 @@ async function chatApp(text){
     applied = !!edit.length; if(applied){ chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Done ✓' }); saveNow(); }
   }
   const said = chatMsgs.slice(before).filter(m => m.who === 'ai').map(m => m.text).filter(t => t !== 'Done ✓').pop() || '';
+  if(!applied && chatLocalDone && edit.length) return { applied: true, answer: said || 'Done ✓' };
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (director && director.story ? ': ' + director.story : '.') : said || (chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
 }
 function chatDone(story){ if(!chatWaiting) return; chatAnswer('Done ✓ Your Reel is edited the way you asked' + (story ? ': ' + story : '.') + ' Tell me if you want anything else.'); }
@@ -2875,7 +2879,7 @@ async function chatSend(text){
     if(fitOn() && full && have >= 5){ const target = reach(have) < full * 0.95 ? reach(have) : 0; if(target ? Math.abs((sec.len || full) - target) >= 1 : sec.len) await setLen(target); }
     const now2 = reelLen(), n = edit.filter(e => e.sp === SPEED.slow).length;
     if(slow && !n){ slowAll = false; chatAnswer('I could not put this Reel in slow motion.'); return; }
-    saveNow();
+    saveNow(); chatLocalDone = true;
     chatAnswer(slow ? 'Done ✓ ' + (n === edit.length ? 'Every shot' : n + ' of ' + edit.length + ' shots') + ' now plays in slow motion (half speed). ' + (now2 > was + 0.5 ? 'Your Reel is now ' + fmtS(now2) + ' (it was ' + fmtS(was) + ').' : 'Your Reel stays ' + fmtS(now2) + ' long: ' + (fitOn() ? 'your song part is not longer.' : 'that is the length you chose. Tick "Make the Reel as long as my clips" for a longer Reel.')) + ' No Shubix AI credits used. Say "normal speed" to take it back.'
       : 'Done ✓ Your Reel plays at normal speed again' + (now2 < was - 0.5 ? ' and is ' + fmtS(now2) + ' long.' : '.') + ' No Shubix AI credits used.');
     return;
@@ -2893,6 +2897,7 @@ async function chatSend(text){
       hist.u.push(before); if(hist.u.length > HIST_MAX) hist.u.shift();
       hist.r = []; hist.cur = histSnap(); hist.cand = ''; histUI();
       saveNow();
+      chatLocalDone = true;
       chatAnswer('Done ✓ Applied ' + applied + ' to the current Reel on this device. No Shubix AI credits used.');
     }catch(error){
       chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error));
@@ -2902,7 +2907,7 @@ async function chatSend(text){
   // no Shubix AI in this plan (Free): the phone's own changes, and the way to get the AI
   if(!aiOn){
     const did = chatLocal(text);
-    if(ready && did.length) makeEdit();
+    if(ready && did.length){ makeEdit(); chatLocalDone = true; }
     chatAnswer((did.length ? 'Done ✓ I used ' + did.join(' and ') + ' (on your phone). ' : '') + (aiLocked && IN_APP ? 'Changing the Reel from your words is Shubix AI, which is not on your plan.' : aiLocked ? 'Changing the Reel from your words is Shubix AI: it is in the Editor and Pro plans.' : 'Shubix AI is off for this Reel, so I can only switch the style (say "faster" or "calmer") or make a new version.'));
     if(aiLocked && !IN_APP) $('chatlog').appendChild(pricingLink('See Editor & Pro'));
     return;

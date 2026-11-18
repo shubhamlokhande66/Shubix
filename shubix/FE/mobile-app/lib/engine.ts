@@ -209,7 +209,9 @@ export const engine = {
    * the Reel's clips come back (null: the studio does not hold this Reel) */
   chat: async (p: ReelProject, text: string) => {
     if (!engine.holds(p.id)) return null;
-    await engine.edit(p).catch(() => false);
+    // the studio's copy could not be brought to this Reel (a change it cannot hold): its answer would put older shots
+    // back over the ones on the phone, so the phone's own changes answer instead
+    if (!(await engine.edit(p).catch(() => false))) return null;
     const r = await call<{ answer: string; applied: boolean; state?: { edit?: EngineShot[]; overlays?: ReelProject["overlays"] } }>("chat", { text });
     return { answer: r.answer, clips: r.applied && Array.isArray(r.state?.edit) ? shotsOf(r.state!.edit!, sources) : null, overlays: textsOf(r.state?.overlays) };
   },
