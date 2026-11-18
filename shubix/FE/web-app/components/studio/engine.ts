@@ -2011,6 +2011,7 @@ $('aspect').addEventListener('click', e=>{ const b=e.target.closest('button'); i
 
 /* =============== STEP 3: AUTO-EDIT =============== */
 let edit = [], seed = 1, autoHookUsed = false, autoHookOff = false;   // autoFinish: the opening words
+let hookNone = false; try{ hookNone = localStorage.getItem('shubix.openText') === 'none'; }catch(e){}   // Opening text: None
 function rng(){ seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; }
 // Window statistics in O(log n): prefix sums over the clip's samples and faces (built once per clip). The edit scores
 // thousands of windows, so a plain loop here froze the page on long videos.
@@ -3460,7 +3461,7 @@ function hearSong(){
   const body = songSample(song.mono, song.buf.sampleRate, secStart || 0, 30); if(!body) return Promise.resolve();
   songHeard = key; songFeel = null;
   return songHearing = (async () => {
-    const tm = timeoutSignal(20000);
+    const tm = timeoutSignal(45000);   // the AI hears the song with retries on the server (20 s was cut short on QA, 2026-11-18)
     try{ const r = await apiFetch('/api/studio/song?reel=' + encodeURIComponent(reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
       if(!r.ok) throw new Error('song ' + r.status); const feel = await r.json(); if(songHeard === key) songFeel = feel; }
     catch(e){ if(songHeard === key) songHeard = ''; console.warn('The song was not heard:', e); }
@@ -3958,6 +3959,18 @@ function setSeq(on, remake = true){
   wipNote();
   if(remake && buf && sources.length && kind !== 'talk' && !restoring) makeEdit();
 }
+// Opening text: Auto (Shubix's opening words when the Reel has no text) or None; remembered for the next Reels
+function setHookPref(none){
+  hookNone = none; try{ localStorage.setItem('shubix.openText', none ? 'none' : 'auto'); }catch(e){}
+  [...$('htext').children].forEach(x => x.setAttribute('aria-pressed', String((x.dataset.h === 'none') === none)));
+  if(!edit.length || kind === 'talk') return;
+  // None: the words go also from an opened Reel (autoFinish leaves a saved Reel as it was); Auto: given again if it has no text
+  if(none){ if(overlays.some(o => o.auto)){ overlays = overlays.filter(o => !o.auto); ovSel = -1; renderOvList(); } }
+  else { autoHookOff = false; autoHookUsed = false; autoFinish(); }
+  if(!playing) redrawFrame(); saveNow();
+}
+[...$('htext').children].forEach(x => x.setAttribute('aria-pressed', String((x.dataset.h === 'none') === hookNone)));
+$('htext').addEventListener('click', e => { const b = e.target.closest('button'); if(b && !recording) setHookPref(b.dataset.h === 'none'); }, SIG);
 $('seq').addEventListener('click', e => { const b = e.target.closest('button'); if(b && !recording) remakeOk(); if(b && !recording) setSeq(b.dataset.q === 'order'); }, SIG);
 // The Reel is made again (a clip finished reading, the AI's plan came, a setting changed). If it was playing, it goes on
 // playing from the same moment instead of stopping: Play pressed while clips are read keeps playing when they are done.
@@ -4001,13 +4014,15 @@ function makeEdit(){
 }
 // No text of the creator's and no Shubix AI plan with texts: the Reel still opens on words (autoHook, the first two
 // seconds that stop the scroll), as an editor's does. A text like any other; once the creator deletes it, it is not
-// given again. When Shubix AI's plan brings its own texts, these go.
+// given again. When Shubix AI's plan brings its own texts, these go. Opening text: None (the creator's choice, kept for
+// their next Reels): never given, and one already on the Reel goes.
 function autoFinish(){
   if(kind === 'talk' || mode === 'copy' || !edit.length || keepSaved) return;
   // a subject pop before the hero shot, when one has a clear subject (an old one of Shubix's went with the old edit)
   if(layers.some(L => L.pop === 'auto') && popKey !== String(editGen)){ layers = layers.filter(L => L.pop !== 'auto'); lyUI(); }
   if(!popOff && subjectMask && !layers.some(isPop) && reelLen() >= 8) subjectPop(true);
   const had = overlays.some(o => o.auto);
+  if(hookNone){ if(had){ overlays = overlays.filter(o => !o.auto); ovSel = -1; renderOvList(); } return; }
   if(autoHookUsed && !had) autoHookOff = true;
   if(had && director && !director.interim && overlays.some(o => !o.auto)){ overlays = overlays.filter(o => !o.auto); renderOvList(); return; }
   if(autoHookOff || had || overlays.some(o => !o.brand) || hookText || (director && !director.interim)) return;
@@ -4025,7 +4040,7 @@ function makeEditNow(){
   if(story && storyEdit()) return;
   if(!buf || !sources.length) return;
   const keptUk = ukKeep();
-  stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode, downbeats)))), pc.secs); } styleEdit(); const dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
+  stopAll(); plan = adaptPlan(); { const pc = paceNow(); if(pc) plan = beatEdit(endWell(noFlashCuts(withPartCuts(repace(basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), beats, buf.duration, mode, downbeats)))), pc.secs); } styleEdit(); let dirInfo = applyDirectorStyle(); if(!dirInfo) finishTransitions(); tastePlan();
   // no shot in the plan (the song's beats not known yet): no Reel yet. It threw here, and with it the song's reading
   // stopped: "Reading the song…" for ever (2026-11-12)
   if(!plan || !plan.length) return;
@@ -4070,6 +4085,9 @@ function makeEditNow(){
       plan[plan.length-1] = { ...plan[plan.length-1], start: t };
     }
   }
+  // In my order moved the cuts to fit the clips (above), after Shubix AI's plan was looked for: the plan was asked for
+  // these moved cuts, so it is applied now (it was dropped, and the paid plan's transitions, effects and keyframes with it)
+  if(!dirInfo && aiTrusted()){ dirInfo = applyDirectorStyle(); if(slowAll) plan.forEach(s => { s.sp = SPEED.slow; }); }
   const order = plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[plan[a].type]) - (b===0?-1:pr[plan[b].type]) || a-b; });
   const res = new Array(plan.length); dupCount = 0;
   // Shared Director pass: rank the source clips once, then use its explainable quality ranking

@@ -212,7 +212,7 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
 export type ClipOrder = "mix" | "order";
 export type Aspect = "9:16" | "4:5" | "1:1" | "16:9" | "3:4" | "4:3" | "2:1" | "2.35:1";
 export type TalkPace = "tight" | "natural" | "relaxed" | "off";
-export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; under: string; fit: boolean };
+export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; under: string; fit: boolean; text?: "auto" | "none" };
 
 /** Add Your Clips: Videos / Photos, the tap-to-add area, the clips as squares (their length, remove), the clip order,
  * a Talking Reel's pauses and music, and the format. */
@@ -285,6 +285,11 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
       ) : (
         <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks the best moments from all your clips" : "Your clips play one after another, as you added them")}>
           <Segmented small value={settings.order} onChange={(order) => onSettings({ order })} options={[{ value: "mix" as ClipOrder, label: words("Mix all clips") }, { value: "order" as ClipOrder, label: words("In my order") }]} />
+        </Row>
+      )}
+      {kind !== "talking" && (
+        <Row label={words("Opening text")} note={words(settings.text === "none" ? "No text unless you add one" : "A short line in the first 2 seconds when your Reel has no text")}>
+          <Segmented small value={settings.text ?? "auto"} onChange={(text) => onSettings({ text })} options={[{ value: "auto" as const, label: words("Auto") }, { value: "none" as const, label: words("None") }]} />
         </Row>
       )}
       {kind !== "talking" && (

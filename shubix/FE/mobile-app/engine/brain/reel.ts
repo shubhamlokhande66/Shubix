@@ -79,7 +79,7 @@ function makeEditNow(){
   if(ES.story && EH.storyEdit()) return;
   if(!ES.buf || !ES.sources.length) return;
   const keptUk = EH.ukKeep();
-  EH.stopAll(); ES.plan = EH.adaptPlan(); { const pc = EH.paceNow(); if(pc) ES.plan = EH.beatEdit(endWell(EH.noFlashCuts(EH.withPartCuts(repace(ES.basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), ES.beats, ES.buf.duration, ES.mode, ES.downbeats || [])))), pc.secs); } EH.styleEdit(); const dirInfo = EH.applyDirectorStyle(); if(!dirInfo) EH.finishTransitions(); EH.tastePlan();
+  EH.stopAll(); ES.plan = EH.adaptPlan(); { const pc = EH.paceNow(); if(pc) ES.plan = EH.beatEdit(endWell(EH.noFlashCuts(EH.withPartCuts(repace(ES.basePlan, pc.secs.map(x => ({ ...x, every: x.every === 'hits' ? 1 : x.every === 'flicker' ? 8 : x.every })), ES.beats, ES.buf.duration, ES.mode, ES.downbeats || [])))), pc.secs); } EH.styleEdit(); let dirInfo = EH.applyDirectorStyle(); if(!dirInfo) EH.finishTransitions(); EH.tastePlan();
   if(ES.slowAll && ES.plan) ES.plan.forEach(s => { s.sp = EH.SPEED.slow; });   // slow motion asked for in words: every shot, whatever the style gave it
   const gmax = Math.max(1e-6, ...ES.sources.flatMap(s=>s.samples.map(x=>x.m)));
   const used = ES.sources.map(()=>[]);
@@ -121,6 +121,9 @@ function makeEditNow(){
       ES.plan[ES.plan.length-1] = { ...ES.plan[ES.plan.length-1], start: t };
     }
   }
+  // In my order moved the cuts to fit the clips (above), after Shubix AI's plan was looked for: the plan was asked for
+  // these moved cuts, so it is applied now (it was dropped, and the paid plan's transitions, effects and keyframes with it)
+  if(!dirInfo && EH.aiTrusted()){ dirInfo = EH.applyDirectorStyle(); if(ES.slowAll) ES.plan.forEach(s => { s.sp = EH.SPEED.slow; }); }
   const order = ES.plan.map((s,i)=>i).sort((a,b)=>{ const pr={drop:0,hit:1,break:2,cut:3}; return (a===0?-1:pr[ES.plan[a].type]) - (b===0?-1:pr[ES.plan[b].type]) || a-b; });
   const res = new Array(ES.plan.length); ES.dupCount = 0;
   // Shared Director pass: rank the source clips once, then use its explainable quality ranking

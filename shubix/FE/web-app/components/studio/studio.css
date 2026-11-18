@@ -1443,7 +1443,7 @@
 .brs .cbox b{font-size:11px;font-weight:600;opacity:.75}
 .brs .cbox.ok{border-style:solid;border-color:var(--accent);color:var(--foreground)}
 .brs .cbox.short{border-style:solid;border-color:var(--warning);color:var(--warning)}
-.brs.talkmode #seqrow{display:none}
+.brs.talkmode #seqrow,.brs.talkmode #hookrow{display:none}
 .brs.seqon .clips{counter-reset:clipn}
 .brs.seqon .clips .clip{position:relative}
 .brs.seqon .clips .clip::before{counter-increment:clipn;content:counter(clipn);position:absolute;top:6px;left:6px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:11px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font:600 12px var(--body)}

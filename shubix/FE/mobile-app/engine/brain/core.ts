@@ -348,13 +348,15 @@ function makeEdit(){
 }
 // No text of the creator's and no Shubix AI plan with texts: the Reel still opens on words (autoHook, the first two
 // seconds that stop the scroll), as an editor's does. A text like any other; once the creator deletes it, it is not
-// given again. When Shubix AI's plan brings its own texts, these go.
+// given again. When Shubix AI's plan brings its own texts, these go. Opening text: None (the creator's choice, kept for
+// their next Reels): never given, and one already on the Reel goes.
 function autoFinish(){
   if(ES.kind === 'talk' || ES.mode === 'copy' || !ES.edit.length || ES.keepSaved) return;
   // a subject pop before the hero shot, when one has a clear subject (an old one of Shubix's went with the old edit)
   if(ES.layers.some(L => L.pop === 'auto') && ES.popKey !== String(ES.editGen)){ ES.layers = ES.layers.filter(L => L.pop !== 'auto'); EH.lyUI(); }
   if(!ES.popOff && EH.popMask && !ES.layers.some(isPop) && (ES.buf ? ES.buf.duration : 0) >= 8) subjectPop(true);
   const had = ES.overlays.some(o => o.auto);
+  if(ES.hookNone){ if(had){ ES.overlays = ES.overlays.filter(o => !o.auto); ES.ovSel = -1; EH.renderOvList(); } return; }
   if(ES.autoHookUsed && !had) ES.autoHookOff = true;
   if(had && ES.director && !ES.director.interim && ES.overlays.some(o => !o.auto)){ ES.overlays = ES.overlays.filter(o => !o.auto); EH.renderOvList(); return; }
   if(ES.autoHookOff || had || ES.overlays.some(o => !o.brand) || ES.hookText || (ES.director && !ES.director.interim)) return;

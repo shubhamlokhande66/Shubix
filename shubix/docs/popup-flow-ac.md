@@ -17,14 +17,14 @@ Status of each rule on each platform is at the end of this file.
 
 ## 2. Song and clips
 
-- Adding a song or clips opens the popup with Stop and a small red Discard Reel (changed 2026-11-09: Cancel / Cancel Reel confused people).
+- Adding a song or clips reads them behind the page, with no popup: the page says what is left ("6 clips left to read…"). From Generate the popup shows that work, with Stop and a small red Discard Reel (changed 2026-11-09: Cancel / Cancel Reel confused people; no popup before Generate since 2026-11-06, `studio-tasks-quiet.test.ts`).
 - Cancel deletes nothing. The song and every video stay, and the video count never grows.
 - After Stop, Next asks "Analysis not done" with Continue, Not now and Discard Reel.
 - Proceed goes on from where it stopped: clips already read are not read again, and an analysed song only finishes its beat check.
 - Discard Reel asks once, removes everything for this Reel and goes Home.
 - Make Reel runs in one popup (2026-11-09): no Shubix AI question or offer in between; the price is on the screen and pressing Make Reel is the answer. Every API call is tried 3 times, then a Retry / Close popup; Shubix AI never falls back to the phone's edit.
 - After Make Reel the popup stays open until the editor opens, also between two steps (2026-11-10). If Shubix AI stops moving, it is tried again after 10 s and a Retry / Close popup shows after 30 s. Retry continues to the editor without another click.
-- Next and Generate are off without a song and clips, and while either is being worked on. After a Cancel, Generate says "Continue analysis" and only offers Proceed.
+- Next and Generate are off without a song and clips. Pressed while they are still being read, Generate opens the popup with what is left and makes the Reel by itself when they are done. After a Cancel, Generate says "Continue analysis" and only offers Proceed.
 - Each clip plays in its own card, muted and looping, once the work is over. There is no play button. Only cards on the screen play, and only a few at once, so a phone does not run out of memory. Cards do not play during Shubix AI or in the editor.
 - A clip is moved by dragging it: at once with a mouse, after holding it a moment with a finger. A quick swipe still scrolls. There is no arrow and no Reverse order. The Reel and the numbers follow the new order.
 
@@ -55,6 +55,8 @@ While the inputs differ from the Reel that was made, the changes are not saved o
 
 - A change inside the editor is asked straight away. On the website it continues there. On Android, Make new Reel opens the Create screen with the old and new clips, and the old Reel stays in My Reels.
 - Once a Reel has its plan, Shubix AI plans again only through Make new Reel or the chat, which have their own charges. A style change does not re-run it.
+- Clip order (Mix all clips / In my order) is a style change: the Reel is made again at once with the plan it has, with no popup and no credits. "Order" in the table above is moving a clip.
+- After Back, step 3 says "Press Generate Reel to open it again." ("Opening your Reel…" only while it is really opening).
 - The server decides too: other footage or another plan under the same Reel id, after its plan was delivered, takes a new charge. A retry of the same work does not.
 
 ## 5. Steps and Back
@@ -76,6 +78,7 @@ While the inputs differ from the Reel that was made, the changes are not saved o
 - The time and the play button never touch. Under 340 px wide, Mix Video shows only its icon and full view stays visible.
 - A tool's sheet has no empty space under Done.
 - Buttons show the hand cursor, and a button that is off shows not-allowed and takes no click.
+- Opening text (next to Clip order, website and Android): Auto gives a Reel with no text a short opening line (autoHook); None gives none and takes one already there away. The choice is kept for the next Reels.
 
 ## Status
 

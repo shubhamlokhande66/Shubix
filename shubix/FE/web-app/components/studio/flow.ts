@@ -155,7 +155,7 @@ export function initFlow(root: HTMLElement): () => void {
     if (b && b.getAttribute("aria-pressed") !== "true") b.click();
   };
   // Shubix Edit's lines say what Shubix has done: nothing until Generate has started it
-  let aiGo = false;
+  let aiGo = false, openWait = false;   // openWait: Generate pressed, the Reel opens when Shubix is done (not after Back)
   // Make Reel's steps running now (the popup stays open while they do), and the wait for the song and clips
   let going = 0, waitIdle = 0, waitTimer: ReturnType<typeof setInterval> | undefined;
   ac.signal.addEventListener("abort", () => clearInterval(waitTimer));
@@ -216,12 +216,12 @@ export function initFlow(root: HTMLElement): () => void {
     if (sectionsOn && !desk && revealed) for (const id of ["s1", "s2"]) { setClass($(id), "folded", true); setAttr($(id).querySelector(".sh")!, "aria-expanded", "false"); }
     sectionsOn = desk;
     if (desk && openSec === null) { openSec = songDone ? "s2" : "s1"; songWas = songDone; }
-    if (desk && songDone && !songWas) { clearTimeout(songTimer); songTimer = setTimeout(() => { if (songDoneNow() && !songWas) { songWas = true; toClips(); } }, 700); }   // (the beat check may start right after the song)
-    if (!songDone) { clearTimeout(songTimer); if (desk && songWas) openSec = "s1"; songWas = false; }
+    if (desk && songDone && !songWas && !songTimer) songTimer = setTimeout(() => { songTimer = undefined; if (songDoneNow() && !songWas) { songWas = true; toClips(); } }, 700);   // (the beat check may start right after the song; a timer already waiting is not started again: apply() runs many times a second while clips are read, and each one put it off, so Music never folded: QA 2026-11-18)
+    if (!songDone) { clearTimeout(songTimer); songTimer = undefined; if (desk && songWas) openSec = "s1"; songWas = false; }
     // the clips done: they minimise too and the page goes on to Shubix Edit
     const clipsDone = clipsDoneNow();
-    if (desk && clipsDone && !clipsWas) { clearTimeout(clipsTimer); clipsTimer = setTimeout(() => { if (clipsDoneNow() && !clipsWas) { clipsWas = true; if (songDoneNow()) openSection("fai"); else apply(); } }, 700); }
-    if (!clipsDone) { clearTimeout(clipsTimer); if (desk && clipsWas) openSec = songDone ? "s2" : "s1"; clipsWas = false; }
+    if (desk && clipsDone && !clipsWas && !clipsTimer) { clipsTimer = setTimeout(() => { clipsTimer = undefined; if (clipsDoneNow() && !clipsWas) { clipsWas = true; if (songDoneNow()) openSection("fai"); else apply(); } }, 700); }
+    if (!clipsDone) { clearTimeout(clipsTimer); clipsTimer = undefined; if (desk && clipsWas) openSec = songDone ? "s2" : "s1"; clipsWas = false; }
     for (const id of ["s1", "s2"] as const) {
       const s = $(id), head = s.querySelector<HTMLElement>(".sh")!, num = head.firstElementChild as HTMLElement, fold = desk && openSec !== id, tick = desk && done(id) && (id !== "s1" || songDone);
       setClass(s, "ffold", fold);
@@ -362,7 +362,7 @@ export function initFlow(root: HTMLElement): () => void {
     setText($("fgent"), checking ? "Getting ready…" : paused ? "Continue analysis" : wantGen ? "Making your Reel…" : ready || goes ? "Generate Reel" : stopped().song ? missing || "Generate Reel" : (!songOk() && !songComing && (kind !== "copy" || has("pickown")) ? "Add your song first" : missing || "Generate Reel"));
     const aiDone = aiGo && made() && !aiWorking();
     setText($("freadyt"), aiDone ? "Your Reel is ready!" : aiGo ? "Shubix is editing your Reel…" : "Ready to create your Reel!");
-    setText($("freadys"), aiDone ? "Opening your Reel…" : aiGo ? "Every clip, every beat: it takes a moment." : ready ? "Press Generate Reel to start Shubix." : copy && !refName && !songOk() ? "Pick the Reel to match, then add your clips."
+    setText($("freadys"), aiDone ? (openWait ? "Opening your Reel…" : "Press Generate Reel to open it again.") : aiGo ? "Every clip, every beat: it takes a moment." : ready ? "Press Generate Reel to start Shubix." : copy && !refName && !songOk() ? "Pick the Reel to match, then add your clips."
       : copy && songComing ? "Taking the song from the Reel you match…" : !songOk() ? "Add your song, then your clips." : "Add your clips, then press Generate.");
     setText($("fprevnote"), aiDone ? "Your Reel is ready" : "Your Reel appears here");
     setClass($("fprevbox"), "ready", made());
@@ -514,7 +514,7 @@ export function initFlow(root: HTMLElement): () => void {
         const r = change === "same" ? "skip" : st?.upsell ? await st.upsell() : "skip";   // (nothing changed: the same Reel, no new credits)
         if (r === "close" && change === "new") return st?.keepOldReel?.();
         if (r === "upgrade" || r === "close") return;
-        aiGo = true; apply();
+        aiGo = true; openWait = true; apply();
         // the popup shows the work on every screen size; the Reel opens once Shubix is done
         await new Promise((ok) => setTimeout(ok, 400)); apply();
         // the AI's Reel, not the first one: as long as work goes on (50 clips may take minutes; a fixed 3 minutes closed the
@@ -528,6 +528,7 @@ export function initFlow(root: HTMLElement): () => void {
           if (still === 33) live()?.aiKick?.();
           if (still >= 100) { live()?.aiStalled?.(); break; }
         }
+        openWait = false;
         if (run === aiRunNo && !made()) { aiGo = false; wantGen = false; apply(); return; }   // no Reel after all that: never a dead Make Reel
         if (run === aiRunNo && made() && phone()) {   // phones: the finished Reel, with its timeline (also when it is opened again after Back)
           revealed = true; mark(true); apply(); window.scrollTo({ top: 0 });

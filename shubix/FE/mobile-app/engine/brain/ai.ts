@@ -113,7 +113,7 @@ async function hearSong(){
   const key = ES.song.key + '|' + Math.round(ES.secStart || 0); if(ES.songHeard === key) return;
   const body = songSample(ES.song.mono, ES.song.buf.sampleRate, ES.secStart || 0, 30); if(!body) return;
   ES.songHeard = key; ES.songFeel = null;
-  const tm = timeoutSignal(20000);
+  const tm = timeoutSignal(45000);   // the AI hears the song with retries on the server (20 s was cut short on QA, 2026-11-18)
   try{ const r = await EH.apiFetch('/api/studio/song?reel=' + encodeURIComponent(EH.reelIdNow()), { method:'POST', headers:{'Content-Type':'audio/wav'}, body, signal: tm.signal });
     if(!r.ok) throw new Error('song ' + r.status); ES.songFeel = await r.json(); }
   catch(e){ ES.songHeard = ''; console.warn('The song was not heard:', e); }

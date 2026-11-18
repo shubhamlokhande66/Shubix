@@ -53,6 +53,9 @@ function CreateFlowScreen() {
   const keptBy = useRef(new Map<string, { clip: ProjectClip; name: string }>()), copied = useRef(0), lengthLater = useRef(0), badTold = useRef(0), longOk = useRef("");
   const lengthChosen = useRef(false), onScreen = useRef(true), DRAFT = `create-draft-${kind}`;
   useEffect(() => { void recentSongs().then(setRecent); }, []);
+  // Opening text (Auto / None): the creator's choice is kept for their next Reels
+  useEffect(() => { void AsyncStorage.getItem("shubix.openText").then((t) => { if (t === "none" || t === "auto") setSettings((o) => ({ ...o, text: t })); }).catch(() => undefined); }, []);
+  useEffect(() => { if (settings.text) void AsyncStorage.setItem("shubix.openText", settings.text).catch(() => undefined); }, [settings.text]);
 
   const go = (to: FlowStep | undefined) => to && setStep(to);
   const styleNow = () => styleFromWords(wish);
@@ -149,7 +152,7 @@ function CreateFlowScreen() {
           if (length) await engine.choose({ length });
           if (start) await engine.part(start);
         }
-        await engine.choose({ order: settings.order, aspect: settings.aspect, mode: styleNow() || "auto" });
+        await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: styleNow() || "auto" });
         // each clip numbered once (phones name many clips the same): the ones the studio kept, in its order
         const names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
         if (!making.current) return false;
@@ -285,7 +288,7 @@ function CreateFlowScreen() {
       if (engineOn && now.current.music) {
         stage.current = "ai"; making.current = true; setStep("analyse"); tasks.unlock();   // (the cards stop playing: another step)
         tasks.start("flow", "ai", words("Shubix at work"), words("Getting your Reel ready…"));
-        await engine.choose({ order: settings.order, aspect: settings.aspect, mode: style || "auto" }); // (the length and the part are set already)
+        await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: style || "auto" }); // (the length and the part are set already)
         if (again) await engine.newReel();
         const went = await engine.ai();
         if (!went && again && making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return void keepOldReel(old); }   // Shubix AI's question closed: the old Reel

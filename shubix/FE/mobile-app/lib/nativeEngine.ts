@@ -300,6 +300,7 @@ export function createNativeEngine(io: NativeIo) {
     choose: async (a) => {
       if (a.mode) { host.ES.mode = String(a.mode); }
       if (a.order) host.ES.seqOn = a.order === "order";
+      if (a.text) { host.ES.hookNone = a.text === "none"; if (a.text === "auto") { host.ES.autoHookOff = false; host.ES.autoHookUsed = false; } else host.ES.overlays = host.ES.overlays.filter((o: { auto?: boolean }) => !o.auto); }   // Opening text (engine.ts setHookPref alike)
       if (a.aspect) host.ES.aspect = String(a.aspect);
       if (a.length !== undefined) { host.sec.len = Number(a.length); host.sec.auto = true; await host.useSection(); }
       else host.makeReel();
