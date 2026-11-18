@@ -2262,7 +2262,15 @@ const aiBal = () => aiInfo && typeof aiInfo.balance === 'number' ? aiInfo.balanc
 const creditWord = n => n + ' credit' + (n === 1 ? '' : 's');
 const aiFreeChats = () => (aiInfo && Number(aiInfo.freeChats)) || 0;
 const chatSync = res => { if(res && res.chat && typeof res.chat.used === 'number') chatUsed = res.chat.used; };
+// one question at a time: a second one asked while one is open waits for it (it took the first one's buttons, and the
+// first never answered: Generate's popup stood on "Getting your Reel ready" for ever, QA 2026-11-18)
+let askChain = Promise.resolve();
 function askCredits(o){
+  const p = askChain.then(() => askOne(o));
+  askChain = p.then(() => {}, () => {});
+  return p;
+}
+function askOne(o){
   return new Promise(res => {
     $('cconft').textContent = o.title; $('cconfp').textContent = o.text;
     const L = $('cconfl'); L.hidden = !(o.list && o.list.length); L.textContent = ''; (o.list || []).forEach(t => { const li = document.createElement('li'); li.textContent = t; L.appendChild(li); });
