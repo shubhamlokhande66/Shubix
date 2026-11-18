@@ -808,3 +808,26 @@ tests/human-rebuild.test.ts` in `FE/mobile-app` (ffmpeg on the PATH; `<reel>.fac
 `<reel>.ai.json`, rankShots' answer for each shot in order, adds the Shubix AI column). Tests:
 `FE/web-app/tests/video-engine-story.test.ts`, `FE/mobile-app/tests/story-teaser.test.ts`, and the engine parity test
 (`teaserOpen`, `storyRole`).
+
+## Shot flow and reactions: closer to how an editor lays shots out
+
+**Shot flow** (`Shared/video-engine/src/shotFlow.ts`). An editor puts next to each other shots that look alike. In the
+17 human-edited Reels of the rebuild test (194 cuts), the editor's next shot is closer to the shot before it than the
+other shots left are, in movement, warmth (red against blue) and light: with those three (what the phone reads of every
+frame) the editor's own next shot ranks at 64% among the shots left (50% = a random pick), above 50% in 16 of the 17
+Reels. Colour histograms gave 66%, but the phone keeps no histogram per frame. "Close-ups after wide shots" (the face
+growing shot to shot) gave 50% and is not used. Shots of one clip look alike as well, so the rule that two parts of one
+clip are not put in a row stays first; among the other clips, the one that flows on from the shots already placed beside
+it gets a bonus (`flowBonus`, `FLOW.weight` points for a gap of 1). In "Mix all clips" only (both engines, `flowNear` and
+`flowLook`, in the engine-parity test); "In my order" keeps the person's order and a copied Reel its reference.
+
+**Reactions** (`Shared/video-engine/src/reactions.ts`). A cheer, a laugh, clapping or a shout in a clip's own sound marks
+the moment people cared about (the cake cut, the goal, the entry). The clip's sound is read once with the clip (website:
+with its scan, kept with it; app: `readClip` in `lib/nativeEngine.ts`), its loudness every 50 ms against its own usual
+loudness: a part far louder (2.2 times the median), 0.3 s to 8 s long, rising out of a quieter part, is a reaction; a clip
+loud all through (music, traffic) has none. A moment showing it, or the half second that led to it, gets up to
+`REACT.weight` points (about a face's). The song stays the Reel's sound. Not measured yet: the human Reels of the rebuild
+test carry only their song; the real test (raw clips with their sound and the editor's Reel) is needed.
+
+Benchmark: `FE/mobile-app/tests/human-rebuild.test.ts` reports "flow off / flow on" (the shot before is the human's own,
+and no longer a choice). Tests: `FE/web-app/tests/video-engine-flow-reactions.test.ts`.

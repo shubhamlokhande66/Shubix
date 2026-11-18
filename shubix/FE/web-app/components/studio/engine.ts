@@ -14,7 +14,7 @@ import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './d
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
-import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -437,6 +437,15 @@ function drawMusic(){
 // QuickTime .MOV (every iPhone video) that way, and decoding a big video whole would need it all in memory: for those,
 // mediabunny copies just the sound track, unchanged, into a small .m4a that the browser's decoder accepts (fast, any
 // browser); a sound that cannot be copied so is decoded with WebCodecs where the browser has an audio decoder.
+// a clip's reactions (cheers, laughs: video-engine reactions.ts) from its own sound; none when it has no sound or this
+// browser cannot read it (an iPhone does not decode a very big clip's sound: memory)
+async function clipReacts(src){
+  try{ if(!src.file || (IOS && src.file.size > 200e6)) return [];
+    const b = await decodeAnyAudio(src.file), x = new Float32Array(b.length);
+    for(let c = 0; c < b.numberOfChannels; c++){ const d = b.getChannelData(c); for(let i = 0; i < x.length; i++) x[i] += d[i]/b.numberOfChannels; }
+    return reactionsOf(x, b.sampleRate);
+  }catch(e){ return []; }
+}
 async function decodeAnyAudio(file){
   const c = getCtx(), isVideo = /^video\//.test(file.type) || /\.(mov|mp4|m4v|3gp|webm|mkv)$/i.test(file.name);
   let firstErr = null;
@@ -1327,7 +1336,7 @@ async function scanGet(src){
   const k = await keptGet('a:', src.file);
   return k && k.v === SCAN_V && Math.abs((k.dur || 0) - src.dur) < 0.05 && k.w === src.w && Array.isArray(k.samples) && k.samples.length ? k : null;
 }
-function scanPut(src){ keptPut('a:', src.file, { v: SCAN_V, dur: src.dur, w: src.w, scenes: src.scenes || [], samples: src.samples, faces: src.faces || [], faceHow: src.faceHow }); }
+function scanPut(src){ keptPut('a:', src.file, { v: SCAN_V, dur: src.dur, w: src.w, scenes: src.scenes || [], samples: src.samples, faces: src.faces || [], faceHow: src.faceHow, reacts: src.reacts }); }
 // results whose file is gone (its Reels deleted from Fast Studio or from My Reels): removed now and then
 async function keptSweep(){
   try{ const keys = await idb('files', 'readonly', s => s.getAllKeys()) || [], have = new Set(keys.filter(k => String(k).startsWith('f:')).map(k => String(k).slice(2)));
@@ -1622,6 +1631,10 @@ async function readVideo(src){
         if(IOS || x >= 1) window.__shubixReport && window.__shubixReport('perf', 'Clip reading ' + b + '× its length · ' + (IOS ? 'iPhone' : 'other') + ' · ' + (src.readMs.how || '?') + (src.h > 1920 || src.w > 1920 ? ' · 4K' : ''),
           JSON.stringify({ ms, dur: +src.dur.toFixed(1), w: src.w, h: src.h, type: src.file && src.file.type, mb: Math.round((src.file && src.file.size || 0) / 1e6), parts: src.readMs })); }catch(e){}
     }
+    if(src.removed) return;
+    // reactions in the clip's own sound (video-engine reactions.ts): read once, kept with the clip's scan
+    if(kept && Array.isArray(kept.reacts)) src.reacts = kept.reacts;
+    else { src.reacts = await clipReacts(src); if(!src.removed) scanPut(src); }
     if(src.removed) return;
     const nf = src.faces.filter(f=>f.n>0).length, shs = src.samples.map(s=>s.sh).sort((a,b)=>a-b);
     src.shMed = shs[Math.floor(shs.length/2)] || 1;
@@ -3760,7 +3773,15 @@ function storyRole(i){
   if(storyMemo.p !== plan || storyMemo.sig !== sig) storyMemo = { p: plan, sig, r: storyRoles(plan.map(s => ({ kind: s.type, start: s.start, end: s.end }))) };
   return storyMemo.r[i];
 }
-function scoreWindow(i, src, a, need, gmax){
+// shot flow (Shared/video-engine shotFlow.ts): a moment's look (movement, light, warmth), and the looks of the shots
+// already placed beside shot i, which a moment is drawn to
+function flowLook(src, a, b, st, m){ const t = toneOf(src.samples || [], a, b); return { m, b: st.b, warm: t ? t.warm : undefined }; }
+function flowNear(i, res, gmax){
+  return [i - 1, i + 1].map(j => { const r = res[j], s = plan[j], src = r && sources[r.src]; if(!src || !s || !src.samples || !src.samples.length) return null;
+    const b = r.in + s.sp.pos(s.end - s.start)*(r.scaleR || 1), st = windowStats(src, r.in, Math.max(b, r.in + 0.05));
+    return flowLook(src, r.in, b, st, st.m/gmax); });
+}
+function scoreWindow(i, src, a, need, gmax, near){
   const s = plan[i], st = windowStats(src, a, a+need), m = st.m/gmax;
   let sc;
   if(s.type==='drop') sc = 2.2*m;
@@ -3782,6 +3803,10 @@ function scoreWindow(i, src, a, need, gmax){
   const rm = mode === 'copy' && refProfile && !refProfile.learned && refProfile.moments ? refProfile.moments[s.ref ?? i] : null;
   if(rm && rm.mo !== undefined){ sc += 1.4*(1 - Math.min(1, 1.6*Math.abs(m - rm.mo))) - 0.7;
     if(rm.br !== undefined) sc += 0.5*(1 - Math.min(1, 3*Math.abs(st.b - rm.br))) - 0.25; }
+  // drawn to the look of the shots already beside it (a copied Reel follows its reference instead)
+  if(near && mode !== 'copy') sc += flowBonus(flowLook(src, a, a+need, st, m), near);
+  // a moment people reacted to in the clip's own sound: a cheer, a laugh (video-engine reactions.ts)
+  if(src.reacts && mode !== 'copy') sc += reactionBonus(src.reacts, a, a+need);
   return {sc, st, m, ai};
 }
 // the creator's keyframes stay on their shots when the edit is made again (the AI's scores or the director arriving,
@@ -4089,7 +4114,7 @@ function makeEditNow(){
   // the director's chosen moments are held for their own cuts
   const held = plan.map((s,i)=>{ const d = dirShot(i); return d ? {i, si:d.src, a:d.in, b:d.in + s.sp.pos(s.end-s.start)} : null; }).filter(Boolean);
   const pick = (i, allowNeighbour, allowOverlap, anyScene, seen, only) => {
-    const s = plan[i], len = s.end - s.start, dir = dirShot(i);
+    const s = plan[i], len = s.end - s.start, dir = dirShot(i), near = flowNear(i, res, gmax);
     let best=null, bs=-Infinity;
     sources.forEach((src,si)=>{
       if(only != null && si !== only) return;   // (a repair: a moment of this one clip)
@@ -4102,7 +4127,7 @@ function makeEditNow(){
         if(!allowOverlap && ov > 0.001) return;          // a moment of footage is used only once
         if(!allowOverlap && held.some(h=>h.i!==i && h.si===si && !res[h.i] && Math.min(h.b,a+need)-Math.max(h.a,a) > 0.001)) return;
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
-        const w = scoreWindow(i, src, a, need, gmax);
+        const w = scoreWindow(i, src, a, need, gmax, near);
         // A black part of a clip (it opens on black, a cut to black) is not footage to show: such a moment is not
         // taken while any other can be, footage shown twice included (a second of black looks broken; a moment seen
         // again does not). Not for a dark clip (night, a stage: four fifths of it or more under the limit): that is

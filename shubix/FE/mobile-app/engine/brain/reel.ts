@@ -170,7 +170,7 @@ function makeEditNow(){
   // the director's chosen moments are held for their own cuts
   const held = ES.plan.map((s,i)=>{ const d = EH.dirShot(i); return d ? {i, si:d.src, a:d.in, b:d.in + s.sp.pos(s.end-s.start)} : null; }).filter(Boolean);
   const pick = (i, allowNeighbour, allowOverlap, anyScene, seen, only) => {
-    const s = ES.plan[i], len = s.end - s.start, dir = EH.dirShot(i);
+    const s = ES.plan[i], len = s.end - s.start, dir = EH.dirShot(i), near = EH.flowNear(i, res, gmax);
     let best=null, bs=-Infinity;
     ES.sources.forEach((src,si)=>{
       if(only != null && si !== only) return;   // (a repair: a moment of this one clip)
@@ -183,7 +183,7 @@ function makeEditNow(){
         if(!allowOverlap && ov > 0.001) return;          // a moment of footage is used only once
         if(!allowOverlap && held.some(h=>h.i!==i && h.si===si && !res[h.i] && Math.min(h.b,a+need)-Math.max(h.a,a) > 0.001)) return;
         if(!anyScene && crossesScene(src, a, a+need)) return;   // a shot never runs across a cut inside the clip
-        const w = EH.scoreWindow(i, src, a, need, gmax);
+        const w = EH.scoreWindow(i, src, a, need, gmax, near);
         // A black part of a clip (it opens on black, a cut to black) is not footage to show: such a moment is not
         // taken while any other can be, footage shown twice included (a second of black looks broken; a moment seen
         // again does not). Not for a dark clip (night, a stage: four fifths of it or more under the limit): that is

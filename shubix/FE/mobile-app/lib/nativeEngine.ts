@@ -1,7 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
-import { checkExportedReel, clipAdvice, type ExportExpect } from "@mobile/video-engine";
+import { checkExportedReel, clipAdvice, reactionsOf, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -255,6 +255,8 @@ export function createNativeEngine(io: NativeIo) {
     let raw: { t: number; rects: unknown[] }[] = [];
     try { raw = lastLine(await (await io.fetch(url("faces", `${q}&w=${W}&h=${H}`), { method: "POST" })).text(), "["); } catch { /* no faces read: the Reel is still made */ }
     const src = host.addClip({ name: c.name, path, soundPath: c.path, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface" });
+    // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
+    try { const s = await readSound(c.path); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
     readBefore.set(c.name, src);
   }
   async function clips(a: Args) {

@@ -43,10 +43,29 @@ const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.lengt
 function readReel(file: string) {
   const at = process.env.CACHE ? path.join(process.env.CACHE, path.basename(file) + ".read.json") : "";
   const sp = { pos: (l: number) => l, at: () => 1 };
-  if (at && fs.existsSync(at)) { const r = JSON.parse(fs.readFileSync(at, "utf8")); r.slots.forEach((x: Record<string, unknown>) => { x.sp = sp; }); return r as ReturnType<typeof readReelNow>; }
+  const keep = (r: ReturnType<typeof readReelNow>) => { if (at) fs.writeFileSync(at, JSON.stringify({ ...r, shots: r.shots.map((x) => ({ ...x, samples: x.samples.map(({ t, m, b, sh, cx, gx, gy, sat, warm }) => ({ t, m, b, sh, cx, gx, gy, sat, warm })) })) })); };
+  if (at && fs.existsSync(at)) {
+    const r = JSON.parse(fs.readFileSync(at, "utf8")); r.slots.forEach((x: Record<string, unknown>) => { x.sp = sp; });
+    if (r.shots.length && typeof r.shots[0].samples[0]?.warm !== "number") { toneShots(file, r.shots); keep(r); }
+    return r as ReturnType<typeof readReelNow>;
+  }
   const r = readReelNow(file);
-  if (at) fs.writeFileSync(at, JSON.stringify({ ...r, shots: r.shots.map((x) => ({ ...x, samples: x.samples.map(({ t, m, b, sh, cx, gx, gy }) => ({ t, m, b, sh, cx, gx, gy })) })) }));
+  keep(r);
   return r;
+}
+/** each shot's warmth and colour (red against blue, as frameTone reads it), for a cache made before the flow: one quick
+ * pass at 16x9, the shot's mean put on all of its samples */
+function toneShots(file: string, shots: Src[]) {
+  const W = 16, H = 9, F = 5, n = W * H * 3, p = spawnSync("ffmpeg", ["-loglevel", "error", "-i", file, "-an", "-vf", `fps=${F},scale=${W}:${H}:flags=area`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 1 << 28 });
+  const frames = Math.floor(p.stdout.length / n);
+  for (const s of shots) {
+    let warm = 0, sat = 0, c = 0;
+    for (let k = Math.ceil(s.at * F); k < frames && k / F < s.at + s.dur - 0.05; k++) for (let i = 0; i < W * H; i++) {
+      const o = k * n + i * 3, r = p.stdout[o] / 255, g = p.stdout[o + 1] / 255, b = p.stdout[o + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      warm += r - b; if (mx > 0.04) sat += (mx - mn) / mx; c++;
+    }
+    s.samples.forEach((x) => { x.warm = c ? warm / c : 0; x.sat = c ? sat / c : 0; });
+  }
 }
 /** one human Reel: its shots as clips, and the slots they fill */
 function readReelNow(file: string) {
@@ -72,16 +91,18 @@ function readReelNow(file: string) {
 }
 
 /** for each slot, where the human's own shot ranks among the Reel's shots by Shubix's scorer (1 = first, 0 = last) */
-function rankAll(reel: ReturnType<typeof readReel>, story: boolean, ai = false) {
+function rankAll(reel: ReturnType<typeof readReel>, story: boolean, ai = false, flow?: "base" | "on") {
   const ES: Record<string, unknown> = { seed: 1, plan: reel.slots, sources: reel.shots, mode: story ? "auto" : "copy", aiOn: ai };
   const b = createEditBrain(ES, { SW, SH }) as any, gmax = Math.max(1e-6, ...reel.shots.flatMap((s) => s.samples.map((x) => x.m)));
+  const look = (s: Src) => ({ m: mean(s.samples.map((x) => x.m)) / gmax, b: mean(s.samples.map((x) => x.b)), warm: mean(s.samples.map((x) => x.warm ?? 0)) });
   const best = (i: number, src: Src) => {
     const need = Math.max(0.1, Math.min(reel.slots[i].end - reel.slots[i].start, src.dur - TAIL)); let sc = -Infinity;
-    for (let a = 0; a <= src.dur - need + 1e-6; a += 0.1) sc = Math.max(sc, b.scoreWindow(i, src, a, need, gmax).sc);
+    const near = flow === "on" && i > 0 ? [look(reel.shots[i - 1])] : undefined;
+    for (let a = 0; a <= src.dur - need + 1e-6; a += 0.1) sc = Math.max(sc, b.scoreWindow(i, src, a, need, gmax, near).sc);
     return sc;
   };
   return reel.slots.map((_, i) => {
-    const sc = reel.shots.map((src) => best(i, src)), mine = sc[i], others = sc.filter((_, j) => j !== i);
+    const sc = reel.shots.map((src) => best(i, src)), mine = sc[i], others = sc.filter((_, j) => j !== i && !(flow && j === i - 1));
     return others.length ? others.reduce((n, x) => n + (x < mine ? 1 : x === mine ? 0.5 : 0), 0) / others.length : 0.5;
   });
 }
@@ -99,7 +120,7 @@ describe.skipIf(!DIR)("rebuild test: Shubix's picks against human-edited Reels",
   it("measures every Reel in HUMAN_REELS", () => {
     const files = fs.readdirSync(DIR!).filter((f) => /\.(mp4|mov|webm)$/i.test(f) && (!process.env.ONLY || f === process.env.ONLY)).sort();   // ONLY=name: one Reel (a run per Reel needs less memory)
     const roles: StoryRole[] = ["hook", "setup", "build", "peak", "close"];
-    const by: Record<string, Record<string, number[]>> = { on: {}, off: {}, ai: {} }, feat: Record<string, Record<string, number[]>> = {};
+    const by: Record<string, Record<string, number[]>> = { on: {}, off: {}, ai: {}, fb: {}, fo: {} }, feat: Record<string, Record<string, number[]>> = {};
     const per: unknown[] = [];
     for (const f of files) {
       const reel = readReel(path.join(DIR!, f));
@@ -110,19 +131,25 @@ describe.skipIf(!DIR)("rebuild test: Shubix's picks against human-edited Reels",
       if (reel.slots.length < 4) { say(`${f}: ${reel.slots.length} shots, skipped`); continue; }
       const R = storyRoles(reel.slots.map((s) => ({ kind: s.type, start: s.start, end: s.end })));
       const on = rankAll(reel, true), off = rankAll(reel, false), withAi = aiSeen ? rankAll(reel, true, true) : null, L = looks(reel);
+      // shot flow (shotFlow.ts): the shot before is the human's; the human's shot here ranked without and with the flow
+      const fb = rankAll(reel, true, false, "base"), fo = rankAll(reel, true, false, "on");
       const avg = Object.fromEntries(Object.keys(L[0]).map((k) => [k, mean(L.map((x) => x[k as keyof typeof x]))]));
       R.forEach((r, i) => {
         (by.on[r] ||= []).push(on[i]); (by.off[r] ||= []).push(off[i]); if (withAi) (by.ai[r] ||= []).push(withAi[i]);
+        if (i > 0) { (by.fb[r] ||= []).push(fb[i]); (by.fo[r] ||= []).push(fo[i]); }
         for (const k of Object.keys(avg)) ((feat[r] ||= {})[k] ||= []).push(L[i][k as keyof (typeof L)[0]] - avg[k]);
       });
-      per.push({ file: f, shots: reel.slots.length, on: mean(on), off: mean(off), ai: withAi ? mean(withAi) : null, hook: on[0], close: on[on.length - 1] });
+      per.push({ file: f, shots: reel.slots.length, on: mean(on), off: mean(off), ai: withAi ? mean(withAi) : null, hook: on[0], close: on[on.length - 1], flowOff: mean(fb.slice(1)), flowOn: mean(fo.slice(1)) });
       say(`${f}: ${reel.slots.length} shots · placement ${(mean(on) * 100).toFixed(0)}% (story off ${(mean(off) * 100).toFixed(0)}%) · opening ${(on[0] * 100).toFixed(0)}% · last ${(on[on.length - 1] * 100).toFixed(0)}%`);
     }
     const pc = (a?: number[]) => (a && a.length ? `${(mean(a) * 100).toFixed(0)}%`.padStart(5) : "    -");
-    say("\npart     shots   story on   story off   Shubix AI   (50% = a random pick)");
-    for (const r of roles) say(`${r.padEnd(8)} ${String((by.on[r] || []).length).padStart(5)}   ${pc(by.on[r])}      ${pc(by.off[r])}      ${pc(by.ai[r])}`);
-    const all = (k: "on" | "off" | "ai") => roles.flatMap((r) => by[k][r] || []);
-    say(`${"all".padEnd(8)} ${String(all("on").length).padStart(5)}   ${pc(all("on"))}      ${pc(all("off"))}      ${pc(all("ai"))}`);
+    say("\npart     shots   story on   story off   Shubix AI   flow off   flow on   (50% = a random pick)");
+    for (const r of roles) say(`${r.padEnd(8)} ${String((by.on[r] || []).length).padStart(5)}   ${pc(by.on[r])}      ${pc(by.off[r])}      ${pc(by.ai[r])}      ${pc(by.fb[r])}     ${pc(by.fo[r])}`);
+    const all = (k: "on" | "off" | "ai" | "fb" | "fo") => roles.flatMap((r) => by[k][r] || []);
+    say(`${"all".padEnd(8)} ${String(all("on").length).padStart(5)}   ${pc(all("on"))}      ${pc(all("off"))}      ${pc(all("ai"))}      ${pc(all("fb"))}     ${pc(all("fo"))}`);
+    // shot flow: the shot before is the human's own (as the engine has it placed), so it is no longer a choice
+    const P = per as { flowOff: number; flowOn: number }[];
+    say(`flow: better in ${P.filter((x) => x.flowOn > x.flowOff + 1e-9).length} Reels, worse in ${P.filter((x) => x.flowOn < x.flowOff - 1e-9).length}, of ${P.length}`);
     say("\nwhat the human's shot in each part is like, against the Reel's average (+ more, - less):");
     for (const r of roles) if (feat[r]) say(`${r.padEnd(8)} ` + Object.entries(feat[r]).map(([k, v]) => `${k} ${mean(v) >= 0 ? "+" : ""}${mean(v).toFixed(3)}`).join("  "));
     if (process.env.OUT) fs.writeFileSync(process.env.OUT, JSON.stringify({ per, by, feat }, null, 1));
