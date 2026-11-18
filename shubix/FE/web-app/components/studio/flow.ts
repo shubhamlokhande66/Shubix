@@ -375,6 +375,9 @@ export function initFlow(root: HTMLElement): () => void {
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
     if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
+    // Stop pressed in the popup: the Reel is not made by itself after it (a clip removed then, the rest read, counted down
+    // and opened the popup again: QA 2026-11-18); Generate makes it
+    if (!autoOff && (stopped().song || stopped().clips)) autoStop(true);
     const autoCan = !autoOff && !autoGo && !wantGen && !checking && ready && !busy && working.size === 0 && !has("opening") && !revealed && !inEngine && !made();   // a Reel made is never made again by itself (it counted down in the editor)
     if (autoCan && !autoAt) {
       autoAt = Date.now() + AUTO_MS;
@@ -424,6 +427,9 @@ export function initFlow(root: HTMLElement): () => void {
   const back = () => {
     if (has("fpost") && root.dataset.tool && !toolMarked) return closeTool(); // Edit Options → back to the Reel
     if (has("fpost") && has("editing") && !root.dataset.tool) $("feditdone").click(); // the timeline: one Back leaves it and goes on to the clips (not first to the Reel's review)
+    // computers: the steps are the sections of one page, one open at a time; Back opens the one before (Shubix Edit, Clips,
+    // Music), and leaves only from Music. It left the studio from Clips, the song with it (QA 2026-11-18)
+    if (sectionsOn && !revealed && !has("fpost") && openSec && openSec !== "s1") return openSection(openSec === "fai" ? "s2" : "s1");
     if (depth > 0) { history.back(); return; } // the screen before, as the browser's own Back does
     // opened part way (no screen before it in this visit): the screen before takes this entry's place. A new entry here would
     // be "the screen before" for the next Back, and Back would go round between two screens
