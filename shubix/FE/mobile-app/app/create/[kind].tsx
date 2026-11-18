@@ -316,11 +316,12 @@ function CreateFlowScreen() {
   useEffect(() => { if (step === "clips" && focused && engineOn) void engine.aiPrice().then(setPrice).catch(() => setPrice(null)); }, [step, focused]); // eslint-disable-line react-hooks/exhaustive-deps
   // how many clips the song asks for (videos, photos, or either under Mix), said on the clips step: read before the clips are in, then kept (the clips
   // change the plan's pace a little); a new song asks again (video-engine clipAdvice.ts, as the website)
-  const [advice, setAdvice] = useState<ClipAdvice | null>(null);
+  const [advice, setAdvice] = useState<ClipAdvice | null>(null), adviceFor = useRef<SongAnalysis | null>(null);   // the song it was for
   useEffect(() => {
     if (!music || kind === "talking" || !engineOn) { setAdvice(null); return; }
-    if (media.length && advice) return;
-    let on = true; void engine.advice(pick).then((a) => { if (on) setAdvice(a); }).catch(() => undefined);
+    // (clips in: kept for the same song; another song asks again, or "5 clips" of the first song stayed: QA 2026-11-18)
+    if (media.length && advice && adviceFor.current === music) return;
+    let on = true; void engine.advice(pick).then((a) => { if (on) { adviceFor.current = music; setAdvice(a); } }).catch(() => undefined);
     return () => { on = false; };
   }, [music, start, length, pick]); // eslint-disable-line react-hooks/exhaustive-deps
   const adviceText = adviceLine(advice, media.length);

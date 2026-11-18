@@ -386,16 +386,18 @@ function buildPlan(){
     segs.push([a, s.end]);
     segs.forEach(([x,y],k)=>outL.push({start:x, end:y, type: k ? 'cut' : s.type, fx: k ? 'Hard cut' : s.fx}));
   });
-  basePlan = outL; plan = adaptPlan(); clipWantPaint();
+  basePlan = outL; planSong = song ? song.key : ''; plan = adaptPlan(); clipWantPaint();
 }
 // the clips step says how many clips (videos, photos, or either under Mix) this song asks for: read from the plan before any clip is in (the clips
 // change the plan's pace a little, the advice stays), for this song's part and length (video-engine clipAdvice.ts)
-let wantMemo = { key: '', song: '', a: null };
+// planSong: the song the plan was made for. A second song (Back, another song) was painted with the first one's plan
+// and kept it ("5 clips" stayed: QA 2026-11-18); the advice waits for its own plan
+let wantMemo = { key: '', song: '', a: null }, planSong = '';
 function clipWantPaint(){
   const el = $('clipwant'); if(!el) return;
   const pick = root.classList.contains('photomode') ? 'photos' : root.classList.contains('mixmode') ? 'mix' : 'videos', talking = kind === 'talk' || root.classList.contains('talkmode');
   const have = sources.filter(s => !s.removed).length;
-  const key = !talking && song && buf && plan.length ? [mode, pick, secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
+  const key = !talking && song && buf && plan.length && planSong === song.key ? [mode, pick, secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
   if(!key) wantMemo = { key: '', song: '', a: null };
   else if(key !== wantMemo.key && (!have || !wantMemo.a || wantMemo.song !== song.key || wantMemo.key.split('|')[1] !== pick)) wantMemo = { key, song: song.key, a: clipAdvice(plan, pick) };
   const line = adviceLine(wantMemo.a, have);
