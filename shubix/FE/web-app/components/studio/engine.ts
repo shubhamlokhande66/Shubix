@@ -14,7 +14,7 @@ import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './d
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
-import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, clipAdvice, adviceLine } from '@shubix/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -401,6 +401,20 @@ function clipWantPaint(){
   const line = adviceLine(wantMemo.a, have);
   if(el.textContent !== line) el.textContent = line;
   el.hidden = !line;
+  // one box a clip, with its seconds; the clips in the order added fill them (video-engine clipAdvice.ts adviceBoxes)
+  const wrap = $('clipboxes'), list = $('cboxes'), boxes = (line && wantMemo.a && wantMemo.a.boxes) || [];
+  if(!wrap || !list) return;
+  const durs = sources.filter(s => !s.removed).map(s => s.dur || 0);
+  const sig = boxes.join(',') + '|' + durs.map(d => d.toFixed(1)).join(',');
+  if(list.dataset.sig !== sig){
+    list.dataset.sig = sig; list.textContent = '';
+    boxes.forEach((need, i) => { const b = document.createElement('span'), fit = boxFit(need, durs[i]);
+      b.className = 'cbox' + (fit === 'empty' ? '' : ' ' + fit); b.setAttribute('role', 'listitem');
+      const n = document.createElement('b'); n.textContent = 'Clip ' + (i + 1); b.append(n, document.createTextNode(boxWords(need, durs[i])));
+      b.title = fit === 'short' ? 'This clip is shorter than its part: Shubix repeats or slows it. A longer clip looks better.' : fit === 'ok' ? 'Long enough: Shubix keeps its best part.' : 'A clip of ' + need + ' s or longer';
+      list.appendChild(b); });
+  }
+  wrap.hidden = !boxes.length;
 }
 function drawMusic(){
   clipWantPaint();

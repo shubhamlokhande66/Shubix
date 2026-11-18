@@ -11,7 +11,7 @@ import { PlanGate } from "../../components/templates/PlanGate";
 import type { ProjectClip } from "@mobile/validations";
 import { engine, engineOn, keepAwake, onClipRead, shotsOf, type SongAnalysis } from "../../lib/engine";
 import { errorMessage } from "@mobile/api-client";
-import { adviceLine, mediaKindOf, pickTakes, shortReelFor, SHORT_REEL, oneTakeLength, type ClipAdvice, type MediaPick, type ShortReel } from "@mobile/video-engine";
+import { adviceLine, boxFit, boxWords, mediaKindOf, pickTakes, shortReelFor, SHORT_REEL, oneTakeLength, type ClipAdvice, type MediaPick, type ShortReel } from "@mobile/video-engine";
 import { forgetKeptFiles, keepPickedAssets, keepPickedFile, removeProject, saveProject, takeNewReelSeed } from "../../lib/projects";
 import { notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
@@ -321,6 +321,8 @@ function CreateFlowScreen() {
     return () => { on = false; };
   }, [music, start, length, pick]); // eslint-disable-line react-hooks/exhaustive-deps
   const adviceText = adviceLine(advice, media.length);
+  // one box a clip, with its seconds; the clips in the order added fill them (a photo fills any box: it moves as long as needed)
+  const boxes = adviceText && advice?.boxes ? advice.boxes.map((need, i) => { const m = media[i], have = !m ? null : m.type === "image" ? need : (m.duration ?? 0) / 1000; return { need, fit: boxFit(need, have), text: boxWords(need, have) }; }) : [];
   const priceLine = !price?.on ? "" : !price.cost ? words("Shubix AI: included in your plan") : price.balance === null ? words("Shubix AI: {n} credits", { n: price.cost }) : words("Shubix AI: {n} credits · You have {b}", { n: price.cost, b: price.balance });
   // what the person chose stays: an app that was closed can go on from it
   useEffect(() => {
@@ -375,6 +377,19 @@ function CreateFlowScreen() {
         {step === "adjust" && song && <FlowAdjust song={song} music={music} length={length} start={start} onLength={(n) => void lengthTo(n)} onStart={(t) => void partFrom(t)} locked={settings.fit !== false && kind !== "talking"} />}
         {step === "clips" && song && needSong && <View className="mb-3"><Button variant="secondary" icon="music" title={words("Adjust music")} onPress={() => go("adjust")} /></View>}
         {step === "clips" && !!adviceText && <Text accessibilityRole="text" className="mb-2 text-[14px] font-semibold text-foreground">{adviceText}</Text>}
+        {step === "clips" && boxes.length > 0 && (
+          <View className="mb-3 gap-1.5">
+            <View accessibilityLabel={words("The clips this song asks for, and how long each should be")} className="flex-row flex-wrap gap-1.5">
+              {boxes.map((b, i) => (
+                <View key={i} className={`min-w-[58px] items-center rounded-[10px] border-[1.5px] px-2 py-1.5 ${b.fit === "ok" ? "border-accent bg-surface-2" : b.fit === "short" ? "border-warning bg-surface-2" : "border-dashed border-border bg-surface-2"}`}>
+                  <Text className="text-[10.5px] font-semibold text-muted">{words("Clip {n}", { n: String(i + 1) })}</Text>
+                  <Text className={`text-[12.5px] font-semibold ${b.fit === "short" ? "text-warning" : b.fit === "ok" ? "text-foreground" : "text-muted"}`}>{b.text}</Text>
+                </View>
+              ))}
+            </View>
+            <Text className="text-[12px] text-muted">{words("A longer clip is fine: Shubix keeps its best part and leaves the rest out.")}</Text>
+          </View>
+        )}
         {step === "clips" && <FlowClips kind={kind} pick={pick} onTab={(p) => { setPick(p); setMedia((m) => m.filter((x) => pickTakes(p, mediaKindOf(x)))); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
       </ScrollView>
       {button && <View className="gap-1.5 px-4 pt-2" style={{ paddingBottom: Math.max(12, insets.bottom + 4) }}>{step === "clips" && !!priceLine && <Text className="text-center text-[12.5px] font-semibold text-muted">{priceLine}</Text>}<Button full size="xl" title={button.title} iconAfter={button.on ? "arrow" : undefined} disabled={!button.on} onPress={() => { Keyboard.dismiss(); button.press(); }} /></View>}
