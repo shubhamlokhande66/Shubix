@@ -10,11 +10,17 @@
  * - Photos (a Photo Reel): photos only, one a shot, 8 to 30: "12 photos".
  * - Mix: videos and photos, as many as Videos asks for, in any share: "10 clips or photos". Shubix mixes them.
  * Fewer works too: the Reel is still made, with what was added.
+ *
+ * Boxes: one a clip asked for, each with the seconds that clip should have at least: the Reel's shots in order, shared
+ * out among the clips (whole shots, about as many each), rounded up to half a second. A longer clip is fine: Shubix
+ * keeps its best part for that time (sharp, well lit, moving, faces) and leaves the rest out, as every Reel does. A
+ * shorter one is said ("1.2 s of 3 s"): Shubix then repeats or slows it. The boxes are a guide to the lengths; with
+ * "Mix all clips" Shubix may still place a clip's moments elsewhere in the Reel.
  */
 export type MediaPick = "videos" | "photos" | "mix";
 export type AdviceSlot = { start: number; end: number; type?: string };
 /** clips: videos asked for; photos: photos asked for; either: videos or photos (Mix) */
-export type ClipAdvice = { shots: number; clips: number; photos: number; either?: number };
+export type ClipAdvice = { shots: number; clips: number; photos: number; either?: number; boxes?: number[] };
 
 export const ADVICE = { perClip: 2, least: 3, most: 15, photoLeast: 8, photoReelMost: 30 } as const;
 
@@ -27,9 +33,35 @@ export function clipAdvice(plan: readonly AdviceSlot[] | null | undefined, pick:
   const n = plan ? plan.length : 0;
   if (!plan || !n) return null;
   const k = mediaPick(pick);
-  if (k === "photos") return { shots: n, clips: 0, photos: clamp(n, ADVICE.photoLeast, ADVICE.photoReelMost) };
-  const want = clamp(Math.ceil(n / ADVICE.perClip), ADVICE.least, ADVICE.most);
-  return k === "mix" ? { shots: n, clips: 0, photos: 0, either: want } : { shots: n, clips: want, photos: 0 };
+  if (k === "photos") { const p = clamp(n, ADVICE.photoLeast, ADVICE.photoReelMost); return { shots: n, clips: 0, photos: p, boxes: adviceBoxes(plan, p) }; }
+  const want = clamp(Math.ceil(n / ADVICE.perClip), ADVICE.least, ADVICE.most), boxes = adviceBoxes(plan, want);
+  return k === "mix" ? { shots: n, clips: 0, photos: 0, either: want, boxes } : { shots: n, clips: want, photos: 0, boxes };
+}
+
+const upHalf = (v: number) => Math.max(0.5, Math.ceil(v * 2 - 1e-6) / 2);
+
+/** the seconds each of `count` clips should have: the shots in order, shared out (whole shots, about as many each); with
+ * more clips than shots, the Reel's time shared out evenly */
+export function adviceBoxes(plan: readonly AdviceSlot[], count: number): number[] {
+  const n = plan.length, k = Math.max(1, Math.round(count));
+  if (!n) return [];
+  if (k > n) { const all = plan[n - 1].end - plan[0].start; return Array.from({ length: k }, () => upHalf(all / k)); }
+  return Array.from({ length: k }, (_, i) => {
+    const a = Math.round((i * n) / k), b = Math.round(((i + 1) * n) / k);
+    return upHalf(plan.slice(a, b).reduce((t, s) => t + (s.end - s.start), 0));
+  });
+}
+
+/** a box and the clip in it: "ok" long enough (longer is fine, its best part is kept), "short" shorter, "empty" none yet */
+export function boxFit(need: number, have: number | null | undefined): "ok" | "short" | "empty" {
+  if (have == null || !(have > 0)) return "empty";
+  return have >= need - 0.05 ? "ok" : "short";
+}
+
+/** what a box says: "3 s", "✓ 3 s", "1.2 of 3 s" */
+export function boxWords(need: number, have?: number | null): string {
+  const s = (v: number) => `${+v.toFixed(1)} s`, f = boxFit(need, have);
+  return f === "empty" ? s(need) : f === "ok" ? `✓ ${s(need)}` : `${+(have as number).toFixed(1)} of ${s(need)}`;
 }
 
 /** what a file is, by its type or name: a video, a photo, or neither */

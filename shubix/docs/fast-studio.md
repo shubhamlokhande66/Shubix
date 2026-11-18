@@ -668,6 +668,14 @@ any clip is in), the same on the website (`engine.ts` `clipWantPaint`, the line 
   Reels measured are videos;
 - Photos: one a shot, 8 to 30.
 
+Under the line, one box a clip, with the seconds that clip should have at least ("Clip 1 · 3 s"): the Reel's shots in
+order, shared out among the clips (whole shots, about as many each), rounded up to half a second (`adviceBoxes`). The
+clips fill the boxes in the order added: "✓ 3 s" when long enough, "1.2 of 3 s" (amber) when shorter. A longer clip is
+fine: Shubix keeps its best part for that time (sharp, well lit, moving, faces) and leaves the rest out, as every Reel
+does; a shorter one is repeated or slowed. A photo fills any box in the app (it moves as long as needed); on the website
+a photo is a 3 s moving shot. The boxes are a guide to the lengths: with "Mix all clips" Shubix may still place a clip's
+moments elsewhere in the Reel.
+
 The advice is read before the clips and kept once they come (they change the plan's pace a little); a new song, part,
 length or choice asks again. Fewer clips still make the Reel. Tests: `FE/web-app/tests/video-engine-clip-advice.test.ts`.
 
