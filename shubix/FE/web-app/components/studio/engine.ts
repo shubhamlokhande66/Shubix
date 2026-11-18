@@ -14,6 +14,7 @@ import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './d
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -2409,13 +2410,19 @@ function aiAt(src, a, b){
   const roles = {}; for(const r in R) roles[r] = R[r]/w;
   return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '' };
 }
-// how much the AI's opinion adds to a candidate moment for this slot
-function aiBonus(ai, slot, last){
-  const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : last ? 'ending' : null;
+// how much the AI's opinion adds to a candidate moment for this slot. Measured on 17 human-edited Reels (the rebuild
+// test, FE/mobile-app/tests/human-rebuild.test.ts, with GPT-5.6 Luna's answers): editors open on a reveal (the subject
+// coming into view) far more than on action, ease in with reveals and details, and end on a shot the AI scores low (a
+// logo, a fade, a quiet look). So the hook goes by reveal, the setup by reveal and detail, and the last shot by the AI's
+// "ending" alone, without its quality score (with it, editors' last shots ranked 26%; without, 41%).
+function aiBonus(ai, slot, last, part){
+  const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : null;
   let fit = 0;
-  if(role) fit = 0.6*(ai.roles[role] || 0) + (role==='hook' ? 0.3*(ai.roles.action || 0) : 0);
-  if(last && role!=='ending') fit += 0.3*(ai.roles.ending || 0);
-  return ai.conf * (2.2*(ai.score - 0.5) + fit);
+  if(slot==='hook') fit = 0.6*(ai.roles.reveal || 0) + 0.3*(ai.roles.hook || 0);
+  else if(last) fit = 0.6*(ai.roles.ending || 0);
+  else if(part==='setup') fit = 0.4*((ai.roles.reveal || 0) + (ai.roles.detail || 0));
+  else if(role) fit = 0.6*(ai.roles[role] || 0);
+  return ai.conf * ((last ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
@@ -3717,6 +3724,13 @@ function clipFlaw(src){
   const v = (jit >= 1.5 ? 3 : 0) + (soft < 0.15 ? 3 : 0);
   src._flaw = { key, v }; return v;
 }
+// each shot's part in the story, worked out once for the plan as it is (it changes when the cuts change)
+let storyMemo = { p: null, sig: '', r: [] };
+function storyRole(i){
+  const sig = plan.length + ':' + (plan.length ? plan[0].start.toFixed(2) + ':' + plan[plan.length-1].end.toFixed(2) : '');
+  if(storyMemo.p !== plan || storyMemo.sig !== sig) storyMemo = { p: plan, sig, r: storyRoles(plan.map(s => ({ kind: s.type, start: s.start, end: s.end }))) };
+  return storyMemo.r[i];
+}
 function scoreWindow(i, src, a, need, gmax){
   const s = plan[i], st = windowStats(src, a, a+need), m = st.m/gmax;
   let sc;
@@ -3731,7 +3745,10 @@ function scoreWindow(i, src, a, need, gmax){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1);
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1, storyRole(i));
+  // the shot's part in the story (Shared/video-engine story.ts): wide and steady to set the scene, people close up at
+  // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
+  if(mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
   // Copy a Reel: the moment most like the reference's shot here (a calm shot for a calm one, action for action, as bright)
   const rm = mode === 'copy' && refProfile && !refProfile.learned && refProfile.moments ? refProfile.moments[s.ref ?? i] : null;
   if(rm && rm.mo !== undefined){ sc += 1.4*(1 - Math.min(1, 1.6*Math.abs(m - rm.mo))) - 0.7;
@@ -3848,6 +3865,32 @@ function seqPick(seq, res, gmax){
       res[i] = best; cur = best.in + nd;
     });
   }
+}
+// The teaser (Shared/video-engine story.ts): "In my order" with three clips or more opens as the clips' order gives it.
+// When that opening is clearly weaker than a moment further on in the clips (one the Reel shows nowhere else, sharp and
+// light enough), the Reel opens on that moment for about a second, cut on a beat, then plays the clips from the start:
+// an editor's flash-forward. Not for a copied Reel, slow motion asked for in words, or with Shubix AI on (its plan goes
+// by the cuts' numbers and times, which the teaser would change).
+function teaserOpen(seq, res, gmax){
+  if(!seq || plan.length < 2 || sources.length < 3 || mode === 'copy' || slowAll || aiOn || director || !res[0]) return false;
+  const s0 = plan[0], b = teaserCut(s0.start, s0.end, beats); if(b == null) return false;
+  const L = b - s0.start, open = scoreWindow(0, sources[seq[0]], res[0].in, L, gmax).sc;
+  let best = null;
+  sources.forEach((src, si) => {
+    if(si === seq[0] || src.removed || !(src.samples && src.samples.length) || src.dur - TAIL < L) return;
+    const shown = res.map((r, i) => r && r.src === si ? [r.in, r.in + plan[i].sp.pos(plan[i].end - plan[i].start)*(r.scaleR || 1)] : null).filter(Boolean);
+    const stepT = Math.max(0.1, Math.min(0.5, src.dur/120));
+    for(let a = 0; a <= src.dur - L - TAIL + 1e-6; a += stepT){
+      if(!teaserFree(a, a + L, shown) || crossesScene(src, a, a + L)) continue;
+      const w = scoreWindow(0, src, a, L, gmax), st = w.st;
+      if(st.b < EDIT_REVIEW_LIMITS.dark || (st.dark || 0)*L >= EDIT_REVIEW_LIMITS.darkSeconds || st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft) continue;
+      if(!best || w.sc > best.sc) best = { sc: w.sc, si, r: { src: si, in: a, scaleR: 1, cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false, teaser: true, why: 'teaser: the strongest moment first, then your clips in order' } };
+    }
+  });
+  if(!best || !teaserWorth(open, best.sc)) return false;
+  plan.splice(0, 1, { ...s0, end: b, sp: SPEED.normal }, { ...s0, start: b, type: 'cut', tr: 'hard', efx: 'none' });
+  seq.splice(0, 0, best.si); res.splice(0, 0, best.r);
+  return true;
 }
 function setSeq(on, remake = true){
   seqOn = on; root.classList.toggle('seqon', on);
@@ -4051,7 +4094,7 @@ function makeEditNow(){
     return best;
   };
   editTakes = { tried: 1, kept: 1 };
-  if(seq) seqPick(seq, res, gmax);
+  if(seq){ seqPick(seq, res, gmax); teaserOpen(seq, res, gmax); }
   else {
     const take = () => { res.fill(undefined); used.forEach(u => { u.length = 0; }); dupCount = 0;
       order.forEach(i=>{
@@ -4240,7 +4283,7 @@ function repick(i, avoidCurrent, onlySrc){
       let sc = e.type==='drop' ? 2.2*m : e.type==='hit' ? 1.5*m : e.type==='break' ? 1-Math.abs(m-0.18)*2 : 1-Math.abs(m-0.55);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1);
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });

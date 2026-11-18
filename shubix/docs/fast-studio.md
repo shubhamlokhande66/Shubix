@@ -729,3 +729,49 @@ on (`Shared/video-engine/src/lookFit.ts`, `dirLookFit` in the website's engine a
 
 A shot whose picture is unknown (no frames looked at, an answer cached before this change) keeps the director's
 settings. Tests: `FE/mobile-app/tests/look-fit.test.ts`; the server's `studio-direct` and `studio-rank-shots` tests.
+
+## The Reel tells a story, measured against human editors
+
+An editor lays a Reel out as a story: it opens on its hook, builds, peaks on the drop and closes. Shubix names each
+shot's part (`Shared/video-engine/src/story.ts`: hook, setup, build, peak, close; `storyRole` in the website's engine
+and the Android brain) and nudges the moment a shot takes only where human edits showed it helps.
+
+**Measured (2026-11-17), the rebuild test** (`FE/mobile-app/tests/human-rebuild.test.ts`): 17 human-edited Reels (245
+shots) cut at their own cuts; for each place in the Reel Shubix's scorer ranks all of that Reel's shots, and we look
+where the human's own shot lands (100% = Shubix's first choice, 50% = a random pick). No raw footage is needed; it
+measures placement, not choosing from raw clips.
+
+| part | shots | Shubix now | before the story nudges | with Shubix AI (GPT-5.6 Luna), before | with Shubix AI, now |
+|---|---|---|---|---|---|
+| opening | 17 | 31% | 31% | 33% | 38% |
+| setup (first fifth) | 41 | 37% | 37% | 39% | 41% |
+| middle | 159 | 50% | 50% | 53% | 53% |
+| drops | 11 | 50% | 50% | 49% | 49% |
+| last shot | 17 | 39% | 35% | 23% | 40% |
+| all | 245 | 46% | 45% | 47% | 49% |
+
+So only the **close** is nudged: a calm last shot when the song settles, a strong one when it ends on a hit. A wide,
+steady setup made it worse (editors' early shots move more) and close-ups on the drops changed nothing, so neither
+gives a bonus.
+
+What it says beyond that, plainly:
+- **The middle is a coin toss.** No measure the phone has (movement, light, faces, sharpness) orders the middle shots
+  the way editors did (each alone: 47-53%). Shubix AI's look at the frames (rank-shots) moves it to 53%: a little.
+- **How Shubix AI's look is used** (`aiBonus`, web engine and `pure.ts`): editors open on a *reveal* (the subject
+  coming into view: Luna's "reveal" alone put their openings at 61%) far more than on action (43%), and end on a shot
+  the AI scores low (a logo, a fade, a quiet look: by the AI's score their last shots ranked 12%). So the opening goes
+  by reveal and hook, the setup by reveal and detail, and the last shot by "ending" alone, without the AI's score.
+  The weights are the ones it had; only which role counts where changed. Measured with 2 frames a shot (the app sends
+  more) and one model; other models may differ.
+- **The opening is the weakest (31%).** Editors' openings here move about as much as their other shots and show fewer
+  faces; Shubix opens on the most movement and on faces. Part of it is the finished Reels themselves (5 of 17 fade in
+  from black, which the scorer counts as dark), so the hook score was not changed on this alone.
+- **The teaser is off** (`STORY_ON.teaser`): it would open an In my order Reel on the moment that hook score likes
+  best, and the score is not yet trusted for that.
+
+Run it: put the Reels outside the repository, then `HUMAN_REELS=<folder> CACHE=<folder> npx vitest run
+tests/human-rebuild.test.ts` in `FE/mobile-app` (ffmpeg on the PATH; `<reel>.faces.json` beside a Reel adds its faces;
+`ONLY=<file>` runs one Reel, for machines low on memory; with CACHE a second run takes seconds; `AI_DIR=<folder>` with
+`<reel>.ai.json`, rankShots' answer for each shot in order, adds the Shubix AI column). Tests:
+`FE/web-app/tests/video-engine-story.test.ts`, `FE/mobile-app/tests/story-teaser.test.ts`, and the engine parity test
+(`teaserOpen`, `storyRole`).

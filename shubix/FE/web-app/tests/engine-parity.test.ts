@@ -22,6 +22,9 @@ describe("the website's engine and the Android app's brain pick the same moments
   const alike: [string, string, string][] = [
     ["In my order: which clip each shot shows", "function seqSlots(n){", "edit.ts"],
     ["In my order: the moment of the clip", "function seqPick(seq, res, gmax){", "edit.ts"],
+    ["In my order: the teaser that opens the Reel", "function teaserOpen(seq, res, gmax){", "edit.ts"],
+    ["each shot's part in the story", "function storyRole(i){", "edit.ts"],
+    ["what Shubix AI's look adds to a moment", "function aiBonus(ai, slot, last, part){", "pure.ts"],
     ["the reading of a moment (movement, light, black, sharpness, faces)", "function windowStats(src, a, b){", "pure.ts"],
     ["the index those readings come from", "function statsIndex(src){", "pure.ts"],
     ["a clip's black part", "function blackPart(src){", "pure.ts"],

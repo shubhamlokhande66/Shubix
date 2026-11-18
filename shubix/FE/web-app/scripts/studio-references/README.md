@@ -81,3 +81,10 @@ this needs Reels with a known song (the same song as a file), so the beats are m
 1. Put the videos outside the repository.
 2. Run `ANON=1 node analyze.mjs references.json all-of-them/*.mp4`.
 3. Commit only the JSON.
+
+## The rebuild test: where Shubix puts the shots a human placed
+
+These Reels have no raw footage, so Shubix cannot be asked to make them again. The rebuild test
+(`FE/mobile-app/tests/human-rebuild.test.ts`) instead cuts each Reel at its own cuts and asks Shubix's scorer, place by
+place, to rank the Reel's shots; the human's own shot should come out on top. `faces.py` adds the faces first. The
+results and how to run it: `docs/fast-studio.md`, "The Reel tells a story, measured against human editors".
