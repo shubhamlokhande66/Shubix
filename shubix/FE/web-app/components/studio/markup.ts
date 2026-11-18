@@ -257,6 +257,7 @@ export const STUDIO_HTML = `
     <div class="grid min-w-0 gap-3.5">
     <button type="button" class="${Button.secondary} lg:hidden" id="fadjust" hidden>Adjust music</button>
     <div class="ftabs" id="ftabs" role="group" aria-label="Videos or photos"><button type="button" data-ft="videos" aria-pressed="true">Videos</button><button type="button" data-ft="photos" aria-pressed="false">Photos</button></div>
+    <p class="hint clipwant" id="clipwant" role="status" hidden></p>
     <div class="drop" id="dropzone" role="button" tabindex="0">${IC.upload}<b class="vonly fdesk">Drag &amp; drop videos here</b><b class="ponly fdesk">Drag &amp; drop photos here</b><b class="vonly fmob">Tap to Add Videos</b><b class="ponly fmob">Tap to Add Photos</b><span class="vonly fdesk">or tap to choose · you can add more at any time</span><span class="ponly fdesk">or tap to choose · each photo becomes a short moving shot</span><span class="fmob">or choose from gallery</span><small>Supports MP4, MOV, 3GP, JPG, PNG</small></div>
     <input id="vfile" type="file" accept="video/*,.mov,.mp4,.m4v" multiple hidden>
     <div class="row">

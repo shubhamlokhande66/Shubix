@@ -646,6 +646,24 @@ the order the files were chosen, so "In my order" plays them as picked. The Andr
 too (its Photos tab keeps to photos). Checked in Chrome: 2 videos and 2 photos, chosen video, photo, video, photo ->
 4 shots in that order, quality 90/100. Android: not run on a phone.
 
+## How many clips the song asks for
+
+Once the song is in, the clips step says how many clips (and photos) it asks for: "For this song: 8 clips + 2 photos".
+Then, as clips come in: "7 of 10 added · 3 more make it better (optional)", and "Enough for this song". Nothing else is
+asked of the person: which clip goes where, fast or slow, the bad parts left out and the check stay Shubix's.
+
+`Shared/video-engine/src/clipAdvice.ts` reads it from the Reel's plan (the shots cut on the song's part, before any clip
+is in), the same on the website (`engine.ts` `clipWantPaint`, the line above the drop area) and in the app (the
+`advice` engine call, the Create screen's clips step):
+
+- about two shots a clip before the Reel looks repeated: the shots / 2 clips, 3 at least, 15 at most;
+- photos for the calm shots (a break, or a long shot that is not a drop or a hit, never the opening): half of those, a
+  quarter of what is asked at most, 3 at most;
+- a Photo Reel: photos only, one a shot, 8 to 30.
+
+The advice is read before the clips and kept once they come (they change the plan's pace a little); a new song, part or
+length before any clip asks again. Fewer clips still make the Reel. Tests: `FE/web-app/tests/video-engine-clip-advice.test.ts`.
+
 ## Words that never sit on a face
 
 Shubix's own texts (the opening words, Shubix AI's texts) are moved off faces by themselves (`Shared/video-engine/src/clear.ts`,

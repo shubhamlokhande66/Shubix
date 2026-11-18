@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
 import { ShubixVideo } from "../modules/shubix-video";
 import { clipDuration, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
-import { buildSpeedRampSegments, type ExportVerdict } from "@mobile/video-engine";
+import { buildSpeedRampSegments, type ClipAdvice, type ExportVerdict } from "@mobile/video-engine";
 import { tokenStore } from "./device";
 import { API_URL } from "./session";
 import { fitShot } from "./shotFit";
@@ -91,6 +91,8 @@ export const engine = {
   choose: (c: { length?: number; order?: "mix" | "order"; aspect?: string; mode?: "auto" | "smooth" | "fast" }) => call<{ start: number }>("choose", c),
   /** the song's part moved on the waves: the Reel uses the song from `start` */
   part: (start: number) => call<{ start: number }>("part", { start }),
+  /** how many clips (and photos) this song's part asks for (video-engine clipAdvice.ts); null: no song yet */
+  advice: (photo: boolean) => call<ClipAdvice | null>("advice", { photo }),
   /** the clips: the website reads them (motion, scenes, faces) and makes the Reel on the beats */
   clips: (list: { uri: string; name: string }[]) => call<{ clips: number; names: string[] }>("clips", { paths: list.map((c) => ({ path: pathOf(c.uri), name: c.name })) }),
   /** once the Reel is made: its shots (`id`: the phone's draft, which the studio now holds) */

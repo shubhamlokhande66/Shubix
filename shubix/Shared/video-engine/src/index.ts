@@ -1291,3 +1291,4 @@ export * from "./colorMatch";
 export * from "./retakes";
 export * from "./lookFit";
 export * from "./story";
+export * from "./clipAdvice";
