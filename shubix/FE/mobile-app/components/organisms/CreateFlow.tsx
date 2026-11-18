@@ -6,6 +6,7 @@ import { ActivityIndicator, Animated, Image, PanResponder, Pressable, ScrollView
 import Svg, { Circle } from "react-native-svg";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import type { ImagePickerAsset } from "expo-image-picker";
+import type { MediaPick } from "@mobile/video-engine";
 import { useStudioText } from "@mobile/hooks";
 import { Button, Gold, Icon, IconButton, Input, Segmented, useColors } from "@mobile/ui-mobile";
 import type { IconName } from "@mobile/ui-core";
@@ -245,16 +246,16 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
   );
 }
 
-export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; photos: boolean; states?: (ClipState | undefined)[]; onTab: (photos: boolean) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
+export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
   const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3;
   return (
     <FlowCard>
       {kind !== "talking" && kind !== "copy" && (
         <View accessibilityRole="radiogroup" className="flex-row gap-1.5 rounded-[14px] border border-border bg-surface-2 p-1">
-          {[false, true].map((p) => (
-            <Pressable key={String(p)} onPress={() => onTab(p)} accessibilityRole="radio" accessibilityState={{ checked: photos === p }} className="h-10 flex-1 items-center justify-center overflow-hidden rounded-[10px]">
-              {photos === p && <Gold />}
-              <Text className={`text-[14px] font-semibold ${photos === p ? "text-on-accent" : "text-muted"}`}>{words(p ? "Photos" : "Videos")}</Text>
+          {(["videos", "photos", "mix"] as const).map((p) => (
+            <Pressable key={p} onPress={() => onTab(p)} accessibilityRole="radio" accessibilityState={{ checked: pick === p }} className="h-10 flex-1 items-center justify-center overflow-hidden rounded-[10px]">
+              {pick === p && <Gold />}
+              <Text className={`text-[14px] font-semibold ${pick === p ? "text-on-accent" : "text-muted"}`}>{words(p === "photos" ? "Photos" : p === "mix" ? "Mix" : "Videos")}</Text>
             </Pressable>
           ))}
         </View>
@@ -262,7 +263,7 @@ export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove,
       {media.length === 0 ? (
         <Pressable onPress={onAdd} accessibilityRole="button" className="items-center gap-1 rounded-[18px] border-[1.5px] border-dashed border-accent/45 bg-surface-2 px-[18px] py-7 active:opacity-80">
           <View className="mb-1.5"><Icon name="upload" size={34} /></View>
-          <Text className="text-[15px] font-semibold text-foreground">{words(photos ? "Tap to Add Photos" : "Tap to Add Videos")}</Text>
+          <Text className="text-[15px] font-semibold text-foreground">{words(pick === "photos" ? "Tap to Add Photos" : pick === "mix" ? "Tap to Add Videos and Photos" : "Tap to Add Videos")}</Text>
           <Text className="text-[13px] text-muted">{words("or choose from gallery")}</Text>
           <Text className="mt-2 text-[12px] text-muted">{words("Supports MP4, MOV, 3GP, JPG, PNG")}</Text>
         </Pressable>

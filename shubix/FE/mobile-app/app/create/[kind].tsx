@@ -11,7 +11,7 @@ import { PlanGate } from "../../components/templates/PlanGate";
 import type { ProjectClip } from "@mobile/validations";
 import { engine, engineOn, keepAwake, onClipRead, shotsOf, type SongAnalysis } from "../../lib/engine";
 import { errorMessage } from "@mobile/api-client";
-import { adviceLine, shortReelFor, SHORT_REEL, oneTakeLength, type ClipAdvice, type ShortReel } from "@mobile/video-engine";
+import { adviceLine, mediaKindOf, pickTakes, shortReelFor, SHORT_REEL, oneTakeLength, type ClipAdvice, type MediaPick, type ShortReel } from "@mobile/video-engine";
 import { forgetKeptFiles, keepPickedAssets, keepPickedFile, removeProject, saveProject, takeNewReelSeed } from "../../lib/projects";
 import { notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
@@ -35,7 +35,8 @@ function CreateFlowScreen() {
   const words = useStudioText(), insets = useSafeAreaInsets(), queryClient = useQueryClient(), order = ORDER[kind];
   const [step, setStep] = useState<FlowStep>("intro");
   const [music, setMusic] = useState<SongAnalysis | null>(null), [song, setSong] = useState<Song | null>(null), [recent, setRecent] = useState<Song[]>([]), [reading, setReading] = useState(false);
-  const [length, setLength] = useState(0), [start, setStart] = useState(0), [photos, setPhotos] = useState(kind === "photo"), [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const [length, setLength] = useState(0), [start, setStart] = useState(0), [pick, setPick] = useState<MediaPick>(kind === "photo" ? "photos" : "videos"), [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
+  const photos = pick === "photos", choosing = kind !== "talking" && kind !== "copy";   // the clips step's choice: Videos, Photos or Mix
   const [settings, setSettings] = useState<ClipSettings>({ order: "order", aspect: "9:16", pace: "natural", under: "0.09", fit: true });
   const [wish, setWish] = useState(""), [working, setWorking] = useState(false), [focused, setFocused] = useState(true);
   const [clipState, setClipState] = useState<Record<string, ClipState>>({});
@@ -175,8 +176,10 @@ function CreateFlowScreen() {
     if (await readClips(old.media, old.song)) { await engine.keptOldReel().catch(() => undefined); setStep("clips"); router.push({ pathname: "/editor", params: { id: old.id } }); }
   }
   async function addMedia() {
-    // a Beat Reel takes videos and photos together (each photo a shot); the Photos tab keeps to photos
-    const got = await pickInOrder({ kind: photos ? "image" : "both", limit: Math.max(1, 30 - media.length) }); // in the order tapped ("In my order")
+    // the clips step's three choices take only what they say: Videos videos, Photos photos, Mix both (each photo a shot);
+    // a talking Reel and Copy a Reel have no choice: both
+    const want = !choosing ? "both" : pick === "photos" ? "image" : pick === "mix" ? "both" : "video";
+    const got = await pickInOrder({ kind: want, limit: Math.max(1, 30 - media.length) }); // in the order tapped ("In my order")
     if (!got) return;
     // the very same file twice: out at once, before any work on it
     const keyOf1 = (m: ImagePicker.ImagePickerAsset) => m.assetId || m.uri, seen = new Set(media.map(keyOf1));
@@ -308,15 +311,15 @@ function CreateFlowScreen() {
 
   // Shubix AI's price and the balance, on the screen before Make Reel (pressing it is the answer)
   useEffect(() => { if (step === "clips" && focused && engineOn) void engine.aiPrice().then(setPrice).catch(() => setPrice(null)); }, [step, focused]); // eslint-disable-line react-hooks/exhaustive-deps
-  // how many clips (and photos) the song asks for, said on the clips step: read before the clips are in, then kept (the clips
+  // how many clips the song asks for (videos, photos, or either under Mix), said on the clips step: read before the clips are in, then kept (the clips
   // change the plan's pace a little); a new song asks again (video-engine clipAdvice.ts, as the website)
   const [advice, setAdvice] = useState<ClipAdvice | null>(null);
   useEffect(() => {
     if (!music || kind === "talking" || !engineOn) { setAdvice(null); return; }
     if (media.length && advice) return;
-    let on = true; void engine.advice(photos).then((a) => { if (on) setAdvice(a); }).catch(() => undefined);
+    let on = true; void engine.advice(pick).then((a) => { if (on) setAdvice(a); }).catch(() => undefined);
     return () => { on = false; };
-  }, [music, start, length, photos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [music, start, length, pick]); // eslint-disable-line react-hooks/exhaustive-deps
   const adviceText = adviceLine(advice, media.length);
   const priceLine = !price?.on ? "" : !price.cost ? words("Shubix AI: included in your plan") : price.balance === null ? words("Shubix AI: {n} credits", { n: price.cost }) : words("Shubix AI: {n} credits · You have {b}", { n: price.cost, b: price.balance });
   // what the person chose stays: an app that was closed can go on from it
@@ -328,7 +331,7 @@ function CreateFlowScreen() {
   useEffect(() => {
     const seed = takeNewReelSeed();
     if (seed) {
-      setPhotos(false); setMedia(seed.media); setSong(seed.song as Song | null); setLength(seed.length); setStep("clips"); lengthChosen.current = true;
+      setPick("videos"); setMedia(seed.media); setSong(seed.song as Song | null); setLength(seed.length); setStep("clips"); lengthChosen.current = true;
       void later(async () => { if (seed.song) await hear(seed.song as Song); setStart(seed.start); return readClips(seed.media, seed.song as Song | null); });
       return;
     }
@@ -372,7 +375,7 @@ function CreateFlowScreen() {
         {step === "adjust" && song && <FlowAdjust song={song} music={music} length={length} start={start} onLength={(n) => void lengthTo(n)} onStart={(t) => void partFrom(t)} locked={settings.fit !== false && kind !== "talking"} />}
         {step === "clips" && song && needSong && <View className="mb-3"><Button variant="secondary" icon="music" title={words("Adjust music")} onPress={() => go("adjust")} /></View>}
         {step === "clips" && !!adviceText && <Text accessibilityRole="text" className="mb-2 text-[14px] font-semibold text-foreground">{adviceText}</Text>}
-        {step === "clips" && <FlowClips kind={kind} photos={photos} onTab={(p) => { setPhotos(p); setMedia([]); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
+        {step === "clips" && <FlowClips kind={kind} pick={pick} onTab={(p) => { setPick(p); setMedia((m) => m.filter((x) => pickTakes(p, mediaKindOf(x)))); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
       </ScrollView>
       {button && <View className="gap-1.5 px-4 pt-2" style={{ paddingBottom: Math.max(12, insets.bottom + 4) }}>{step === "clips" && !!priceLine && <Text className="text-center text-[12.5px] font-semibold text-muted">{priceLine}</Text>}<Button full size="xl" title={button.title} iconAfter={button.on ? "arrow" : undefined} disabled={!button.on} onPress={() => { Keyboard.dismiss(); button.press(); }} /></View>}
     </View>

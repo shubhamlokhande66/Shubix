@@ -325,6 +325,11 @@
 .brs.photomode .ponly{display:inline}
 @media (min-width:1024px){.brs.photomode .ponly.fmob{display:none}} /* computers: "Drag & drop photos", not the phones' "Tap to Add Photos" */
 .brs.photomode .vonly{display:none}
+/* Mix: videos and photos together (the clips step's third choice, steps.ts) */
+.brs .monly{display:none}
+.brs.mixmode .monly{display:inline}
+@media (min-width:1024px){.brs.mixmode .monly.fmob{display:none}}
+.brs.mixmode .vonly{display:none}
 /* notifications: short notes at the bottom (above the save bar on phones), and the in-app yes / no question */
 .brs .toasts{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:80;display:grid;gap:9px;width:min(92vw,420px);pointer-events:none}
 @media (max-width:1023px){.brs.fopen .toasts{bottom:calc(150px + env(safe-area-inset-bottom))}}
@@ -561,7 +566,7 @@
 .brs.talkmode .fsugg{display:none}
 
 /* 2 Add Your Clips: Videos / Photos, the drop area, the clips as pictures */
-.brs .ftabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);max-width:420px}
+.brs .ftabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);max-width:420px}
 .brs .ftabs button{height:40px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:600 14px var(--body);cursor:pointer}
 .brs .ftabs button[aria-pressed=true]{background:var(--gold-gradient);color:var(--on-accent)}
 .brs.fopen .drop{display:grid;justify-items:center;gap:4px;padding:28px 18px;border-radius:18px;background:var(--surface-2);color:var(--muted)}
@@ -745,7 +750,7 @@
   /* 4 Add Clips: Videos / Photos, "Tap to Add Videos", the clips three across with a "+" at the end */
   .brs.fopen .fdesk{display:none !important}
   .brs.fopen .fmob{display:block}
-  .brs.fopen.photomode .vonly.fmob,.brs.fopen:not(.photomode) .ponly.fmob{display:none}
+  .brs.fopen.photomode .vonly.fmob,.brs.fopen:not(.photomode) .ponly.fmob,.brs.fopen.mixmode .vonly.fmob,.brs.fopen:not(.mixmode) .monly.fmob{display:none}
   .brs.fopen .ftabs{max-width:none}
   .brs.fopen .drop{min-height:190px;align-content:center;border-radius:18px;padding:24px 16px}
   .brs.fopen .drop b.fmob{font:600 16px var(--body)}
@@ -1136,7 +1141,7 @@
   .brs.noir .ptabs button[aria-pressed=true]{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 0 -2px 0 var(--accent)}
   /* Media: Videos / Photos, the drop zone, the clips three a row */
   .brs.noir #mslot{display:grid;gap:12px}
-  .brs.noir #mslot .ftabs{display:grid !important;grid-template-columns:1fr 1fr;gap:4px;padding:3px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+  .brs.noir #mslot .ftabs{display:grid !important;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:3px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
   .brs.noir #mslot .ftabs button{height:34px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 13px var(--body);cursor:pointer}
   .brs.noir #mslot .ftabs button[aria-pressed=true]{background:var(--gold-gradient);color:var(--on-accent,#fff)}
   .brs.noir #mslot .drop{display:grid;justify-items:center;gap:4px;padding:18px 12px;border:1.5px dashed color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:14px;
