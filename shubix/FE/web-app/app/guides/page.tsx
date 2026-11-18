@@ -5,6 +5,7 @@ import { GUIDES } from "@/lib/guides";
 
 export const metadata: Metadata = {
   title: "Guides to better Reels",
+  alternates: { canonical: "/guides" },
   description: "Practical guides to editing short vertical videos: beat-synced cuts, hooks, transitions, music rights, sizes and more.",
 };
 
