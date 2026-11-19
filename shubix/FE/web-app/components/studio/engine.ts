@@ -594,9 +594,17 @@ function snapToBeat(t){ const bt = song.r.beats || []; if(bt.length < 8) return 
  * The edit's drops and breaks come only from here, so every Reel cuts where the song changes and nowhere else. */
 function songParts(mono, sr, beats){
   if(!beats || beats.length < 16) return [];
-  let n = beats.length; const p = (beats[n-1]-beats[0])/(n-1), dur = mono.length/sr;
-  // a quiet intro or ending has no beats found: its pulse goes on, on the same grid
-  { const g = beats.slice(); for(let t=g[0]-p; t>=0; t-=p) g.unshift(t); for(let t=g[g.length-1]+p; t<dur-p; t+=p) g.push(t); beats = g; n = g.length; }
+  let n = beats.length; const dur = mono.length/sr;
+  // Preserve the tracker's local beat spacing. A single song-wide average drifts away from the
+  // real grid when tempo changes; only extrapolate the untracked intro/outro from nearby beats.
+  const median = xs => { const a=xs.filter(x=>x>0).sort((x,y)=>x-y); return a.length ? a[a.length>>1] : 0.5; };
+  const startPeriod = median(beats.slice(1, Math.min(beats.length, 6)).map((t,i)=>t-beats[i]));
+  const endPeriod = median(beats.slice(-5).slice(1).map((t,i)=>t-beats[beats.length-5+i]));
+  const g = beats.slice();
+  if(startPeriod>0) for(let t=g[0]-startPeriod; t>=0; t-=startPeriod) g.unshift(t);
+  if(endPeriod>0) for(let t=g[g.length-1]+endPeriod; t<dur-endPeriod; t+=endPeriod) g.push(t);
+  beats = g; n = g.length;
+  const p = median(beats.slice(1).map((t,i)=>t-beats[i]));
   // per beat: loudness and low end (kick + bass), in dB
   let lp = 0; const a = Math.exp(-2*Math.PI*150/sr), low = new Float32Array(mono.length);
   for(let i=0;i<mono.length;i++){ lp = (1-a)*mono[i] + a*lp; low[i] = lp; }
