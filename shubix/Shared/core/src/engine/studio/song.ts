@@ -11,6 +11,22 @@ export function songAnalysis(monoIn, sampleRate, opts){
   const ALT_FAST = opts.altFast ?? 0.55;
   const JIT = opts.jit ?? 0.010;
   const DRUM_MIN = 0.7;
+  // every song is read at 44.1 kHz: the frames below are counted in samples (512, 1024), so at a phone's or a browser's 48 kHz
+  // they were other lengths and other bands, and the tracker another one (the benchmark, all at 44.1 kHz: 95% of beats; the
+  // same songs at 48 kHz 89%, at 32 kHz 79%; a QA Reel song at 48 kHz got a beat every 0.79 s, its beat is 0.33 s: 2026-11-19).
+  // Lanczos (4 lobes), its low-pass at the lower of the two rates; its weights from a table of 512 phases (a 3-minute song
+  // in well under a second, on a phone too)
+  if(sampleRate !== 44100 && sampleRate > 0){
+    const R = 44100, ratio = R/sampleRate, n = Math.floor(monoIn.length*ratio), out = new Float32Array(n), A = 4, fc = Math.min(1, ratio);
+    const sinc = x => x === 0 ? 1 : Math.sin(Math.PI*x)/(Math.PI*x), Lw = Math.ceil(A/fc), T = 2*Lw, PH = 512, tab = new Float32Array(PH*T);
+    for(let ph=0; ph<PH; ph++){ let sum = 0; for(let q=0;q<T;q++){ const x = (ph/PH + Lw - 1 - q)*fc, k = Math.abs(x) < A ? sinc(x)*sinc(x/A) : 0; tab[ph*T+q] = k; sum += k; }
+      for(let q=0;q<T;q++) tab[ph*T+q] /= sum || 1; }
+    const L = monoIn.length;
+    for(let i=0;i<n;i++){ const c = i/ratio, j0 = Math.floor(c), ph = Math.min(PH-1, Math.floor((c-j0)*PH)), b = ph*T; let s = 0;
+      for(let q=0;q<T;q++){ const j = j0 - Lw + 1 + q; if(j >= 0 && j < L) s += monoIn[j]*tab[b+q]; }
+      out[i] = s; }
+    monoIn = out; sampleRate = R;
+  }
   const buf = { sampleRate, length: monoIn.length, duration: monoIn.length/sampleRate, numberOfChannels: 1, getChannelData: () => monoIn };
   let mono = null, period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, beatLvl = [];
   let onEnv = null, onFps = 0, onOff = 0, hitsRaw = [], cutFx = [], pfArr = null;
@@ -407,7 +423,10 @@ function rebuild(){
   const onGrid = tt => { let lo=0, hi=beats.length; while(lo<hi){ const m=(lo+hi)>>1; if(beats[m]<tt) lo=m+1; else hi=m; }
     return (lo<beats.length && Math.abs(beats[lo]-tt) < 0.05) || (lo>0 && Math.abs(beats[lo-1]-tt) < 0.05); };
   // only real beats are candidates: if it is just voice or a held note, no cut there
-  const cands = peaks.map((pt,k)=>({t:pt, sc: peakS[k]*(onGrid(pt)?1.4:1)})).filter(c=>drumness(c.t) >= DR-0.1);
+  // ...or a strong hit right on a beat: a Reel song's bass and dhol are often read as not drums (its drive was 0.15), and
+  // its loudest part, all bass, got one 3.7 s shot (QA 2026-11-19); a voice or a held note is neither on the beat nor strong
+  const pkMid = (() => { const q = Array.from(peakS).sort((x,y)=>x-y); return q.length ? q[q.length>>1] : Infinity; })();
+  const cands = peaks.map((pt,k)=>({t:pt, sc: peakS[k]*(onGrid(pt)?1.4:1), k})).filter(c=>drumness(c.t) >= DR-0.1 || (onGrid(c.t) && peakS[c.k] >= pkMid));
   ups.forEach(u=>{ if(drumness(u.t) >= DR-0.1) cands.push({t:u.t, sc: u.s/4 + (onGrid(u.t)?1:0)}); });
   cands.sort((a,b)=>a.t-b.t);
   // 4) walk through the song: clip length depends on intensity (4 / 2 / 1 beats)
@@ -424,7 +443,8 @@ function rebuild(){
     const nb = beatsFor(intensity(cur)), w = Math.min(1, nb/2)*p, target = (nb >= 4 && barNear(cur + nb*p, w)) || cur + nb*p;
     if(fi<forced.length && forced[fi].t < target + w && forced[fi].t - cur >= 0.2){ cur = forced[fi].t; out.push({t:cur, ty:forced[fi].ty}); fi++; continue; }
     let best=null, bs=-1;
-    for(const c of cands){ if(c.t < target-w || c.t > target+w || c.t-cur < 0.25) continue; const sc=c.sc*(1-0.35*Math.abs(c.t-target)/w); if(sc>bs){ bs=sc; best=c.t; } }
+    // (a song with little beat: never a shot of one beat)
+    for(const c of cands){ if(c.t < target-w || c.t > target+w || c.t-cur < (drive < 0.4 ? 1.5*p : 0.25)) continue; const sc=c.sc*(1-0.35*Math.abs(c.t-target)/w); if(sc>bs){ bs=sc; best=c.t; } }
     if(best===null){ // no beat in the window (only voice/music): hold the shot until the next real beat
       const nx = cands.find(c=>c.t > target+w), nf = fi<forced.length ? forced[fi].t : Infinity;
       if(!nx && nf===Infinity) break;

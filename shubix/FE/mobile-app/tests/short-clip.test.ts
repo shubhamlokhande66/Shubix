@@ -118,7 +118,9 @@ describe("slow motion asked for in words", () => {
       await w.e.call("choose", { order: "order" });   // "In my order", as the website has it by default: long clips' shots are joined there
       await w.e.call("ready");
       const before = speeds(w.e);
-      expect(Math.max(...before)).toBeGreaterThan(0.8);
+      // not slow motion (0.5): 24 s of clips stretched over a 30 s song play at about 0.8 (0.75-0.79 since the song is read at
+      // its true beat, 0.5 s: song.ts resamples to 44.1 kHz; 0.511 s before)
+      expect(Math.max(...before)).toBeGreaterThan(0.7);
       const said = await w.e.call("chat", { text: words }) as { answer: string };
       expect(said.answer).toMatch(/slow motion/);
       const slow = speeds(w.e);
@@ -127,7 +129,7 @@ describe("slow motion asked for in words", () => {
       expect(again.answer).toMatch(/already in slow motion/);
       const back = await w.e.call("chat", { text: "normal speed" }) as { answer: string };
       expect(back.answer).toMatch(/normal speed again/);
-      expect(Math.max(...speeds(w.e))).toBeGreaterThan(0.8);
+      expect(Math.max(...speeds(w.e))).toBeGreaterThan(0.7);
     });
   }
   it("words that are not about slow motion change no speed", async () => {

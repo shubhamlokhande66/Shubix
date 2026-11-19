@@ -77,3 +77,34 @@ Still wrong together, not changed (the rules that choose a tracker were tuned on
 These numbers are lower than the table in `docs/fast-studio.md` (99.7% / 100% / 99.7%), which was measured earlier
 with a script no longer in the repository; here the song reaches Beat This! through ffmpeg's resampler, in the app
 through the browser's. Real songs (above) are what settles it.
+
+## The rate a song is read at (2026-11-19)
+
+The tracker's frames are counted in samples, and the benchmark decodes every song at 44.1 kHz, while a browser or a phone
+decodes at its own rate, mostly 48 kHz. The same synthetic songs (sets 1-3, own tracker, F70):
+
+| | 44.1 kHz | 48 kHz | 32 kHz | 22.05 kHz |
+|---|---|---|---|---|
+| before | 95.2% | 89.4% | 79.1% | 94.6% |
+| after (every song resampled to 44.1 kHz first, `songAnalysis`) | 95.2% | 95.2% | 95.2% | 95.2% |
+
+At 48 kHz `four_floor_124` and `bollywood_dembow_96` fell to 41%. A Reel song on QA got a beat every 0.79 s in the
+browser, every 0.33 s at 44.1 kHz. `--check baseline.json` unchanged (its songs are 44.1 kHz).
+
+## Where the cuts go (2026-11-19)
+
+Only hits the drum / voice split called drums could be cuts, and a dhol, dholki, tabla or a Reel song's bass often is
+not called a drum: whole songs got one or two cuts. A strong hit (over the song's median) right on a tracked beat is now
+a cut too; in a song with little beat no shot is under 1.5 beats. Cuts per song, the longest shot (own tracker, 44.1 kHz):
+
+| | before | after |
+|---|---|---|
+| garba 6/8 | 1 cut, 25.5 s | 14 cuts, 2.0 s |
+| lavani dholki | 1, 23.7 s | 22, 1.5 s |
+| bhangra dhol | 5, 9.1 s | 21, 1.8 s |
+| bhajan | 6, 10.1 s | 19, 2.5 s |
+| tabla kaharwa | 12, 5.7 s | 30, 1.8 s |
+| piano only | 2, 29.1 s | 14, 3.0 s |
+| a QA Reel song (its drop all bass) | 14, 3.9 s | 19, 1.7 s |
+
+Drum songs (sets 1-2 but trap, hip-hop) unchanged; all 24 songs: shots over 2.5 s 24 -> 9.
