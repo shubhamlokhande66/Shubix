@@ -20,6 +20,14 @@ describe("bars", () => {
     expect(r.downbeats.length).toBeGreaterThan(5);
     expect(ones.filter((t) => near(r.downbeats, t)).length / ones.length).toBeGreaterThan(0.8);
   });
+  it("returns separate kick and snare hit timestamps plus per-beat strength labels", () => {
+    const r = songAnalysis(make(12, (k) => (k % 4 === 0 ? 1 : 0.5)), SR, {});
+    expect(r.drumHits.some((h: { band: string }) => h.band === "kick")).toBe(true);
+    expect(r.drumHits.some((h: { band: string }) => h.band === "snare")).toBe(true);
+    expect(r.drumHits.every((h: { t: number; strength: number }) => h.t >= 0 && h.t < 12 && h.strength >= 0 && h.strength <= 1)).toBe(true);
+    expect(r.beatAccents).toHaveLength(r.beats.length);
+    expect(r.beatAccents.every((b: { level: string }) => ["strong", "medium", "weak"].includes(b.level))).toBe(true);
+  });
   it("takes the bars the neural tracker heard", () => {
     const m = make(24, () => 0.8), beats = Array.from({ length: 47 }, (_, k) => k * B), downs = beats.filter((_, k) => k % 4 === 2);
     const r = songAnalysis(m, SR, { beats, downbeats: downs });
