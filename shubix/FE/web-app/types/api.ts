@@ -41,6 +41,13 @@ export interface TrendLook {
 }
 
 /** A Reel a creator copied ("Copy a Reel"), waiting for the administrator to teach the styles with it. */
+/** Admin -> My trends -> Learning log: what "Teach Shubix from many Reels" learned, and what it could not (kept apart) */
+export interface LearningOdd { guess: string; ours: string | null; n: number; reels: number; looks: { sig: string; n: number }[] }
+export interface LearningLog {
+  reels: number; failed: number; cuts: number; read: number; unreadCuts: number;
+  known: { kind: string; n: number }[]; newTransitions: LearningOdd[]; effects: LearningOdd[];
+  recent: { name: string; category: string; ok: boolean; reason?: string; at: string; cuts: number; unreadCuts: number; effects: number }[];
+}
 export interface StyleSuggestion {
   id: string;
   name: string;

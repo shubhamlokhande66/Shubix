@@ -18,6 +18,7 @@ export const ROUTES: [string, () => Record<string, unknown>][] = [
   ["api/admin/email-preview", () => require("../routes/api/admin/email-preview/route")],
   ["api/admin/errors", () => require("../routes/api/admin/errors/route")],
   ["api/admin/features", () => require("../routes/api/admin/features/route")],
+  ["api/admin/learning", () => require("../routes/api/admin/learning/route")],
   ["api/admin/marketing", () => require("../routes/api/admin/marketing/route")],
   ["api/admin/offers", () => require("../routes/api/admin/offers/route")],
   ["api/admin/overview", () => require("../routes/api/admin/overview/route")],

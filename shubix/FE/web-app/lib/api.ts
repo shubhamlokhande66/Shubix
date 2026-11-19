@@ -34,6 +34,7 @@ import type {
   Brand,
   LearnedTrend,
   StyleSuggestion,
+  LearningLog,
   AiModels,
   ModelTestResult,
   AiConfig,
@@ -429,6 +430,8 @@ export const api = {
   styleSuggestions: () => request<{ items: StyleSuggestion[]; total: number }>("/api/admin/style-suggestions"),
   useStyleSuggestion: (id: string, category: string) =>
     request<{ id: string }>("/api/admin/style-suggestions", { method: "POST", body: JSON.stringify({ id, category }) }),
+  // admin: the learning log of "Teach Shubix from many Reels" (what was learned, what could not be)
+  learningLog: () => request<LearningLog>("/api/admin/learning"),
   removeStyleSuggestion: (id: string) => request<{ ok: boolean }>("/api/admin/style-suggestions", { method: "DELETE", body: JSON.stringify({ id }) }),
 
   // --- brands + templates ---

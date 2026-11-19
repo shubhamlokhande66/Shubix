@@ -108,6 +108,8 @@
 .brs:not(.admin) #stsaverow,.brs:not(.admin) #teach,.brs:not(.admin) #stmine,.brs:not(.admin) #learnrow{display:none !important}
 .brs .stdetails{flex-basis:100%;font-size:13px;color:var(--muted)}
 .brs .stdetails ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
+.brs .stdetails.teachtop{display:block;margin:0 0 14px;padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}
+.brs .stdetails.teachtop .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 /* ◆ keyframes */
 .brs .kfbox{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:grid;gap:8px}
 .brs .kfbox summary{cursor:pointer;font-weight:600}

@@ -580,6 +580,18 @@ function songParts(mono, sr, beats){
   // boundaries: strongest changes, at least 8 beats apart
   const cand = nov.map((v,k)=>({k, v})).filter(c => c.v >= 3 || c.v <= -3.5).sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)), keep = [];
   cand.forEach(c => { if(keep.every(o => Math.abs(o.k-c.k) >= 8)) keep.push(c); });
+  // a short song (a Reel's audio, under 40 beats): 8 beats either side is half of it, and a few bars of bass coming in or
+  // going (most of a Reel song's change: its loudness is mastered flat) were averaged away, so its strongest moment had no
+  // cut (QA 2026-11-18: bass in at 7.7 s, out at 10.4 s, one soft shot over both). Here the low end alone, 4 beats either
+  // side, a change of 2.5 dB or more; more than two such changes is the song's pattern (tabla, a dhol loop), not its parts.
+  if(n < 40){
+    const bc = [];
+    for(let k=4; k<n-3; k++){ let A=0,B=0; for(let q=1;q<=4;q++){ A += F[k-q][1]; B += F[k+q-1][1]; } const d = (B-A)/4;
+      if(Math.abs(d) >= 2.5) bc.push({ k, v: Math.sign(d)*(3.5 + Math.abs(d) - 2.5) }); }
+    bc.sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)); const bk = [];
+    bc.forEach(c => { if(bk.every(o => Math.abs(o.k-c.k) >= 4)) bk.push(c); });
+    if(bk.length <= 2) bk.forEach(c => { if(keep.every(o => Math.abs(o.k-c.k) >= 4)) keep.push(c); });
+  }
   // the exact beat: where the sound changes most from one beat to the next (same direction), near the coarse change
   const step = (k, w) => { let A=0,B=0; for(let q=1;q<=w;q++){ A += F[k-q][0]+F[k-q][1]; B += F[k+q-1][0]+F[k+q-1][1]; } return (B-A)/(2*w); };
   keep.forEach(c => { let bk = c.k, bv = 0; for(let k=Math.max(2,c.k-3); k<=Math.min(n-2,c.k+3); k++){ const v = step(k, 2)*Math.sign(c.v); if(v > bv){ bv = v; bk = k; } } c.k = bk; });
@@ -7540,6 +7552,30 @@ function rgbShiftOf(canvas){
     const v = s2/Math.max(1,n); if(sh===0) base = v; if(v < bv){ bv = v; best = sh; } }
   return Math.abs(best) >= 2 && bv < 0.8*base ? Math.abs(best) : 0;
 }
+// Learning (Teach Shubix from many Reels): a transition this reader does not know. Read as a hard cut, yet not a clean
+// one-frame jump: two or more frames in its middle are neither shot, nor a mix of the two (a dissolve). What it looks like
+// goes to the learning log (Admin -> My trends), with the studio's own transition it seems to be when there is one (ours).
+function oddCut(fr, c, at){
+  if(c.kind !== 'hard' || c.one || c.flick || c.flickEnd) return null;
+  const A = at(-CUT_K), B = at(CUT_K); if(!A || !B) return null;
+  const n = A.Y.length, d = (P, Q) => { let s = 0; for(let q=0;q<n;q++) s += Math.abs(P.Y[q]-Q.Y[q]); return s/n; }, AB = d(A, B);
+  if(AB < 0.04) return null;   // the same picture on both sides: nothing to learn
+  const mixOff = F => { let best = Infinity; for(let a=0; a<=1.001; a+=0.1){ let s = 0; for(let q=0;q<n;q++) s += Math.abs(F.Y[q] - (a*A.Y[q] + (1-a)*B.Y[q])); best = Math.min(best, s/n); } return best; };
+  const odd = fr.filter(f => Math.abs(f.k) <= 4 && d(f, A) > 0.3*AB && d(f, B) > 0.3*AB && mixOff(f) > 0.3*AB);
+  if(odd.length < 2) return null;
+  const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+  const dxs = odd.map(f => f.dx).filter(x => x !== undefined), scs = odd.map(f => f.sc).filter(x => x !== undefined);
+  const light = avg(odd.map(f => f.mean)) - (A.mean + B.mean)/2, soft = (c.blurDip ?? 1) < 0.65;
+  const side = dxs.length >= 2 && dxs.every(x => Math.sign(x) === Math.sign(dxs[0])) && Math.abs(avg(dxs)) >= 4 ? (avg(dxs) > 0 ? 'right' : 'left') : '';
+  const zoom = scs.length >= 2 ? (avg(scs) < 0.97 ? 'out' : avg(scs) > 1.03 ? 'in' : '') : '';
+  let guess = 'not known', ours = null;
+  if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
+  else if(zoom === 'out'){ guess = 'zoom out'; ours = 'zoomout'; }
+  else if(light > 0.15){ guess = 'light leak / film burn'; ours = 'burn'; }
+  const sig = [odd.length + ' frames', light > 0.1 ? 'brighter' : light < -0.1 ? 'darker' : 'same light', side ? 'moves ' + side : 'no sideways move',
+    zoom ? 'zoom ' + zoom : 'no zoom', soft ? 'soft' : 'sharp'].join(', ');
+  return { guess, ours, sig };
+}
 function cutKind(fr, hint){
   if(fr.length < 6) return hint === 'cut' ? 'hard' : hint;
   const endF = fr.filter(f=>Math.abs(f.k) >= CUT_K-1), ends = (endF.length >= 2 ? endF : [fr[0], fr[fr.length-1]]).map(f=>f.mean).sort((a,b)=>a-b), endMed = ends[Math.floor((ends.length-1)/2)];
@@ -7635,7 +7671,7 @@ async function analyzeReference(file, onP){
       refAudio = { mono: m, sr: ab.sampleRate, curve: onsetCurve(m, ab.sampleRate) };   // where it is in the creator's song (refAlign)
       rr = r; try{ rmap = soundMap(m, ab.sampleRate); }catch(e){ rmap = null; } }catch(e){ /* no soundtrack: pace in seconds */ }
     // its cuts: the same reading as a clip (scene changes, frame-accurate)
-    const ps = { url, dur, w, h, file }; let refCutsOut = [];   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
+    const ps = { url, dur, w, h, file }; let refCutsOut = []; const fxOdd = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
     await scanMotion(ps, p => onP(0.05 + 0.35*p, 'finding its cuts'));
     const shots = [], looks = [];
     const fs = await frameSource(file, v, w, h);
@@ -7696,7 +7732,8 @@ async function analyzeReference(file, onP){
         // when it stays sharp (something moved inside the shot); fades and dissolves keep their own reading
         if(!c.exact && !c.flick && !c.flickEnd && c.hint === 'cut'){ if(c.blurDip >= 0.65) c.drop = true; else if(!['whip','zoom','spin','flash','glitch'].includes(c.kind)) c.kind = 'blur'; }
         if(['hard','dissolve'].includes(c.kind) && !c.one){ const A = at(-CUT_K), B = at(CUT_K);
-          if(A && B) for(const k of [0,-1,1,-2,2,-3,3]){ const F = at(k); if(!F) continue; const sh = revealShape(A.Y, B.Y, F.Y, A.FW, A.FH); if(sh){ c.kind = sh; break; } } } });
+          if(A && B) for(const k of [0,-1,1,-2,2,-3,3]){ const F = at(k); if(!F) continue; const sh = revealShape(A.Y, B.Y, F.Y, A.FW, A.FH); if(sh){ c.kind = sh; break; } } }
+        c.odd = oddCut(fr, c, at); });
       for(let i=cuts.length-1;i>=0;i--) if(cuts[i].drop) cuts.splice(i, 1);
       // a flash moves its cut onto its brightest frame: in time order again, never two on the same frame
       cuts.sort((x, y) => x.t - y.t);
@@ -7724,7 +7761,15 @@ async function analyzeReference(file, onP){
         let move = null;
         if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g.Y), mine.map(([z])=>z[1]), gr[0].FW, gr[0].FH);
         shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick });
-        const lk = lf[i] ? lookOfImage(lf[i], lf[i].width, lf[i].height) : null; if(lk) looks.push(lk); });
+        const lk = lf[i] ? lookOfImage(lf[i], lf[i].width, lf[i].height) : null; if(lk) looks.push(lk);
+        // the learning log: an effect in the shot the styles do not learn yet (the studio has each of these)
+        if(!x.flick){ const cv = mine.map(([,k]) => zf[k]).filter(Boolean), found = [];
+          if(cv.filter(c => rgbShiftOf(c) >= 2).length >= 2) found.push(['RGB split in the shot', 'rgbpulse']);
+          const sym = g => { const Y = g.Y, W2 = g.FW; let s2 = 0, n2 = 0; for(let q=0; q<Y.length; q+=3){ const xq = q % W2; s2 += Math.abs(Y[q] - Y[q - xq + (W2-1-xq)]); n2++; } return n2 ? s2/n2 : 1; };
+          if(gr.filter(g => g && sym(g) < 0.015).length >= 2) found.push(['mirror', 'mirror']);
+          const bs = (ps.samples || []).filter(q => q.t >= x.a + 0.07 && q.t < x.b - 0.07).map(q => q.b);
+          if(bs.length >= 6){ const md = [...bs].sort((p,q)=>p-q)[bs.length>>1]; if(bs.filter(b => b > md + 0.25).length >= 2) found.push(['strobe / flash pulses', 'strobe']); }
+          found.forEach(([guess, ours]) => fxOdd.push({ at: +x.a.toFixed(2), guess, ours })); } });
       refCutsOut = cuts;
     } finally { fs.close(); refBars = null; }
     const cuts = refCutsOut;
@@ -7763,7 +7808,9 @@ async function analyzeReference(file, onP){
     return { name: file.name, key: refKeyOf(file), audio: refAudio, dur, w, h, moments, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
       hookBeats: shotBeats[0] || 0, hookSec: shotSec[0] || 0, onBeat, energy, trans,
       zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
-      look, bpm: P ? 60/P : 0 };
+      look, bpm: P ? 60/P : 0,
+      // the learning log: what this reader could not learn (a transition it does not know; an effect in a shot)
+      unread: { cuts: cuts.filter(c => c.odd).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd } };
   } finally { setTimeout(()=>URL.revokeObjectURL(url), 1000); }
 }
 function describeRef(R){
@@ -8130,26 +8177,42 @@ function autoUse(){
   $('luse').click();
 }
 // teaching from many Reels: each one read like "Copy a Reel" and saved to the kind, one after another
-$('tpick').addEventListener('click', () => $('tfiles').click(), SIG);
+// 400-500 Reels at a time from the administrator: one after another on this computer (the video never leaves it); each
+// one's reading goes to the learning log (Admin -> My trends): the transitions known, and what could not be learned. Reels
+// of the kind already learned are skipped (taught again after a Stop or a closed tab, it goes on where it was).
+let teachStop = false, teaching = false;
+$('tpick').addEventListener('click', () => { if(teaching){ teachStop = true; $('tpick').textContent = 'Stopping…'; return; } $('tfiles').click(); }, SIG);
 $('tfiles').addEventListener('change', async e => {
   const files = [...(e.target.files || [])]; e.target.value = ''; if(!files.length) return;
-  const cat = $('tcat').value, shared = $('tshare').checked; let ok = 0, bad = 0;
-  $('tpick').disabled = true;
+  const cat = $('tcat').value, shared = $('tshare').checked, admin = root.classList.contains('admin');
+  const nameOf = f => (f.name || 'Reel').replace(/\.[^.]+$/, '').slice(0, 120);
+  let ok = 0, bad = 0, skip = 0, cutsN = 0, oddN = 0, fxN = 0, done = new Set();
+  if(admin){ try{ done = new Set((await api('/api/admin/learning?names=' + encodeURIComponent(cat))).names || []); }catch(err){ /* no log: all are read */ } }
+  const log = d => admin ? api('/api/admin/learning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: cat, ...d }) }).catch(() => {}) : null;
+  teaching = true; teachStop = false; $('tpick').textContent = 'Stop';
   try{
     for(const [i, f] of files.entries()){
-      const head = 'Reel ' + (i+1) + ' of ' + files.length + ': ';
+      if(teachStop) break;
+      const head = 'Reel ' + (i+1) + ' of ' + files.length + ': ', name = nameOf(f);
+      if(done.has(name)){ skip++; continue; }
       try{
         const R = await analyzeReference(f, (p, what) => { $('tstat').textContent = head + what + ' ' + Math.round(p*100) + '%'; });
         if(!R.cuts || R.cuts.length < 2) throw new Error('too few cuts to learn from');
         $('tstat').textContent = head + 'saving';
-        await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: (f.name || 'Reel').replace(/\.[^.]+$/, '').slice(0, 120), category: cat, shared, fp: fingerprintOf(R) }) });
-        ok++;
-      }catch(err){ console.warn('not learned from', f.name, err); bad++; }
+        await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, category: cat, shared, fp: fingerprintOf(R) }) });
+        const known = {}; R.cuts.forEach(c => { if(!(c.kind === 'hard' && R.unread.cuts.some(o => Math.abs(o.at - c.t) < 0.02))) known[c.kind] = (known[c.kind] || 0) + 1; });
+        await log({ name, ok: true, cuts: R.cuts.length, known, unread: R.unread });
+        ok++; done.add(name); cutsN += R.cuts.length; oddN += R.unread.cuts.length; fxN += R.unread.fx.length;
+      }catch(err){ console.warn('not learned from', f.name, err); bad++; await log({ name, ok: false, reason: String(err && err.message || err).slice(0, 200) }); }
     }
-  } finally { $('tpick').disabled = false; }
-  $('tstat').textContent = 'Learned from ' + ok + ' Reel' + (ok === 1 ? '' : 's') + ' (' + STYLE_KINDS[cat] + ')' + (bad ? ' · ' + bad + ' could not be read (too short or no cuts)' : '') + (ok ? ' ✓' : '');
+  } finally { teaching = false; $('tpick').textContent = 'Choose Reels'; $('tpick').disabled = false; }
+  $('tstat').textContent = (teachStop ? 'Stopped. ' : '') + 'Learned from ' + ok + ' Reel' + (ok === 1 ? '' : 's') + ' (' + STYLE_KINDS[cat] + ')' + (skip ? ' · ' + skip + ' already learned, skipped' : '') +
+    (bad ? ' · ' + bad + ' could not be read (too short or no cuts)' : '') + (ok ? ' · ' + (cutsN - oddN) + ' of ' + cutsN + ' transitions known, ' + oddN + ' new' + (fxN ? ', ' + fxN + ' effects not learned' : '') + ' (Admin → My trends → Learning log) ✓' : '');
   if(ok){ await loadKinds(); $('lcat').value = cat; if(learnedKind === cat) $('luse').click(); }
 }, SIG);
+// Admin -> My trends -> Teach from many Reels opens the studio here: Style, its "Teach Shubix from many Reels" open
+if(new URLSearchParams(location.search).get('teach') === '1') setTimeout(() => { const t = $('teach'), s1 = $('s1'); if(!t) return;   // (its panel opens only on a made Reel: brought above the steps)
+  if(s1 && s1.parentElement) s1.parentElement.insertBefore(t, s1); t.open = true; t.classList.add('teachtop'); t.scrollIntoView({ block: 'start' }); }, 1200);
 /* ---- learning without the creator seeing it ----
  * A template of a kind (Wedding, Travel, a festival, Product, Food, Gym, Birthday, Day in my life) puts on the learned
  * style of that kind (the Reels the administrator taught, with everyone's corrections), when there is one: the edit
