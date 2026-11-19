@@ -29,6 +29,13 @@ describe("A short song's parts", () => {
     expect(parts.some((x) => x.ty === "drop" && Math.abs(x.t - 7.25) < 0.8)).toBe(true);
     expect(parts.some((x) => x.ty === "break" && Math.abs(x.t - 11.0) < 0.8)).toBe(true);
   });
+  // the bass gone for three beats and back (QA 2026-11-19: out at 11.52 s, back at 12.51 s): the return is a moment of its own,
+  // not dropped for being near the break; the break on its own beat (a return the 8-beat rule also finds is put on its bar line)
+  it("bass in, out for three beats, back: a break on its beat, and the return", async () => {
+    const parts = await partsOf(track((t) => t >= 5.0 && !(t >= 11.0 && t < 13.25)));
+    expect(parts.some((x) => x.ty === "break" && Math.abs(x.t - 11.0) < 0.1)).toBe(true);
+    expect(parts.some((x) => x.ty !== "break" && Math.abs(x.t - 13.25) < 0.8)).toBe(true);
+  });
   it("bass on and off every bar (a loop): no parts from it in the middle", async () => {
     // (the 8-beat rule may still see one at the very start, where its window is short: older than this rule)
     const parts = await partsOf(track((t) => Math.floor(t / (P * 4)) % 2 === 1));

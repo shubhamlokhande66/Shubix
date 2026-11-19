@@ -193,25 +193,35 @@ function songParts(mono, sr, beats){
   // (most of a Reel song's change: its loudness is mastered flat) were averaged away, so its strongest moment had no cut
   // (QA 2026-11-18: bass in at 7.3 s, out at 11.5 s, one soft shot over both). Here the low end alone, about 1.3 s either
   // side, a change of 2.5 dB or more. Changes at an even spacing are the song's loop (tabla, a dhol pattern), not its
-  // parts; else the strongest, 2 s apart at least, one for every 4 s of song at most.
+  // parts; else the strongest, 2 s apart at least, one for every 4 s of song at most. A change the other way (bass back after
+  // a short break, gone after a short drop) may come sooner: about 0.9 s (QA 2026-11-19: bass out at 11.5 s, back at 12.5 s;
+  // the return, the moment ChatGPT and an editor cut on, was dropped for being near the break).
   if(dur < 40){
     const Wb = Math.max(4, Math.min(8, Math.round(1.3/p))), bc = [];
     for(let k=Wb; k<=n-Wb; k++){ let A=0,B=0; for(let q=1;q<=Wb;q++){ A += F[k-q][1]; B += F[k+q-1][1]; } const d = (B-A)/Wb;
       if(Math.abs(d) >= 2.5) bc.push({ k, v: Math.sign(d)*(3.5 + Math.abs(d) - 2.5) }); }
     bc.sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)); const bk = [];
-    bc.forEach(c => { if(bk.every(o => Math.abs(o.k-c.k) >= Wb)) bk.push(c); });
+    const away = (o, c) => Math.sign(o.v) !== Math.sign(c.v);   // a change the other way
+    bc.forEach(c => { if(bk.every(o => Math.abs(o.k-c.k) >= (away(o, c) ? Math.max(2, Math.round(0.9/p)) : Wb))) bk.push(c); });
     const ts = bk.map(c => beats[c.k]).sort((x,y)=>x-y), gaps = ts.slice(1).map((t,i)=>t-ts[i]);
     const gm = gaps.reduce((s,x)=>s+x,0)/Math.max(1,gaps.length), gsd = Math.sqrt(gaps.reduce((s,x)=>s+(x-gm)*(x-gm),0)/Math.max(1,gaps.length));
     if(!(ts.length >= 3 && gsd/Math.max(1e-9,gm) < 0.25)){ let added = 0;
       for(const c of bk){ if(added >= Math.max(1, Math.floor(dur/4))) break;
-        if(keep.every(o => Math.abs(beats[o.k]-beats[c.k]) >= 2)){ keep.push(c); added++; } } }
+        if(keep.every(o => Math.abs(beats[o.k]-beats[c.k]) >= (away(o, c) ? 0.9 : 2))){ c.bass = true; keep.push(c); added++; } } }
   }
   // the exact beat: where the sound changes most from one beat to the next (same direction), near the coarse change
   const step = (k, w) => { let A=0,B=0; for(let q=1;q<=w;q++){ A += F[k-q][0]+F[k-q][1]; B += F[k+q-1][0]+F[k+q-1][1]; } return (B-A)/(2*w); };
-  keep.forEach(c => { let bk = c.k, bv = 0; for(let k=Math.max(2,c.k-3); k<=Math.min(n-2,c.k+3); k++){ const v = step(k, 2)*Math.sign(c.v); if(v > bv){ bv = v; bk = k; } } c.k = bk; });
+  // (a change of the bass alone, from the short-song rule: the beat where the low end itself steps most and stays (two beats
+  // before against two after, so bass on one beat and off the next is no change); it is on its beat
+  // already and is not moved onto a bar line: QA 2026-11-19, the bass goes at 11.52 s and is back at 12.51 s, both one beat
+  // off this song's bar lines, and moved onto them they were a beat early)
+  keep.forEach(c => { let bk = c.k, bv = 0; for(let k=Math.max(2,c.k-3); k<=Math.min(n-2,c.k+3); k++){ const v = (c.bass ? (F[k][1] + F[Math.min(n-1,k+1)][1] - F[k-1][1] - F[k-2][1])/2 : step(k, 2))*Math.sign(c.v); if(v > bv){ bv = v; bk = k; } } c.k = bk; });
   // bars: the phase most changes agree on; a change one beat off a bar line moves onto it
-  const ph = [0,1,2,3].map(r => keep.reduce((s,c)=>s + (c.k%4===r ? Math.abs(c.v) : 0), 0)), P = ph.indexOf(Math.max(...ph));
-  keep.forEach(c => { const o = ((c.k - P)%4+4)%4; if(o === 1) c.k -= 1; else if(o === 3) c.k += 1; });
+  const ph = [0,1,2,3].map(r => keep.reduce((s,c)=>s + (c.k%4===r && !c.bass ? Math.abs(c.v) : 0), 0)), P = ph.indexOf(Math.max(...ph));
+  // (only where the bar line's own change is nearly as strong: a change clearly a beat off the bar stays on its beat; the bass
+  // back one beat after a bar line was put a beat early, before the bass: 2026-11-19)
+  keep.forEach(c => { if(c.bass) return; const o = ((c.k - P)%4+4)%4, to = o === 1 ? c.k - 1 : o === 3 ? c.k + 1 : c.k;
+    if(to !== c.k && to >= 2 && to <= n-2 && step(to, 2)*Math.sign(c.v) >= 0.8*step(c.k, 2)*Math.sign(c.v)) c.k = to; });
   for(let i=keep.length-1;i>=0;i--) if(beats[n-1] - beats[Math.min(n-1,keep[i].k)] < 4*p || keep[i].k >= n) keep.splice(i,1);
   keep.sort((x,y)=>x.k-y.k);
   const all = F.map(f=>f[0]).sort((x,y)=>x-y), hi = all[Math.floor(all.length*0.55)];
@@ -460,14 +470,20 @@ function tastePlan(){
   ES.plan.forEach((s, i) => {
     const len = s.end - s.start, prev = ES.plan[i - 1];
     // transitions: only where the song changes, room on both sides, spaced, one style
-    if(i > 0 && s.tr !== 'hard'){
+    // (a drop marked after the style chose its cut, a part of the song found later: weighed too, so it gets the drop's own)
+    if(i > 0 && (s.tr !== 'hard' || (s.type === 'drop' && !s.trByDir && !s.trByRef))){
       const at = s.type === 'drop' || s.type === 'break' || (ES.songPartsRel.length ? EH.isPartStart(s.start) : s.type === 'hit' && (!marked || s.start - last >= 2 * apart))
         || (!marked && !hits && len >= 1.5);
-      const room = len >= 1 && prev && prev.end - prev.start >= 1;
-      if(!at || !room || used >= most || s.start - last < apart) s.tr = 'hard';
+      // (a drop, the bass back included: its flash is a moment of light over the cut, not a blend of two shots, so a short
+      // shot on each side takes it; a fast song's drop shot is under a second, and every drop was a plain cut: QA 2026-11-19)
+      const room = s.type === 'drop' ? len >= 0.3 && prev && prev.end - prev.start >= 0.3 : len >= 1 && prev && prev.end - prev.start >= 1;
+      // (a drop may follow the transition before it sooner: 2 s, a break and then the drop are one move of the song)
+      if(!at || !room || used >= most || s.start - last < (s.type === 'drop' ? 2 : apart)) s.tr = 'hard';
       else {
         const rc = recipeNow();
-        if(s.type === 'drop') s.tr = rc.drop; else if(s.type === 'break') s.tr = rc.brk; else if(!ES.TR_CLASSY.has(s.tr)) s.tr = style[1];
+        // a drop is the song's hit: a flash, a whip or a zoom lands on it; a dissolve or a dip there (some recipes) is soft where
+        // the song is hardest, so outside Smooth it is a flash (as every editor asked does it: one flash on the drop, one on the return)
+        if(s.type === 'drop') s.tr = ES.mode !== 'smooth' && ['dissolve', 'dip', 'blur', 'luma'].includes(rc.drop) ? 'flash' : rc.drop; else if(s.type === 'break') s.tr = rc.brk; else if(!ES.TR_CLASSY.has(s.tr)) s.tr = style[1];
         if((TR_DUR[s.tr] || 0) > 0.6 * len) s.tr = 'hard'; else { used++; last = s.start; }
       }
     }

@@ -11,13 +11,34 @@ import { toneOf, matchTones } from '@mobile/video-engine';
 export function createReelBrain(ES, EH){
 // The edit's own review (shared/video-engine review.ts), as the website's studio gives it (engine.ts reviewOf): the same
 // edit gets the same review on both.
+// Every transition lands on its beat (as an editor sets it, and as ChatGPT asked about this Reel's song put it: QA
+// 2026-11-19): the new shot is fully in ON the beat, so the transition plays in the time just before it. A transition
+// started at the beat showed the new shot 0.2-0.45 s late (a whole beat on a 185 BPM song). The shot then starts that
+// much earlier (the one before it ends earlier) and its footage starts as much earlier, so on the beat it shows the
+// moment chosen for it. A flash and a glitch are not moved: their peak is their first frame, already on the beat. The
+// lead is kept (trLead) for the edit's review, which measures the cut at start + lead. At most 45% of the shot before.
+function landTransitions(list){
+  const NO = ['hard', 'flash', 'glitch', 'fadein'];
+  for(let i = 1; i < list.length; i++){
+    const e = list[i], pv = list[i-1]; e.trLead = 0;
+    if(!e.tr || NO.includes(e.tr) || e.black || (e.cs && e.cs.rev)) continue;
+    const d = e.trd ?? (TR_DUR[e.tr] || 0), r = Math.max(0.05, (e.sp && e.sp.at ? e.sp.at(0) : 1)*(e.scaleR || 1));
+    // (footage from before its moment; else, a clip used from its first frame, the moment a little later, from the footage after it)
+    const sd = ES.sources[e.src] ? ES.sources[e.src].dur : 0, after = Math.max(0, sd - TAIL - (e.in + e.sp.pos(e.end - e.start)*(e.scaleR || 1)));
+    let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
+    if(!back) L = Math.min(L, after/r);
+    if(!(L >= 1/30)) continue;
+    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.trLead = L;
+    for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = ES.beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
+  }
+}
 function reviewOf(list){
   const t0 = list[0].start, gmax = Math.max(1e-6, ...ES.sources.flatMap(s => (s.samples || []).map(x => x.m)));
   const shots = list.map(e => { const s = ES.sources[e.src], need = e.sp.pos(e.end - e.start)*(e.scaleR || 1);
     const st = s && s.samples && s.samples.length ? windowStats(s, e.in, e.in + Math.max(need, 0.05)) : null;
     return { start: e.start - t0, end: e.end - t0, sourceIndex: e.src, sourceStart: e.in, sourceEnd: e.in + need, kind: e.type,
       ...(st ? { sharpness: st.sh/(s.shMed || 1), brightness: st.b, darkSeconds: (st.dark || 0)*Math.max(need, 0.05), motion: Math.min(1, st.m/gmax), face: st.face } : {}),
-      effect: e.efx || 'none', transition: e.tr || 'hard', locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
+      effect: e.efx || 'none', transition: e.tr || 'hard', transitionLead: e.trLead || 0, locked: !!(e.byDir || (e.uk && e.uk.length)) }; });
   // the song's own drops (its analysis, before the plan was made from it): each should have a cut on it
   const drops = (ES.cuts || []).filter((c, k) => ES.cutType[k] === 'drop').map(c => c - t0);
   return reviewAutonomousEdit({ shots, beats: ES.beats.map(x => x - t0), drops, duration: list[list.length-1].end - t0, sourceCount: ES.sources.length, sourceDurations: ES.sources.map(s => s.dur), cutLead: 1/30 });
@@ -282,7 +303,8 @@ function makeEditNow(){
         if(fx && (e.end - e.start) >= 0.65) e.efx = fx;
       }
       // The shared plan's transition IDs are renderer-native; keep explicit rules/AI choices intact.
-      if(i > 0 && !e.trByDir && e.tr === 'hard' && shared.transition !== 'hard' && shared.transition in TR_DUR) e.tr = shared.transition;
+      // (not its transition: a plain cut here is the rules' choice, transitions only where the song changes and rationed;
+      // this put the clip's own transition on any such cut, a flash on a cut where the song does nothing: QA 2026-11-19)
       // Apply the shared camera keyframes to the same WebGL/2D draw path used by preview and MP4 export.
       if(!e.ak || !e.ak.length){
         const len = e.end - e.start, scaleTrack = shared.keyframes.find(track => track.property === 'scale');
@@ -302,6 +324,7 @@ function makeEditNow(){
     e.beatsIn = ES.beats.filter(b=>b>e.start+0.12 && b<e.end-0.05).map(b=>b-e.start);
   });
   motionMatch();
+  landTransitions(ES.edit);
   EH.ukRestore(keptUk);
   EH.setCanvas(); ES.edit.forEach(e=>EH.camAt(e, 0)); EH.renderEDL();
   EH.autoTools(); EH.speechScan();

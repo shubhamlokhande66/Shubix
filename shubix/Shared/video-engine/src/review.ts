@@ -30,6 +30,9 @@ export type EditReviewShot = {
   /** the effect and the transition into the shot ("none" / "hard" = nothing) */
   effect?: string;
   transition?: string;
+  /** seconds the shot starts before its beat because its transition plays into the beat (the new shot fully in on the beat,
+   * as editors land a whip or a dissolve): its cut is measured at start + this */
+  transitionLead?: number;
   /** chosen by the creator or by an explicit instruction: reviewed like the others, never proposed for a change */
   locked?: boolean;
 };
@@ -233,7 +236,7 @@ export function reviewAutonomousEdit(input: EditReviewInput): EditReview {
   if (beats.length && shots.length > 1) {
     let onBeat = 0, sum = 0, worst = 0;
     for (let i = 1; i < shots.length; i++) {
-      const off = nearest(beats, shots[i].start + lead);
+      const off = nearest(beats, shots[i].start + lead + (num(shots[i].transitionLead) ? shots[i].transitionLead as number : 0));
       sum += off; worst = Math.max(worst, off);
       if (off <= tolerance + 1e-9) onBeat++;
       else add("cut-off-beat", "warning", "snap-cut-to-beat", `The cut into shot ${i + 1} is ${Math.round(off * 1000)} ms off the beat.`, i, off * 1000, !!shots[i].locked || !!shots[i - 1].locked);
@@ -243,7 +246,7 @@ export function reviewAutonomousEdit(input: EditReviewInput): EditReview {
   }
 
   // ---- every drop gets a cut
-  const starts = shots.map((s) => s.start + lead);
+  const starts = shots.map((s) => s.start + lead + (num(s.transitionLead) ? s.transitionLead as number : 0));
   const dropTimes = [...new Set((input.drops ?? []).filter((d) => num(d) && d > 0.25 && d < duration - 0.25))].sort((a, b) => a - b);
   let drops: EditReviewMetrics["drops"] = null;
   if (dropTimes.length) {

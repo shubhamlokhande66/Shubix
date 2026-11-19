@@ -18,9 +18,9 @@ type Sample = { t: number; m: number; b: number; sh: number };
 type Shot = { start: number; end: number; src: number; in: number; scaleR: number; sp: { pos: (l: number) => number }; byDir?: boolean };
 type State = { edit: Shot[]; sources: { dur: number; shMed?: number; samples: Sample[] }[]; beats: number[]; editTakes: { tried: number; kept: number; fixedDark: number; addedClips: number } };
 
-export function world(nClips: number, seed: number, o: { pop?: boolean; face?: { x: number; y: number; s: number }; still?: boolean } = {}) {
+export function world(nClips: number, seed: number, o: { pop?: boolean; face?: { x: number; y: number; s: number }; still?: boolean; mono?: Float32Array; sr?: number } = {}) {
   let r = seed; const rnd = () => { r = (r * 16807) % 2147483647; return (r - 1) / 2147483646; };
-  const mono = song(30), clips: Record<string, { dur: number; samples: Record<string, number>[] }> = {}, paths: { path: string; name: string }[] = [];
+  const mono = o.mono ?? song(30), clips: Record<string, { dur: number; samples: Record<string, number>[] }> = {}, paths: { path: string; name: string }[] = [];
   for (let c = 0; c < nClips; c++) {
     const dur = 3 + Math.floor(rnd() * 8), n = dur * 10, badA = Math.floor(rnd() * n), badLen = Math.floor(n * (0.2 + 0.4 * rnd())), dark = rnd() < 0.5, base = 0.2 + rnd() * 0.6;
     const samples = Array.from({ length: n }, (_, i) => { const bad = i >= badA && i < badA + badLen;
@@ -30,7 +30,7 @@ export function world(nClips: number, seed: number, o: { pop?: boolean; face?: {
   const ok = (body: unknown) => ({ ok: true, status: 200, text: async () => String(body), json: async () => body, arrayBuffer: async () => body as ArrayBuffer });
   const fetcher = async (url: string, init?: { method?: string; body?: unknown }) => {
     const u = new URL(url), path = u.pathname.slice(1), p = u.searchParams.get("p") ?? "";
-    if (path === "sound") { const out = new ArrayBuffer(8 + mono.byteLength), v = new DataView(out); v.setInt32(0, SR, true); v.setInt32(4, 1, true); new Float32Array(out, 8).set(mono); return ok(out); }
+    if (path === "sound") { const out = new ArrayBuffer(8 + mono.byteLength), v = new DataView(out); v.setInt32(0, o.sr ?? SR, true); v.setInt32(4, 1, true); new Float32Array(out, 8).set(mono); return ok(out); }
     if (path === "song") {
       const b = init!.body as Uint8Array, len = new DataView(b.buffer, b.byteOffset).getUint32(0, true), o = JSON.parse(new TextDecoder().decode(b.subarray(4, 4 + len)));
       const m = new Float32Array(b.slice(4 + len).buffer), a = songAnalysis(m, o.sr, o);
