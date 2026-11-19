@@ -806,7 +806,13 @@ function applyAnalysis(r){
   ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, beatAccents, drumHits, cuts, cutType, cutFx, peaks, peakS, barOff } = r); downbeats = r.downbeats || [];
   songPartsRel = r.parts || [];
   buildPlan(); drawMusic();
-  $('mbpm').textContent = (60/period).toFixed(0);
+  $('mbpm').textContent = (60/period).toFixed(1);
+  $('mbeatcount').textContent = beats.length;
+  $('mdrumcount').textContent = drumHits.length;
+  $('beatdetails').hidden = !beats.length;
+  $('beatlist').textContent = (beatAccents.length ? beatAccents.map(b => b.t.toFixed(3) + 's ' + b.level) : beats.map(b => b.toFixed(3) + 's')).join(' · ');
+  $('drumcounts').textContent = 'Kick ' + drumHits.filter(h=>h.band==='kick').length + ' · Snare ' + drumHits.filter(h=>h.band==='snare').length + ' · Hi-hat ' + drumHits.filter(h=>h.band==='hihat').length;
+  $('drumlist').textContent = drumHits.slice(0,250).map(h => h.band + ' ' + h.t.toFixed(3) + 's (' + h.strength.toFixed(2) + ')').join(' · ') + (drumHits.length > 250 ? ' · …' : '');
   $('mclips').textContent = plan.length; $('mdrop').textContent = plan.filter(s=>s.type==='drop').length; $('mbreak').textContent = plan.filter(s=>s.type==='break').length;
 }
 // Second opinion on the beats: Beat This! (a neural network trained on thousands of hand-annotated songs) runs on this
