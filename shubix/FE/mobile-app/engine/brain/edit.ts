@@ -189,6 +189,18 @@ function songParts(mono, sr, beats){
   // boundaries: strongest changes, at least 8 beats apart
   const cand = nov.map((v,k)=>({k, v})).filter(c => c.v >= 3 || c.v <= -3.5).sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)), keep = [];
   cand.forEach(c => { if(keep.every(o => Math.abs(o.k-c.k) >= 8)) keep.push(c); });
+  // a short song (a Reel's audio, under 40 beats): 8 beats either side is half of it, and a few bars of bass coming in or
+  // going (most of a Reel song's change: its loudness is mastered flat) were averaged away, so its strongest moment had no
+  // cut (QA 2026-11-18: bass in at 7.7 s, out at 10.4 s, one soft shot over both). Here the low end alone, 4 beats either
+  // side, a change of 2.5 dB or more; more than two such changes is the song's pattern (tabla, a dhol loop), not its parts.
+  if(n < 40){
+    const bc = [];
+    for(let k=4; k<n-3; k++){ let A=0,B=0; for(let q=1;q<=4;q++){ A += F[k-q][1]; B += F[k+q-1][1]; } const d = (B-A)/4;
+      if(Math.abs(d) >= 2.5) bc.push({ k, v: Math.sign(d)*(3.5 + Math.abs(d) - 2.5) }); }
+    bc.sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)); const bk = [];
+    bc.forEach(c => { if(bk.every(o => Math.abs(o.k-c.k) >= 4)) bk.push(c); });
+    if(bk.length <= 2) bk.forEach(c => { if(keep.every(o => Math.abs(o.k-c.k) >= 4)) keep.push(c); });
+  }
   // the exact beat: where the sound changes most from one beat to the next (same direction), near the coarse change
   const step = (k, w) => { let A=0,B=0; for(let q=1;q<=w;q++){ A += F[k-q][0]+F[k-q][1]; B += F[k+q-1][0]+F[k+q-1][1]; } return (B-A)/(2*w); };
   keep.forEach(c => { let bk = c.k, bv = 0; for(let k=Math.max(2,c.k-3); k<=Math.min(n-2,c.k+3); k++){ const v = step(k, 2)*Math.sign(c.v); if(v > bv){ bv = v; bk = k; } } c.k = bk; });
