@@ -60,7 +60,7 @@ export function pcmOf(raw: ArrayBuffer) {
     if (k === ref) return 1;
     let dot = 0, aa = 0, bb = 0;
     for (let i = 0; i < n; i += stride) { dot += base[i] * d[i]; aa += base[i] * base[i]; bb += d[i] * d[i]; }
-    return dot / Math.sqrt(Math.max(1e-20, aa * bb)) < -0.2 ? -1 : 1;
+    return dot / Math.sqrt(Math.max(1e-20, aa * bb)) < -0.6 ? -1 : 1;
   });
   for (let k = 0; k < count; k++) {
     const d = channels[k], sign = signs[k];
