@@ -264,7 +264,9 @@ function analyse(){
     const sorted = Array.from(a).filter(v=>v>0).sort((x,y)=>x-y);
     if(sorted.length < 4) return;
     const q = p => sorted[Math.min(sorted.length-1, Math.floor((sorted.length-1)*p))];
-    const scale = Math.max(q(0.95), 1e-9), threshold = Math.max(q(0.5)*3, q(0.9)*0.18, 1e-9);
+    // Percussive attacks occupy only a small fraction of frames; the 95th percentile can
+    // still be background on sparse tracks. Use the upper tail as the reference level.
+    const scale = Math.max(q(0.995), 1e-9), threshold = Math.max(q(0.5)*3, scale*0.18, 1e-9);
     const gap = Math.max(1, Math.round(0.05*fps)); let last = -gap;
     for(let i=2;i<a.length-2;i++){
       const v=a[i]; if(v<threshold || v<a[i-1] || v<=a[i+1] || v<=a[i-2] || v<=a[i+2] || i-last<gap) continue;
