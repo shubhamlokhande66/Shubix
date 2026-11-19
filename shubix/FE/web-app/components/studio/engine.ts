@@ -9007,10 +9007,15 @@ function restoreEdit(list){
  * Each song is kept once (with the saved Reels' files) together with its finished analysis (beats, drops, AI check), so
  * picking it again is instant. Up to 12; the oldest go (their file too, unless a saved Reel uses it). */
 const RECENT_MAX = 12;
+// the analysis kept with a song is from this beat tracker (a hash of songAnalysis' own code): when song.ts changes, a song
+// picked again is read again, not shown with the old beats (QA 2026-11-19: a song kept from before the 44.1 kHz fix still
+// had a beat every 0.8 s, its beat is 0.33 s)
+let anaVer = '';
+const songAnaVer = () => { if(!anaVer){ const t = songAnalysis.toString(); let h = 2166136261; for(let i=0;i<t.length;i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } anaVer = (h >>> 0).toString(36); } return anaVer; };
 async function rememberSong(file, r, aiDone){
   if(typeof indexedDB === 'undefined' || !file) return;
   try{ await putFile(file); const fp = fileFp(file);
-    await idb('songs', 'readwrite', s => s.put({ fp, name: file.name, type: file.type, dur: song ? song.buf.duration : 0, usedAt: Date.now(), r, aiDone: !!aiDone }));
+    await idb('songs', 'readwrite', s => s.put({ fp, name: file.name, type: file.type, dur: song ? song.buf.duration : 0, usedAt: Date.now(), r, aiDone: !!aiDone, v: songAnaVer() }));
     const all = (await idb('songs', 'readonly', s => s.getAll()) || []).sort((a, b) => b.usedAt - a.usedAt);
     for(const old of all.slice(RECENT_MAX)) await forgetSong(old.fp, true);
     listRecent();
@@ -9065,7 +9070,7 @@ async function pickRecent(fp){
   const sg = await idb('songs', 'readonly', s => s.get(fp)), b = sg && await idb('files', 'readonly', s => s.get('f:' + fp));
   if(!sg || !b){ await forgetSong(fp); return; }
   const f = new File([b], sg.name, { type: sg.type || b.type, lastModified: +fp.split('|').pop() || Date.now() });
-  loadMusic(f, sg.r ? { r: sg.r, aiDone: sg.aiDone } : null);
+  loadMusic(f, sg.r && sg.v === songAnaVer() ? { r: sg.r, aiDone: sg.aiDone } : null);
 }
 listRecent();
 
