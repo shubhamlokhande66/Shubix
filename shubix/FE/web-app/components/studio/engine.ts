@@ -3814,6 +3814,12 @@ function flowNear(i, res, gmax){
     const b = r.in + s.sp.pos(s.end - s.start)*(r.scaleR || 1), st = windowStats(src, r.in, Math.max(b, r.in + 0.05));
     return flowLook(src, r.in, b, st, st.m/gmax); });
 }
+// a shot in slow motion (half speed or slower over most of it, as the style or Shubix AI chose for a break or a calm
+// moment): editors give slow motion a moment with smooth movement in it (a walk, an entrance, hair or a dupatta in the wind,
+// water), not a still picture (slowed, nothing changes) nor a frantic one. Not "every walk is slowed": the music decides
+// where the slow part is, this decides which footage plays in it (2026-11-19).
+const slowMo = (sp, len) => !!sp && len > 0 && sp.pos(len) < 0.8*len;
+const slowFit = m => 1 - Math.abs(m - 0.4)*1.6 - (m < 0.1 ? 0.5 : 0);
 function scoreWindow(i, src, a, need, gmax, near){
   const s = plan[i], st = windowStats(src, a, a+need), m = st.m/gmax;
   let sc;
@@ -3821,6 +3827,7 @@ function scoreWindow(i, src, a, need, gmax, near){
   else if(s.type==='hit') sc = 1.5*m;
   else if(s.type==='break') sc = 1 - Math.abs(m-0.18)*2;
   else sc = 1 - Math.abs(m-0.55);
+  if(s.type!=='drop' && slowMo(s.sp, s.end - s.start)) sc = slowFit(m);
   if(i===0) sc = 2.4*m;   // hook: the most action-packed moment opens the reel
   // too dark: the whole moment (as before), or a part of it (a clip that opens on black, a fade in): half of it
   // black costs as much as all of it did, and more black costs more, so the moment with the least black is taken
@@ -4385,6 +4392,7 @@ function repick(i, avoidCurrent, onlySrc){
       if(crossesScene(src, a, a+need)) continue;
       const st = windowStats(src, a, a+need), m = st.m/gmax;
       let sc = e.type==='drop' ? 2.2*m : e.type==='hit' ? 1.5*m : e.type==='break' ? 1-Math.abs(m-0.18)*2 : 1-Math.abs(m-0.55);
+      if(e.type!=='drop' && slowMo(e.sp, len)) sc = slowFit(m);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
       const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i));
@@ -8568,6 +8576,11 @@ function autoTools(){
     // the clips' own sound, as chosen (a shot's own volume set by hand always stays)
     if(au.clip === 'all') csAutoSet(e, { vol: 0.7 });
     else if(au.clip === 'voices' && speechShare(s, e.in, e.in + need) > 0.4) csAutoSet(e, { vol: 0.9 });
+    // a slowed shot (0.5x, a ramp's slow part) glides with Smooth slow-mo, as an editor turns it on in CapCut: 30 fps footage at
+    // half speed shows every picture twice and steps. Not for footage of 50 fps or more played from its own file (its real
+    // pictures fill the slow part); a heavy clip played from its 30 fps edit copy is 30 fps.
+    const fps = s.facts && s.facts.fps || 0;
+    if(!(fps >= 50 && !s.edFile) && slowMo(e.sp, e.end - e.start)) csAutoSet(e, { smooth: 1 });
   });
   // the AI director's own look for a shot (mirror, black and white, a framed photo, a fade...), like a person's clip tools
   // fitted to the shot's picture first (lookFit.ts): a mask round the subject, a key only on a green screen, gentle curves

@@ -18,13 +18,13 @@ type Sample = { t: number; m: number; b: number; sh: number };
 type Shot = { start: number; end: number; src: number; in: number; scaleR: number; sp: { pos: (l: number) => number }; byDir?: boolean };
 type State = { edit: Shot[]; sources: { dur: number; shMed?: number; samples: Sample[] }[]; beats: number[]; editTakes: { tried: number; kept: number; fixedDark: number; addedClips: number } };
 
-export function world(nClips: number, seed: number, o: { pop?: boolean; face?: { x: number; y: number; s: number } } = {}) {
+export function world(nClips: number, seed: number, o: { pop?: boolean; face?: { x: number; y: number; s: number }; still?: boolean } = {}) {
   let r = seed; const rnd = () => { r = (r * 16807) % 2147483647; return (r - 1) / 2147483646; };
   const mono = song(30), clips: Record<string, { dur: number; samples: Record<string, number>[] }> = {}, paths: { path: string; name: string }[] = [];
   for (let c = 0; c < nClips; c++) {
     const dur = 3 + Math.floor(rnd() * 8), n = dur * 10, badA = Math.floor(rnd() * n), badLen = Math.floor(n * (0.2 + 0.4 * rnd())), dark = rnd() < 0.5, base = 0.2 + rnd() * 0.6;
     const samples = Array.from({ length: n }, (_, i) => { const bad = i >= badA && i < badA + badLen;
-      return { t: i / 10, m: Math.max(0.005, base * (0.5 + rnd())) * 0.1, b: bad && dark ? 0.03 : 0.35 + 0.3 * rnd(), cx: 0.5, sh: bad && !dark ? 20 : 90 + 30 * rnd(), sx: 0.5, sy: 0.5, sw: 0.2, gx: 0, gy: 0, ax: 0.5, ay: 0.5, aw: 0.3 }; });
+      return { t: i / 10, m: o.still && i < n / 2 ? 0.0005 : Math.max(0.005, base * (0.5 + rnd())) * 0.1, b: bad && dark ? 0.03 : 0.35 + 0.3 * rnd(), cx: 0.5, sh: bad && !dark ? 20 : 90 + 30 * rnd(), sx: 0.5, sy: 0.5, sw: 0.2, gx: 0, gy: 0, ax: 0.5, ay: 0.5, aw: 0.3 }; });
     clips[`/c${c}.mp4`] = { dur, samples }; paths.push({ path: `/c${c}.mp4`, name: `c${c}.mp4` });
   }
   const ok = (body: unknown) => ({ ok: true, status: 200, text: async () => String(body), json: async () => body, arrayBuffer: async () => body as ArrayBuffer });
