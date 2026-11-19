@@ -194,7 +194,7 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
         </Pressable>
         {showTiming && <>
           <ScrollView horizontal showsHorizontalScrollIndicator>
-            <Text className="font-mono text-[11px] leading-5 text-muted">{music.beatTimes.map((t) => t.toFixed(3) + "s").join("  ·  ")}</Text>
+            <Text className="font-mono text-[11px] leading-5 text-muted">{music.beatTimes.map((t, i) => t.toFixed(3) + "s " + (music.beatAccents[i]?.level ?? "beat")).join("  ·  ")}</Text>
           </ScrollView>
           <Text className="text-[12px] text-muted">{words("Kick")}: {music.drumHits.filter((h) => h.band === "kick").length}  ·  {words("Snare")}: {music.drumHits.filter((h) => h.band === "snare").length}  ·  {words("Hi-hat")}: {music.drumHits.filter((h) => h.band === "hihat").length}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator>
