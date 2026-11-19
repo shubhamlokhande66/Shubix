@@ -496,8 +496,35 @@ async function loadMusic(file, cached = null){
   try{ whole = await decodeAnyAudio(file); }
   catch(e){ if(token !== musicToken) return; songBusy(false); console.warn('song not readable', e); rlog('song', 'Song could not be read: ' + String(e && e.message || e), { name }, 'error'); tasks.fail('song', 'This file has no sound we can read. Try an MP3, M4A or WAV.'); $('s1st').textContent = 'Could not read the sound of this file. Use MP3, M4A, WAV or a video with sound. (Songs in the Apple Music app are protected and cannot be opened by websites.)'; return; }
   if(token !== musicToken) return;
+  // A plain average can cancel the kick/snare almost completely when a stereo file has
+  // one channel polarity-inverted (common in phone/edited audio). Pick the strongest
+  // channel as the reference, align only clearly anti-correlated channels, then mix.
   const m = new Float32Array(whole.length);
-  { const ch = whole.numberOfChannels; for(let c=0;c<ch;c++){ const d = whole.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ch; } }
+  {
+    const ch = whole.numberOfChannels, channels = Array.from({ length: ch }, (_, c) => whole.getChannelData(c));
+    if(ch === 1) m.set(channels[0]);
+    else {
+      let ref = 0, refEnergy = -1;
+      for(let c=0;c<ch;c++){
+        let e=0; const d=channels[c], stride=Math.max(1,Math.floor(d.length/12000));
+        for(let i=0;i<d.length;i+=stride) e += d[i]*d[i];
+        if(e>refEnergy){ refEnergy=e; ref=c; }
+      }
+      const base=channels[ref], stride=Math.max(1,Math.floor(base.length/12000));
+      const signs = channels.map((d,c)=>{
+        if(c===ref) return 1;
+        let dot=0, aa=0, bb=0;
+        for(let i=0;i<base.length;i+=stride){ dot+=base[i]*d[i]; aa+=base[i]*base[i]; bb+=d[i]*d[i]; }
+        const corr=dot/Math.sqrt(Math.max(1e-20,aa*bb));
+        return corr < -0.2 ? -1 : 1;
+      });
+      const scale=1/ch;
+      for(let c=0;c<ch;c++){
+        const d=channels[c], sign=signs[c];
+        for(let i=0;i<m.length;i++) m[i] += sign*d[i]*scale;
+      }
+    }
+  }
   song = { buf: whole, mono: m, r: null, name, file, key: name + '|' + whole.duration.toFixed(2) };
   buf = whole; mono = m; secStart = 0; capWords = null; capLines = null; capAll = null;
   drawMusic();
