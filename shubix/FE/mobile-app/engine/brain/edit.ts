@@ -463,12 +463,17 @@ function recipeNow(){
 function tastePlan(){
   if(ES.mode === 'copy' || !ES.plan.length || !ES.buf || EH.aiTrusted()) return;
   const L = ES.buf.duration, style = EH.TR_STYLE[ES.mode] || EH.TR_STYLE.auto;
-  const most = Math.max(1, Math.round(L / 7)), apart = Math.max(4, L / 6);
+  // (agreed with ChatGPT for Shubix, 2026-11-19: transitions that stand out, a flash, a whip, a glitch, a zoom, together at
+  // most 2 for every 10 s of Reel and 2.5 s apart at least; any other cut is a plain cut on its beat)
+  const most = Math.max(1, Math.round(L / 5)), apart = Math.max(4, L / 6);
+  let drops = 0, brokeAt = -99, lastDropAt = -99;
   let used = 0, last = -99, lastAcc = -99;
   // a song without a drop or a break (found): its hits, or else its long shots, are where it changes
   const marked = ES.plan.some(s => s.type === 'drop' || s.type === 'break'), hits = ES.plan.some(s => s.type === 'hit');
   ES.plan.forEach((s, i) => {
     const len = s.end - s.start, prev = ES.plan[i - 1];
+    if(s.type === 'drop'){ drops++; } else if(s.type === 'break') brokeAt = s.start;
+    const lastDrop = lastDropAt; if(s.type === 'drop') lastDropAt = s.start;   // (the drop before this one)
     // transitions: only where the song changes, room on both sides, spaced, one style
     // (a drop marked after the style chose its cut, a part of the song found later: weighed too, so it gets the drop's own)
     if(i > 0 && (s.tr !== 'hard' || (s.type === 'drop' && !s.trByDir && !s.trByRef))){
@@ -476,15 +481,20 @@ function tastePlan(){
         || (!marked && !hits && len >= 1.5);
       // (a drop, the bass back included: its flash is a moment of light over the cut, not a blend of two shots, so a short
       // shot on each side takes it; a fast song's drop shot is under a second, and every drop was a plain cut: QA 2026-11-19)
-      const room = s.type === 'drop' ? len >= 0.3 && prev && prev.end - prev.start >= 0.3 : len >= 1 && prev && prev.end - prev.start >= 1;
-      // (a drop may follow the transition before it sooner: 2 s, a break and then the drop are one move of the song)
-      if(!at || !room || used >= most || s.start - last < (s.type === 'drop' ? 2 : apart)) s.tr = 'hard';
+      const room = s.type === 'drop' ? len >= 0.25 && prev && prev.end - prev.start >= 0.25 : len >= 1 && prev && prev.end - prev.start >= 1;
+      // (a drop may follow the transition before it sooner: 2.5 s, a break and then the drop are one move of the song)
+      // a drop's flash only where the song really starts again: its first drop, or the bass back after a break. The bass
+      // back after a short dip (no break between, QA song 15.09 s) is a plain cut with its zoom punch, not one flash more
+      const major = s.type !== 'drop' || drops === 1 || brokeAt > lastDrop;
+      if(!at || !room || !major || used >= most || s.start - last < (s.type === 'drop' ? 2.5 : apart)) s.tr = 'hard';
       else {
         const rc = recipeNow();
         // a drop is the song's hit: a flash, a whip or a zoom lands on it; a dissolve or a dip there (some recipes) is soft where
         // the song is hardest, so outside Smooth it is a flash (as every editor asked does it: one flash on the drop, one on the return)
-        if(s.type === 'drop') s.tr = ES.mode !== 'smooth' && ['dissolve', 'dip', 'blur', 'luma'].includes(rc.drop) ? 'flash' : rc.drop; else if(s.type === 'break') s.tr = rc.brk; else if(!ES.TR_CLASSY.has(s.tr)) s.tr = style[1];
-        if((TR_DUR[s.tr] || 0) > 0.6 * len) s.tr = 'hard'; else { used++; last = s.start; }
+        if(s.type === 'drop') s.tr = ES.mode !== 'smooth' && ['dissolve', 'dip', 'blur', 'luma'].includes(rc.drop) ? 'flash' : rc.drop; else if(s.type === 'break') s.tr = ES.mode === 'smooth' ? rc.brk : 'hard'; else if(!ES.TR_CLASSY.has(s.tr)) s.tr = style[1];
+        // a drop shot too short for its whip or zoom (0.29 s in the plan ChatGPT gave): a flash, light over the cut, fits it
+        if(s.type === 'drop' && s.tr !== 'flash' && (TR_DUR[s.tr] || 0) > 0.6 * len) s.tr = 'flash';
+        if((TR_DUR[s.tr] || 0) > (s.tr === 'flash' || s.tr === 'glitch' ? 0.9 : 0.6) * len) s.tr = 'hard'; else if(s.tr !== 'hard'){ used++; last = s.start; }   // (a plain cut is not counted)
       }
     }
     // the AI's keyframe kicks: on a drop or a hit only, one per shot, spaced
