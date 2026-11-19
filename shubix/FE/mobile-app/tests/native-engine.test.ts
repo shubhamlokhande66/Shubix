@@ -38,6 +38,11 @@ describe("the studio with no page", () => {
     const { e } = engine();
     const song = await e.call("song", { path: "/s.mp3", name: "s.mp3" }) as { beats: number; bpm: number };
     expect(song.beats).toBeGreaterThan(20);
+    expect(song.beatTimes).toHaveLength(song.beats);
+    expect(song.beatTimes.every((t) => t >= 0 && t < 30)).toBe(true);
+    expect(song.beatAccents).toHaveLength(song.beats);
+    expect(song.beatAccents.every((b) => ["strong", "medium", "weak"].includes(b.level))).toBe(true);
+    expect(song.drumHits.every((h) => ["kick", "snare", "hihat"].includes(h.band))).toBe(true);
     expect(await e.call("clips", { paths: clips })).toMatchObject({ clips: 3, names: ["a.mp4", "b.mp4", "c.mp4"] });
     const r = await e.call("ready") as { work: { shots: number }; state: { edit: { start: number; end: number; src: number }[] } };
     expect(r.work.shots).toBeGreaterThan(3);
