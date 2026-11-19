@@ -500,6 +500,7 @@ async function loadMusic(file, cached = null){
   // one channel polarity-inverted (common in phone/edited audio). Pick the strongest
   // channel as the reference, align only clearly anti-correlated channels, then mix.
   const m = new Float32Array(whole.length);
+  let phaseAlignedChannels = 0;
   {
     const ch = whole.numberOfChannels, channels = Array.from({ length: ch }, (_, c) => whole.getChannelData(c));
     if(ch === 1) m.set(channels[0]);
@@ -516,6 +517,7 @@ async function loadMusic(file, cached = null){
         let dot=0, aa=0, bb=0;
         for(let i=0;i<base.length;i+=stride){ dot+=base[i]*d[i]; aa+=base[i]*base[i]; bb+=d[i]*d[i]; }
         const corr=dot/Math.sqrt(Math.max(1e-20,aa*bb));
+        if(corr < -0.2) phaseAlignedChannels++;
         return corr < -0.2 ? -1 : 1;
       });
       const scale=1/ch;
@@ -537,8 +539,9 @@ async function loadMusic(file, cached = null){
   if(token !== musicToken) return;   // another song was chosen meanwhile
   song.r = r; song.source = r.beatSource || 'own';
   rlog('beats', 'Song analysed · ' + (60/r.period).toFixed(1) + ' BPM · ' + (r.beats || []).length + ' beats · ' + (r.cuts || []).length + ' cut points', {
-    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
-    downbeats: (r.downbeats || []).length, parts: r.parts || [], beats: (r.beats || []).slice(0, 200).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
+    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, phaseAlignedChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
+    beatIntervalsMs: (r.beats || []).slice(1).map((b, i) => +((b - r.beats[i]) * 1000).toFixed(1)),
+    downbeats: (r.downbeats || []).length, beatJudge: r.beatJudge || null, parts: r.parts || [], beats: (r.beats || []).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
   await useSection(token);
   if(token !== musicToken) return;
   songBusy(false); $('s1st').textContent = 'Ready'; $('s1').classList.add('done'); $('s2').classList.remove('locked'); $('lenrow').hidden = kind === 'talk';
