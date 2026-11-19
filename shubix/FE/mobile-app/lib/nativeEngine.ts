@@ -210,7 +210,7 @@ export function createNativeEngine(io: NativeIo) {
       return facts();
     } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "song", e instanceof Error ? e.message : "The song could not be read"); throw e; }
   }
-  const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, drops: n("drop"), breaks: n("break") }; };
+  const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; beatAccents?: { t: number; strength: number; level: string }[]; drumHits?: { t: number; band: string; strength: number }[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, beatTimes: r.beats, beatAccents: r.beatAccents || [], drumHits: r.drumHits || [], drops: n("drop"), breaks: n("break") }; };
 
   /** My Reels with room left for this person (read at most once a minute); null: not offered */
   let room: { used: number; limit: number } | null = null, roomAt = 0;
