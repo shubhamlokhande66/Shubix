@@ -236,10 +236,19 @@ export const STUDIO_HTML = `
     <div class="stats">
       <span>Length <b id="mdur">—</b></span>
       <span><b id="mbpm">—</b> BPM</span>
+      <span>Beats <b id="mbeatcount">—</b></span>
+      <span>Drum hits <b id="mdrumcount">—</b></span>
       <span>Shots <b id="mclips">—</b></span>
       <span>Drops <b id="mdrop">—</b></span>
       <span>Breaks <b id="mbreak">—</b></span>
     </div>
+    <details id="beatdetails" class="mt-2 rounded-xl border border-border bg-surface-2 p-3">
+      <summary class="cursor-pointer text-[13px] font-semibold">Beat timestamps & drum hits</summary>
+      <p class="mt-2 text-[11px] text-muted">Beat times (seconds)</p>
+      <p id="beatlist" class="max-h-24 overflow-auto break-words font-mono text-[11px] leading-5"></p>
+      <p id="drumcounts" class="mt-2 text-[11px] text-muted"></p>
+      <p class="mt-1 max-h-24 overflow-auto break-words font-mono text-[11px] leading-5" id="drumlist"></p>
+    </details>
     <div class="fsugg" id="fsugg">${IC.spark}<span><b>Suggested Part</b><small>We found the best part of the song, with strong beats. Drag on the waveform to choose another.</small></span></div>
     <div class="legend">
       <span><i style="background:var(--drop)"></i>Drop: best shot</span>
