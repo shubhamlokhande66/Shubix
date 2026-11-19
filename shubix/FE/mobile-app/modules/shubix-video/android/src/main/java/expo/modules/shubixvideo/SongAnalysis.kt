@@ -369,13 +369,14 @@ fun songAnalysis(mono: FloatArray, sampleRate: Int, opts: SongOptions = SongOpti
     if (pickAi) { ownPeriod = median2(gaps(theirs)); own = theirs.toList(); beatSource = "ai" }
   }
   val beatsDP = if (force != null) own.toList() else trimNoPulse(refineBeats(own, ownPeriod, mono, sr)) { t -> val f = rnd((t - half) * fps); var m = 0.0; for (j in f - 3..f + 3) if (j in 0 until frames && env[j] > m) m = env[j]; m }
+  val beats = beatsDP.filter { it >= 0 && it < duration - 0.02 }
   val period = ownPeriod; val phase = beatsDP.firstOrNull() ?: 0.0; val hopSec = H / sr
-  val accentValues = beatsDP.map { t ->
+  val accentValues = beats.map { t ->
     fun bandAt(a: DoubleArray): Double { val f = rnd((t - half) * fps); var m = 0.0; for (j in f - 2..f + 3) if (j in a.indices && a[j] > m) m = a[j]; return m }
     bandAt(kickEnv) + bandAt(midEnv) * 0.9 + bandAt(topEnv) * 0.25
   }
   val accentSorted = accentValues.sorted(); val accentScale = accentSorted.getOrElse(floor(accentSorted.size * 0.9).toInt()) { 1.0 }.let { if (it > 0) it else 1.0 }
-  val beatAccents = beatsDP.mapIndexed { i, t ->
+  val beatAccents = beats.mapIndexed { i, t ->
     val strength = min(1.0, accentValues[i] / max(1e-9, accentScale))
     BeatAccent(t, strength, if (strength >= 0.65) "strong" else if (strength >= 0.3) "medium" else "weak")
   }
@@ -404,7 +405,6 @@ fun songAnalysis(mono: FloatArray, sampleRate: Int, opts: SongOptions = SongOpti
   }
   fun drumness(t: Double): Double { val c = rnd((t - onOff) * onFps); var m = 0.0; for (j in c - 2..c + 4) if (j in pfArr.indices && pfArr[j] > m) m = pfArr[j].toDouble(); return m }
   // the cuts
-  val beats = beatsDP.filter { it >= 0 && it < duration - 0.02 }
   val first = beats.firstOrNull() ?: 0.0
   val hop = rnd(0.005 * sr); val wn = rnd(0.02 * sr)
   val nF = max(1, floor((len - wn).toDouble() / hop).toInt() + 1); val L = DoubleArray(nF); val lt = DoubleArray(nF)
