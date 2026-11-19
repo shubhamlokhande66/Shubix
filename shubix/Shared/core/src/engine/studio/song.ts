@@ -15,6 +15,7 @@ export function songAnalysis(monoIn, sampleRate, opts){
   let mono = null, period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, beatLvl = [];
   let onEnv = null, onFps = 0, onOff = 0, hitsRaw = [], cutFx = [], pfArr = null;
   let beats = [], beatsDP = [], beatAccents = [], drumHits = [], cuts = [], cutType = [], peaks = [], peakS = [], beatSource = 'own', beatJudge = null;
+  let beatAccentAt = () => 0;
   let downbeats = [], barLen = 4, drive = 1;
 /* ---------- FFT ---------- */
 function makeFFT(n){
@@ -324,6 +325,10 @@ function analyse(){
   const acc = new Float64Array(frames); for(let i=0;i<frames;i++) acc[i]=e1[i]+e2[i]+0.5*e3[i];
   onEnv = acc; onFps = fps; onOff = (N/2)/sr; detectHits();
   findDownbeats(fKick, fLow, fps);
+  beatAccentAt = t => {
+    const at = a => { const f=Math.round((t-(N/2)/sr)*fps); let m=0; for(let j=f-2;j<=f+3;j++) if(j>=0&&j<a.length&&a[j]>m) m=a[j]; return m; };
+    return at(kickEnv) + at(midEnv)*0.9 + at(topEnv)*0.25;
+  };
   // how much of the song really has a beat (drums at the beat): a calm song (a bhajan, a slow Diwali song) is cut less
   { let on = 0; for(const t of beatsDP) if(drumness(t) >= DRUM_MIN) on++; drive = beatsDP.length ? on/beatsDP.length : 0; }
   rebuild();
@@ -476,10 +481,7 @@ function rebuild(){
   // Use the final beat list (after free-time trimming and any creator markers) so every
   // timestamp has exactly one matching strength label.
   {
-    const accentValues = beats.map(t => {
-      const at = a => { const f=Math.round((t-(N/2)/sampleRate)*(sampleRate/512)); let m=0; for(let j=f-2;j<=f+3;j++) if(j>=0&&j<a.length&&a[j]>m) m=a[j]; return m; };
-      return at(kickEnv) + at(midEnv)*0.9 + at(topEnv)*0.25;
-    });
+    const accentValues = beats.map(t => beatAccentAt(t));
     const sorted = accentValues.slice().sort((a,b)=>a-b), scale = sorted[Math.floor(sorted.length*0.9)] || 1;
     beatAccents = beats.map((t,i) => { const strength=Math.min(1,accentValues[i]/Math.max(1e-9,scale)); return { t:+t.toFixed(3), strength:+strength.toFixed(3), level:strength>=0.65?'strong':strength>=0.3?'medium':'weak' }; });
   }
