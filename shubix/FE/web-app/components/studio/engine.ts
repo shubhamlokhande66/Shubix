@@ -517,8 +517,8 @@ async function loadMusic(file, cached = null){
         let dot=0, aa=0, bb=0;
         for(let i=0;i<base.length;i+=stride){ dot+=base[i]*d[i]; aa+=base[i]*base[i]; bb+=d[i]*d[i]; }
         const corr=dot/Math.sqrt(Math.max(1e-20,aa*bb));
-        if(corr < -0.2) phaseAlignedChannels++;
-        return corr < -0.2 ? -1 : 1;
+        if(corr < -0.6) phaseAlignedChannels++;
+        return corr < -0.6 ? -1 : 1;
       });
       const scale=1/ch;
       for(let c=0;c<ch;c++){
