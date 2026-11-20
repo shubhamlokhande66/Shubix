@@ -40,3 +40,11 @@ Medium: shot action labels ("Show an earlier moment", "Keep more of this moment"
 1 In my order engine (L) 2 One true shot plan (L) 3 Credit transparency (M) 4 Preflight before Make Reel (M) 5 One-screen simple editor (M)
 6 Ask Shubix review flow (plain shot list, thumbnails, Keep/Undo) (L) 7 Versions never overwritten (M) 8 Reuse clip analysis + real progress (L) 9 Song import/preview/section (M) 10 Onboarding + draft safety (M) 11 Plan locks shown early (M) 12 Music rights + with/without song (S) 13 Phone drafts vs online exports (M) 14 Recovery/cancel (M) 15 Completion polish (S)
 Ship together: A #1+#2+#6; B #3+#7+#14; C #4+#8; D #5+#6+#15; E #11+#12+#13; F #7+#10+#14.
+
+## Design round (rest of the work)
+- Ask Shubix: no full-screen modal; "Shubix is changing your Reel…" line in the panel; tools say "Shubix is changing your Reel. You can edit again when it's done."; then the new version plays with [Keep] [Undo] kept until chosen; no side-by-side; no other AI change/export while it works.
+- Make Reel wait: "Moments found" with up to 3 real ones, newest on top ("Clip 2 · couple under the sparklers"), only real.
+- Unreadable clip: on its card and above Make Reel "1 clip couldn't be read and will be left out. Remove it or continue without it." No popup later. Not enough footage: keep asking (unless Match my clips is on).
+- Plan locks: "2 effects aren't included in your plan. They'll be left out of the exported video. · See plans", only when real.
+- Song: "Preview selected part" on the chosen song card. Recent songs later.
+- Versions: Undo/Redo now, list later.

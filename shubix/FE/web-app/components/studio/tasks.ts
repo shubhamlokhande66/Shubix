@@ -134,7 +134,7 @@ export function createTasks(host: HTMLElement) {
     head.hidden = steps.hidden = !guard; if (guard) paintSteps();
     // what Shubix AI uses, under the popup's title, once Generate was pressed (flow.ts)
     head.querySelector("[data-sub]")!.textContent = host.dataset.fcredit || tx("Every beat, every clip, every moment.");
-    notes = locked || shown.some(([, c]) => c.kind === "ai") ? [tx(window.matchMedia?.("(pointer: coarse)").matches ? "Keep this page open with the screen on." : "You can switch tabs. Keep this tab open."), tx("Closing it now may lose this Reel's credits."), ...(guard && locked ? [tx("Shubix AI has started working on this Reel. You can't cancel now.")] : [])] : [];
+    notes = locked || shown.some(([, c]) => c.kind === "ai") ? [tx(window.matchMedia?.("(pointer: coarse)").matches ? "Keep this page open with the screen on." : "You can switch tabs. Keep this tab open."), ...(guard && locked ? [tx("Shubix AI is making your Reel now and finishes it. If it fails, no credits are used.")] : [])] : [];
     why.hidden = !notes.length; if (notes.length) why.textContent = notes[note % notes.length];
     if (notes.length) void stayAwake(true);
     if (!notes.length) stopNotes(); else if (!noteTimer) noteTimer = setInterval(() => { why.textContent = notes[++note % notes.length]; }, 3500);
