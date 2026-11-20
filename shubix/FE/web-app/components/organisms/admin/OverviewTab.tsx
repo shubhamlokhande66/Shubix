@@ -87,11 +87,14 @@ export function OverviewTab({ onOpenUser, onOpenTab }: { onOpenUser: (id: string
       </div>
 
       {/* the numbers */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatTile icon="eye" label="Online now" value={count(o.visitors.online)} lead={<LiveDot />} note={`${o.visitors.today} visitors today · ${o.visitors.week} this week`} />
         <StatTile icon="user" label="Users" value={count(o.users.total)} note={`+${o.users.today} today · +${o.users.week} this week`} />
         <StatTile icon="coins" label="Revenue" value={rupees(o.revenue.total)} note={`${rupees(o.revenue.month)} in 30 days · ${o.revenue.payments} payments`} />
         <StatTile icon="bolt" label="Credits left" value={o.billing ? count(o.credits.left) : "—"} note={o.billing ? `${count(o.credits.used30d)} used in 30 days` : "Billing is off"} />
+        {/* how often Shubix's own edit was good enough: exported with no change by the creator */}
+        <StatTile icon="wand" label="Kept as Shubix made it" value={o.keptAsMade?.share != null ? `${Math.round(o.keptAsMade.share * 100)}%` : "—"}
+          note={o.keptAsMade?.exported ? `${count(o.keptAsMade.kept)} of ${count(o.keptAsMade.exported)} exports in 30 days · ${o.keptAsMade.medianChanges ?? 0} changes typical` : "No exports logged yet"} />
       </div>
 
       {/* growth */}

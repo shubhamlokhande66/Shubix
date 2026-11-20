@@ -58,6 +58,16 @@ describe("request limits", () => {
     const fresh = prompt(DirectIn.parse({ ...req(3), recent: ["boxgrow", "flash", "speed 0.5×"] }));
     expect(fresh).toContain("Used in this creator's last Reels (make this one feel fresh where the feel allows: other tools, other combinations): boxgrow, flash, speed 0.5×.");
   });
+  it("tells the director each shot's picture, so its masks, green screens and colour fit it", () => {
+    const d = req(2);
+    const pic = DirectIn.parse({ ...d, slots: d.slots.map((s, i) => ({ ...s, candidates: s.candidates.map((c) => i ? c : { ...c, light: "dark", subject: { x: 0.2, y: 0.1, w: 0.5, h: 0.6 }, backdrop: "green" }) })) });
+    const text = prompt(pic);
+    expect(text).toContain('"light":"dark","subject":{"x":0.2,"y":0.1,"w":0.5,"h":0.6},"backdrop":"green"');
+    expect(text).toContain("ck only on a candidate with a \"backdrop\"");
+    expect(prompt(d)).not.toContain('"backdrop":');
+    expect(DirectIn.safeParse({ ...d, slots: [{ ...d.slots[0], candidates: [cand("0a", { subject: { x: 2, y: 0, w: 1, h: 1 } })] }] }).success).toBe(false);
+    expect(DirectIn.safeParse({ ...d, slots: [{ ...d.slots[0], candidates: [cand("0a", { backdrop: "red" })] }] }).success).toBe(false);
+  });
 });
 
 describe("the plan is bounded", () => {

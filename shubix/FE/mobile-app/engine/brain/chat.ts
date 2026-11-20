@@ -1,8 +1,11 @@
 // Ask Shubix: what the person says, asked and charged, planned and applied. The page and the phone's own engine share it; what is drawn is theirs.
 // @ts-nocheck
 export function createChatBrain(ES, EH){
+// the last chatSend changed the Reel itself, with no Shubix AI plan: chatApp hands the phone the new shots (engine.ts alike)
+let localDone = false;
 async function chatApp(text){
   const before = ES.chatMsgs.length;
+  localDone = false;
   await chatSend(text);
   const t0 = Date.now(), wait = ms => new Promise(r => setTimeout(r, ms));
   while((ES.chatWaiting || ES.aiBusy || ES.dirBusy || ES.paceBusy) && Date.now() - t0 < 240000) await wait(300);
@@ -14,6 +17,7 @@ async function chatApp(text){
     applied = !!ES.edit.length; if(applied){ ES.chatMsgs.push({ at: Date.now(), who: 'ai', text: 'Done ✓' }); EH.saveNow(); }
   }
   const said = ES.chatMsgs.slice(before).filter(m => m.who === 'ai').map(m => m.text).filter(t => t !== 'Done ✓').pop() || '';
+  if(!applied && localDone && ES.edit.length) return { applied: true, answer: said || 'Done ✓' };
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (ES.director && ES.director.story ? ': ' + ES.director.story : '.') : said || (ES.chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
 }
 async function chatPatch(text, n, id){
@@ -49,6 +53,20 @@ async function chatSend(text){
   const ready = ES.buf && ES.sources.length && ES.edit.length && !ES.recording;
   // Explicit, deterministic visual edits are applied locally on every plan. They do not need
   // a model round-trip, a credit check or a server upload; verify the full scope before replying.
+  // slow motion asked for in words: done here at once, for everyone, with no Shubix AI and no credits. The Reel's
+  // length is the create flow's on the phone, so it stays as it is (the website makes it longer where the clips allow)
+  const slow = EH.slowWish(text);
+  if(ready && ES.kind !== 'talk' && ES.mode !== 'copy' && slow !== null){
+    if(slow === !!ES.slowAll){ chatAnswer(slow ? 'Your Reel is already in slow motion. Say "normal speed" to take it back.' : 'Your Reel already plays at normal speed.'); return; }
+    if(ES.playing) EH.stopAll();
+    ES.slowAll = slow; EH.makeEdit();
+    const n = ES.edit.filter(e => e.sp === EH.SPEED.slow).length;
+    if(slow && !n){ ES.slowAll = false; chatAnswer('I could not put this Reel in slow motion.'); return; }
+    EH.saveNow(); localDone = true;
+    chatAnswer(slow ? 'Done ✓ ' + (n === ES.edit.length ? 'Every shot' : n + ' of ' + ES.edit.length + ' shots') + ' now plays in slow motion (half speed). Your Reel stays as long as it was. No Shubix AI credits used. Say "normal speed" to take it back.'
+      : 'Done ✓ Your Reel plays at normal speed again. No Shubix AI credits used.');
+    return;
+  }
   const localVisualIntent = EH.parseDirectorVisualIntent(text);
   const hasLocalVisualIntent = !!(localVisualIntent.openingText || localVisualIntent.squareFrameAll
     || localVisualIntent.transitionAll || localVisualIntent.effectsAll);
@@ -62,6 +80,7 @@ async function chatSend(text){
       EH.hist.u.push(before); if(EH.hist.u.length > EH.HIST_MAX) EH.hist.u.shift();
       EH.hist.r = []; EH.hist.cur = EH.histSnap(); EH.hist.cand = ''; EH.histUI();
       EH.saveNow();
+      localDone = true;
       chatAnswer('Done ✓ Applied ' + applied + ' to the current Reel on this device. No Shubix AI credits used.');
     }catch(error){
       chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error));
@@ -71,7 +90,7 @@ async function chatSend(text){
   // no Shubix AI in this plan (Free): the phone's own changes, and the way to get the AI
   if(!ES.aiOn){
     const did = EH.chatLocal(text);
-    if(ready && did.length) EH.makeEdit();
+    if(ready && did.length){ EH.makeEdit(); localDone = true; }
     chatAnswer((did.length ? 'Done ✓ I used ' + did.join(' and ') + ' (on your phone). ' : '') + (EH.aiLocked() && EH.IN_APP ? 'Changing the Reel from your words is Shubix AI, which is not on your plan.' : EH.aiLocked() ? 'Changing the Reel from your words is Shubix AI: it is in the Editor and Pro plans.' : 'Shubix AI is off for this Reel, so I can only switch the style (say "faster" or "calmer") or make a new version.'));
     if(EH.aiLocked() && !EH.IN_APP) EH.chatLink('See Editor & Pro');
     return;

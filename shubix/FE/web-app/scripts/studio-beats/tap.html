@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mark a song's beats · Shubix beat benchmark</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; --accent: #c8962a; }
+  * { box-sizing: border-box; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
+  p { margin: 6px 0; } .sub { opacity: .75; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  button, label.file { font: inherit; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, label.file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #tap { width: 100%; padding: 34px 14px; font-size: 20px; font-weight: 600; border: 2px solid var(--accent); touch-action: manipulation; user-select: none; }
+  #tap.hit { background: var(--accent); color: #111; }
+  canvas { width: 100%; height: 72px; border: 1px solid var(--line); border-radius: 10px; display: block; }
+  .stat { font-variant-numeric: tabular-nums; }
+  input[type=file] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  input[type=range] { flex: 1; min-width: 140px; }
+  kbd { border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font: 13px ui-monospace, monospace; }
+  ol { padding-left: 20px; } li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>Mark a song's beats</h1>
+<p class="sub">For the beat benchmark (<code>bench.mjs</code>): the beats a person hears are the truth the tracker is scored against. The song stays on this computer; nothing is uploaded.</p>
+
+<div class="row">
+  <label class="file" tabindex="0">Choose a song<input id="file" type="file" accept="audio/*,video/mp4"></label>
+  <span id="name" class="sub">No song chosen</span>
+</div>
+
+<canvas id="wave" width="1400" height="144" aria-label="The song's loudness, the beats marked on it and the playhead"></canvas>
+<div class="row">
+  <button id="play" disabled>Play</button>
+  <button id="back" disabled>Back 5 s</button>
+  <button id="start" disabled>To the start</button>
+  <label class="sub">Speed <select id="rate"><option value="1">1×</option><option value="0.75">0.75×</option><option value="0.5">0.5×</option></select></label>
+  <span class="stat" id="time">0:00.00</span>
+</div>
+
+<button id="tap" disabled>Tap on every beat <span class="sub">(or press <kbd>Space</kbd>)</span></button>
+
+<div class="row">
+  <span class="stat" id="count">0 beats</span>
+  <button id="undo" disabled>Remove the last beat</button>
+  <button id="clear" disabled>Remove all</button>
+</div>
+
+<div class="row">
+  <label><input type="checkbox" id="click"> Play a click on each marked beat (to hear whether they are right)</label>
+</div>
+<div class="row">
+  <label for="shift" class="sub">Move every beat</label>
+  <input id="shift" type="range" min="-150" max="150" step="5" value="0" disabled>
+  <span class="stat" id="shiftv">0 ms</span>
+</div>
+<div class="row">
+  <button id="save" disabled>Save the beats file</button>
+  <span id="saved" class="sub" role="status"></span>
+</div>
+
+<ol class="sub">
+  <li>Play the song and tap on every beat, as you would tap your foot. Slower playback makes fast songs easier.</li>
+  <li>Taps land a little late (the hand, the keyboard). Turn the click on, play again and move every beat with the slider until the clicks sit exactly on the beats.</li>
+  <li>Save: the file is named after the song (<code>song.beats.txt</code>). Put it next to the song in one folder (for example <code>real/</code>), then run <code>node bench.mjs real</code>.</li>
+</ol>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const audio = new Audio(); audio.preload = 'auto';
+let taps = [], shiftMs = 0, peaks = null, fileBase = '', ctx = null, lastClicked = -1, raf = 0;
+const beats = () => taps.map((t) => Math.max(0, t + shiftMs / 1000)).sort((a, b) => a - b);
+const fmt = (t) => Math.floor(t / 60) + ':' + (t % 60).toFixed(2).padStart(5, '0');
+
+function draw(){
+  const c = $('wave'), g = c.getContext('2d'), W = c.width, H = c.height, dur = audio.duration || 0;
+  const fg = getComputedStyle(document.body).color;
+  g.clearRect(0, 0, W, H);
+  if(peaks){ g.fillStyle = fg; g.globalAlpha = 0.35; for(let x = 0; x < W; x++){ const h = peaks[x] * (H - 8); g.fillRect(x, (H - h) / 2, 1, Math.max(1, h)); } g.globalAlpha = 1; }
+  if(dur){
+    g.fillStyle = '#c8962a'; for(const b of beats()) g.fillRect(Math.round(b / dur * W), 0, 2, H);
+    g.fillStyle = fg; g.fillRect(Math.round(audio.currentTime / dur * W), 0, 2, H);
+  }
+}
+function sync(){
+  const n = taps.length, has = !!audio.src;
+  $('count').textContent = n + (n === 1 ? ' beat' : ' beats');
+  for(const id of ['undo', 'clear', 'save']) $(id).disabled = !n;
+  for(const id of ['play', 'back', 'start', 'tap']) $(id).disabled = !has;
+  $('shift').disabled = !n; $('shiftv').textContent = (shiftMs > 0 ? '+' : '') + shiftMs + ' ms';
+  draw();
+}
+function click(){
+  if(!ctx) ctx = new AudioContext();
+  const o = ctx.createOscillator(), a = ctx.createGain();
+  o.frequency.value = 1800; a.gain.setValueAtTime(0.5, ctx.currentTime); a.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+  o.connect(a).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.05);
+}
+function tick(){
+  $('time').textContent = fmt(audio.currentTime);
+  if($('click').checked && !audio.paused){
+    // the click a few ms ahead of its beat, so it sounds on it (one screen frame of looking ahead)
+    const t = audio.currentTime + 0.012 * audio.playbackRate, list = beats();
+    let i = list.findIndex((b) => b > t) - 1; if(i === -2) i = list.length - 1;
+    if(i >= 0 && i !== lastClicked && t - list[i] < 0.06){ lastClicked = i; click(); }
+  }
+  draw(); raf = requestAnimationFrame(tick);
+}
+function tap(){
+  if(!audio.src || audio.paused) return;
+  taps.push(audio.currentTime);
+  $('tap').classList.add('hit'); setTimeout(() => $('tap').classList.remove('hit'), 70);
+  $('saved').textContent = ''; sync();
+}
+$('file').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  audio.pause(); if(audio.src) URL.revokeObjectURL(audio.src);
+  audio.src = URL.createObjectURL(f); fileBase = f.name.replace(/\.[^.]+$/, ''); taps = []; shiftMs = 0; $('shift').value = 0; peaks = null; lastClicked = -1;
+  $('name').textContent = f.name; $('saved').textContent = ''; $('play').textContent = 'Play'; sync();
+  try{
+    const buf = await new (window.OfflineAudioContext || window.AudioContext)(1, 2, 44100).decodeAudioData(await f.arrayBuffer());
+    const d = buf.getChannelData(0), W = $('wave').width, step = Math.max(1, Math.floor(d.length / W)); let top = 1e-6; peaks = new Float32Array(W);
+    for(let x = 0; x < W; x++){ let m = 0; for(let i = x * step, e2 = Math.min(d.length, i + step); i < e2; i += 16){ const v = Math.abs(d[i]); if(v > m) m = v; } peaks[x] = m; if(m > top) top = m; }
+    for(let x = 0; x < W; x++) peaks[x] /= top;
+  }catch(err){ peaks = null; }   // the song still plays and can be marked without its picture
+  draw();
+});
+$('play').addEventListener('click', () => { if(audio.paused){ lastClicked = -1; audio.play(); } else audio.pause(); });
+audio.addEventListener('play', () => { $('play').textContent = 'Pause'; cancelAnimationFrame(raf); tick(); });
+audio.addEventListener('pause', () => { $('play').textContent = 'Play'; cancelAnimationFrame(raf); $('time').textContent = fmt(audio.currentTime); draw(); });
+audio.addEventListener('loadedmetadata', sync);
+$('back').addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 5); lastClicked = -1; draw(); });
+$('start').addEventListener('click', () => { audio.currentTime = 0; lastClicked = -1; draw(); });
+$('rate').addEventListener('change', (e) => { audio.playbackRate = +e.target.value; audio.preservesPitch = true; });
+$('tap').addEventListener('pointerdown', (e) => { e.preventDefault(); tap(); });
+document.addEventListener('keydown', (e) => {
+  if(e.code !== 'Space' || e.repeat || ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
+  e.preventDefault(); if(document.activeElement.tagName === 'BUTTON' && document.activeElement.id !== 'tap') document.activeElement.blur(); tap();
+});
+$('undo').addEventListener('click', () => { taps.pop(); sync(); });
+$('clear').addEventListener('click', () => { taps = []; sync(); });
+$('shift').addEventListener('input', (e) => { shiftMs = +e.target.value; lastClicked = -1; sync(); });
+$('wave').addEventListener('pointerdown', (e) => { if(!audio.duration) return; const r = e.currentTarget.getBoundingClientRect(); audio.currentTime = (e.clientX - r.left) / r.width * audio.duration; lastClicked = -1; draw(); });
+$('save').addEventListener('click', () => {
+  const text = beats().map((t) => t.toFixed(3)).join('\n') + '\n', a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = fileBase + '.beats.txt'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $('saved').textContent = 'Saved ' + a.download + ' (' + taps.length + ' beats)';
+});
+sync();
+</script>
+</body>
+</html>

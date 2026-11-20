@@ -20,6 +20,10 @@ function call<T>(msg: object, transfer: Transferable[]): Promise<T> {
 export async function personMask(rgba: Uint8ClampedArray): Promise<Float32Array> {
   return (await call<{ mask: Float32Array }>({ type: "seg", rgba }, [rgba.buffer])).mask;
 }
+/** the subject of a frame (U²-Net small): POP_SIDE x POP_SIDE values 0..255, from that many RGBA pixels */
+export async function subjectMask(rgba: Uint8ClampedArray): Promise<Uint8Array> {
+  return (await call<{ mask: Uint8Array }>({ type: "pop", rgba }, [rgba.buffer])).mask;
+}
 /** faces in each 128x128 RGBA square: [score, cx, cy, w, h] in the square's fractions */
 export async function findFaces(squares: Uint8ClampedArray[]): Promise<number[][][]> {
   return (await call<{ faces: number[][][] }>({ type: "face", rgba: squares }, squares.map((s) => s.buffer))).faces;

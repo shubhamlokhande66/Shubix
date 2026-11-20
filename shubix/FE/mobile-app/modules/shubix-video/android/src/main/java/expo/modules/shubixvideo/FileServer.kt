@@ -27,6 +27,8 @@ import kotlin.concurrent.thread
  *   GET  /probe?k=KEY&p=PATH        a clip's length, its size as shown and what it is (VideoFacts.kt)
  *   POST /faces?k=KEY&p=PATH&dur=D&w=W&h=H  where faces are in a clip (ClipFaces.kt): a line of JSON
  *   POST /aiframes?k=KEY&p=PATH&w=W&h=H  frames at the times in the body, comma separated, for Shubix AI: JSON, a base64 JPEG for each (null: none)
+ *   POST /popmask?k=KEY&p=PATH&t=T  the frame at T and its subject (SubjectPop.kt): 1 byte (1: found), the mask, the RGBA pixels
+ *   POST /popcut?k=KEY&p=PATH&t=T&w=W&h=H&box=X0,Y0,X1,Y1  the subject cut out (the body: its alpha); answers its PNG's path and size
  *   POST /song?k=KEY                the song's beats and cuts (SongAnalysis.kt); the body is as songFromRequest reads it
  *   POST /speak?k=KEY&v=LANGUAGE    the body's words spoken by the phone's voice: floats, with X-Sample-Rate (SystemVoice.kt) */
 @androidx.media3.common.util.UnstableApi
@@ -89,6 +91,28 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
         try { out.write((facesOfFile(f, dur, w, h, models).facesToJson().toString() + "\n").toByteArray()) }
         catch (e: Throwable) { out.write("${(e.message ?: "no faces").replace('\n', ' ').ifBlank { "no faces" }}\n".toByteArray()) }
         finally { decoders.release(); out.flush() }
+      }
+      url.path == "/popmask" && method == "POST" -> {
+        val f = File(url.getQueryParameter("p") ?: ""); val t = url.getQueryParameter("t")?.toDoubleOrNull() ?: -1.0
+        if (!f.isFile || !inside(f) || t < 0) return@use reply(out, 404, "Not Found", emptyMap(), null)
+        if (!decoders.tryAcquire(30, TimeUnit.SECONDS)) return@use reply(out, 503, "Busy", emptyMap(), null)
+        try { val b = java.io.ByteArrayOutputStream(); popMaskOf(f, t, models, b); reply(out, 200, "OK", mapOf("Content-Type" to "application/octet-stream"), b.toByteArray()) }
+        catch (e: Throwable) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no subject").toByteArray()) }
+        finally { decoders.release() }
+      }
+      url.path == "/popcut" && method == "POST" -> {
+        val f = File(url.getQueryParameter("p") ?: ""); val t = url.getQueryParameter("t")?.toDoubleOrNull() ?: -1.0
+        val w = url.getQueryParameter("w")?.toIntOrNull() ?: 0; val h = url.getQueryParameter("h")?.toIntOrNull() ?: 0
+        val box = (url.getQueryParameter("box") ?: "").split(',').mapNotNull { it.toDoubleOrNull() }.toDoubleArray()
+        if (!f.isFile || !inside(f) || t < 0 || w !in 2..2048 || h !in 2..2048 || box.size != 4) return@use reply(out, 404, "Not Found", emptyMap(), null)
+        val body = ByteArray((headers["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 200_000)); var read = 0
+        while (read < body.size) { val n = input.read(body, read, body.size - read); if (n <= 0) break; read += n }
+        if (!decoders.tryAcquire(30, TimeUnit.SECONDS)) return@use reply(out, 503, "Busy", emptyMap(), null)
+        try {
+          val (png, cw, ch) = popCutOf(f, t, w, h, body.copyOf(read), box, outDir)
+          reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), org.json.JSONObject().put("path", png.absolutePath).put("w", cw).put("h", ch).toString().toByteArray())
+        } catch (e: Throwable) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no cut-out").toByteArray()) }
+        finally { decoders.release() }
       }
       url.path == "/scan" && method == "POST" -> {
         val f = File(url.getQueryParameter("p") ?: ""); val dur = url.getQueryParameter("dur")?.toDoubleOrNull() ?: 0.0

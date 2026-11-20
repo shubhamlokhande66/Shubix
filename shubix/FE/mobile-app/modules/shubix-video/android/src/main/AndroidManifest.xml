@@ -10,7 +10,10 @@
       <action android:name="android.intent.action.TTS_SERVICE" />
     </intent>
   </queries>
-  <application>
+  <!-- the large heap (about 512 MB instead of 256 MB): a song's sound (75 MB for 4 min) and the file server's answers pass
+       through the app's Java memory, both ends in this process; at 256 MB the app closed by itself (OutOfMemoryError,
+       2026-11-20, Galaxy S23 Ultra) -->
+  <application android:largeHeap="true">
     <service android:name="expo.modules.shubixvideo.ShubixWorkService" android:exported="false" android:foregroundServiceType="mediaProcessing|dataSync" />
   </application>
 </manifest>

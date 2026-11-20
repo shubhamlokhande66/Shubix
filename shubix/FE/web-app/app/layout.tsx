@@ -23,15 +23,15 @@ export const viewport: Viewport = {
 };
 
 const site: Metadata = {
-  title: { default: "Shubix · Reels video studio", template: "%s · Shubix" },
+  title: { default: "Shubix - Video Maker", template: "%s · Shubix" },
   description: "Turn your clips, photos and a song into a beat-synced Reel.",
   applicationName: "Shubix",
   appleWebApp: { capable: true, title: "Shubix", statusBarStyle: "black-translucent" },
   formatDetection: { telephone: false },
   // a shared link shows the name, the line and the logo (WhatsApp, Instagram, X…)
   metadataBase: process.env.PUBLIC_BASE_URL ? new URL(process.env.PUBLIC_BASE_URL) : undefined,
-  openGraph: { type: "website", siteName: "Shubix", title: "Shubix · Reels video studio", description: "Turn your clips, photos and a song into a beat-synced Reel.", images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "Shubix" }] },
-  twitter: { card: "summary", title: "Shubix · Reels video studio", description: "Turn your clips, photos and a song into a beat-synced Reel.", images: ["/icon-512.png"] },
+  openGraph: { type: "website", siteName: "Shubix", title: "Shubix - Video Maker", description: "Turn your clips, photos and a song into a beat-synced Reel.", images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "Shubix" }] },
+  twitter: { card: "summary", title: "Shubix - Video Maker", description: "Turn your clips, photos and a song into a beat-synced Reel.", images: ["/icon-512.png"] },
 };
 
 /** The AdSense publisher id for Google's site check, from the public /ads.txt (the id set in Admin → Settings → Ads; none: no tag). */

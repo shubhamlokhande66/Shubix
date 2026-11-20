@@ -12,6 +12,84 @@ The shared workspace package is the platform-neutral decision and editing model 
 
 Fast Studio now runs this shared planner as a local fallback. It adds a soft preference to the existing frame/window scorer and applies only renderer-supported motion effects when the cloud AI director has not supplied explicit choices. The music timeline and explicit AI shot choices remain authoritative.
 
+## The edit's own review
+
+`reviewAutonomousEdit` (`src/review.ts`) measures a finished edit before anything is exported: the cuts against the beats
+(in ms), drops without a cut, footage shown twice, two parts of one clip in a row, soft or dark shots, shots slowed under
+0.4x, a weak opening, holes in the timeline. It gives a score from 0 to 100 (what each issue costs is the `COST` table),
+the issues by shot and the repairs worth doing. What was not measured is `null`; a shot the creator or Shubix AI chose
+(`locked`) is reviewed but never proposed for a change.
+
+Both engines use it when they make a Reel (`FE/web-app/components/studio/engine.ts` and
+`FE/mobile-app/engine/brain/reel.ts`, `makeEditNow`): when the first take has a fault another take can change
+(`editNeedsAnotherTake`), up to two more takes are made and the best review is kept. The first take wins a tie and the
+random numbers go on from the first take's, so a clean edit is unchanged and the same clips and song make the same Reel.
+After the takes, two repairs with one right answer are made on the kept take (not on a copied Reel, Shubix AI's plan
+or a shot the director chose): a shot too dark to see moves to a moment that can be seen, when unused footage has one;
+and a clip of the creator's that no shot shows takes a shot from a clip shown more than once (the shot that loses least
+by it, never the opening, never a dark or soft moment). This holds with fewer shots than clips too: 10 shots from 12 clips show 10 clips, not 6. A soft shot is not moved: fast action is soft too. No repair
+shows footage twice, puts two parts of one clip in a row, or moves a cut.
+
+Measured on the Android app's engine with no page (`FE/mobile-app/tests/edit-repairs.test.ts` keeps it so), 60 Reels of
+50 shots from made-up clips with dark and soft stretches: with 12 clips, 3.9 of them were in no shot before and none
+after; with 20 clips, 10.2 before and none after; no Reel reviewed worse, none got repeated footage or a jump. With 3
+short clips (too little footage) the takes bettered 5 Reels of 15 a little and the repairs had nothing to move to.
+
+What it costs (the Android engine with no page, the time to make one edit, before this work -> now): 12 clips 20 ->
+12 ms, 40 clips of up to a minute 132 -> 84 ms, a 90 s song with 40 clips 139 -> 87 ms. More takes are made only where
+footage is little (`editTakesFor`: shots x seconds of clips up to 3000; it goes by the clips and the song, never by the
+device, so the same Reel is made everywhere), an unused clip is tried against eight shots at most, and the brain
+remembers which part holds each of its functions (`FE/mobile-app/engine/brain/index.ts`: that lookup was over a third
+of an edit's time).
+
+**In my order** (`seqSlots`, the same code in both engines): each clip gets its share of the Reel's time, not of its
+number of shots. The clips stay one after another, so this is where each clip ends among the song's cuts: the ends that
+leave every clip nearest its share (by its length, at most what its footage fills at 0.4x), and a drop's cut is kept as
+an end unless a clip would be left far from its share. Inside a fast part (`beatEdit`: a cut on every drum hit) the drop's
+own cut stays too. Measured on 12 real clips of 15 s and a 22 s song (136 BPM, a drop at 8.2 s), In my order, as it comes:
+before, the first clip held 7.3 s and five clips 0.6-0.7 s each, the drop had no cut, the review said 75; now the shots
+are 0.9-2.7 s, the drop is cut on, the review says 88.5 (`FE/mobile-app/tests/brain-edit.test.ts` keeps it so).
+
+The website writes each review to the Reel's log (Admin → Logs, step `review`) and keeps it in `root.__lastEditReview`.
+
+## A Reel from very little video
+
+`shortReelFor` (`src/short.ts`) answers what to make of 2 to 5 s of good video (one 4 s clip). Nobody is sent back for
+more clips and nothing is asked: the song decides.
+
+| the song | the video plays | 4 s of video becomes |
+|---|---|---|
+| slow (95 BPM or under), or no steady beat | at half speed | a Reel of about 8 s |
+| in between | in between | 5 to 7 s |
+| fast (130 BPM or over) | as filmed | a Reel of about 4 s |
+
+Never slower than half speed (a phone's 30 pictures a second stutter below it), never shorter than 3 s, never longer
+than the song. Under 2 s of good video: more clips are asked for, as before. The website's studio (`footCheck`,
+`askShort` in `engine.ts`) and the Android app's create flow (`app/create/[kind].tsx`) set the Reel's length by it;
+the engines then play the clip forward once, slower (the "In my order" walk, also for several clips that are under
+5 s together). Checked by `FE/web-app/tests/video-engine-short.test.ts`, `FE/mobile-app/tests/short-clip.test.ts`
+(the Android engine with no page) and runs E and F of the start-to-end check.
+
+## One clip is one take
+
+One clip of 5 s and more is edited as a creator edits a single take: it plays on without a jump, as filmed up to the
+song's moment and in slow motion (half speed) from there. The moment is the song part's drop; else its break; else
+where a new part of the song begins; else where a phrase begins (8 beats) nearest 40% of the Reel. It is never in the
+first 1.5 s and leaves at least 2 s. Both engines' `seqPick` do it; where in the clip the take begins is the stretch
+that scores best over all its shots. Because part of it is slow, the Reel one clip fills is longer than the clip
+(`oneTakeLength` in `src/short.ts`: a 10 s clip, a 14 s Reel), and "Make the Reel as long as my clips" sets that.
+Checked by `FE/mobile-app/tests/short-clip.test.ts` and run G of the start-to-end check (the speed before and after
+the moment is measured in the exported file).
+
+## Slow motion asked for in words
+
+"clip slow kar", "slow motion", "video हळू कर" typed to Shubix (`slowWish` in both engines) is done at once, with no
+Shubix AI and no credits: every shot plays at half speed, whatever the style gave it, and stays so while the Reel is
+made again. On the website the Reel also gets longer where the clips allow ("Make the Reel as long as my clips": slow
+motion needs half the video); in the Android app its length stays. "normal speed" takes it back. Before, "slow" only
+switched to the Smooth style (longer shots, no slow motion) and the answer still said Done. Free plan on the website:
+the chat changes nothing there, as before. Checked by `FE/mobile-app/tests/short-clip.test.ts` and run H.
+
 ## Shared editing primitives
 
 - Typed keyframe tracks and easing, with numeric and compact Studio transform interpolation shared by web and Android

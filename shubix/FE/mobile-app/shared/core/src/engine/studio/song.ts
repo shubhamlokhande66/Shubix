@@ -9,7 +9,24 @@
 export function songAnalysis(monoIn, sampleRate, opts){
   opts = opts || {};
   const ALT_FAST = opts.altFast ?? 0.55;
+  const JIT = opts.jit ?? 0.010;
   const DRUM_MIN = 0.7;
+  // every song is read at 44.1 kHz: the frames below are counted in samples (512, 1024), so at a phone's or a browser's 48 kHz
+  // they were other lengths and other bands, and the tracker another one (the benchmark, all at 44.1 kHz: 95% of beats; the
+  // same songs at 48 kHz 89%, at 32 kHz 79%; a QA Reel song at 48 kHz got a beat every 0.79 s, its beat is 0.33 s: 2026-11-19).
+  // Lanczos (4 lobes), its low-pass at the lower of the two rates; its weights from a table of 512 phases (a 3-minute song
+  // in well under a second, on a phone too)
+  if(sampleRate !== 44100 && sampleRate > 0){
+    const R = 44100, ratio = R/sampleRate, n = Math.floor(monoIn.length*ratio), out = new Float32Array(n), A = 4, fc = Math.min(1, ratio);
+    const sinc = x => x === 0 ? 1 : Math.sin(Math.PI*x)/(Math.PI*x), Lw = Math.ceil(A/fc), T = 2*Lw, PH = 512, tab = new Float32Array(PH*T);
+    for(let ph=0; ph<PH; ph++){ let sum = 0; for(let q=0;q<T;q++){ const x = (ph/PH + Lw - 1 - q)*fc, k = Math.abs(x) < A ? sinc(x)*sinc(x/A) : 0; tab[ph*T+q] = k; sum += k; }
+      for(let q=0;q<T;q++) tab[ph*T+q] /= sum || 1; }
+    const L = monoIn.length;
+    for(let i=0;i<n;i++){ const c = i/ratio, j0 = Math.floor(c), ph = Math.min(PH-1, Math.floor((c-j0)*PH)), b = ph*T; let s = 0;
+      for(let q=0;q<T;q++){ const j = j0 - Lw + 1 + q; if(j >= 0 && j < L) s += monoIn[j]*tab[b+q]; }
+      out[i] = s; }
+    monoIn = out; sampleRate = R;
+  }
   const buf = { sampleRate, length: monoIn.length, duration: monoIn.length/sampleRate, numberOfChannels: 1, getChannelData: () => monoIn };
   let mono = null, period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, beatLvl = [];
   let onEnv = null, onFps = 0, onOff = 0, hitsRaw = [], cutFx = [], pfArr = null;
@@ -139,7 +156,7 @@ function trimNoPulse(bt, strength){
    spectrum, the low end at half weight) puts every beat on the attack nearest to it. The correction is checked against
    the beats around it: the local median correction is applied in full, a single beat may differ from it by at most
    25 ms (an off-beat hi-hat or a flam cannot pull one beat away from the groove). */
-function refineBeats(bt, periodSec){
+function refineBeats(bt, periodSec, jit){
   if(!bt.length) return bt;
   const sr = buf.sampleRate, fN = 512, fH = 128, len = mono.length, nF = Math.max(1, Math.floor((len-fN)/fH)+1), half = fN/2;
   const fft = makeFFT(fN), re = new Float64Array(fN), im = new Float64Array(fN), win = new Float64Array(fN), prev = new Float64Array(half);
@@ -155,7 +172,11 @@ function refineBeats(bt, periodSec){
   const fps2 = sr/fH, off = (fN/2)/sr, tOf = i => i/fps2 + off, idx = t => (t-off)*fps2;
   // smoothed copy (±6 ms): tolerant to small timing spread when lining up several beats at once
   const g = new Float32Array(nF); for(let i=0;i<nF;i++){ let s2=0, ws=0; for(let j=-3;j<=3;j++){ const v = fe[i+j]; if(v!==undefined){ const ww = Math.exp(-0.5*(j/1.5)**2); s2 += ww*v; ws += ww; } } g[i] = s2/ws; }
-  const gAt = t => { const x = idx(t), i = Math.floor(x); if(i < 0 || i >= nF-1) return 0; return g[i] + (g[i+1]-g[i])*(x-i); };
+  // beats that come in coarse steps (the neural tracker's: 20 ms frames) sit up to `jit` off their attacks: for lining
+  // the grid up, each such beat counts the strongest attack within `jit` of it. Without this the grid's best fit could
+  // land away from the beats: whole stretches moved 60 to 90 ms off (measured: FE/web-app/scripts/studio-beats).
+  const gj = jit > 0 ? (() => { const r = Math.max(1, Math.round(jit*fps2)), o = new Float32Array(nF); for(let i=0;i<nF;i++){ let m = 0; for(let j=Math.max(0,i-r), e=Math.min(nF-1,i+r); j<=e; j++) if(g[j] > m) m = g[j]; o[i] = m; } return o; })() : g;
+  const gAt = t => { const x = idx(t), i = Math.floor(x); if(i < 0 || i >= nF-1) return 0; return gj[i] + (gj[i+1]-gj[i])*(x-i); };
   // 1) phase: shift the grid locally (±12% of a beat: enough for a late 808, never as far as the next triplet or 16th) to where the 9 beats around
   //    each beat land best on attacks; a weak preference for no shift
   const P = periodSec, maxS = 0.12*P, stepS = 1/fps2, shift = bt.map((b,k)=>{
@@ -287,7 +308,7 @@ function analyse(){
     }
     if(pickAi){ const ib = opts.beats.slice(1).map((t,i)=>t-opts.beats[i]).sort((x,y)=>x-y); own = opts.beats.slice(); ownPeriod = ib[ib.length>>1]; beatSource = 'ai'; }
   }
-  beatsDP = opts.forceBeats && opts.forceBeats.length >= 4 ? own.slice() : trimNoPulse(refineBeats(own, ownPeriod), t => { const f = Math.round((t - (N/2)/sr)*fps); let m = 0; for(let j=f-3;j<=f+3;j++) if(env[j] > m) m = env[j]; return m; });
+  beatsDP = opts.forceBeats && opts.forceBeats.length >= 4 ? own.slice() : trimNoPulse(refineBeats(own, ownPeriod, beatSource === 'ai' ? JIT : 0), t => { const f = Math.round((t - (N/2)/sr)*fps); let m = 0; for(let j=f-3;j<=f+3;j++) if(env[j] > m) m = env[j]; return m; });
   period = ownPeriod; phase = beatsDP.length ? beatsDP[0] : 0; hopSec = H/sr;
   // accent strength = drums + bass + instrument attacks (voice counts only half)
   const detrend = a => { const c=new Float64Array(frames+1); for(let i=0;i<frames;i++) c[i+1]=c[i]+a[i]; const o=new Float64Array(frames);
@@ -402,7 +423,10 @@ function rebuild(){
   const onGrid = tt => { let lo=0, hi=beats.length; while(lo<hi){ const m=(lo+hi)>>1; if(beats[m]<tt) lo=m+1; else hi=m; }
     return (lo<beats.length && Math.abs(beats[lo]-tt) < 0.05) || (lo>0 && Math.abs(beats[lo-1]-tt) < 0.05); };
   // only real beats are candidates: if it is just voice or a held note, no cut there
-  const cands = peaks.map((pt,k)=>({t:pt, sc: peakS[k]*(onGrid(pt)?1.4:1)})).filter(c=>drumness(c.t) >= DR-0.1);
+  // ...or a strong hit right on a beat: a Reel song's bass and dhol are often read as not drums (its drive was 0.15), and
+  // its loudest part, all bass, got one 3.7 s shot (QA 2026-11-19); a voice or a held note is neither on the beat nor strong
+  const pkMid = (() => { const q = Array.from(peakS).sort((x,y)=>x-y); return q.length ? q[q.length>>1] : Infinity; })();
+  const cands = peaks.map((pt,k)=>({t:pt, sc: peakS[k]*(onGrid(pt)?1.4:1), k})).filter(c=>drumness(c.t) >= DR-0.1 || (onGrid(c.t) && peakS[c.k] >= pkMid));
   ups.forEach(u=>{ if(drumness(u.t) >= DR-0.1) cands.push({t:u.t, sc: u.s/4 + (onGrid(u.t)?1:0)}); });
   cands.sort((a,b)=>a.t-b.t);
   // 4) walk through the song: clip length depends on intensity (4 / 2 / 1 beats)
@@ -419,7 +443,8 @@ function rebuild(){
     const nb = beatsFor(intensity(cur)), w = Math.min(1, nb/2)*p, target = (nb >= 4 && barNear(cur + nb*p, w)) || cur + nb*p;
     if(fi<forced.length && forced[fi].t < target + w && forced[fi].t - cur >= 0.2){ cur = forced[fi].t; out.push({t:cur, ty:forced[fi].ty}); fi++; continue; }
     let best=null, bs=-1;
-    for(const c of cands){ if(c.t < target-w || c.t > target+w || c.t-cur < 0.25) continue; const sc=c.sc*(1-0.35*Math.abs(c.t-target)/w); if(sc>bs){ bs=sc; best=c.t; } }
+    // (a song with little beat: never a shot of one beat)
+    for(const c of cands){ if(c.t < target-w || c.t > target+w || c.t-cur < (drive < 0.4 ? 1.5*p : 0.25)) continue; const sc=c.sc*(1-0.35*Math.abs(c.t-target)/w); if(sc>bs){ bs=sc; best=c.t; } }
     if(best===null){ // no beat in the window (only voice/music): hold the shot until the next real beat
       const nx = cands.find(c=>c.t > target+w), nf = fi<forced.length ? forced[fi].t : Infinity;
       if(!nx && nf===Infinity) break;

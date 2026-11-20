@@ -136,7 +136,7 @@ fun scanClip(times: DoubleArray, frames: (emit: (Int, ByteArray?, ByteArray?) ->
 fun ClipScanResult.toJson(): JSONObject = JSONObject()
   .put("samples", JSONArray(samples.map { s ->
     val w = s.row
-    JSONObject().put("t", s.t).put("m", s.m).put("b", w.b).put("cx", w.cx).put("sh", w.sh).put("sx", w.sx).put("sy", w.sy).put("sw", s.sw).put("gx", w.gx).put("gy", w.gy).put("ax", w.ax).put("ay", w.ay).put("aw", w.aw).also { if (s.cut) it.put("cut", true) }
+    JSONObject().put("t", s.t).put("m", s.m).put("b", w.b).put("cx", w.cx).put("sh", w.sh).put("sx", w.sx).put("sy", w.sy).put("sw", s.sw).put("gx", w.gx).put("gy", w.gy).put("ax", w.ax).put("ay", w.ay).put("aw", w.aw).put("sat", w.sat).put("warm", w.warm).put("sd", w.sd).also { if (s.cut) it.put("cut", true) }
   }))
   .put("scenes", JSONArray(scenes.map { c -> JSONObject().put("t0", c.t0).put("t1", c.t1).put("kind", c.kind).also { o -> c.tc?.let { o.put("tc", it) }; c.white?.let { o.put("white", it) } } }))
 

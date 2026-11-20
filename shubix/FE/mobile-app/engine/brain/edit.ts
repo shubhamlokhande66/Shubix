@@ -1,7 +1,9 @@
 // The engine's edit core: how a Reel's shots are chosen and placed. Moved from components/studio/engine.ts, with its state in
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
-import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed } from './pure';
+import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
+import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -22,7 +24,7 @@ function snap(t, w){
    // the template's kind of Reel (car, wedding...): with Shubix AI its trend leads the AI's guide
 // Style: Auto follows the music as analysed; Smooth keeps fewer, longer shots on the strong beats; Fast cuts on every beat.
 // (a copied Reel keeps its short shots: no flash-cut merging; another song puts them on its beats, copyPlan)
-function adaptPlan(){ return EH.copyTimed() ? copyPlanTimed() : ES.mode === 'copy' && ES.refProfile ? endWell(adaptPlan0()) : beatEdit(endWell(noFlashCuts(adaptPlan0()))); }
+function adaptPlan(){ return EH.copyTimed() ? copyPlanTimed() : ES.mode === 'copy' && ES.refProfile ? endWell(adaptPlan0()) : paceWell(beatEdit(endWell(noFlashCuts(adaptPlan0())))); }
 /* ---- the beat edit of car, bike and sports Reels (measured on such Reels: cuts land on the drum hits, 88% of them) ----
  * Where the song's strong drum hits are dense (5 a second or more, for 2 s or longer: a fast verse, a dhol or snare roll,
  * a build-up) a cut on every hit, never closer than a third of a beat; where it stays loud with no strong hits for 1.5 s
@@ -49,9 +51,11 @@ function beatEdit(p, ai){
   if(!burst.length && !flick.length) return p;
   const inR = (t, R) => R.some(([a, b]) => t > a + 0.02 && t < b - 0.02);
   // the cut points: the plan's own, outside the bursts and flickers; every hit inside a burst; both ends of a flicker
-  let pts = p.slice(1).map(x => x.start).filter(t => !inR(t, burst) && !inR(t, flick));
-  const gap = Math.max(0.13, ES.period/3);
-  burst.forEach(([a, b]) => { let last = -9; H.forEach(h => { const t = h - 1/30; if(t > a && t < b && t - last >= gap && !inR(t, flick)){ pts.push(t); last = t; } }); });
+  // a drop's own cut stays where it is inside a burst (the hits beside it give way): an editor never misses the drop
+  const keep = p.slice(1).filter(x => x.type === 'drop' && inR(x.start, burst) && !inR(x.start, flick)).map(x => x.start);
+  let pts = p.slice(1).map(x => x.start).filter(t => !inR(t, burst) && !inR(t, flick)).concat(keep);
+  const gap = Math.max(0.3, ES.period/2);   // creators' shortest shots: about 0.33 s (a third of a beat made 0.17 s flashes)
+  burst.forEach(([a, b]) => { let last = -9; H.forEach(h => { const t = h - 1/30; if(t > a && t < b && t - last >= gap && !inR(t, flick) && !keep.some(k => Math.abs(k - t) < gap)){ pts.push(t); last = t; } }); });
   flick.forEach(([a, b]) => { pts.push(a, b); });
   pts = pts.filter(t => t > 0.12 && t < dur - 0.15).sort((x,y)=>x-y).filter((t, i, A) => !i || t - A[i-1] >= 0.1);
   const of = t => p.find(x => t >= x.start - 1e-3 && t < x.end) || p[p.length-1];
@@ -65,6 +69,27 @@ function noFlashCuts(p){
     if(keepStart && p[i+1] && !(p[i+1].type === 'drop' || p[i+1].type === 'break' || EH.isPartStart(p[i+1].start + 1/30))){ s.end = p[i+1].end; p.splice(i+1, 1); i--; }
     else if(!keepStart){ p[i-1].end = s.end; p.splice(i, 1); i--; } }
   return p;
+}
+/* ---- the pace of creators' beat Reels (measured on 19 of them: scripts/studio-references/README.md) ----
+ * The opening shot holds about 4 beats (median 2.7 s) before the cutting starts; the shots get longer toward the end
+ * (0.63 cuts a second in the first third, 0.48 in the middle, 0.2 in the last); few shots are under 0.5 s (8%), the
+ * shortest about 0.33 s. Auto only (Fast cuts on every beat on purpose, Smooth and Natural are long already, a copied
+ * Reel keeps its own edit); a drop, a break and a flicker montage keep their cut. */
+function paceWell(p){
+  if(ES.mode !== 'auto' || p.length < 3 || !(ES.period > 0) || !ES.buf) return p;
+  const dur = ES.buf.duration, hard = s => s.type === 'drop' || s.type === 'break' || s.flick;
+  // the opening: no cut before about 4 beats (when the next shot is long, it starts on the beat nearest 4 beats instead)
+  const open = Math.min(3, Math.max(1.6, 4*ES.period));
+  while(p.length > 2 && p[1].start < open - 0.1 && !hard(p[1])){
+    if(p[1].end <= open + 2*ES.period){ p[0].end = p[1].end; p.splice(1, 1); continue; }
+    const b = gridOf(dur).map(x => x - 1/30).filter(x => x >= open - 0.1 && x < p[1].end - 0.4)[0];
+    if(b !== undefined){ p[0].end = b; p[1].start = b; }
+    break;
+  }
+  // the last fifth: no shot shorter than two beats (it joins the shot before)
+  const tail = 0.8*dur, least = Math.max(0.9, 2*ES.period);
+  for(let i = p.length - 1; i > 1 && p[i].start >= tail; i--) if(!hard(p[i]) && p[i].end - p[i].start < least){ p[i-1].end = p[i].end; p.splice(i, 1); }
+  return endWell(p);
 }
 function adaptPlan0(){
   if(ES.mode==='copy' && ES.refProfile) return copyPlan();
@@ -164,12 +189,39 @@ function songParts(mono, sr, beats){
   // boundaries: strongest changes, at least 8 beats apart
   const cand = nov.map((v,k)=>({k, v})).filter(c => c.v >= 3 || c.v <= -3.5).sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)), keep = [];
   cand.forEach(c => { if(keep.every(o => Math.abs(o.k-c.k) >= 8)) keep.push(c); });
+  // a short song (a Reel's audio, under 40 s): 8 beats either side is much of it, and a few bars of bass coming in or going
+  // (most of a Reel song's change: its loudness is mastered flat) were averaged away, so its strongest moment had no cut
+  // (QA 2026-11-18: bass in at 7.3 s, out at 11.5 s, one soft shot over both). Here the low end alone, about 1.3 s either
+  // side, a change of 2.5 dB or more. Changes at an even spacing are the song's loop (tabla, a dhol pattern), not its
+  // parts; else the strongest, 2 s apart at least, one for every 4 s of song at most. A change the other way (bass back after
+  // a short break, gone after a short drop) may come sooner: about 0.9 s (QA 2026-11-19: bass out at 11.5 s, back at 12.5 s;
+  // the return, the moment ChatGPT and an editor cut on, was dropped for being near the break).
+  if(dur < 40){
+    const Wb = Math.max(4, Math.min(8, Math.round(1.3/p))), bc = [];
+    for(let k=Wb; k<=n-Wb; k++){ let A=0,B=0; for(let q=1;q<=Wb;q++){ A += F[k-q][1]; B += F[k+q-1][1]; } const d = (B-A)/Wb;
+      if(Math.abs(d) >= 2.5) bc.push({ k, v: Math.sign(d)*(3.5 + Math.abs(d) - 2.5) }); }
+    bc.sort((x,y)=>Math.abs(y.v)-Math.abs(x.v)); const bk = [];
+    const away = (o, c) => Math.sign(o.v) !== Math.sign(c.v);   // a change the other way
+    bc.forEach(c => { if(bk.every(o => Math.abs(o.k-c.k) >= (away(o, c) ? Math.max(2, Math.round(0.9/p)) : Wb))) bk.push(c); });
+    const ts = bk.map(c => beats[c.k]).sort((x,y)=>x-y), gaps = ts.slice(1).map((t,i)=>t-ts[i]);
+    const gm = gaps.reduce((s,x)=>s+x,0)/Math.max(1,gaps.length), gsd = Math.sqrt(gaps.reduce((s,x)=>s+(x-gm)*(x-gm),0)/Math.max(1,gaps.length));
+    if(!(ts.length >= 3 && gsd/Math.max(1e-9,gm) < 0.25)){ let added = 0;
+      for(const c of bk){ if(added >= Math.max(1, Math.floor(dur/4))) break;
+        if(keep.every(o => Math.abs(beats[o.k]-beats[c.k]) >= (away(o, c) ? 0.9 : 2))){ c.bass = true; keep.push(c); added++; } } }
+  }
   // the exact beat: where the sound changes most from one beat to the next (same direction), near the coarse change
   const step = (k, w) => { let A=0,B=0; for(let q=1;q<=w;q++){ A += F[k-q][0]+F[k-q][1]; B += F[k+q-1][0]+F[k+q-1][1]; } return (B-A)/(2*w); };
-  keep.forEach(c => { let bk = c.k, bv = 0; for(let k=Math.max(2,c.k-3); k<=Math.min(n-2,c.k+3); k++){ const v = step(k, 2)*Math.sign(c.v); if(v > bv){ bv = v; bk = k; } } c.k = bk; });
+  // (a change of the bass alone, from the short-song rule: the beat where the low end itself steps most and stays (two beats
+  // before against two after, so bass on one beat and off the next is no change); it is on its beat
+  // already and is not moved onto a bar line: QA 2026-11-19, the bass goes at 11.52 s and is back at 12.51 s, both one beat
+  // off this song's bar lines, and moved onto them they were a beat early)
+  keep.forEach(c => { let bk = c.k, bv = 0; for(let k=Math.max(2,c.k-3); k<=Math.min(n-2,c.k+3); k++){ const v = (c.bass ? (F[k][1] + F[Math.min(n-1,k+1)][1] - F[k-1][1] - F[k-2][1])/2 : step(k, 2))*Math.sign(c.v); if(v > bv){ bv = v; bk = k; } } c.k = bk; });
   // bars: the phase most changes agree on; a change one beat off a bar line moves onto it
-  const ph = [0,1,2,3].map(r => keep.reduce((s,c)=>s + (c.k%4===r ? Math.abs(c.v) : 0), 0)), P = ph.indexOf(Math.max(...ph));
-  keep.forEach(c => { const o = ((c.k - P)%4+4)%4; if(o === 1) c.k -= 1; else if(o === 3) c.k += 1; });
+  const ph = [0,1,2,3].map(r => keep.reduce((s,c)=>s + (c.k%4===r && !c.bass ? Math.abs(c.v) : 0), 0)), P = ph.indexOf(Math.max(...ph));
+  // (only where the bar line's own change is nearly as strong: a change clearly a beat off the bar stays on its beat; the bass
+  // back one beat after a bar line was put a beat early, before the bass: 2026-11-19)
+  keep.forEach(c => { if(c.bass) return; const o = ((c.k - P)%4+4)%4, to = o === 1 ? c.k - 1 : o === 3 ? c.k + 1 : c.k;
+    if(to !== c.k && to >= 2 && to <= n-2 && step(to, 2)*Math.sign(c.v) >= 0.8*step(c.k, 2)*Math.sign(c.v)) c.k = to; });
   for(let i=keep.length-1;i>=0;i--) if(beats[n-1] - beats[Math.min(n-1,keep[i].k)] < 4*p || keep[i].k >= n) keep.splice(i,1);
   keep.sort((x,y)=>x.k-y.k);
   const all = F.map(f=>f[0]).sort((x,y)=>x-y), hi = all[Math.floor(all.length*0.55)];
@@ -245,7 +297,7 @@ function frameStats(d, d2, prev){
   for(let y=1;y<71;y++) for(let x=1;x<127;x++){ const i=y*128+x, lap = 4*L2[i]-L2[i-1]-L2[i+1]-L2[i-128]-L2[i+128]; sm+=lap; sq+=lap*lap; n++; }
   const sh = sq/n - (sm/n)*(sm/n);
   return { lum, hist, row: { m: prev ? m/lum.length : 0, b:b/lum.length, cx: m>1e-6 ? mx/m : 0.5, sh,
-    sx: sub ? sub.x : -1, sy: sub ? sub.y : -1, sw: sub ? sub.w : 0, gx: sub ? sub.gx : 0, gy: sub ? sub.gy : 0, ax: sal.x, ay: sal.y, aw: sal.w } };
+    sx: sub ? sub.x : -1, sy: sub ? sub.y : -1, sw: sub ? sub.w : 0, gx: sub ? sub.gx : 0, gy: sub ? sub.gy : 0, ax: sal.x, ay: sal.y, aw: sal.w, ...frameTone(d, SW*SH) } };
 }
 function colorHist(d){
   const h = new Float32Array(EH.FEAT), gs = new Float32Array(40); let n = 0;
@@ -411,22 +463,38 @@ function recipeNow(){
 function tastePlan(){
   if(ES.mode === 'copy' || !ES.plan.length || !ES.buf || EH.aiTrusted()) return;
   const L = ES.buf.duration, style = EH.TR_STYLE[ES.mode] || EH.TR_STYLE.auto;
-  const most = Math.max(1, Math.round(L / 7)), apart = Math.max(4, L / 6);
+  // (agreed with ChatGPT for Shubix, 2026-11-19: transitions that stand out, a flash, a whip, a glitch, a zoom, together at
+  // most 2 for every 10 s of Reel and 2.5 s apart at least; any other cut is a plain cut on its beat)
+  const most = Math.max(1, Math.round(L / 5)), apart = Math.max(4, L / 6);
+  let drops = 0, brokeAt = -99, lastDropAt = -99;
   let used = 0, last = -99, lastAcc = -99;
   // a song without a drop or a break (found): its hits, or else its long shots, are where it changes
   const marked = ES.plan.some(s => s.type === 'drop' || s.type === 'break'), hits = ES.plan.some(s => s.type === 'hit');
   ES.plan.forEach((s, i) => {
     const len = s.end - s.start, prev = ES.plan[i - 1];
+    if(s.type === 'drop'){ drops++; } else if(s.type === 'break') brokeAt = s.start;
+    const lastDrop = lastDropAt; if(s.type === 'drop') lastDropAt = s.start;   // (the drop before this one)
     // transitions: only where the song changes, room on both sides, spaced, one style
-    if(i > 0 && s.tr !== 'hard'){
+    // (a drop marked after the style chose its cut, a part of the song found later: weighed too, so it gets the drop's own)
+    if(i > 0 && (s.tr !== 'hard' || (s.type === 'drop' && !s.trByDir && !s.trByRef))){
       const at = s.type === 'drop' || s.type === 'break' || (ES.songPartsRel.length ? EH.isPartStart(s.start) : s.type === 'hit' && (!marked || s.start - last >= 2 * apart))
         || (!marked && !hits && len >= 1.5);
-      const room = len >= 1 && prev && prev.end - prev.start >= 1;
-      if(!at || !room || used >= most || s.start - last < apart) s.tr = 'hard';
+      // (a drop, the bass back included: its flash is a moment of light over the cut, not a blend of two shots, so a short
+      // shot on each side takes it; a fast song's drop shot is under a second, and every drop was a plain cut: QA 2026-11-19)
+      const room = s.type === 'drop' ? len >= 0.25 && prev && prev.end - prev.start >= 0.25 : len >= 1 && prev && prev.end - prev.start >= 1;
+      // (a drop may follow the transition before it sooner: 2.5 s, a break and then the drop are one move of the song)
+      // a drop's flash only where the song really starts again: its first drop, or the bass back after a break. The bass
+      // back after a short dip (no break between, QA song 15.09 s) is a plain cut with its zoom punch, not one flash more
+      const major = s.type !== 'drop' || drops === 1 || brokeAt > lastDrop;
+      if(!at || !room || !major || used >= most || s.start - last < (s.type === 'drop' ? 2.5 : apart)) s.tr = 'hard';
       else {
         const rc = recipeNow();
-        if(s.type === 'drop') s.tr = rc.drop; else if(s.type === 'break') s.tr = rc.brk; else if(!ES.TR_CLASSY.has(s.tr)) s.tr = style[1];
-        if((TR_DUR[s.tr] || 0) > 0.6 * len) s.tr = 'hard'; else { used++; last = s.start; }
+        // a drop is the song's hit: a flash, a whip or a zoom lands on it; a dissolve or a dip there (some recipes) is soft where
+        // the song is hardest, so outside Smooth it is a flash (as every editor asked does it: one flash on the drop, one on the return)
+        if(s.type === 'drop') s.tr = ES.mode !== 'smooth' && ['dissolve', 'dip', 'blur', 'luma'].includes(rc.drop) ? 'flash' : rc.drop; else if(s.type === 'break') s.tr = ES.mode === 'smooth' ? rc.brk : 'hard'; else if(!ES.TR_CLASSY.has(s.tr)) s.tr = style[1];
+        // a drop shot too short for its whip or zoom (0.29 s in the plan ChatGPT gave): a flash, light over the cut, fits it
+        if(s.type === 'drop' && s.tr !== 'flash' && (TR_DUR[s.tr] || 0) > 0.6 * len) s.tr = 'flash';
+        if((TR_DUR[s.tr] || 0) > (s.tr === 'flash' || s.tr === 'glitch' ? 0.9 : 0.6) * len) s.tr = 'hard'; else if(s.tr !== 'hard'){ used++; last = s.start; }   // (a plain cut is not counted)
       }
     }
     // the AI's keyframe kicks: on a drop or a hit only, one per shot, spaced
@@ -469,7 +537,7 @@ function directorCandidates(){
     const gx = S.length ? S.reduce((q,x)=>q+(x.gx||0),0)/S.length : 0, m = w.m;
     return { id: i + 'abc'[k], si, a, clip: 'c'+(si+1), at: +a.toFixed(2), score: +w.sc.toFixed(2), note: w.ai ? w.ai.note : '',
       roles: w.ai ? Object.keys(w.ai.roles).filter(r=>w.ai.roles[r] > 0.4) : [], motion: m < 0.08 ? 'still' : m < 0.3 ? 'low' : m < 0.6 ? 'medium' : 'high', people: w.st.face > 0.3,
-      camera: Math.abs(gx) < 0.35 ? 'still' : gx > 0 ? 'pans left' : 'pans right' }; };
+      camera: Math.abs(gx) < 0.35 ? 'still' : gx > 0 ? 'pans left' : 'pans right', ...pictureWords(pictureOf(ES.aiOn && src.ai ? src.ai.frames : null, src.faces, a, a + need, w.st ? w.st.b : undefined, EH.out.height/EH.out.width)) }; };
   order.forEach(i=>{
     const s = ES.plan[i], e = ES.edit[i], len = s.end - s.start, nb = [ES.edit[i-1], ES.edit[i+1]].filter(Boolean).map(x=>x.src);
     const cur = e.sp.pos(len)*e.scaleR;
@@ -645,19 +713,50 @@ function clipFlaw(src){
   const v = (jit >= 1.5 ? 3 : 0) + (soft < 0.15 ? 3 : 0);
   src._flaw = { key, v }; return v;
 }
-function scoreWindow(i, src, a, need, gmax){
+// each shot's part in the story, worked out once for the plan as it is (it changes when the cuts change)
+let storyMemo = { p: null, sig: '', r: [] };
+function storyRole(i){
+  const sig = ES.plan.length + ':' + (ES.plan.length ? ES.plan[0].start.toFixed(2) + ':' + ES.plan[ES.plan.length-1].end.toFixed(2) : '');
+  if(storyMemo.p !== ES.plan || storyMemo.sig !== sig) storyMemo = { p: ES.plan, sig, r: storyRoles(ES.plan.map(s => ({ kind: s.type, start: s.start, end: s.end }))) };
+  return storyMemo.r[i];
+}
+// shot flow (Shared/video-engine shotFlow.ts): a moment's look (movement, light, warmth), and the looks of the shots
+// already placed beside shot i, which a moment is drawn to
+function flowLook(src, a, b, st, m){ const t = toneOf(src.samples || [], a, b); return { m, b: st.b, warm: t ? t.warm : undefined }; }
+function flowNear(i, res, gmax){
+  return [i - 1, i + 1].map(j => { const r = res[j], s = ES.plan[j], src = r && ES.sources[r.src]; if(!src || !s || !src.samples || !src.samples.length) return null;
+    const b = r.in + s.sp.pos(s.end - s.start)*(r.scaleR || 1), st = windowStats(src, r.in, Math.max(b, r.in + 0.05));
+    return flowLook(src, r.in, b, st, st.m/gmax); });
+}
+// a shot in slow motion (half speed or slower over most of it, as the style or Shubix AI chose for a break or a calm
+// moment): editors give slow motion a moment with smooth movement in it (a walk, an entrance, hair or a dupatta in the wind,
+// water), not a still picture (slowed, nothing changes) nor a frantic one. Not "every walk is slowed": the music decides
+// where the slow part is, this decides which footage plays in it (2026-11-19).
+const slowMo = (sp, len) => !!sp && len > 0 && sp.pos(len) < 0.8*len;
+const slowFit = m => 1 - Math.abs(m - 0.4)*1.6 - (m < 0.1 ? 0.5 : 0);
+function scoreWindow(i, src, a, need, gmax, near){
   const s = ES.plan[i], st = windowStats(src, a, a+need), m = st.m/gmax;
   let sc;
   if(s.type==='drop') sc = 2.2*m;
   else if(s.type==='hit') sc = 1.5*m;
   else if(s.type==='break') sc = 1 - Math.abs(m-0.18)*2;
   else sc = 1 - Math.abs(m-0.55);
+  if(s.type!=='drop' && slowMo(s.sp, s.end - s.start)) sc = slowFit(m);
   if(i===0) sc = 2.4*m;   // hook: the most action-packed moment opens the reel
-  if(st.b < 0.08) sc -= 1;                              // too dark
+  // too dark: the whole moment (as before), or a part of it (a clip that opens on black, a fade in): half of it
+  // black costs as much as all of it did, and more black costs more, so the moment with the least black is taken
+  sc -= Math.max(st.b < 0.08 ? 1 : 0, 2*(st.dark || 0));
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1);
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1, storyRole(i));
+  // the shot's part in the story (shared/video-engine story.ts): wide and steady to set the scene, people close up at
+  // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
+  if(ES.mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
+  // drawn to the look of the shots already beside it (a copied Reel follows its reference instead)
+  if(near && ES.mode !== 'copy') sc += flowBonus(flowLook(src, a, a+need, st, m), near);
+  // a moment people reacted to in the clip's own sound: a cheer, a laugh (video-engine reactions.ts)
+  if(src.reacts && ES.mode !== 'copy') sc += reactionBonus(src.reacts, a, a+need);
   return {sc, st, m, ai};
 }
 // the creator's keyframes stay on their shots when the edit is made again (the AI's scores or the director arriving,
@@ -674,27 +773,75 @@ function seqSlots(n){
   const sum = c => c.reduce((a,b)=>a+b,0);
   // how many shots each clip's footage fills: a short clip given more shows the same moment twice
   const shot = ES.plan.length ? ES.plan.reduce((a,s)=>a+s.end-s.start,0)/ES.plan.length : 1, room = S.map(s => Math.max(1, Math.floor((s.dur - TAIL)/Math.max(0.2, shot))));
+  // Shots enough for every clip: each clip gets its share of the Reel's TIME, as an editor lays clips out (its share
+  // of the NUMBER of shots gave the first clip 7 s of a calm intro and a later one 0.6 s where the song cuts fast).
+  // The clips' shots stay one after another, so this is where each clip ends among the song's cuts: the ends that
+  // leave every clip nearest its share (a clip's footage at 0.4x is the most it fills), a drop's cut kept as an end
+  // unless that leaves a clip far from its share (an editor does not miss the drop).
+  if(S.length > 1 && n >= S.length && ES.plan.length === n){
+    const pre = [0]; ES.plan.forEach(s => pre.push(pre[pre.length-1] + s.end - s.start));
+    const T = pre[n], K = S.length, want = w.map(x => T*x/tot), capT = S.map(s => Math.max(0.3, (s.dur - TAIL)/0.4));
+    const cost = (j, a, b) => { const t = pre[b] - pre[a], d = t - want[j], over = Math.max(0, t - capT[j]), more = Math.max(0, b - a - room[j]);
+      return d*d/want[j] + over*over*4 + more*0.2 - (b < n && ES.plan[b].type === 'drop' ? 1.5 : 0); };
+    const best = Array.from({ length: K + 1 }, () => new Array(n + 1).fill(Infinity)), from = Array.from({ length: K + 1 }, () => new Array(n + 1).fill(0));
+    best[0][0] = 0;
+    for(let j = 1; j <= K; j++) for(let b = j; b <= n - (K - j); b++) for(let a = j - 1; a < b; a++){
+      if(best[j-1][a] === Infinity) continue;
+      const c = best[j-1][a] + cost(j - 1, a, b); if(c < best[j][b]){ best[j][b] = c; from[j][b] = a; }
+    }
+    const out = new Array(n); let b = n;
+    for(let j = K; j >= 1; j--){ const a = from[j][b]; for(let i = a; i < b; i++) out[i] = j - 1; b = a; }
+    return out;   // shot i -> its clip
+  }
   const cnt = w.map((x, j) => Math.min(room[j], Math.max(n >= S.length ? 1 : 0, Math.round(n*x/tot))));   // every clip once while there are shots enough
   while(sum(cnt) > n){ const k = cnt.lastIndexOf(Math.max(...cnt)); cnt[k]--; }   // (fewer shots than clips: the last clips wait)
   while(sum(cnt) < n){ const free = cnt.some((c,j) => c < room[j]); let k = 0, b = -Infinity; cnt.forEach((c,j)=>{ const r = n*w[j]/tot - c; if(r > b && (!free || c < room[j])){ b = r; k = j; } }); cnt[k]++; }
-  // never the same clip on two cuts in a row: a clip's next shot waits for the next clip (the order stays near the person's)
-  const seq = cnt.flatMap((c, si) => Array(c).fill(si));
-  for(let i = 1; i < seq.length; i++) if(seq[i] === seq[i-1]){ const j = seq.findIndex((x, k) => k > i && x !== seq[i]); if(j > 0) seq.splice(i, 0, seq.splice(j, 1)[0]); }
-  return seq;   // shot i -> its clip
+  // strictly the person's order: a clip's shots one after another (it plays on forward across them), then the next
+  // clip; never back to a clip already left (moving a shot to avoid a repeat sent the Reel back to the clip before)
+  return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
 }
 function seqPick(seq, res, gmax){
   const n = ES.plan.length, lenOf = i => ES.plan[i].end - ES.plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= EH.SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
+  const t0 = n ? ES.plan[0].start : 0, tEnd = n ? ES.plan[n-1].end : 0, room = s => s.start - t0 >= 1.5 && tEnd - s.start >= 2;
+  let slowAt = -1;
+  if(ES.sources.length === 1 && n > 1) for(const is of [s => s.type === 'drop', s => s.type === 'break', s => EH.isPartStart(s.start) || EH.isPartStart(s.start + 1/30)]){
+    slowAt = ES.plan.findIndex((s, k) => k > 0 && is(s) && room(s)); if(slowAt > 0) break; }
+  if(slowAt < 0 && ES.sources.length === 1 && n > 1){   // the song part names no moment: where a phrase of it begins (8 beats), nearest 40% of the Reel
+    const T = tEnd - t0, ph = 8*ES.period, off = s => { const x = (s.start + 1/30 - t0)/ph; return ph > 0 ? Math.abs(x - Math.round(x))*ph : 0; };
+    let b = Infinity; ES.plan.forEach((s, k) => { if(k > 0 && room(s)){ const c = Math.abs(s.start - t0 - ONE_TAKE.slowFrom*T) + (off(s) > 0.12 ? T : 0); if(c < b){ b = c; slowAt = k; } } });
+  }
   for(const si of [...new Set(seq)]){
-    const src = ES.sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), foot = Math.max(0.05, src.dur - TAIL);
+    // a clip that opens or ends on black (a fade in, the lens covered) is walked from its first picture to its last: the
+    // black is not footage, so as for a shorter clip its shots play a little slower rather than show it
+    const src = ES.sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), [from, trail] = blackEnds(src), foot = Math.max(0.05, src.dur - TAIL - trail - from), end = from + foot;
     const need = ids.map(i => ES.plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
-    const scale = ids.map(i => spare < 0 ? 1 : fast[i] && fastNeed > 0 ? Math.min(EH.SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
+    // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
+    // last picture until the cut ("it stops when the clip ends") or showing a moment of it twice
+    const fit = spare < 0 ? Math.max(ES.seqFloor, foot/sum(need)*0.98) : 1;
+    const scale = ids.map(i => spare < 0 ? fit : fast[i] && fastNeed > 0 ? Math.min(EH.SEQ_MAX, 1 + spare*0.6/fastNeed) : 1);
     const use = need.map((x, k) => x*scale[k]);
-    let cur = 0;
+    let cur = from;
+    // (far too little video for the take, a 4 s clip under an 8 s Reel: the walk below, slower all through)
+    const want = ids.map(i => lenOf(i)*(i >= slowAt || ES.slowAll ? ONE_TAKE.slow : 1)), all = sum(want);
+    if(slowAt > 0 && all*0.8 <= foot){
+      // the take: every shot runs straight on from the one before; a clip a little short for it plays a little slower all through
+      const f = all > foot ? foot/all*0.98 : 1;
+      const run = want.map(x => x*f), total = sum(run), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
+      let bestA = from, bs = -Infinity;
+      for(let a = from; a <= Math.max(from, end - total) + 1e-6; a += stepT){
+        let sc = rng()*0.15, c = a; ids.forEach((i, k) => { sc += scoreWindow(i, src, c, run[k], gmax).sc*lenOf(i); c += run[k]; });
+        if(sc > bs){ bs = sc; bestA = a; }
+      }
+      ids.forEach((i, k) => { const w = scoreWindow(i, src, bestA, run[k], gmax), st = w.st;
+        res[i] = { src: si, in: bestA, scaleR: run[k]/Math.max(1e-6, need[k]), cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false, take: i >= slowAt ? 'slow' : 'filmed' };
+        bestA += run[k]; });
+      continue;
+    }
     ids.forEach((i, k) => {
-      cur = Math.min(cur, Math.max(0, foot - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
-      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, foot - nd - rest);
+      cur = Math.min(cur, Math.max(from, end - use[k]));   // (never slowed: too little footage, the last shots stay inside the clip; the Reel is cut to the clips' length)
+      const nd = use[k], rest = sum(use.slice(k + 1)), maxA = Math.max(cur, end - nd - rest);
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
@@ -705,6 +852,32 @@ function seqPick(seq, res, gmax){
       res[i] = best; cur = best.in + nd;
     });
   }
+}
+// The teaser (shared/video-engine story.ts): "In my order" with three clips or more opens as the clips' order gives it.
+// When that opening is clearly weaker than a moment further on in the clips (one the Reel shows nowhere else, sharp and
+// light enough), the Reel opens on that moment for about a second, cut on a beat, then plays the clips from the start:
+// an editor's flash-forward. Not for a copied Reel, slow motion asked for in words, or with Shubix AI on (its plan goes
+// by the cuts' numbers and times, which the teaser would change).
+function teaserOpen(seq, res, gmax){
+  if(!seq || ES.plan.length < 2 || ES.sources.length < 3 || ES.mode === 'copy' || ES.slowAll || ES.aiOn || ES.director || !res[0]) return false;
+  const s0 = ES.plan[0], b = teaserCut(s0.start, s0.end, ES.beats); if(b == null) return false;
+  const L = b - s0.start, open = scoreWindow(0, ES.sources[seq[0]], res[0].in, L, gmax).sc;
+  let best = null;
+  ES.sources.forEach((src, si) => {
+    if(si === seq[0] || src.removed || !(src.samples && src.samples.length) || src.dur - TAIL < L) return;
+    const shown = res.map((r, i) => r && r.src === si ? [r.in, r.in + ES.plan[i].sp.pos(ES.plan[i].end - ES.plan[i].start)*(r.scaleR || 1)] : null).filter(Boolean);
+    const stepT = Math.max(0.1, Math.min(0.5, src.dur/120));
+    for(let a = 0; a <= src.dur - L - TAIL + 1e-6; a += stepT){
+      if(!teaserFree(a, a + L, shown) || crossesScene(src, a, a + L)) continue;
+      const w = scoreWindow(0, src, a, L, gmax), st = w.st;
+      if(st.b < EDIT_REVIEW_LIMITS.dark || (st.dark || 0)*L >= EDIT_REVIEW_LIMITS.darkSeconds || st.sh/(src.shMed||1) < EDIT_REVIEW_LIMITS.soft) continue;
+      if(!best || w.sc > best.sc) best = { sc: w.sc, si, r: { src: si, in: a, scaleR: 1, cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false, teaser: true, why: 'teaser: the strongest moment first, then your clips in order' } };
+    }
+  });
+  if(!best || !teaserWorth(open, best.sc)) return false;
+  ES.plan.splice(0, 1, { ...s0, end: b, sp: EH.SPEED.normal }, { ...s0, start: b, type: 'cut', tr: 'hard', efx: 'none' });
+  seq.splice(0, 0, best.si); res.splice(0, 0, best.r);
+  return true;
 }
 // an AI camera move in words: "zoom 1.00→1.18, slides right, turns 4°, fast then settles"
 function kfSummary(e){
@@ -740,9 +913,10 @@ function repick(i, avoidCurrent, onlySrc){
       if(crossesScene(src, a, a+need)) continue;
       const st = windowStats(src, a, a+need), m = st.m/gmax;
       let sc = e.type==='drop' ? 2.2*m : e.type==='hit' ? 1.5*m : e.type==='break' ? 1-Math.abs(m-0.18)*2 : 1-Math.abs(m-0.55);
+      if(e.type!=='drop' && slowMo(e.sp, len)) sc = slowFit(m);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1);
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1, storyRole(i));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });
@@ -1057,12 +1231,17 @@ function sfxSynth(kind, sr){
 }
 function sfxEvents(){
   const out = ES.sfxList.map(x => ({ at: x.at, kind: x.kind }));
-  if(ES.au.sfx && ES.kind !== 'talk'){ let lastW = -9;
-    ES.edit.forEach((e, i) => { if(!i) return;
-      if(EH.WHOOSH_TR.includes(e.tr) && e.start - lastW > 0.8){ out.push({ at: Math.max(0, e.start - 0.2), kind: 'whoosh' }); lastW = e.start; }
-      else if((e.tr === 'flash' || e.tr === 'burn') && e.type === 'drop') out.push({ at: e.start, kind: 'boom' });
-      if(e.efx === 'snap' || (e.sp && e.sp.label === 'Freeze frame')) out.push({ at: e.start, kind: 'click' }); });
-    for(const o of ES.overlays) if(o.anim === 'pop' && !o.all && o.t0 > 0.05) out.push({ at: o.t0, kind: 'pop' }); }
+  // the automatic sounds, as an editor uses them: a boom on the drop, a whoosh into a whip or a swipe now and then (4 s
+  // apart at least), a click on a photo snap or a freeze, a pop on a text that pops in; at most one every 6 s of the
+  // Reel in all (a whoosh on every swipe is what made them sound home-made, so they were off until now)
+  if(ES.au.sfx && ES.kind !== 'talk' && ES.edit.length){
+    const len = ES.edit[ES.edit.length-1].end - ES.edit[0].start, cap = Math.max(2, Math.round(len/6)), t0 = ES.edit[0].start;
+    let n = 0, lastW = -9;
+    ES.edit.forEach((e, i) => { if(!i || n >= cap) return;
+      if(e.type === 'drop'){ out.push({ at: e.start, kind: 'boom' }); n++; lastW = e.start; }
+      else if(EH.WHOOSH_TR.includes(e.tr) && e.start - lastW >= 4){ out.push({ at: Math.max(0, e.start - 0.2), kind: 'whoosh' }); lastW = e.start; n++; }
+      if(n < cap && (e.efx === 'snap' || (e.sp && e.sp.label === 'Freeze frame'))){ out.push({ at: e.start, kind: 'click' }); n++; } });
+    for(const o of ES.overlays) if(n < cap && o.anim === 'pop' && !o.all && o.t0 > 0.05 && o.t0 < t0 + len){ out.push({ at: o.t0, kind: 'pop' }); n++; } }
   return out;
 }
 /* ---- voice changer (on the phone): deep, chipmunk, robot, radio, echo ---- */
@@ -1122,5 +1301,5 @@ function remakeOk(){ if(!ES.restoring) ES.keepSaved = false; }
 function editOf(){
   return ES.kind === 'talk' ? [] : ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: EH.speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
-  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
+  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, flowNear, storyRole, teaserOpen, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
 }

@@ -526,3 +526,308 @@ Checked: screenshots of every design screen (phone Ivory / Noir, computer) again
 "Add or change clips" opens step 2; an Editor chip changes the shot's transition (hard → fade-in) and lights up; the
 Effect tab shows its 13 choices; the Pro inspector changes the speed; tapping the Pro timeline at 75% moves the playhead
 to 0.75; the menu's Noir and Simple apply and are remembered. `check-keyframes`, `check-overlays`, `check-templates` pass.
+
+## Vlog / Talking video (one entry)
+
+`/create/vlog` (the menu's one entry for talking videos; `/create/clips` is its old link and shows the same page): a
+vlog, tutorial, review or podcast in. Up to 3 minutes of talking (one video, or a few clips): one Reel, made at once in
+the Talking Reel studio (the clips are handed over as they are, `/create/talking?from=clips`, Generate presses itself).
+Longer than 3 minutes (one video): its best moments, below. A video of 45 s to 3 minutes can go either way ("One Reel of
+it all" / "Several Reels from it"). The Android app opens its Talking Reel for this entry. Checked in Chrome: a 4.6 min
+video offers only its best moments; two short clips (0:18) became one Reel in the studio by themselves (5 shots).
+
+## Clips from a Video (long video → Reels)
+
+`/create/clips` (`components/organisms/ClipsFinder.tsx`, `lib/clips/media.ts`): one long video (up to 2 hours: a podcast,
+a talk, a class, a vlog) in, its best moments out, each a Reel. The video never leaves the phone.
+- **Words**: the sound is read part by part (170 s, mediabunny's audio sink, one part in memory at a time), made 16 kHz
+  mono and transcribed by `/api/studio/transcribe`; the words get their place in the whole video. Read once per video and
+  language: a new length or number of clips asks only for the moments again.
+- **Moments** (`/api/studio/moments`, `BE/api/src/server/studio/moments.ts`): the words in sentences (full stop, `।`, a
+  pause over 0.8 s), every stretch of whole sentences inside the length (15–35 s, 30–60 s, 55–90 s), a plain score (a
+  hook in the first sentence, no weak start like "and / so / aur / ani", a finished last sentence, steady talking, no long
+  silences), the best ones apart (none sharing time). Shubix AI (Editor and Pro; AI task "Clips from a long video") judges
+  up to 30 of them: a score, a title, an on-screen hook and why, in the video's own language. Charged once per video
+  (`studio_moments`, 5 credits by default; given back if the AI fails). Without the AI: the plain picks.
+- **Each moment**: plays in the page from its start to its end; **Make Reel** cuts it out on the phone (mediabunny
+  Conversion with a trim: exact frames) and opens the Talking Reel studio with it (`/create/talking?from=clips`: the clip
+  waits in IndexedDB, used once, for 10 minutes); **Download** saves the cut clip.
+
+Checked in Chromium (a 6.6 min spoken WebM): 3 parts of the voice in 2.9 s, a 30 s clip cut in 0.07 s (30.00 s, VP9 +
+Opus), handed to the studio once.
+
+## AI voices (text to speech)
+
+Edit → Voice → "Text to speech · AI voice": type what to say (any language), pick a voice, "Add at the playhead". The
+speech is made on the server (`/api/studio/speak`, `BE/api/src/server/studio/speak.ts`) by the natural AI voices it has
+(OpenAI: 11 voices, Gemini: 14; none without a key, and then the tool is hidden), and mixed on the phone like the
+voiceover (the song steps back while it speaks; the voice changer works on it). 1 credit per piece of speech
+(`studio_voice`), Editor and Pro or credits; the same text in the same voice is never charged twice, and the browser keeps
+each piece (`lib/tts/client.ts`, Cache Storage), so reopening a Reel does not ask the server again. Shubix AI's chat can
+add speech too ("add a voiceover saying …").
+
+Checked in Chromium (the client against a stand-in server): the voice list, a 1.79 s WAV decoded at 48 kHz, the same
+speech again from the browser's cache (no second request), a refused request's message shown as it is.
+
+## AI dub (a Talking Reel in another language)
+
+Captions panel → "AI dub: Hindi / Marathi / English / Hinglish / Gujarati / Bengali / Tamil / Telugu / Punjabi" and an
+AI voice (talking Reels; shown when the server has AI voices). `makeDub` in `engine.ts`, the pure parts in `dub.ts`:
+- the talk's own voice (pauses already cut) is transcribed, the words put in sentences (full stop, a pause over 0.6 s,
+  12 s or 150 characters), the sentences translated (`/api/studio/translate`) and each spoken by the AI voice
+  (`/api/studio/speak`, 1 credit each, kept in the browser);
+- each spoken sentence starts where the original one did (or just after the one before), sped up with its pitch kept
+  (WSOLA, at most 1.35×) when it would run into the next; the music steps back under the dubbed voice;
+- the dubbed voice takes the place of the person's own in the preview, captions (made again from the dub, so they are in
+  the new language) and the export; "AI dub: off" puts the own voice back. Saved with the Reel (language and voice) and
+  made again on opening (the speech comes from the browser's cache). Up to 3 minutes of talk. The lips are not moved.
+
+Checked in Chromium (`next dev`, the API stood in for): a 9.3 s talking clip, Hindi → listened, translated, 4 sentences
+spoken, the talk rebuilt with the dub; `tests/studio-dub.test.ts` (sentences, 1.3× faster at the same pitch, placing).
+
+## One tap from a clip, and pictures from the chat
+
+- A moment sent from Clips from a Video ("Make Reel") is made into the Reel by itself: once the clip is read, the
+  Generate button presses itself (`FastStudio.tsx`, once). Checked in Chromium: the clip handed over, 3 shots made, no tap.
+- Shubix AI's chat can add AI pictures: action `{"do":"picture","prompt","at","style"}` (`direct.ts` ACTIONS; the engine
+  runs `brollAdd`, at most 2 per answer, each charged as an AI picture).
+- Publish panel checked in Chromium (the API stood in for): caption written by Shubix AI, "Publish now", the post shown
+  as Published with its views, likes and comments. Coming back from connecting an account says so in a popup.
+
+## What a Reel gets by itself (no Shubix AI needed)
+
+- **Opening words** (`autoFinish` in both engines, `autoHook` in `Shared/core/src/lib/text-templates.ts`): a Reel with no
+  text of the creator's and no Shubix AI plan with texts opens on 2 s of words, as an editor's does: chosen from the song
+  (a drop in the first 10 s: "WAIT FOR IT 🔥"), the template's kind (car, wedding, festival, gym, travel) and the Reel's
+  number. A text like any other (not selected, so the tools stay on the shots); deleted once, it does not come back; a
+  Shubix AI plan with its own texts replaces it. Not in Talking Reels (their captions say what is said) or Copy a Reel.
+- **Sound effects** on by default, few (`sfxEvents`, both engines): a boom on each drop, a whoosh into a whip or swipe at
+  most every 4 s, a click on a snap or freeze, a pop on a text that pops; at most one every 6 s in all. Music → Sound
+  effects turns them off. Reels saved before keep their own setting.
+- **Captions in Talking Reels** turn on by themselves when the server can make them for this person (website); a creator
+  who turns them off is not given them again. `FREE_CAPTIONS=true` on the API gives captions to every plan (speech
+  recognition costs the server: OpenAI about ₹0.5 a minute of speech); without it they stay Editor and Pro.
+
+Checked in Chrome on real clips: a music Reel of 6 clips opened on "WAIT FOR IT 🔥" (0-2.2 s) with sound effects on; a
+Talking Reel had its captions on by itself (11 lines). The Android engine runs the same code (`tests/tools.test.ts`).
+
+## Pictures for what you say (a Talking Reel's B-roll)
+
+Talking Reel → Captions → "Add pictures for what you say" (shown when the server makes AI pictures), or ask Shubix AI's
+chat for pictures / B-roll. What is said (the captions, in sentences) goes to `/api/studio/broll/plan`: Shubix AI picks
+the sentences a picture helps (never the opening one, never two in a row; one picture per 15 s of the Reel, at most 4)
+and writes each picture; each is made (`/api/studio/broll`) and laid over the speaker from that sentence for up to 3 s,
+full frame, fading in and out, as a layer the creator can move, trim or delete. Credits: the plan (1) and each picture.
+Checked in Chrome with the API stood in for: a 10.5 s talk got one picture at 3.8-6.1 s, no page errors.
+
+## Shubix's song library ("Choose a song for me")
+
+Admin → Songs: the administrator adds songs Shubix may use in the Reels people post (royalty-free with a licence that
+allows it, or bought for it), each with its licence, source, moods (energetic, happy, calm, romantic, emotional,
+devotional, cinematic, festive) and, optionally, its BPM (`BE/api/src/server/songs.ts`, collection `song_library`,
+files under `songs/` in the bucket). In the studio's first step, "Choose a song for me" (shown when the library has
+songs) asks `/api/songs/pick` for one: by the clips' energy (their movement, once read), the template's kind (a wedding:
+romantic; Ganpati: devotional; a festival: festive; gym / car: energetic), long enough, never the song chosen last; the
+studio reads it as if the creator had added it and says its licence. Checked in Chrome with the API stood in for.
+
+## The Reel makes itself (song and clips in, nothing to press)
+
+Once the song and the clips are read and the edit is made behind the screen, the studio counts down 4 s ("Shubix makes
+your Reel in 4 s… Tap anywhere to wait") and presses Generate (computers) or Make Reel (phones) itself (`flow.ts`,
+`autoAt`). Everything Generate asks still comes (Shubix AI's price, sign-in, too long a clip set). A tap anywhere during
+the countdown waits: the creator is adding or changing something and presses Generate when done; it is not offered
+again on that page. Checked in Chrome: no tap -> Generate pressed (computer and phone screens); a tap -> not pressed.
+
+## Videos and photos together
+
+Every kind of Reel takes videos and photos in one go (`steps.ts`: the clip picker accepts both; Photo Reel lists photos
+first). Each photo becomes a 3 s moving shot (`photoClip`, a slow push-in, made on the device) and takes its place in
+the order the files were chosen, so "In my order" plays them as picked. The Android app's Beat Reel picker takes both
+too (its Photos tab keeps to photos). Checked in Chrome: 2 videos and 2 photos, chosen video, photo, video, photo ->
+4 shots in that order, quality 90/100. Android: not run on a phone.
+
+## How many clips the song asks for, and Videos / Photos / Mix
+
+The clips step has three choices, and each takes only what it says (a file it does not take is left out, and said):
+
+- **Videos**: videos only. "For this song: 10 clips".
+- **Photos** (a Photo Reel): photos only. "For this song: 12 photos".
+- **Mix**: videos and photos, in any share; Shubix mixes them. "For this song: 10 clips or photos".
+
+A talking Reel and Copy a Reel have no choice: they take both. Then, as clips come in: "7 of 10 added · 3 more make it
+better (optional)", and "Enough for this song". Nothing else is asked of the person: which clip goes where, fast or slow,
+the bad parts left out and the check stay Shubix's.
+
+`Shared/video-engine/src/clipAdvice.ts` reads the number from the Reel's plan (the shots cut on the song's part, before
+any clip is in), the same on the website (`engine.ts` `clipWantPaint`, the line above the drop area; the tabs in
+`flow.ts`, the files kept in `steps.ts`) and in the app (the `advice` engine call; the tabs in `CreateFlow.tsx`
+`FlowClips`, the picker in the Create screen):
+
+- about two shots a clip before the Reel looks repeated: the shots / 2 clips, 3 at least, 15 at most;
+- no photo is asked for under Videos: a calm part takes a clip as well (slow motion, a slow zoom), and the human-edited
+  Reels measured are videos;
+- Photos: one a shot, 8 to 30.
+
+Under the line, one box a clip, with the seconds that clip should have at least ("Clip 1 · 3 s"): the Reel's shots in
+order, shared out among the clips (whole shots, about as many each), rounded up to half a second (`adviceBoxes`). The
+clips fill the boxes in the order added: "✓ 3 s" when long enough, "1.2 of 3 s" (amber) when shorter. A longer clip is
+fine: Shubix keeps its best part for that time (sharp, well lit, moving, faces) and leaves the rest out, as every Reel
+does; a shorter one is repeated or slowed. A photo fills any box in the app (it moves as long as needed); on the website
+a photo is a 3 s moving shot. The boxes are a guide to the lengths: with "Mix all clips" Shubix may still place a clip's
+moments elsewhere in the Reel.
+
+The advice is read before the clips and kept once they come (they change the plan's pace a little); a new song, part,
+length or choice asks again. Fewer clips still make the Reel. Tests: `FE/web-app/tests/video-engine-clip-advice.test.ts`.
+
+## Words that never sit on a face
+
+Shubix's own texts (the opening words, Shubix AI's texts) are moved off faces by themselves (`Shared/video-engine/src/clear.ts`,
+`clearTexts` in both engines): for the time a text shows, the faces on screen are read (BlazeFace's track, where the
+camera crop puts it) and the text (a template's parts together, keeping their spacing) moves up or down just enough to
+clear them, inside Instagram's safe area; when no place clears every face, the place covering the least. The creator's
+own texts, and any the creator dragged, set to follow the person or keyframed, stay where they are. Captions already
+moved up over a face. On Android the brain had no frame size, so every position on the frame was NaN there: captions
+and texts never moved off faces on the phone until this (the brain now takes the frame's size from the aspect).
+Checked: `tests/text-clear.test.ts` (web: the placement rules; Android: a Reel whose clips have a face where the
+opening words go: they move below it, the 🔊 with them, inside the safe area).
+
+## The exported video is checked before you see it (Android)
+
+A phone's video encoder can fail without an error: a decoder stalls and one picture stays over the cuts after it, a
+clip does not open and leaves black, or the file comes out short. After a Studio Reel is exported, the app reads the
+finished video back with its own clip scan and checks it against the edit that made it
+(`Shared/video-engine/src/exportCheck.ts`):
+
+- **Length:** within 0.5 s (or 3%) of the edit.
+- **Black:** 0.4 s or more of black where the edit shows footage. Black the edit made is kept: a shot it knows is dark,
+  a dip at a cut, the first moment and the fade at the end.
+- **Frozen:** a picture that does not change for a second or more over a cut the edit made.
+
+When a check fails, the Reel is made once more ("Fixing a glitch in the video…"). A finished Reel is never thrown away:
+if the second take also fails, it is kept and the creator is asked to watch it once. Each failed check goes into the
+Reel's log (Admin → Logs). On the website the export already samples its frames while it encodes and falls back to the
+real-time export when frames are missing.
+
+## Clips that look like one Reel (colour match)
+
+Clips from different phones, rooms and hours look different side by side: one warm, one blue, one flat. An editor
+evens them out before the look, so the Reel reads as one piece. Shubix does the same on its own
+(`Shared/video-engine/src/colorMatch.ts`, both engines):
+
+- While the clips are read, each moment's colour is read too: how saturated it is, red against blue, and how far its
+  light spreads (contrast). The website reads it in the browser; the app reads it in `ClipStats.kt`.
+- Once the edit is made, the Reel's middle look is the screen-time weighted median of its shots. Each shot moves 60% of
+  the way toward it through its own Adjust (brightness, contrast, saturation, warmth), which both renderers draw.
+- It is never forced:
+  - a difference under 8% is left alone;
+  - a correction is at most 15% brightness, 0.2 contrast, 0.3 saturation and 0.4 warmth;
+  - a night shot is never brightened, a dim shot is never made darker, and a black-and-white shot is never coloured;
+  - a shot the creator adjusted is theirs.
+- It is off for a copied Reel (it has its own look) and for Shubix AI's own plan.
+
+Clips read before this change carry no colour, so their Reels are left as they were.
+
+## Retakes left out (Talking Reel)
+
+A creator who stumbles stops and says the line again, so a raw talk often has the same sentence twice, or a false
+start ("So today I… So today I want to show you"). An editor keeps the last take. Shubix does too
+(`Shared/video-engine/src/retakes.ts`):
+
+- When the captions' words are heard, each stretch of speech between pauses is compared with the next three within
+  25 s. If one of them opens with the same words in the same order, the earlier stretch is a retake and is left out.
+  A short stretch needs a near-exact repeat; a long one needs most of its words.
+- The talk is made again without them. The words move with their stretches, so the speech is not heard (or charged)
+  twice. The status line says how many retakes were left out.
+- It is careful: the last stretch always stays, at most a third of the talk goes, and a dubbed talk or a Reel reopened
+  from My Reels is left as it is. Changing the clips, the pace or the noise cleanup looks again.
+- Any language: words are compared by their letters, marks and digits (Hindi vowel signs count), without case or
+  punctuation.
+
+The Android app does not make Talking Reels from speech yet; the same `findRetakes` is ready for it.
+
+## The AI director's masks, green screens and colour fit the picture
+
+The AI director plans from words, so a mask, a green-screen key, curves or HSL it chose could miss what is in the
+frame. Now it is told what the phone knows of each offered shot (`light`, the main `subject` box and a green or blue
+`backdrop`: the shot-ranking AI, which looks at the frames, now also says when a frame has a chroma-key screen behind
+the subject), and asked to fit those settings to it. The phone checks the answer against the picture before putting it
+on (`Shared/video-engine/src/lookFit.ts`, `dirLookFit` in the website's engine and the Android brain):
+
+- a mask that shows a shape is moved onto the subject and made big enough to hold it (its keyframes move with it); a
+  mask that hides a shape never hides the subject; band shapes (split, film) stay as set
+- a green-screen key stays only on a shot with a green or blue screen, in that colour
+- curves rise (no flipped tones), stay within reach of the shot (colour casts lightly), never darken a dark shot nor
+  brighten a bright one; a dark shot is not made darker with `bri` either
+- HSL hue shifts stay moderate, and on people the skin bands (red, orange) keep their colour
+
+A shot whose picture is unknown (no frames looked at, an answer cached before this change) keeps the director's
+settings. Tests: `FE/mobile-app/tests/look-fit.test.ts`; the server's `studio-direct` and `studio-rank-shots` tests.
+
+## The Reel tells a story, measured against human editors
+
+An editor lays a Reel out as a story: it opens on its hook, builds, peaks on the drop and closes. Shubix names each
+shot's part (`Shared/video-engine/src/story.ts`: hook, setup, build, peak, close; `storyRole` in the website's engine
+and the Android brain) and nudges the moment a shot takes only where human edits showed it helps.
+
+**Measured (2026-11-17), the rebuild test** (`FE/mobile-app/tests/human-rebuild.test.ts`): 17 human-edited Reels (245
+shots) cut at their own cuts; for each place in the Reel Shubix's scorer ranks all of that Reel's shots, and we look
+where the human's own shot lands (100% = Shubix's first choice, 50% = a random pick). No raw footage is needed; it
+measures placement, not choosing from raw clips.
+
+| part | shots | Shubix now | before the story nudges | with Shubix AI (GPT-5.6 Luna), before | with Shubix AI, now |
+|---|---|---|---|---|---|
+| opening | 17 | 31% | 31% | 33% | 38% |
+| setup (first fifth) | 41 | 37% | 37% | 39% | 41% |
+| middle | 159 | 50% | 50% | 53% | 53% |
+| drops | 11 | 50% | 50% | 49% | 49% |
+| last shot | 17 | 39% | 35% | 23% | 40% |
+| all | 245 | 46% | 45% | 47% | 49% |
+
+So only the **close** is nudged: a calm last shot when the song settles, a strong one when it ends on a hit. A wide,
+steady setup made it worse (editors' early shots move more) and close-ups on the drops changed nothing, so neither
+gives a bonus.
+
+What it says beyond that, plainly:
+- **The middle is a coin toss.** No measure the phone has (movement, light, faces, sharpness) orders the middle shots
+  the way editors did (each alone: 47-53%). Shubix AI's look at the frames (rank-shots) moves it to 53%: a little.
+- **How Shubix AI's look is used** (`aiBonus`, web engine and `pure.ts`): editors open on a *reveal* (the subject
+  coming into view: Luna's "reveal" alone put their openings at 61%) far more than on action (43%), and end on a shot
+  the AI scores low (a logo, a fade, a quiet look: by the AI's score their last shots ranked 12%). So the opening goes
+  by reveal and hook, the setup by reveal and detail, and the last shot by "ending" alone, without the AI's score.
+  The weights are the ones it had; only which role counts where changed. Measured with 2 frames a shot (the app sends
+  more) and one model; other models may differ.
+- **The opening is the weakest (31%).** Editors' openings here move about as much as their other shots and show fewer
+  faces; Shubix opens on the most movement and on faces. Part of it is the finished Reels themselves (5 of 17 fade in
+  from black, which the scorer counts as dark), so the hook score was not changed on this alone.
+- **The teaser is off** (`STORY_ON.teaser`): it would open an In my order Reel on the moment that hook score likes
+  best, and the score is not yet trusted for that.
+
+Run it: put the Reels outside the repository, then `HUMAN_REELS=<folder> CACHE=<folder> npx vitest run
+tests/human-rebuild.test.ts` in `FE/mobile-app` (ffmpeg on the PATH; `<reel>.faces.json` beside a Reel adds its faces;
+`ONLY=<file>` runs one Reel, for machines low on memory; with CACHE a second run takes seconds; `AI_DIR=<folder>` with
+`<reel>.ai.json`, rankShots' answer for each shot in order, adds the Shubix AI column). Tests:
+`FE/web-app/tests/video-engine-story.test.ts`, `FE/mobile-app/tests/story-teaser.test.ts`, and the engine parity test
+(`teaserOpen`, `storyRole`).
+
+## Shot flow and reactions: closer to how an editor lays shots out
+
+**Shot flow** (`Shared/video-engine/src/shotFlow.ts`). An editor puts next to each other shots that look alike. In the
+17 human-edited Reels of the rebuild test (194 cuts), the editor's next shot is closer to the shot before it than the
+other shots left are, in movement, warmth (red against blue) and light: with those three (what the phone reads of every
+frame) the editor's own next shot ranks at 64% among the shots left (50% = a random pick), above 50% in 16 of the 17
+Reels. Colour histograms gave 66%, but the phone keeps no histogram per frame. "Close-ups after wide shots" (the face
+growing shot to shot) gave 50% and is not used. Shots of one clip look alike as well, so the rule that two parts of one
+clip are not put in a row stays first; among the other clips, the one that flows on from the shots already placed beside
+it gets a bonus (`flowBonus`, `FLOW.weight` points for a gap of 1). In "Mix all clips" only (both engines, `flowNear` and
+`flowLook`, in the engine-parity test); "In my order" keeps the person's order and a copied Reel its reference.
+
+**Reactions** (`Shared/video-engine/src/reactions.ts`). A cheer, a laugh, clapping or a shout in a clip's own sound marks
+the moment people cared about (the cake cut, the goal, the entry). The clip's sound is read once with the clip (website:
+with its scan, kept with it; app: `readClip` in `lib/nativeEngine.ts`), its loudness every 50 ms against its own usual
+loudness: a part far louder (2.2 times the median), 0.3 s to 8 s long, rising out of a quieter part, is a reaction; a clip
+loud all through (music, traffic) has none. A moment showing it, or the half second that led to it, gets up to
+`REACT.weight` points (about a face's). The song stays the Reel's sound. Not measured yet: the human Reels of the rebuild
+test carry only their song; the real test (raw clips with their sound and the editor's Reel) is needed.
+
+Benchmark: `FE/mobile-app/tests/human-rebuild.test.ts` reports "flow off / flow on" (the shot before is the human's own,
+and no longer a choice). Tests: `FE/web-app/tests/video-engine-flow-reactions.test.ts`.

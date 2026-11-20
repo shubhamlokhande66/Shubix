@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 
-/** the browser tab / installed app title of this part of the app ("Administration · Shubix") */
-export const metadata: Metadata = { title: "Administration" };
+/** Admin is a private, authenticated application screen and must never appear in search results. */
+export const metadata: Metadata = {
+  title: "Administration",
+  robots: { index: false, follow: true },
+};
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return children;

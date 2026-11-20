@@ -227,3 +227,47 @@ export async function trendText(kind?: string): Promise<string> {
 ${order.map((k) => lines[k]).join("\n")}
 ${known ? `This Reel is a ${known} Reel (its template): follow the ${known} trend.` : "Decide from the clips which kind this Reel is and follow that kind's trend (none fits: your own taste)."}`;
 }
+
+// ---- the learning log (Admin -> My trends -> Learning log): for each Reel taught from many ("Teach Shubix from many
+// Reels"), how many transitions the reader knew, and what it could not learn, kept apart: a transition it does not know
+// (with the studio's own one it looks like, when there is one: `ours`) and an effect inside a shot. So the administrator
+// sees how much of 400-500 Reels was really learned and what the studio still lacks. The video is never kept.
+const Odd = z.object({ at: num(0, 600), guess: z.string().max(60), ours: z.string().max(24).nullable(), sig: z.string().max(160).optional() });
+export const LearnLogIn = z.object({
+  name: z.string().trim().min(1).max(160), category: z.enum(CATEGORIES), ok: z.boolean(), reason: z.string().max(200).optional(),
+  cuts: z.number().int().min(0).max(2000).default(0), known: z.partialRecord(z.enum(KINDS), z.number().int().min(0).max(2000)).default({}),
+  unread: z.object({ cuts: z.array(Odd).max(300).default([]), fx: z.array(Odd).max(300).default([]) }).default({ cuts: [], fx: [] }),
+});
+const learnLogCol = async () => (await mainDb()).collection("studio_learn_log");
+export async function saveLearnLog(d: z.infer<typeof LearnLogIn>) {
+  await (await learnLogCol()).updateOne({ name: d.name, category: d.category }, { $set: { ...d, at: new Date() } }, { upsert: true });   // taught again: its newest reading
+  return { ok: true };
+}
+/** the names of the Reels of a kind already learned (taught again after a stop or a closed tab: they are skipped) */
+export async function learnedNames(category: string) {
+  const docs = await (await learnLogCol()).find({ category, ok: true }, { projection: { name: 1 } }).limit(5000).toArray();
+  return { names: docs.map((d) => String(d.name)) };
+}
+type OddRow = z.infer<typeof Odd>;
+export async function learnReport() {
+  const docs = await (await learnLogCol()).find({}).sort({ at: -1 }).limit(5000).toArray();
+  const ok = docs.filter((d) => d.ok), group = (pick: (d: Record<string, unknown>) => OddRow[]) => {
+    const g = new Map<string, { guess: string; ours: string | null; n: number; reels: number; sigs: Map<string, number> }>();
+    for (const d of ok) { const seen = new Set<string>();
+      for (const o of pick(d)) { const k = `${o.guess}|${o.ours ?? ""}`, row = g.get(k) ?? { guess: o.guess, ours: o.ours ?? null, n: 0, reels: 0, sigs: new Map() };
+        row.n++; if (!seen.has(k)) { row.reels++; seen.add(k); } if (o.sig) row.sigs.set(o.sig, (row.sigs.get(o.sig) ?? 0) + 1); g.set(k, row); } }
+    return [...g.values()].sort((a, b) => b.n - a.n).map((r) => ({ guess: r.guess, ours: r.ours, n: r.n, reels: r.reels,
+      looks: [...r.sigs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([sig, n]) => ({ sig, n })) }));
+  };
+  const cuts = ok.reduce((s, d) => s + Number(d.cuts ?? 0), 0), unreadCuts = ok.reduce((s, d) => s + ((d.unread as { cuts?: unknown[] })?.cuts?.length ?? 0), 0);
+  const known: Record<string, number> = {};
+  for (const d of ok) for (const [k, v] of Object.entries((d.known ?? {}) as Record<string, number>)) known[k] = (known[k] ?? 0) + v;
+  return {
+    reels: ok.length, failed: docs.length - ok.length, cuts, read: cuts - unreadCuts, unreadCuts,
+    known: Object.entries(known).sort((a, b) => b[1] - a[1]).map(([kind, n]) => ({ kind, n })),
+    newTransitions: group((d) => ((d.unread as { cuts?: OddRow[] })?.cuts ?? [])),
+    effects: group((d) => ((d.unread as { fx?: OddRow[] })?.fx ?? [])),
+    recent: docs.slice(0, 100).map((d) => ({ name: String(d.name), category: String(d.category), ok: !!d.ok, reason: d.reason ? String(d.reason) : undefined, at: d.at,
+      cuts: Number(d.cuts ?? 0), unreadCuts: (d.unread as { cuts?: unknown[] })?.cuts?.length ?? 0, effects: (d.unread as { fx?: unknown[] })?.fx?.length ?? 0 })),
+  };
+}

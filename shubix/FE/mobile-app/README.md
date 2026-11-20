@@ -8,6 +8,13 @@ plan and credits. Plans are bought only on the website (`docs/play-store/README.
   the clips, makes the Reel and exports it. `modules/shubix-video` gives it the phone's files and the native export.
 - Ads: AdMob banners on the plans with ads, after Google's consent form where the law asks for it (`lib/ads.ts`). The app id
   comes from `ADMOB_ANDROID_APP_ID` at build time (Google's test ids without it); the ad units from Admin → Settings → Ads.
+- Publish to Instagram and YouTube (`components/organisms/PublishPanel.tsx`, My Reels → Saved → the send button): as the
+  website's. An account is connected in the phone's browser: the app asks the server for a link that carries who is
+  connecting (`POST /api/social/<platform>/connect`, sealed, 10 minutes), and the browser comes back to
+  `shubix://reels?tab=saved&social=…&result=…`. Times to schedule are offered as choices (no date picker).
+- AI voices and AI pictures in the editor: the server's (`/api/studio/speak`, `/api/studio/broll`, credits). The voices
+  are listed after the phone's own languages ("AI · …"; `lib/nativeEngine.ts` reads the WAV); an AI picture is kept on
+  the phone and put on the whole frame at the playhead (Layers). Not on a phone yet: checked by types and unit tests only.
 - Errors on the phone reach Admin → Errors (`lib/errors.ts`).
 - Icons: `assets/icon.png` and `assets/adaptive-icon.png` come from `FE/web-app/scripts/brand-assets.mjs`.
 

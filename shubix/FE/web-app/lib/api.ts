@@ -34,6 +34,7 @@ import type {
   Brand,
   LearnedTrend,
   StyleSuggestion,
+  LearningLog,
   AiModels,
   ModelTestResult,
   AiConfig,
@@ -227,6 +228,9 @@ export interface UploadResult {
 export type AdPlace = "home" | "homeEnd" | "reels" | "rewards" | "account";
 /** AdSense (client, slot) is the website; admob holds the phone app banner ad units */
 export type AdsConfig = { enabled: boolean; client: string; slot: string; places: Record<AdPlace, boolean>; admob: { android: string; ios: string; interstitial: string; rewarded: string; rewardCredits: number; rewardDaily: number } };
+/** A song of Shubix's library (Admin → Songs; BE/api/src/server/songs.ts) */
+export type LibrarySong = { id: string; name: string; artist: string; licence: string; source: string; moods: string[]; bpm: number | null; dur: number; on: boolean; url: string };
+
 export const api = {
   health: () => request<Health>("/api/health"),
   me: () => viaBoot("me", () => request<{ authEnabled: boolean; user: { id: string; email: string; emailVerified?: boolean; iosApp?: boolean; codeWait?: number } | null; pending?: { email: string; codeWait: number } }>("/api/auth/me")),
@@ -348,6 +352,14 @@ export const api = {
   adminUser: (id: string) => request<AdminUserDetail>(`/api/admin/users/${id}`),
   // Admin → Messages, and the bell's messages
   broadcasts: () => request<{ broadcasts: Broadcast[] }>("/api/admin/broadcasts"),
+  /** Admin → Songs: Shubix's song library (every song, turned off too), a new one with its details, on / off, delete */
+  adminSongs: () => request<{ songs: LibrarySong[] }>("/api/admin/songs"),
+  addSong: (file: File, d: { name: string; artist: string; licence: string; source: string; moods: string; bpm: string }, onProgress?: (f: number) => void) => {
+    const form = new FormData(); form.append("file", file); for (const [k, v] of Object.entries(d)) form.append(k, v);
+    return upload<LibrarySong>("/api/admin/songs", form, onProgress);
+  },
+  setSong: (id: string, on: boolean) => request<LibrarySong>(`/api/admin/songs/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ on }) }),
+  deleteSong: (id: string) => request<{ ok: boolean }>(`/api/admin/songs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   sendBroadcast: (d: BroadcastInput & { dryRun?: boolean }) => request<{ ok: boolean; people: number; emails?: number; emailsOff?: number; emailed?: number; emailFailed?: number; over?: boolean }>("/api/admin/broadcasts", { method: "POST", body: JSON.stringify(d) }),
   deleteBroadcast: (id: string) => request<{ ok: boolean }>("/api/admin/broadcasts", { method: "DELETE", body: JSON.stringify({ id }) }),
   notifications: () => viaBoot("notifications", () => request<{ items: Notice[]; unread: number }>("/api/notifications")),
@@ -418,6 +430,8 @@ export const api = {
   styleSuggestions: () => request<{ items: StyleSuggestion[]; total: number }>("/api/admin/style-suggestions"),
   useStyleSuggestion: (id: string, category: string) =>
     request<{ id: string }>("/api/admin/style-suggestions", { method: "POST", body: JSON.stringify({ id, category }) }),
+  // admin: the learning log of "Teach Shubix from many Reels" (what was learned, what could not be)
+  learningLog: () => request<LearningLog>("/api/admin/learning"),
   removeStyleSuggestion: (id: string) => request<{ ok: boolean }>("/api/admin/style-suggestions", { method: "DELETE", body: JSON.stringify({ id }) }),
 
   // --- brands + templates ---

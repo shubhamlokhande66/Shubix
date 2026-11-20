@@ -5,6 +5,8 @@
 import { srcPos, whatClip, velocitySpeed, rampSpeed, keyframesFor, crossesScene, srcPosF, TAIL, buildCapLines, panClamp, shotBeats, windowStats } from './pure';
 import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
+import { autoHook } from '@mobile/core/lib/text-templates';
+import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate, pictureOf, fitLook } from '@mobile/video-engine';
 
 export function createCoreBrain(ES, EH){
 // the preview: the video's own frame times (requestVideoFrameCallback), the picture mixed toward the next one
@@ -31,7 +33,7 @@ async function scanGet(src){
   const k = await EH.keptGet('a:', src.file);
   return k && k.v === EH.SCAN_V && Math.abs((k.dur || 0) - src.dur) < 0.05 && k.w === src.w && Array.isArray(k.samples) && k.samples.length ? k : null;
 }
-function scanPut(src){ EH.keptPut('a:', src.file, { v: EH.SCAN_V, dur: src.dur, w: src.w, scenes: src.scenes || [], samples: src.samples, faces: src.faces || [], faceHow: src.faceHow }); }
+function scanPut(src){ EH.keptPut('a:', src.file, { v: EH.SCAN_V, dur: src.dur, w: src.w, scenes: src.scenes || [], samples: src.samples, faces: src.faces || [], faceHow: src.faceHow, reacts: src.reacts }); }
 // results whose file is gone (its Reels deleted from Fast Studio or from My Reels): removed now and then
 async function keptSweep(){
   try{ const keys = await idb('files', 'readonly', s => s.getAllKeys()) || [], have = new Set(keys.filter(k => String(k).startsWith('f:')).map(k => String(k).slice(2)));
@@ -225,13 +227,23 @@ function applyChatVisualIntent(intent, slots = []){
 }
 function chatDone(story){ if(!ES.chatWaiting) return; EH.chatAnswer('Done ✓ Your Reel is edited the way you asked' + (story ? ': ' + story : '.') + ' Tell me if you want anything else.'); }
 function chatFail(msg){ if(ES.chatWaiting) EH.chatAnswer(msg); }
+// "slow it down", "slow motion", "clip slow kar", "हळू कर": slow motion asked for (true), "normal speed", "slow nako": taken
+// back (false); anything else: null. It is done here at once, for everyone, with no Shubix AI and no credits (before,
+// "slow" only switched to the Smooth style: longer shots, no slow motion, and the answer still said Done).
+function slowWish(t){
+  const x = ' ' + String(t || '').toLowerCase().replace(/[.,!?]/g, ' ') + ' ';
+  if(/normal speed|original speed|no slow|not slow|slow (motion )?(off|nako|mat|nahi|nko)|slow kadh|speed normal|नॉर्मल स्पीड|स्लो नको/.test(x)) return false;
+  if(/slow[\s-]?mo|slowmo|slow (it )?down|slow (kar|kara|kr|karo|kelas|pahije|hava|havi)|(clip|clips|video|videos|reel|shot|shots|it|everything|all) (ko |la |ch |cha |)?slow|make (it|them|the \w+) slow|slower|स्लो|हळू कर|halu kar|dhima|धीमा|dheere|धीरे/.test(x)) return true;
+  return null;
+}
 // plain words the phone understands by itself (with or without the AI)
 function chatLocal(t){
   const x = t.toLowerCase(), did = [];
   const has = (...w) => w.some(k => x.includes(k));
   if(!ES.aiOn && has('new version', 'different version', 'another version', 'dusra', 'navin', 'नवीन')){ ES.seed = (ES.seed*7919 + 13) % 2147483647 || 7; ES.mixNo++; did.push('a new version'); }
   if(has('faster', 'fast', 'energetic', 'energy', 'jalad', 'जलद', 'speed up', 'quick')){ if(ES.mode !== 'fast'){ EH.setModeQuiet('fast'); did.push('the Fast style'); } }
-  else if(has('calm', 'slow', 'smooth', 'cinematic', 'halu', 'हळू', 'shant', 'शांत')){ if(ES.mode !== 'smooth'){ EH.setModeQuiet('smooth'); did.push('the Smooth style'); } }
+  else if(has('calm', 'smooth', 'cinematic', 'shant', 'शांत')){ if(ES.mode !== 'smooth'){ EH.setModeQuiet('smooth'); did.push('the Smooth style'); } }
+  { const slow = slowWish(t); if(slow !== null && slow !== !!ES.slowAll){ ES.slowAll = slow; did.push(slow ? 'slow motion on every shot' : 'normal speed'); } }   // (the Reel is not made yet, or Shubix AI plans it: kept for when it is made)
   return did;
 }
 // the director's transitions / effects / speeds, each checked; returns how many were used and how many were corrected
@@ -330,8 +342,28 @@ async function account(){ EH.planLoad(); await EH.aiCheck(); }
 function makeEdit(){
   const was = (ES.playing || ES.starting) && !ES.recording && !ES.exportBusy && ES.kind !== 'talk', at = ES.playing ? EH.curTime() : ES.pos, gen = ES.editGen;
   EH.makeEditNow();
+  if(ES.edit.length && ES.editGen !== gen){ autoFinish(); brandFinish(); }
   if(ES.editGen !== gen) histRebase();   // Shubix's plan / a new edit is the start of Undo, not a step in it
   if(was && ES.buf && ES.edit.length && !ES.playing && !ES.starting && !ES.recording) EH.startPlayback(Math.min(Math.max(0, at), Math.max(0, ES.buf.duration - 0.2)));
+}
+// No text of the creator's and no Shubix AI plan with texts: the Reel still opens on words (autoHook, the first two
+// seconds that stop the scroll), as an editor's does. A text like any other; once the creator deletes it, it is not
+// given again. When Shubix AI's plan brings its own texts, these go. Opening text: None (the creator's choice, kept for
+// their next Reels): never given, and one already on the Reel goes.
+function autoFinish(){
+  if(ES.kind === 'talk' || ES.mode === 'copy' || !ES.edit.length || ES.keepSaved) return;
+  // a subject pop before the hero shot, when one has a clear subject (an old one of Shubix's went with the old edit)
+  if(ES.layers.some(L => L.pop === 'auto') && ES.popKey !== String(ES.editGen)){ ES.layers = ES.layers.filter(L => L.pop !== 'auto'); EH.lyUI(); }
+  if(!ES.popOff && EH.popMask && !ES.layers.some(isPop) && (ES.buf ? ES.buf.duration : 0) >= 8) subjectPop(true);
+  const had = ES.overlays.some(o => o.auto);
+  if(ES.hookNone){ if(had){ ES.overlays = ES.overlays.filter(o => !o.auto); ES.ovSel = -1; EH.renderOvList(); } return; }
+  if(ES.autoHookUsed && !had) ES.autoHookOff = true;
+  if(had && ES.director && !ES.director.interim && ES.overlays.some(o => !o.auto)){ ES.overlays = ES.overlays.filter(o => !o.auto); EH.renderOvList(); return; }
+  if(ES.autoHookOff || had || ES.overlays.some(o => !o.brand) || ES.hookText || (ES.director && !ES.director.interim)) return;
+  const t0 = ES.edit[0].start, drops = (ES.cuts || []).filter((c, k) => ES.cutType[k] === 'drop').map(c => c - t0).filter(c => c > 0.5);
+  const h = autoHook({ firstDrop: drops.length ? drops[0] : null, kind: ES.tplKind, seed: ES.seed });
+  const n = EH.addTemplate(h.key, h.words, 0, h.len, false);
+  if(n){ ES.overlays.slice(-n).forEach(o => { o.auto = true; }); ES.autoHookUsed = true; ES.ovSel = -1; EH.renderOvList(); }   // (not selected: the tools stay on the shots)
 }
 async function showShot(i){ ES.pos = ES.edit[i].start + Math.min(0.4, (ES.edit[i].end-ES.edit[i].start)*0.5);
   await Promise.all([ES.edit[i-1]?EH.prepare(i-1,ES.edit[i-1].end-0.01):0, EH.prepare(i, ES.pos)]); EH.drawFrame(ES.pos); EH.drawTimeline(); }
@@ -567,8 +599,101 @@ function lySelect(i){
   if(!EH.lyOn(ES.layers[i], ES.pos)) ES.pos = ES.layers[i].t0 + 0.05;
   return EH.prepare(EH.segAt(ES.pos), ES.pos).then(() => EH.prepLayers(ES.pos)).then(EH.redrawFrame).then(() => true);
 }
+/* ---- My brand and the finish (Shared/video-engine/src/finish.ts), as the website's engine.ts brandFinish / finishSet.
+ * The brand (@handle, the logo's file on the phone) comes from the app (brandSet); the layers "shade", "bars" and "tint"
+ * need no file (StudioLayers.kt draws them). ---- */
+const FILLS = ['shade', 'bars', 'tint'];
+const fillMedia = kind => ({ kind, name: { shade: 'End card (dark)', bars: 'Cinematic bars', tint: 'Colour flash on the beat' }[kind], w: 2, h: 2, dur: Infinity, path: '' });
+const mediaIndex = M => { let i = ES.lmedia.indexOf(M); if(i < 0){ ES.lmedia.push(M); i = ES.lmedia.length - 1; } return i; };
+async function brandFinish(){
+  if(!ES.edit.length || ES.mode === 'copy' || ES.keepSaved) return;
+  const D = ES.buf ? ES.buf.duration : 0; if(!D) return;
+  const off = ES.brandOff || (ES.brandOff = { mark: false, end: false });
+  const B = ES.brand, h = B ? handleOf(B.handle) : '', end = B && B.end && !off.end && (h || B.logoPath) ? endCardTime(D, (ES.beats || []).map(b => b - ES.edit[0].start)) : null;
+  const M = B && B.logoPath && ((B.mark && !off.mark) || end) ? (ES.brandLogo && ES.brandLogo.path === B.logoPath ? ES.brandLogo : (ES.brandLogo = await EH.addLayerMedia({ kind: 'photo', path: B.logoPath, name: 'My logo', w: B.logoW || 512, h: B.logoH || 512 }))) : null;
+  ES.layers = ES.layers.filter(L => L.brand !== 'auto'); ES.overlays = ES.overlays.filter(o => o.brand !== 'auto');
+  if(M && B.mark && !off.mark) ES.layers.push({ id: ++ES.lySeq, m: mediaIndex(M), in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), t0: 0, t1: end ? end.t0 : D, x: MARK.x, y: MARK.y, s: MARK.s, op: MARK.op, brand: 'auto', role: 'mark' });
+  if(end){
+    ES.layers.push({ id: ++ES.lySeq, m: mediaIndex(fillMedia('shade')), in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), t0: end.t0, t1: end.t1, shade: 0.9, fin: 0.35, brand: 'auto', role: 'end' });
+    if(M) ES.layers.push({ id: ++ES.lySeq, m: mediaIndex(M), in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), t0: end.t0 + 0.15, t1: end.t1, x: END_LOGO.x, y: END_LOGO.y, s: END_LOGO.s, grow: { ...END_LOGO.grow }, fin: 0.35, brand: 'auto', role: 'end' });
+    const n = EH.addTemplate(M ? 'endcard' : 'endtext', [h, h ? 'Follow for more' : ''], end.t0, end.t1 - end.t0, false);
+    ES.overlays.slice(-n).forEach(o => { o.brand = 'auto'; });
+    ES.ovSel = -1;
+  }
+  EH.lyUI(); EH.renderOvList(); EH.redrawFrame();
+}
+function finishOn(what){ return what === 'bw' ? ES.edit.some(e => e.bw) : ES.layers.some(L => L.finish === what); }
+function finishSet(what, on){
+  if(!ES.edit.length){ EH.notify('Make the Reel first.'); return false; }
+  const D = ES.buf.duration, t0 = ES.edit[0].start;
+  if(what === 'bw'){
+    for(const e of ES.edit) if(e.bw){ e.cs = { ...(e.cs || {}), sat: 0 }; delete e.bw; }
+    if(on){ const drop = (ES.cuts || []).filter((c, k) => ES.cutType[k] === 'drop').map(c => c - t0).filter(c => c > 0.5)[0] ?? null, idx = bwShots(ES.edit, drop);
+      if(!idx.length){ EH.notify('This song part has no drop after its opening: black and white until the drop needs one.'); return false; }
+      for(const i of idx){ ES.edit[i].cs = { ...(ES.edit[i].cs || {}), sat: -1 }; ES.edit[i].bw = true; } }
+  } else {
+    ES.layers = ES.layers.filter(L => L.finish !== what);
+    if(on){
+      const L = { id: ++ES.lySeq, m: mediaIndex(fillMedia(what)), in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), t0: 0, t1: D, finish: what };
+      if(what === 'bars') L.ratio = 2.39;
+      else { EH.strongHit(0); const endAt = (ES.layers.find(x => x.brand === 'auto' && x.role === 'end') || { t0: D }).t0; L.pulses = tintPulses((ES.strongList || []).map(h => h - t0), 0.3, endAt); if(!L.pulses.length){ EH.notify('This song part has no strong beats to flash on.'); return false; } }
+      ES.layers.unshift(L); if(ES.lySel >= 0) ES.lySel++;   // under the other layers: My brand's logo and the end card show over the bars
+    }
+  }
+  EH.lyUI(); EH.redrawFrame(); if(EH.saveNow) EH.saveNow(); return true;
+}
+/* ---- Subject pop (Shared/video-engine/src/pop.ts), as the website's engine.ts subjectPop: the subject of a shot cut
+ * out of the shot's first frame (the phone reads it and runs the subject model: SubjectPop.kt), small in the middle
+ * while the shot before plays on darker, growing to its own size and place; then the cut to its shot. ---- */
+const isPop = L => !!(L && L.pop);
+async function subjectPop(auto = false){
+  if(!EH.popMask){ if(!auto) EH.notify('Pop out is not available here.', 'err'); return null; }
+  if(!ES.edit.length || ES.kind === 'talk' || ES.popBusy){ if(!auto && !ES.edit.length) EH.notify('Make the Reel first, then Pop out.'); return null; }
+  const gen = ES.editGen, shots = popShots(ES.edit, ES.period, auto ? 3 : 5);
+  if(!shots.length){ if(!auto) EH.notify('This Reel has no shot long enough for a pop. A longer song part or longer clips help.'); return null; }
+  ES.popBusy = true; if(!auto) EH.tasks.start('pop', 'clips', 'Pop out', 'Finding the subject…');
+  try{
+    let best = null;
+    for(const i of shots){
+      const e = ES.edit[i], src = ES.sources[e.src], c0 = EH.csOf(e, 0); if(!src || c0.rot || c0.fh || c0.fv || e.flick || e.black || crossesScene(src, srcPos(e, 0) - 0.05, srcPos(e, 0) + 0.6)) continue;   // a turned or mirrored picture, or a scene change at the shot's start: its cut-out would not line up
+      let r = null; try{ r = await EH.popMask(src.path, srcPos(e, 0)); }catch(err){ continue; }
+      if(!r || ES.editGen !== gen) continue;
+      const f = popScore(r.mask, r.rgba);
+      if(f.score < (auto ? 0.45 : 0.2) || (best && f.score <= best.f.score)) continue;
+      // the picture a moment later must be the same one (a cut inside the clip there would show something else)
+      let later = null; try{ later = await EH.popMask(src.path, srcPos(e, Math.min(0.3, (e.end - e.start)/3))); }catch(err){ later = null; }
+      if(!later || !popSteady(r.rgba, later.rgba)) continue;
+      best = { i, f, mask: r.mask };
+      if(f.score >= 0.7) break;   // clear enough: no need to look further
+    }
+    if(ES.editGen !== gen) return null;   // a new edit meanwhile: its own pop comes with it
+    if(!best || best.f.score < (auto ? 0.45 : 0.2)){ if(!auto) EH.tasks.fail('pop', 'No shot has one clear subject (a car, a person, a sign) whole in its picture.'); return null; }
+    const e = ES.edit[best.i], src = ES.sources[e.src], b = best.f.box, m = 0.015;
+    const box = [Math.max(0, b[0] - m), Math.max(0, b[1] - m), Math.min(1, b[2] + m), Math.min(1, b[3] + m)];
+    const k = Math.min(1, 1440/Math.max(src.w, src.h)), W = Math.max(2, Math.round(src.w*k/2)*2), H = Math.max(2, Math.round(src.h*k/2)*2);
+    const cut = await EH.popCut(src.path, srcPos(e, 0), W, H, popAlpha(best.mask), box); if(!cut || ES.editGen !== gen) return null;
+    const M = await EH.addLayerMedia({ kind: 'photo', path: cut.path, name: 'Subject pop.png', w: cut.w, h: cut.h });
+    ES.layers = ES.layers.filter(L => !isPop(L));   // one pop at a time: a new one replaces the last
+    ES.lmedia.push(M);
+    const win = popWindow(ES.edit, best.i, ES.period), P = popLayer(box, layerOf(e, 0, { noFx: true }).rect, { w: EH.out.width, h: EH.out.height }, win);
+    ES.layers.push({ id: ++ES.lySeq, m: ES.lmedia.length - 1, in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), ...P, pop: auto ? 'auto' : 'mine' });
+    e.tr = 'hard';   // the cut from the pop to its shot is a plain cut: the subject is already where the shot shows it
+    if(!auto) ES.lySel = ES.layers.length - 1;
+    ES.popKey = String(gen); EH.lyUI(); await EH.prepLayers(ES.pos); EH.redrawFrame(); if(EH.saveNow) EH.saveNow();
+    if(!auto) EH.tasks.done('pop', 'The subject of shot ' + (best.i + 1) + ' pops out at ' + win.t0.toFixed(1) + ' s');
+    return { shot: best.i, t0: win.t0, t1: win.t1, score: best.f.score };
+  }catch(err){ console.warn('subject pop', err); if(!auto) EH.tasks.fail('pop', 'The subject could not be cut out. Please try again.'); return null; }
+  finally{ ES.popBusy = false; }
+}
 function lyDelete(){
   if(!ES.layers[ES.lySel]) return false;
+  if(ES.layers[ES.lySel].pop === 'auto') ES.popOff = true;   // Shubix's own pop, deleted: not given again for this Reel
+  const gone = ES.layers[ES.lySel];
+  if(gone.brand === 'auto'){   // My brand's logo or end card, deleted: not given again for this Reel (the whole end card goes)
+    const off = ES.brandOff || (ES.brandOff = { mark: false, end: false });
+    if(gone.role === 'mark') off.mark = true;
+    else { off.end = true; ES.layers = ES.layers.filter(L => L === gone || !(L.brand === 'auto' && L.role === 'end')); ES.overlays = ES.overlays.filter(o => o.brand !== 'auto'); EH.renderOvList(); ES.lySel = ES.layers.indexOf(gone); }
+  }
   ES.layers.splice(ES.lySel, 1); ES.lySel = Math.min(ES.lySel, ES.layers.length - 1); ES.clipMixKey = ''; EH.lyUI(); EH.redrawFrame(); return true;
 }
 function lySet(k, v){ const L = ES.layers[ES.lySel]; if(!L) return;
@@ -600,9 +725,29 @@ function facePosOnScreen(t){
   if(!near.length) return null;
   const f = near.reduce((q,x)=>Math.abs(x.t-st) < Math.abs(q.t-st) ? x : q, near[0]);
   const W=EH.out.width, H=EH.out.height, r = Math.max(W/src.w, H/src.h), dw=src.w*r, dh=src.h*r, [ccx, ccy] = EH.camAt(e, local);
-  return { x: Math.max(0, Math.min(1, 0.5 + (f.fx-ccx)*dw/W)), y: Math.max(0, Math.min(1, 0.5 + (f.fy-ccy)*dh/H)) };
+  return { x: Math.max(0, Math.min(1, 0.5 + (f.fx-ccx)*dw/W)), y: Math.max(0, Math.min(1, 0.5 + (f.fy-ccy)*dh/H)), s: (f.fs || 0)*dw/W };
 }
 function faceYOnScreen(t){ const face = facePosOnScreen(t); return face ? face.y : null; }
+// Shubix's own texts never sit on a face (Shared/video-engine clear.ts), as the website's engine.ts clearTexts: each
+// group moves up or down just enough, inside Instagram's safe area; the creator's own texts and keyframed ones stay.
+let clearKey = '';
+function clearTexts(){
+  const key = ES.editGen + '|' + ES.aspect + '|' + ES.overlays.map(o => o.id + ':' + o.t0 + ':' + o.t1 + ':' + (o.placed ? 1 : 0)).join(',');
+  if(key === clearKey) return; clearKey = key;
+  if(!ES.edit.length) return;
+  const W = EH.out.width, H = EH.out.height, groups = new Map();
+  for(const o of ES.overlays){
+    if(!(o.auto || o.aiIntent) || o.placed || o.track || o.uk || o.all || o.kind) continue;
+    if(o.y0 === undefined) o.y0 = o.y;
+    const k = (o.tpl || o.id) + '|' + o.t1; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(o);
+  }
+  for(const list of groups.values()){
+    const a = Math.min(...list.map(o => o.t0)), b = Math.max(...list.map(o => o.t1)), faces = [];
+    for(let t = a; t < b; t += 0.25){ const f = facePosOnScreen(t); if(f && f.s > 0) faces.push(f); }
+    const dy = clearOfFaces(list.map(o => textBoxEstimate(o.text, o.size, !!o.emoji, o.x, o.y0, W, H)), faces, { W, H });
+    for(const o of list) o.y = +(o.y0 + dy).toFixed(4);
+  }
+}
 function drawCaptions(t){
   if(!ES.capsOn || !ES.capLines) return;
   const line = ES.capLines.find(l => t >= l.a && t < l.b); if(!line) return;
@@ -637,7 +782,7 @@ async function aiApply(d){ if(!d) return; ES.layers = ES.layers.filter(L => L.ai
   const k0 = EH.dirKey(), mine = !!ES.director && ES.director.key === k0;
   await EH.aiActions(d.actions);
   const k1 = EH.dirKey(); if(mine && k1 !== k0){ ES.director = { ...ES.director, key: k1 }; ES.dirCache.set(k1, ES.director); } }
-function drawOverlays(t){ for(const ov of ES.overlays) if(!ov.behind || !EH.personMask || !ES.bgMask) EH.drawOverlay(EH.og, ov, t); }
+function drawOverlays(t){ clearTexts(); for(const ov of ES.overlays) if(!ov.behind || !EH.personMask || !ES.bgMask) EH.drawOverlay(EH.og, ov, t); }
 function kfNow(){ return Math.max(0, ES.playing ? EH.curTime() : ES.pos || 0); }
 function kfTarget(){
   if(!ES.edit.length) return null;
@@ -865,7 +1010,7 @@ async function ttsMake(c, quiet){
   if(!quiet) EH.tasks.start(id, 'voice', 'Making the voice', '"' + c.text.slice(0, 40) + (c.text.length > 40 ? '…' : '') + '"');
   try{ const r = await EH.tts.speak(c.text, c.voice, (pr) => { if(!quiet) EH.tasks.update(id, pr.p, 'Speaking'); });
     c.pcm = r.pcm; c.sr = r.sr; if(!quiet) EH.tasks.done(id, 'Voice ready'); }
-  catch(err){ console.warn('tts', err); if(!quiet) EH.tasks.fail(id, 'Could not make the voice. Add this language in the phone\'s Settings, under Text-to-speech, and try again.'); throw err; }
+  catch(err){ console.warn('tts', err); if(!quiet) EH.tasks.fail(id, String(c.voice).includes(':') ? ((err && err.message) || 'The AI voice could not be made. Please try again.') : 'Could not make the voice. Add this language in the phone\'s Settings, under Text-to-speech, and try again.'); throw err; }
 }
 function clearTts(){
   if(!ES.ttsClips.length) return false;
@@ -935,6 +1080,13 @@ function applyVo(){   // (the name stays: everything that changes the sound call
     } }
   ES.buf = mix; ES.normGain = 1;
 }
+// the director's look for a shot fitted to its picture (Shared/video-engine lookFit.ts), as the website's dirLookFit
+function dirLookFit(e, look){
+  if(!look.mk && !look.ck && !look.cv && !look.hsl && !(look.bri < 0)) return look;
+  const s = ES.sources[e.src]; if(!s) return look;
+  const need = e.sp.pos(e.end - e.start)*e.scaleR, st = s.samples && s.samples.length ? windowStats(s, e.in, e.in + need) : null;
+  return fitLook(look, pictureOf(ES.aiOn && s.ai ? s.ai.frames : null, s.faces, e.in, e.in + need, st ? st.b : undefined, EH.out.height/EH.out.width)).look;
+}
 function autoTools(){
   if(ES.kind === 'talk' || !ES.edit.length) return;
   ES.edit.forEach(EH.csAutoClear);
@@ -952,7 +1104,8 @@ function autoTools(){
     else if(ES.au.clip === 'voices' && EH.speechShare(s, e.in, e.in + need) > 0.4) EH.csAutoSet(e, { vol: 0.9 });
   });
   // the AI director's own look for a shot (mirror, black and white, a framed photo, a fade...), like a person's clip tools
-  ES.edit.forEach((e, i) => { const d = EH.dirSlotOf(i); if(d && d.cs) EH.csAutoSet(e, EH.AI_CS(d.cs)); });
+  // fitted to the shot's picture first (lookFit.ts): a mask round the subject, a key only on a green screen, gentle curves
+  ES.edit.forEach((e, i) => { const d = EH.dirSlotOf(i); if(d && d.cs) EH.csAutoSet(e, dirLookFit(e, EH.AI_CS(d.cs))); });
   const cand = ES.edit.map((e, i) => ({ e, i })).filter(({ e, i }) => i > 2 && e.start > 3 && (e.type === 'drop' || e.type === 'hit') && e.end - e.start >= 0.5 && e.end - e.start <= 1.6
     && (e.mot || 0) > 0.45 && e.sp.label === '1×' && e.efx !== 'snap' && !(e.cs && 'rev' in e.cs));
   if(cand.length) EH.csAutoSet(cand[Math.floor(cand.length/2)].e, { rev: true });
@@ -1016,5 +1169,5 @@ async function forgetSong(fp, quiet){
   if(!used) await idb('files', 'readwrite', s => s.delete('f:' + fp));
   if(!quiet) EH.listRecent();
 }
-  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
+  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, slowWish, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, clearTexts, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
 }

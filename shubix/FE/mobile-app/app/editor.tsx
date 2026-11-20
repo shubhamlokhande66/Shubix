@@ -9,14 +9,16 @@ import { errorMessage } from "@mobile/api-client";
 import { clipDuration, projectDuration, splitClip, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
 import { evaluateSpeedRamp, recordEdit, slipClip, stepEditHistory } from "@mobile/video-engine";
 import { getProject, keepPickedAssets, keepPickedFile, saveProject, setNewReelSeed } from "../lib/projects";
+import * as FileSystem from "expo-file-system/legacy";
 import { pickSong } from "../lib/songs";
+import { mobileApi } from "../lib/api";
 import { useLocked } from "../lib/data";
 import { AskShubix, styleFromWords } from "../components/organisms/AskShubix";
 import { ExportScreen } from "../components/organisms/ExportScreen";
 import { pickInOrder } from "../components/organisms/Gallery";
 import { isNativeEffectSupported, isNativeTransitionSupported, previewSpec, videoEngine } from "../lib/video";
 import { ShubixPreviewView, type PreviewRef } from "../modules/shubix-video";
-import { type AiPlan, engine, textsOf } from "../lib/engine";
+import { type AiPlan, type MyBrand, brandGet, brandSave, engine, textsOf } from "../lib/engine";
 import { TEXT_TEMPLATES } from "@mobile/core/lib/text-templates";
 import { STICKERS as SHAPES } from "@mobile/core/lib/stickers";
 import { SFX_REC } from "@mobile/core/lib/sfx-recorded";
@@ -167,7 +169,7 @@ function parseBulkVisualCommand(prompt: string): BulkVisualCommand | null {
 /** The editor (the website's studio editor on a phone): the Reel saved on this phone, played shot by shot with its
  * song; the timeline and the tools change it, every change is kept (undo), and it saves itself as it goes. */
 export default function EditorScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>(), words = useStudioText(), look = useColors(), locked = useLocked();
+  const { id, made } = useLocalSearchParams<{ id: string; made?: string }>(), words = useStudioText(), look = useColors(), locked = useLocked();
   const [p, setP] = useState<ReelProject | null>(null), [selected, setSelected] = useState(0), [playing, setPlaying] = useState(false), [local, setLocal] = useState(0);
   const [mixing, setMixing] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
@@ -366,7 +368,9 @@ export default function EditorScreen() {
   const refreshStudioLayers = async () => {
     const result = await engine.tool("layerList");
     const list = Array.isArray(result) ? result as typeof studioLayers : [];
-    setStudioLayers(list); return list;
+    setStudioLayers(list);
+    void engine.tool("finishState").then((f) => setFin(f as { bars: boolean; tint: boolean; bw: boolean })).catch(() => {});
+    return list;
   };
   const addStudioLayer = async () => {
     if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Overlay layers need a Reel made by Shubix Studio."), "info");
@@ -379,6 +383,55 @@ export default function EditorScreen() {
       setStudioLayerIndex(index); await engine.tool("layerSelect", { index });
       tell(words("Overlay layer added"), "success");
     } catch (e) { tell(errorMessage(e), "danger"); }
+  };
+  // an AI picture (B-roll): a few words → the server makes the picture (/api/studio/broll, credits), kept on the phone and
+  // put on the whole frame at the playhead, as the website's "AI picture"
+  const [picDraft, setPicDraft] = useState(""), [picBusy, setPicBusy] = useState(false);
+  const addAiPicture = async () => {
+    if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Overlay layers need a Reel made by Shubix Studio."), "info");
+    const prompt = picDraft.trim();
+    if (prompt.length < 3) return tell(words("Describe the picture in a few words."), "info");
+    setPicBusy(true);
+    try {
+      const made = await mobileApi.aiPicture(prompt), uri = `${FileSystem.documentDirectory}ai-picture-${Date.now()}.jpg`;
+      await FileSystem.writeAsStringAsync(uri, made.image.split(",")[1] ?? "", { encoding: FileSystem.EncodingType.Base64 });
+      await engine.addLayer(uri, "AI picture.jpg");
+      const list = await refreshStudioLayers(), index = Math.max(0, list.length - 1);
+      setStudioLayerIndex(index); await engine.tool("layerSelect", { index });
+      for (const [key, value] of [["x", 0.5], ["y", 0.5], ["s", 1], ["fin", 0.25], ["fout", 0.25]] as const) await engine.tool("layerSet", { key, value });
+      setPicDraft(""); tell(words("AI picture added"), "success");
+    } catch (e) { tell(errorMessage(e), "danger"); }
+    setPicBusy(false);
+  };
+  // My brand (the @handle and logo on every Reel: a logo in the corner, an end card) and the finish toggles
+  const [myBrand, setMyBrand] = useState<MyBrand>({ handle: "", logoPath: null, mark: true, end: true });
+  const [fin, setFin] = useState<{ bars: boolean; tint: boolean; bw: boolean }>({ bars: false, tint: false, bw: false });
+  useEffect(() => { void brandGet().then((b) => { if (b) setMyBrand(b); }); }, []);
+  const keepBrand = async (b: MyBrand) => {
+    setMyBrand(b);
+    try { await brandSave(b); await refreshStudioLayers(); } catch (e) { tell(errorMessage(e), "danger"); }
+  };
+  const pickLogo = async () => {
+    const assets = await pickInOrder({ kind: "image", limit: 1 });
+    if (!assets?.length) return;
+    try { const [file] = await keepPickedAssets(`brand-logo-${Date.now()}`, assets.slice(0, 1)); await keepBrand({ ...myBrand, logoPath: decodeURIComponent(file.uri.replace(/^file:\/\//, "")), logoW: assets[0].width || 512, logoH: assets[0].height || 512 }); tell(words("Logo kept for your Reels"), "success"); }
+    catch (e) { tell(errorMessage(e), "danger"); }
+  };
+  const setFinish = async (what: "bars" | "tint" | "bw") => {
+    if (!p || !p.studio || !engine.holds(p.id)) return tell(words("This needs a Reel made by Shubix Studio."), "info");
+    try { const r = await engine.tool("finish", { what, on: !fin[what] }) as { on?: typeof fin }; if (r.on) setFin(r.on); await refreshStudioLayers(); } catch (e) { tell(errorMessage(e), "danger"); }
+  };
+  // Pop out: the subject of the best shot cut out, growing over the shot before it (the brain's subjectPop)
+  const [popBusy, setPopBusy] = useState(false);
+  const popOut = async () => {
+    if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Layer editing needs a Reel made by Shubix Studio."), "info");
+    setPopBusy(true);
+    try {
+      const r = await engine.tool("subjectPop") as { ok?: boolean };
+      const list = await refreshStudioLayers();
+      if (r?.ok) { setStudioLayerIndex(Math.max(0, list.length - 1)); tell(words("The subject pops out before its shot"), "success"); }
+    } catch (e) { tell(errorMessage(e), "danger"); }
+    setPopBusy(false);
   };
   const studioLayerAction = async (op: string, args: Record<string, unknown> = {}) => {
     if (!p || !p.studio || !engine.holds(p.id)) return tell(words("Layer editing needs a Reel made by Shubix Studio."), "info");
@@ -660,6 +713,23 @@ export default function EditorScreen() {
       </View>;
       case "layers": return <View className="gap-2">
         <Button full icon="image" title={words("Add photo / video layer")} onPress={() => void addStudioLayer()} />
+        <Label>{words("Finish")}</Label>
+        <View className="flex-row flex-wrap gap-2">
+          {([["bars", "Cinematic bars"], ["tint", "Colour flash on the beat"], ["bw", "B&W until the drop"]] as const).map(([k, label]) => <Button key={k} size="sm" variant={fin[k] ? "primary" : "secondary"} title={words(label)} onPress={() => void setFinish(k)} />)}
+        </View>
+        <Label>{words("My brand · on every Reel you make here")}</Label>
+        <TextInput defaultValue={myBrand.handle} onEndEditing={(e) => void keepBrand({ ...myBrand, handle: e.nativeEvent.text.trim().slice(0, 40) })} placeholder="@yourname" placeholderTextColor={look.muted} autoCapitalize="none" maxLength={40} className="h-12 rounded-xl border border-border bg-surface-2 px-4 text-[14px] text-foreground" />
+        <View className="flex-row flex-wrap gap-2">
+          <Button size="sm" variant="secondary" icon="image" title={words(myBrand.logoPath ? "Change logo" : "Add logo")} onPress={() => void pickLogo()} />
+          {!!myBrand.logoPath && <Button size="sm" variant="secondary" title={words("Remove logo")} onPress={() => void keepBrand({ ...myBrand, logoPath: null })} />}
+          <Button size="sm" variant={myBrand.mark ? "primary" : "secondary"} title={words("Logo in the corner")} onPress={() => void keepBrand({ ...myBrand, mark: !myBrand.mark })} />
+          <Button size="sm" variant={myBrand.end ? "primary" : "secondary"} title={words("End card")} onPress={() => void keepBrand({ ...myBrand, end: !myBrand.end })} />
+        </View>
+        <Button full variant="secondary" icon="sparkle" loading={popBusy} disabled={popBusy} title={words("Pop out the subject")} onPress={() => void popOut()} />
+        <Text className="text-[11px] leading-[16px] text-muted">{words("A car, a bike or a person cut out of a shot: small at first while the Reel plays behind it, growing until the Reel cuts to it.")}</Text>
+        <TextInput value={picDraft} onChangeText={setPicDraft} maxLength={400} multiline placeholder={words("AI picture: describe it (a chai stall in the rain at night…)")} placeholderTextColor={look.muted}
+          className="min-h-[64px] rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground" />
+        <Button full variant="secondary" icon="sparkle" loading={picBusy} disabled={picBusy} title={words("Make AI picture and add it here")} onPress={() => void addAiPicture()} />
         <Text className="text-[11px] leading-[16px] text-muted">{words("Layers are composited by the Studio renderer for export. The Android preview currently shows the base shot and text overlays; complex layer blends and masks are visible in the final Studio render.")}</Text>
         {studioLayers.length > 0 && <>
           <Label>Overlay layers</Label>
@@ -877,7 +947,9 @@ export default function EditorScreen() {
   const aspect = ASPECT[p.settings?.aspect ?? "9:16"];
   return (
     <View className="flex-1 bg-background">
-      <StudioBar title={p.title} onBack={back} onExport={() => { if (!videoEngine.ready) return tell(words("Export needs the Shubix app (Expo Go has no video engine). Your Reel is saved on this phone."), "info"); setPlaying(false); setExporting(p); }} />
+      <StudioBar title={p.title} onBack={back} onExport={() => { if (!videoEngine.ready) return tell(words("Export needs the Shubix app (Expo Go has no video engine). Your Reel is saved on this phone."), "info"); setPlaying(false); setExporting(p);
+        // the creator's changes after Shubix made it (this editor's Undo steps): Admin's "Kept as Shubix made it"
+        void mobileApi.reelLog(p.id, { step: "export", msg: `Export started · ${p.clips.length} shots`, data: { changes: undo.current.length, opened: made !== "1", platform: "android", shots: p.clips.length } }).catch(() => undefined); }} />
       <ScrollView className="flex-1" contentContainerClassName="pb-3" showsVerticalScrollIndicator={false}>
         <Preview n={selected} of={clips.length} playing={playing} aspect={aspect} error={playError} onToggle={() => setPlaying(!playing)}><ReelPlayer p={p} layers={studioLayers} now={now} playing={playing} sound={sound} onTime={seek} onEnd={() => { setPlaying(false); seek(0); }} onError={setPlayError} /></Preview>
         <View className="mx-4 mt-2">

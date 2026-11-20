@@ -47,8 +47,9 @@ with `production`).
 ## Deploying
 
 By hand, as before (Actions minutes): GitHub → Actions → **Deploy to Cloudflare** (the API) and **Deploy website
-(Cloudflare Workers)** → Run workflow → pick `qa`, `uat` or `prod`. Each deploys its own branch (`qa`, `uat`, `main`), whatever
-branch the workflow is started from. Deploy the API first when both changed.
+(Cloudflare Workers)** → Run workflow → pick `qa`, `uat` or `prod`. `qa` deploys the branch picked in **Use workflow from** (`qa`,
+or a feature branch to try on QA before it is merged); `uat` always deploys `uat` and `prod` always `main`, whatever branch
+is picked. The run shows which branch and commit went out. Deploy the API first when both changed.
 
 From a computer with Docker: `cd shubix/infra/cloudflare && npx wrangler deploy --env qa` (or `--env uat`; no `--env`
 is production).

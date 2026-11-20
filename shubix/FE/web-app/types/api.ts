@@ -41,6 +41,13 @@ export interface TrendLook {
 }
 
 /** A Reel a creator copied ("Copy a Reel"), waiting for the administrator to teach the styles with it. */
+/** Admin -> My trends -> Learning log: what "Teach Shubix from many Reels" learned, and what it could not (kept apart) */
+export interface LearningOdd { guess: string; ours: string | null; n: number; reels: number; looks: { sig: string; n: number }[] }
+export interface LearningLog {
+  reels: number; failed: number; cuts: number; read: number; unreadCuts: number;
+  known: { kind: string; n: number }[]; newTransitions: LearningOdd[]; effects: LearningOdd[];
+  recent: { name: string; category: string; ok: boolean; reason?: string; at: string; cuts: number; unreadCuts: number; effects: number }[];
+}
 export interface StyleSuggestion {
   id: string;
   name: string;
@@ -373,6 +380,8 @@ export interface AdminOverview {
   revenue: { total: number; month: number; payments: number };
   credits: { left: number; used30d: number };
   reels: { total: number }; // saved to My Reels
+  /** Reels exported in 30 days exactly as Shubix made them (BE/api/src/server/studio/accuracy.ts); null: logs unreadable */
+  keptAsMade?: { exported: number; kept: number; share: number | null; medianChanges: number | null; web: number; android: number } | null;
   plans: { plan: string; name: string; users: number }[];
   signupsByDay: { day: string; users: number }[];
   revenueByMonth: { month: string; rupees: number }[];

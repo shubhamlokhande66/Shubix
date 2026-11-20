@@ -126,6 +126,30 @@ class ShubixVideoModule : Module() {
       }
     }
     AsyncFunction("cancel") { main.post { cancelActiveExport() } }
+    // why Android closed the app before (a Java or native crash, out of memory, not answering): the JS error report cannot
+    // see these, the app is gone first; read at the next start and sent to Admin -> Errors (Android 11+, minSdk 32)
+    Function("lastExits") { since: Double ->
+      val am = appContext.reactContext?.getSystemService(android.content.Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+      val list = runCatching { am?.getHistoricalProcessExitReasons(null, 0, 10) }.getOrNull() ?: emptyList()
+      val out = org.json.JSONArray()
+      for (x in list) {
+        if (x.timestamp <= since.toLong()) continue
+        val reason = when (x.reason) {
+          android.app.ApplicationExitInfo.REASON_CRASH -> "crash"
+          android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "native crash"
+          android.app.ApplicationExitInfo.REASON_ANR -> "not responding"
+          android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "low memory"
+          android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "too many resources"
+          android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "could not start"
+          else -> null
+        } ?: continue
+        // an ANR's trace is text; a native crash's is a binary tombstone (left out)
+        val trace = if (x.reason == android.app.ApplicationExitInfo.REASON_ANR) runCatching { x.traceInputStream?.use { s -> String(s.readBytes().take(6000).toByteArray()) } }.getOrNull() else null
+        out.put(org.json.JSONObject().put("at", x.timestamp).put("reason", reason).put("description", x.description ?: "")
+          .put("pss", x.pss).put("rss", x.rss).put("trace", trace ?: ""))
+      }
+      out.toString()
+    }
     // the person's work goes on: the screen stays on while they watch; away from the app, a foreground service keeps the
     // app alive and a JS task keeps its timers running (React Native stops them when the app is not on screen)
     Function("keepAwake") { on: Boolean, title: String ->

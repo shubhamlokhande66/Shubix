@@ -29,14 +29,18 @@ import kotlin.math.sin
  * (engine.ts): place, size, turn, flip, crop, fades, round corners and the masks. In the export
  * (`exact`): chroma key, the luma mask, following a face, and blend modes (LayerBlend, StudioPasses.kt). In the player a video
  * layer shows the newest frame its worker has decoded; in the export it waits for the right one. */
+private val FILLS = setOf("shade", "bars", "tint")
+
 @UnstableApi
 internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, private val h: Int, private val exact: Boolean = false) {
   private class Layer(val spec: JSONObject, val feed: () -> Bitmap?, val ask: (Double) -> Unit, val done: () -> Unit = {})
-  private val list = (0 until layers.length()).mapNotNull { layers.optJSONObject(it) }.filter { File(it.optString("path")).isFile }.map { spec ->
-    if (spec.optString("kind") == "video" && exact) ExactFeed(spec.optString("path"), maxOf(w, h)).let { f -> Layer(spec, { f.latest }, { f.at(it) }, { f.close() }) }
+  private val list = (0 until layers.length()).mapNotNull { layers.optJSONObject(it) }.filter { it.optString("kind") in FILLS || File(it.optString("path")).isFile }.map { spec ->
+    if (spec.optString("kind") in FILLS) Layer(spec, { dot }, {})
+    else if (spec.optString("kind") == "video" && exact) ExactFeed(spec.optString("path"), maxOf(w, h)).let { f -> Layer(spec, { f.latest }, { f.at(it) }, { f.close() }) }
     else if (spec.optString("kind") == "video") VideoFeed(spec.optString("path"), maxOf(w, h)).let { f -> Layer(spec, { f.latest }, { f.want(it) }) }
     else { val pic by lazy { photo(spec.optString("path"), maxOf(w, h)) }; Layer(spec, { pic }, {}) }
   }
+  private val dot = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
   private val bufs = arrayOf(Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888), Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888))
   private var turn = 0
   private val blank = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
@@ -60,15 +64,23 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
 
   private fun draw(g: Canvas, L: JSONObject, pic: Bitmap, t: Double) {
     val W = w.toFloat(); val H = h.toFloat()
-    val place = followed(L, t)
+    if (L.optString("kind") in FILLS) return fill(g, L, t, W, H)
+    // a subject pop grows from small in the middle to its own size and place, slow at first (pop.ts popAt)
+    val grow = L.optJSONObject("grow"); val t0 = L.optDouble("t0"); val t1 = L.optDouble("t1")
+    val ease = ((t - t0) / max(1e-3, t1 - t0)).coerceIn(0.0, 1.0).let { it * it * (3 - 2 * it) }
+    val own = followed(L, t)
+    val place = if (grow == null) own else Pair((grow.optDouble("x", 0.5) + (own.first - grow.optDouble("x", 0.5)) * ease).toFloat(), (grow.optDouble("y", 0.5) + (own.second - grow.optDouble("y", 0.5)) * ease).toFloat())
+    val size = L.optDouble("s", 0.5) * (if (grow == null) 1.0 else grow.optDouble("s", 1.0) + (1 - grow.optDouble("s", 1.0)) * ease)
     val crop = L.optJSONObject("crop")
     fun cut(k: String) = crop?.optDouble(k, 0.0) ?: 0.0
     val from = Rect((pic.width * cut("l")).toInt(), (pic.height * cut("t")).toInt(), (pic.width * (1 - cut("r"))).toInt(), (pic.height * (1 - cut("b"))).toInt())
     if (from.width() < 2 || from.height() < 2) return
-    val dw = maxOf(2f, L.optDouble("s", 0.5).toFloat() * W); val dh = dw * from.height() / from.width()
+    val dw = maxOf(2f, size.toFloat() * W); val dh = dw * from.height() / from.width()
     val fadeIn = L.optDouble("fin", 0.0); val fadeOut = L.optDouble("fout", 0.0)
     val fade = min(if (fadeIn > 0) min(1.0, (t - L.optDouble("t0")) / fadeIn) else 1.0, if (fadeOut > 0) min(1.0, (L.optDouble("t1") - t) / fadeOut) else 1.0)
     val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { alpha = (L.optDouble("op", 1.0) * fade * 255).toInt().coerceIn(0, 255) }
+    val shade = L.optDouble("shade", 0.0)   // the Reel darker behind it
+    if (shade > 0) g.drawRect(0f, 0f, W, H, Paint().apply { color = Color.BLACK; alpha = (L.optDouble("op", 1.0) * fade * shade * 255).toInt().coerceIn(0, 255) })
     g.save()
     g.translate(place.first * W, place.second * H)
     g.rotate(L.optDouble("r", 0.0).toFloat())
@@ -86,6 +98,31 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
     else if (keyed != null) g.drawBitmap(keyed, null, box, paint) else g.drawBitmap(pic, from, box, paint)
     keyed?.recycle()
     g.restore()
+  }
+
+  /** the layers that need no file (Shared/video-engine/src/finish.ts, as the website's fillLayer): the end card's black,
+   * cinematic bars (the band that shows, 2.39:1), a colour flash on the strong beats (overlaid, fading over 0.22 s) */
+  private fun fill(g: Canvas, L: JSONObject, t: Double, W: Float, H: Float) {
+    val fin = L.optDouble("fin", 0.0); val fout = L.optDouble("fout", 0.0)
+    val a = L.optDouble("op", 1.0) * min(if (fin > 0) min(1.0, (t - L.optDouble("t0")) / fin) else 1.0, if (fout > 0) min(1.0, (L.optDouble("t1") - t) / fout) else 1.0)
+    val paint = Paint().apply { color = Color.BLACK }
+    when (L.optString("kind")) {
+      "shade" -> { paint.alpha = (a * L.optDouble("shade", 0.9) * 255).toInt().coerceIn(0, 255); g.drawRect(0f, 0f, W, H, paint) }
+      "bars" -> {
+        val band = min(H, W / L.optDouble("ratio", 2.39).toFloat()); val top = (H - band) / 2
+        paint.alpha = (a * 255).toInt().coerceIn(0, 255); g.drawRect(0f, 0f, W, kotlin.math.ceil(top), paint); g.drawRect(0f, kotlin.math.floor(top + band), W, H, paint)
+      }
+      "tint" -> {
+        val pulses = L.optJSONArray("pulses") ?: return
+        var k = 0.0; var col = "#2F6BFF"
+        for (i in 0 until pulses.length()) { val p = pulses.optJSONArray(i) ?: continue; val at = p.optDouble(0); if (at > t) break; val v = kotlin.math.exp(-(t - at) / 0.22); if (v > k) { k = v; col = p.optString(1, col) } }
+        if (k < 0.02) return
+        paint.color = try { Color.parseColor(col) } catch (_: Exception) { Color.BLUE }
+        paint.alpha = (a * k * 0.6 * 255).toInt().coerceIn(0, 255)
+        if (android.os.Build.VERSION.SDK_INT >= 29) paint.blendMode = android.graphics.BlendMode.OVERLAY
+        g.drawRect(0f, 0f, W, H, paint)
+      }
+    }
   }
 
   /** where the layer is: its place, or the face it follows at this time (samples from the studio: t, x, y) */

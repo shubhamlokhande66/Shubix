@@ -22,7 +22,7 @@ shubix/                         # the monorepo (pnpm workspaces)
 │       └── app.json, app.config.ts, eas.json
 ├── BE/api/                     # NestJS 11 + Node: the API, on a Cloudflare container (api.shubix.in)
 │   ├── src/routes/             # every endpoint: routes/api/<path>/route.ts
-│   ├── src/server/             # the logic: accounts, billing (Razorpay), credits, ads, AI, studio, email, storage
+│   ├── src/server/             # the logic: accounts, billing (Cashfree), credits, ads, AI, studio, email, storage
 │   └── test/                   # Vitest (an in-memory MongoDB)
 ├── Shared/                     # packages both sides use
 │   ├── core/                   # CMS texts (lib/texts.ts), plans and locks, features, templates, clip analysis
