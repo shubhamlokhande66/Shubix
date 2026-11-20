@@ -25,6 +25,13 @@ const KEY_WORDS: Record<string, string> = {
 const clock = (t: number) => { const s = Math.max(0, Math.floor(t)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const clean = (s?: string) => String(s || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
 
+/** While a Reel is made: the moments Shubix AI really found in the clips, the newest first, at most 3 (only real ones:
+ * a clip it said nothing about is not listed). "" while there are none. */
+export function momentsFound(found: { clip: number; what?: string }[], most = 3): string {
+  const real = found.filter((f) => clean(f.what)).slice(-most).reverse();
+  return real.length ? "Moments found · " + real.map((f) => `Clip ${f.clip}: ${clean(f.what).slice(0, 48)}`).join(" · ") : "";
+}
+
 /** One shot as a line: "0:07 · Beat drop · Clip 3 from 0:04 — couple under the sparklers · Whip pan · Shake on the beat" */
 export function shotWords(s: ShotWordsIn): string {
   const when = s.first ? "Opening" : s.type === "drop" ? "Beat drop" : s.type === "break" ? "Music break" : "";

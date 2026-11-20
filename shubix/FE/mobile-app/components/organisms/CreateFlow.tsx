@@ -135,6 +135,21 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
   );
 }
 
+/** "Preview selected part" on the clips step's song card: plays the part the Reel uses (from `from`, `len` seconds, or
+ * to the song's end), a tap again stops it (the flow review with ChatGPT, 2026-11-20) */
+export function PartPlay({ uri, from, len }: { uri: string; from: number; len: number }) {
+  const words = useStudioText(), player = useAudioPlayer(uri), status = useAudioPlayerStatus(player);
+  useEffect(() => () => { try { player.pause(); } catch { /* already gone */ } }, [player]);
+  useEffect(() => { if (len > 0 && status.playing && status.currentTime >= from + len) player.pause(); }, [len, from, status.currentTime, status.playing, player]);
+  const toggle = () => { if (status.playing) return player.pause(); void player.seekTo(from); player.play(); };
+  return (
+    <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel={words(status.playing ? "Stop" : "Preview selected part")} className="flex-row items-center gap-1.5 self-start rounded-full border border-accent/40 px-3 py-1.5 active:opacity-80">
+      <Icon name={status.playing ? "pause" : "play"} size={13} color="accent" />
+      <Text className="text-[12px] font-semibold text-accent">{words(status.playing ? "Stop" : "Preview selected part")}</Text>
+    </Pressable>
+  );
+}
+
 // the song's bars (the same picture each time for a song: its name decides them)
 const bars = (seed: string) => Array.from({ length: 56 }, (_, i) => { let h = 7; for (const c of seed + i) h = (h * 31 + c.charCodeAt(0)) % 997; return 0.25 + (h % 75) / 100; });
 export const LENGTHS = [0, 15, 30, 60];

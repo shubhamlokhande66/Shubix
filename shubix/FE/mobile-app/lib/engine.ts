@@ -44,10 +44,16 @@ const files = ShubixVideo ? ShubixVideo.fileServer(API_URL) : null;
 /** whether this phone can make Reels with the studio (the app's own build, not Expo Go or the web) */
 export const engineOn = Platform.OS !== "web" && !!files;
 
+/** Ask Shubix's change in the editor: its progress line goes to the chat panel (onChatStat) while it works */
+let chatting = false;
+const chatSays = new Set<(text: string) => void>();
+export function onChatStat(f: (text: string) => void) { chatSays.add(f); return () => { chatSays.delete(f); }; }
+
 const native = files ? createNativeEngine({
   base: `http://127.0.0.1:${files.port}`, key: files.key, fetch: nativeFetch as never, token: () => tokenStore.get(),
   ask: async (q) => { const v = await askAction({ title: q.title, body: [q.text, q.bal == null ? "" : `You have ${q.bal} credits`].filter(Boolean).join(" · "), list: q.list, ok: q.ok, ...(q.no ? { cancel: q.no } : {}) }); return v === 0 ? true : v === 1 && q.no ? false : null; },
-  stat: (text, err) => { if (!text) return tasks.clear("ai"); if (text.endsWith("…")) { tasks.start("ai", "ai", "Shubix at work", text.slice(0, -1)); return; } if (err) tasks.fail("ai", text); else tasks.done("ai", text); },
+  // (during an Ask Shubix change the editor stays usable: its line goes to the chat panel, not a full-screen popup)
+  stat: (text, err) => { if (chatting) { chatSays.forEach((f) => f(text && !err ? text.replace(/…$/, "") : "")); return; } if (!text) return tasks.clear("ai"); if (text.endsWith("…")) { tasks.start("ai", "ai", "Shubix at work", text.slice(0, -1)); return; } if (err) tasks.fail("ai", text); else tasks.done("ai", text); },
   spent: () => tasks.lock(),
   clipDone: (name, ok) => clipRead?.(name, ok),
   readBytes: async (path, at, length) => { const h = new File(`file://${path}`).open(); try { h.offset = at; return h.readBytes(length); } finally { h.close(); } },
@@ -212,7 +218,8 @@ export const engine = {
     // the studio's copy could not be brought to this Reel (a change it cannot hold): its answer would put older shots
     // back over the ones on the phone, so the phone's own changes answer instead
     if (!(await engine.edit(p).catch(() => false))) return null;
-    const r = await call<{ answer: string; applied: boolean; state?: { edit?: EngineShot[]; overlays?: ReelProject["overlays"] } }>("chat", { text });
+    chatting = true;
+    const r = await call<{ answer: string; applied: boolean; state?: { edit?: EngineShot[]; overlays?: ReelProject["overlays"] } }>("chat", { text }).finally(() => { chatting = false; chatSays.forEach((f) => f("")); });
     return { answer: r.answer, clips: r.applied && Array.isArray(r.state?.edit) ? shotsOf(r.state!.edit!, sources) : null, overlays: textsOf(r.state?.overlays) };
   },
 };

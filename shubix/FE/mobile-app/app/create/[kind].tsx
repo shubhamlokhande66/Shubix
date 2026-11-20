@@ -18,7 +18,7 @@ import { notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
 import { AskShubix, styleFromWords } from "../../components/organisms/AskShubix";
 import { pickInOrder } from "../../components/organisms/Gallery";
-import { FlowAdjust, FlowChoose, FlowClips, FlowHead, FlowIntro, KINDS, ORDER, type ClipSettings, type ClipState, type FlowKind, type FlowStep } from "../../components/organisms/CreateFlow";
+import { FlowAdjust, FlowChoose, FlowClips, FlowHead, FlowIntro, PartPlay, KINDS, ORDER, type ClipSettings, type ClipState, type FlowKind, type FlowStep } from "../../components/organisms/CreateFlow";
 
 /** Create (/create/music, /talking, /photo, /copy): the song and the clips are chosen without waiting: each is read behind
  * the screen, one job after another, and shows how it goes on its own card. Make Reel opens the one popup, with the steps
@@ -55,7 +55,7 @@ function CreateFlowScreen() {
   // what a job finishing behind the screen has changed, for Make Reel, which waited for it
   const now = useRef({ music, start, length }); now.current = { music, start, length };
   const [price, setPrice] = useState<{ on: boolean; cost: number; balance: number | null } | null>(null);
-  const keptBy = useRef(new Map<string, { clip: ProjectClip; name: string }>()), copied = useRef(0), lengthLater = useRef(0), badTold = useRef(0), longOk = useRef("");
+  const keptBy = useRef(new Map<string, { clip: ProjectClip; name: string }>()), copied = useRef(0), lengthLater = useRef(0), badTold = useRef(0), seenBad = useRef(0), longOk = useRef("");
   const lengthChosen = useRef(false), onScreen = useRef(true), DRAFT = `create-draft-${kind}`;
   useEffect(() => { void recentSongs().then(setRecent); }, []);
   // Opening text (Auto / None): the creator's choice is kept for their next Reels
@@ -282,7 +282,7 @@ function CreateFlowScreen() {
     // what the reading found, before Shubix AI and before any credits: a clip left out, too little good video
     if (lengthLater.current) { const n = lengthLater.current; lengthLater.current = 0; await lengthTo(n === -1 ? 0 : n); await new Promise((ok) => setTimeout(ok, 0)); }
     const bad = media.filter((m) => clipBad.current[m.uri] === "bad").length;
-    if (bad && badTold.current !== bad) {
+    if (bad && badTold.current !== bad && seenBad.current !== bad) {
       const v = await askAction({ title: words(bad > 1 ? "{n} clips could not be read" : "{n} clip could not be read", { n: bad }), body: words("They are left out of your Reel. No credits were used."), ok: words("Continue without them"), cancel: words("Go back") });
       if (v !== 0) return;
       badTold.current = bad;
@@ -340,6 +340,8 @@ function CreateFlowScreen() {
   const adviceText = adviceLine(advice, media.length), [secs, setSecs] = useState(false);   // (the seconds a clip: for who wants them)
   // one box a clip, with its seconds; the clips in the order added fill them (a photo fills any box: it moves as long as needed)
   const boxes = adviceText && advice?.boxes ? advice.boxes.map((need, i) => { const m = media[i], have = !m ? null : m.type === "image" ? need : (m.duration ?? 0) / 1000; return { need, fit: boxFit(need, have), text: boxWords(need, have) }; }) : [];
+  // a clip that could not be read: said on its card and above Make Reel at once, so no popup after the wait (the review with ChatGPT)
+  const badNow = media.filter((m) => clipState[m.uri] === "bad").length; seenBad.current = badNow;
   const priceLine = !price?.on ? "" : !price.cost ? words("Shubix AI: included in your plan") : price.balance === null ? words("Shubix AI: {n} credits", { n: price.cost }) : words("Shubix AI: {n} credits · You have {b}", { n: price.cost, b: price.balance });
   // what the person chose stays: an app that was closed can go on from it
   useEffect(() => {
@@ -403,6 +405,7 @@ function CreateFlowScreen() {
             <Button size="sm" variant="secondary" icon="music" title={words("Change")} onPress={() => go("adjust")} />
           </View>
         )}
+        {step === "clips" && song && needSong && music && <View className="-mt-1.5 mb-3"><PartPlay uri={song.uri} from={start} len={length} /></View>}
         {step === "clips" && !!advice && (
           <View className="mb-3 gap-1.5 rounded-[16px] border border-accent/20 bg-surface px-3.5 py-3">
             <Text accessibilityRole="text" className="text-[14px] font-semibold text-foreground">{words("Your Reel has about {n} shots", { n: String(advice.shots) })}</Text>
@@ -426,7 +429,7 @@ function CreateFlowScreen() {
         )}
         {step === "clips" && <FlowClips kind={kind} pick={pick} onTab={(p) => { setPick(p); setMedia((m) => m.filter((x) => pickTakes(p, mediaKindOf(x)))); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
       </ScrollView>
-      {button && <View className="gap-1.5 px-4 pt-2" style={{ paddingBottom: Math.max(12, insets.bottom + 4) }}>{step === "clips" && !!priceLine && <Text className="text-center text-[12.5px] font-semibold text-muted">{priceLine}</Text>}<Button full size="xl" title={button.title} iconAfter={button.on ? "arrow" : undefined} disabled={!button.on} onPress={() => { Keyboard.dismiss(); button.press(); }} /></View>}
+      {button && <View className="gap-1.5 px-4 pt-2" style={{ paddingBottom: Math.max(12, insets.bottom + 4) }}>{step === "clips" && badNow > 0 && <Text className="text-center text-[12.5px] font-semibold text-warning">{words(badNow > 1 ? "{n} clips couldn't be read and will be left out. Remove them or continue without them." : "1 clip couldn't be read and will be left out. Remove it or continue without it.", { n: String(badNow) })}</Text>}{step === "clips" && !!priceLine && <Text className="text-center text-[12.5px] font-semibold text-muted">{priceLine}</Text>}<Button full size="xl" title={button.title} iconAfter={button.on ? "arrow" : undefined} disabled={!button.on} onPress={() => { Keyboard.dismiss(); button.press(); }} /></View>}
     </View>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shotWords } from "@mobile/video-engine";
+import { momentsFound, shotWords } from "@mobile/video-engine";
 import { world } from "./edit-repairs.test";
 
 // "In my order" keeps the song's cuts inside a clip that has footage for them (agreed with ChatGPT, 2026-11-20): before,
@@ -49,5 +49,11 @@ describe("shotWords", () => {
     expect(shotWords({ start: 7.2, type: "drop", clip: 3, at: 4.2, what: "couple under the sparklers", transition: "Whip pan (blur)", effect: "Shake", keys: ["punch"] }))
       .toBe("0:07 · Beat drop · Clip 3 from 0:04 — couple under the sparklers · Whip pan · Shake · zoom punch on the beat");
     expect(shotWords({ start: 0, first: true, clip: 1, at: 0 })).toBe("0:00 · Opening · Clip 1 from 0:00");
+  });
+  it("Moments found: only real ones, the newest first, at most 3", () => {
+    expect(momentsFound([])).toBe("");
+    expect(momentsFound([{ clip: 1, what: "" }])).toBe("");
+    expect(momentsFound([{ clip: 1, what: "a" }, { clip: 2, what: "b" }, { clip: 3, what: "" }, { clip: 4, what: "c" }, { clip: 5, what: "d" }]))
+      .toBe("Moments found · Clip 5: d · Clip 4: c · Clip 2: b");
   });
 });

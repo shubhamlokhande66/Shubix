@@ -13,7 +13,7 @@ import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
-import { budgetEffects, budgetLiftFrom, describeBudget, shotWords } from '@shubix/video-engine';
+import { budgetEffects, budgetLiftFrom, describeBudget, shotWords, momentsFound } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
@@ -2548,7 +2548,7 @@ async function aiRun(){
   const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
   if(!need.length){ aiDone(); return; }
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
-  let charged = 0, failed = 0;
+  let charged = 0, failed = 0; const found = [];   // (the moments found, said while the person waits)
   const stop = aiStopper.signal;   // this run's Stop (Cancel puts a new aiStopper in place: a run reading it again went on)
   try{
     if(!(await serverUp())) throw new Error(TEAM_MSG);   // a down server: said at once (aiDown), never waited for
@@ -2582,7 +2582,10 @@ async function aiRun(){
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
         delete j.src.aiFramesMade;   // answered: its pictures are not needed again, only the labels stay
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = fpOf(j.src); aiCache.set(fp, j.src.ai);
-        try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){} }
+        try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){}
+        found.push({ clip: sources.indexOf(j.src) + 1, what: c.summary }); }
+      // what it found, while the person waits (only real moments, the newest first: the flow review with ChatGPT)
+      { const line = momentsFound(found); if(line) aiStat(line + '…'); }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; } }
       // a clip the answer left out: skipped too, never asked again and again (each ask is a new call)
       for(const j of part) if(!j.src.ai && !j.src.aiFailed){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; }
@@ -2921,7 +2924,7 @@ async function chatSend(text){
     const now2 = reelLen(), n = edit.filter(e => e.sp === SPEED.slow).length;
     if(slow && !n){ slowAll = false; chatAnswer('I could not put this Reel in slow motion.'); return; }
     saveNow(); chatLocalDone = true;
-    chatAnswer(slow ? 'Done ✓ ' + (n === edit.length ? 'Every shot' : n + ' of ' + edit.length + ' shots') + ' now plays in slow motion (half speed). ' + (now2 > was + 0.5 ? 'Your Reel is now ' + fmtS(now2) + ' (it was ' + fmtS(was) + ').' : 'Your Reel stays ' + fmtS(now2) + ' long: ' + (fitOn() ? 'your song part is not longer.' : 'that is the length you chose. Tick "Make the Reel as long as my clips" for a longer Reel.')) + ' No Shubix AI credits used. Say "normal speed" to take it back.'
+    chatAnswer(slow ? 'Done ✓ ' + (n === edit.length ? 'Every shot' : n + ' of ' + edit.length + ' shots') + ' now plays in slow motion (half speed). ' + (now2 > was + 0.5 ? 'Your Reel is now ' + fmtS(now2) + ' (it was ' + fmtS(was) + ').' : 'Your Reel stays ' + fmtS(now2) + ' long: ' + (fitOn() ? 'your song part is not longer.' : 'that is the length you chose. Tick "Match the Reel to my clips" for a longer Reel.')) + ' No Shubix AI credits used. Say "normal speed" to take it back.'
       : 'Done ✓ Your Reel plays at normal speed again' + (now2 < was - 0.5 ? ' and is ' + fmtS(now2) + ' long.' : '.') + ' No Shubix AI credits used.');
     return;
   }
@@ -3770,7 +3773,7 @@ const shortNote = sr => 'Your Reel: ' + fmtS(sr.len) + (sr.speed < 0.9 ? ', your
 function lenLock(){
   const on = fitOn() && kind !== 'talk';
   [...$('slen').children].forEach(b => { b.disabled = on; }); $('slenc').disabled = on;
-  $('slen').title = on ? 'Set by your clips (Make the Reel as long as my clips)' : '';
+  $('slen').title = on ? 'Set by your clips (Match the Reel to my clips)' : '';
 }
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
@@ -3785,7 +3788,7 @@ function footCheck(){
       : slowAll && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clips in slow motion, as you asked.'
       : oneTake() && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clip as filmed, then in slow motion with the song.'
       : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
-      : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
+      : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '): Shubix picks the best moments for it.'
       : 'Your Reel: the whole song (' + fmtS(full) + ').';
     return;
   }
@@ -3815,15 +3818,10 @@ async function askShort(){
     return 'go';
   }
   if(fitOn() && full && have >= 5){
-    // much more good video than song: what to do is the person's (a longer song, fewer clips, or Shubix picks the best)
+    // much more good video than song is the usual Beat Reel (the flow review with ChatGPT, 2026-11-20): no question,
+    // Shubix picks the best moments for the song, and says so
     const key = have + ':' + Math.round(full);
-    if(have > full * 1.1 && longOk !== key){
-      const v = await askCredits({ title: 'Your clips are longer than your song', text: 'Your song is ' + fmtS(full) + ' and your clips have ' + fmtS(have) + ' of good video. No credits were used.',
-        bal: null, ok: 'Shubix picks the best ' + fmtS(full), no: 'Add a longer song', extra: 'I’ll remove some clips' });
-      if(v === false){ root.dispatchEvent(new CustomEvent('studio-goto', { detail: 'music' })); return 'stop'; }
-      if(v !== true) return 'stop';
-      longOk = key;
-    }
+    if(have > full * 1.1 && longOk !== key){ aiStat('Your song is ' + fmtS(full) + ' and your clips have ' + fmtS(have) + ' of good video: Shubix picks the best moments for it.'); longOk = key; }
     const target = reach(have) < full * 0.95 ? reach(have) : 0;
     // as long as the clips: no question. Make Reel goes on once the shorter Reel is made (it went on at once, found the old
     // length still there and asked again)
