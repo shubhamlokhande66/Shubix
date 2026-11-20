@@ -174,7 +174,7 @@ export default function EditorScreen() {
   const [mixing, setMixing] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [aiPlan, setAiPlan] = useState<AiPlan | null | undefined>(undefined);
-  const [exporting, setExporting] = useState<ReelProject | null>(null), [sound, setSound] = useState(true), [saved, setSaved] = useState(true), [tool, setTool] = useState<{ key: string; name: string } | null>(null), [draft, setDraft] = useState("");
+  const [exporting, setExporting] = useState<ReelProject | null>(null), [sound, setSound] = useState(true), [saved, setSaved] = useState(true), [tool, setTool] = useState<{ key: string; name: string } | null>(null), [allTools, setAllTools] = useState(false), [draft, setDraft] = useState("");
   const [studioLayers, setStudioLayers] = useState<Array<{ index: number; id: number; t0: number; t1: number; x: number; y: number; scale: number; opacity: number; rotation: number; mask: string; blend: string; follow: string; followOffsetX: number; followOffsetY: number; maskWidth: number; maskHeight: number; maskThreshold: number; maskFeather: number; maskAngle: number; maskInverted: boolean; chromaKey: boolean; chromaColor: string; chromaTolerance: number; native?: unknown }>>([]), [studioLayerIndex, setStudioLayerIndex] = useState(0);
   const [canvasCol, setCanvasCol] = useState("#4F7CFF");
   const [ttsVoices, setTtsVoices] = useState<Array<{ key: string; label: string }>>([]), [ttsVoice, setTtsVoice] = useState(""), [voiceDraft, setVoiceDraft] = useState("");
@@ -954,8 +954,9 @@ export default function EditorScreen() {
         void mobileApi.reelLog(p.id, { step: "export", msg: `Export started · ${p.clips.length} shots`, data: { changes: undo.current.length, opened: made !== "1", platform: "android", shots: p.clips.length } }).catch(() => undefined); }} />
       <ScrollView className="flex-1" contentContainerClassName="pb-3" showsVerticalScrollIndicator={false}>
         <Preview n={selected} of={clips.length} playing={playing} aspect={aspect} error={playError} onToggle={() => setPlaying(!playing)}><ReelPlayer p={p} layers={studioLayers} now={now} playing={playing} sound={sound} onTime={seek} onEnd={() => { setPlaying(false); seek(0); }} onError={setPlayError} /></Preview>
-        <View className="mx-4 mt-2">
-          <Button full icon="shuffle" variant="secondary" title={words(mixing ? "Mixing video…" : "Mix Video")} disabled={mixing || clips.length < 2} onPress={() => void mixVideo()} />
+        <View className="mx-4 mt-2 gap-1">
+          <Button full icon="shuffle" variant="secondary" title={words(mixing ? "Making another mix…" : "Try another mix")} disabled={mixing || clips.length < 2} onPress={() => void mixVideo()} />
+          <Text className="text-center text-[11.5px] text-muted">{words("Same song and clips, arranged again · free · Undo brings this one back")}</Text>
         </View>
         <Transport now={now} total={total} playing={playing} sound={sound} onPrev={() => go(selected - 1)} onToggle={() => setPlaying(!playing)} onNext={() => go(selected + 1)} onSound={() => setSound(!sound)} />
         <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} log={p.chat ?? []} onLog={addChat} onAsk={async (t) => {
@@ -1046,7 +1047,11 @@ export default function EditorScreen() {
         </View>
       </ScrollView>
       <View className="border-t border-border bg-bar pb-2 pt-2">
-        <ToolRow items={[...DOCK.map((t) => ({ ...t, tag: locked?.(t.key) ? locked(t.key).toUpperCase() : undefined })), ...SHOT_TOOLS]} on={tool?.key} onPress={(k) => { const t = [...DOCK, ...SHOT_TOOLS].find((x) => x.key === k)!; use(k, t.name); }} />
+        {/* one editor screen (the flow review with ChatGPT, 2026-11-20): the few things most people change, and All tools
+            opens the whole row of a pro editor in the same place */}
+        {allTools
+          ? <ToolRow items={[{ key: "less", name: "Fewer tools" }, ...DOCK.map((t) => ({ ...t, tag: locked?.(t.key) ? locked(t.key).toUpperCase() : undefined })), ...SHOT_TOOLS]} on={tool?.key} onPress={(k) => { if (k === "less") return setAllTools(false); const t = [...DOCK, ...SHOT_TOOLS].find((x) => x.key === k)!; use(k, t.name); }} />
+          : <ToolRow items={[{ key: "music", name: "Music" }, { key: "other", name: "Other moment" }, { key: "text", name: "Text" }, { key: "all", name: "All tools" }]} on={tool?.key} onPress={(k) => { if (k === "all") return setAllTools(true); use(k, k === "music" ? "Music" : k === "text" ? "Text" : "Other moment"); }} />}
       </View>
       <ExportScreen reel={exporting} onClose={() => setExporting(null)} />
       <ToolSheet tool={tool} onClose={() => setTool(null)}>{sheet()}</ToolSheet>

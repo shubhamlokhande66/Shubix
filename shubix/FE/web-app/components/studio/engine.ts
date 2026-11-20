@@ -2967,7 +2967,7 @@ async function chatSend(text){
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
   } else if(cost && bal !== null){
     if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + ". Add credits and I'll do it right away."); if(!IN_APP){ $('chatlog').appendChild(pricingLink('Top up')); void aiSell(true, cost, bal); } return; }
-    const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
+    const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '. If it fails, no credits are used; Undo is free but does not give them back.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed and no credits used.'); return; }
   }
   chatCost = cost; const n = ++chatN, id = newId();
