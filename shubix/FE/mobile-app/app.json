@@ -25,6 +25,16 @@
           "isAccessMediaLocationEnabled": false
         }
       ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": { "image": "./assets/splash-icon.png", "backgroundColor": "#ffffff" }
+        }
+      ],
       "expo-secure-store",
       [
         "expo-notifications",
