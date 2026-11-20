@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-/** The on-device beat tracker's worker on an iPhone: closed once it owes nothing more (its memory never shrinks), but not
- * while a second request (a second song picked meanwhile) still waits on it: that one would never be answered. */
+/** The on-device beat tracker's worker on an iPhone: closed once it owes nothing more (its memory never shrinks). */
 type Msg = { id: number };
 class FakeWorker {
   static all: FakeWorker[] = [];
@@ -21,19 +20,23 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("the beat tracker's worker", () => {
   afterEach(() => { FakeWorker.all = []; vi.resetModules(); vi.unstubAllGlobals(); });
-  it("iPhone: two songs in a row are both answered; the worker is closed after the last", async () => {
+  // Songs are checked one at a time since 2026-11-11 (client.ts: two checks at once on one worker never answered), so
+  // the second song is asked only when the first is answered, by then on a new worker.
+  it("iPhone: two songs in a row are both answered, one at a time; each worker is closed once it owes nothing", async () => {
     vi.stubGlobal("Worker", FakeWorker); ua(IPHONE);
     const { beatThisOnDevice } = await import("@/lib/beatThis/client");
     const a = beatThisOnDevice(song(), 22050), b = beatThisOnDevice(song(), 22050);
     await tick(); await tick();
-    const w = FakeWorker.all[0]; expect(FakeWorker.all).toHaveLength(1); expect(w.sent).toHaveLength(2);
+    const w = FakeWorker.all[0]; expect(FakeWorker.all).toHaveLength(1); expect(w.sent).toHaveLength(1);   // the second waits its turn
     w.answer(w.sent[0].id); await a;
-    expect(w.terminated).toBe(false);          // the second song still waits on it
-    w.answer(w.sent[1].id);
+    expect(w.terminated).toBe(true);           // nothing more owed on it: its memory goes
+    await tick(); await tick();
+    const w2 = FakeWorker.all[1]; expect(FakeWorker.all).toHaveLength(2); expect(w2.sent).toHaveLength(1);   // now the second song is asked
+    w2.answer(w2.sent[0].id);
     await expect(b).resolves.toMatchObject({ beats: [1] });
-    expect(w.terminated).toBe(true);           // nothing more owed: its memory goes
+    expect(w2.terminated).toBe(true);
     beatThisOnDevice(song(), 22050); await tick(); await tick();
-    expect(FakeWorker.all).toHaveLength(2);    // the next song gets a new worker
+    expect(FakeWorker.all).toHaveLength(3);    // the next song gets a new worker
   });
   it("Android: the worker stays, as before", async () => {
     vi.stubGlobal("Worker", FakeWorker); ua(ANDROID);

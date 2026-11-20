@@ -4,6 +4,7 @@ import Link from "next/link";
 /** the browser tab / installed app title of this part of the app ("Pricing & plans · Shubix") */
 export const metadata: Metadata = {
   title: "Pricing & plans",
+  alternates: { canonical: "/pricing" },
   description: "Shubix plans and credits: make Reels free on your phone, or let Shubix AI edit them on a paid plan. No card for Free, nothing renews by itself, prices include GST.",
 };
 

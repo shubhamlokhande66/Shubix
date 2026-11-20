@@ -24,6 +24,9 @@ export const TEXT_TEMPLATES: Record<string, TextTemplate> = {
   step: { name: "Step", len: 3, words: ["Mix it well", "1"], parts: [P("STEP {2}", "tag", "#FFD54A", "slide", 0.2, 0.8, 0), P("{1}", "box", "#111111", "slide", 0.27, 0.9, 0.2)] },
   typewriter: { name: "Typewriter", len: 3.5, words: ["Here is how I did it", ""], parts: [P("{1}", "clean", "#FFFFFF", "type", 0.42, 1, 0, { font: "poppins" })] },
   spinin: { name: "Spin in", len: 2.5, words: ["WOW", ""], parts: [P("{1}", "bold", "#FFFFFF", "spin", 0.42, 1.8, 0, { font: "bangers", out: "spin" })] },
+  // the end card creators put on their Reels (Shared/video-engine/src/finish.ts): the @handle under the logo, or alone
+  endcard: { name: "End card", len: 4.4, words: ["@yourname", "Follow for more"], parts: [P("{1}", "bold", "#FFFFFF", "fade", 0.6, 0.95, 0.25, { font: "montserrat" }), P("{2}", "clean", "#D9D9D9", "fade", 0.665, 0.6, 0.55)] },
+  endtext: { name: "End card (no logo)", len: 4.4, words: ["@yourname", "Follow for more"], parts: [P("{1}", "bold", "#FFFFFF", "zoom", 0.46, 1.3, 0.15, { font: "montserrat" }), P("{2}", "clean", "#D9D9D9", "fade", 0.54, 0.7, 0.5)] },
   price: { name: "Price", len: 3, words: ["₹999", "only"], parts: [P("{1}", "tag", "#FFD54A", "drop", 0.6, 1.3, 0, { loop: "bounce" }), P("{2}", "clean", "#FFFFFF", "fade", 0.68, 0.7, 0.3)] },
 };
 
@@ -33,4 +36,20 @@ export function templateTexts(key: string, words: string[] = [], at = 0, len?: n
   const L = Math.max(0.6, Math.min(30, len ?? T.len)), w = [0, 1].map((i) => String(words[i] ?? T.words[i] ?? "").trim().slice(0, 120));
   return T.parts.map((p) => ({ ...p, text: p.text.replace("{1}", w[0]).replace("{2}", w[1]).trim(), start: at + Math.min(p.t, L - 0.3), end: at + L }))
     .filter((p) => p.text && p.text !== "—" && p.text !== "“”" && p.text !== "📍");
+}
+
+/** The opening words a Reel gets when nobody wrote any (no text of the creator's, no Shubix AI plan): what editors put
+ * in the first two seconds to stop the scroll. Chosen from what is known without the AI: the song (a drop in the first
+ * 10 s), the template's kind of Reel (car, wedding, festival…), and the Reel's own number (`seed`), so one Reel keeps
+ * its words and the next one gets others. A text like any other: the creator edits or deletes it. */
+export function autoHook(o: { firstDrop: number | null; kind?: string; seed: number }): { key: string; words: string[]; len: number } {
+  const pick = <T,>(a: T[]) => a[Math.abs(Math.round(o.seed)) % a.length];
+  const k = (o.kind || "").toLowerCase();
+  if (/wedding|love|couple|engag/.test(k)) return { key: "love", words: pick([["Forever us", ""], ["Our day", "♥"], ["Just married", ""]]), len: 2.4 };
+  if (/car|bike|ride|auto/.test(k)) return { key: "glitch", words: pick([["NEW RIDE", ""], ["DREAM CAR", ""], ["KEYS ARE HERE", ""]]), len: 2.2 };
+  if (/festival|diwali|ganpati|puja|holi|navratri/.test(k)) return { key: "festival", words: pick([["शुभ दीपावली", "🪔"], ["गणपती बाप्पा मोरया", "🙏"], ["Happy festival", "✨"]]), len: 2.6 };
+  if (/gym|fitness|workout/.test(k)) return { key: "glitch", words: pick([["NO DAYS OFF", ""], ["GRIND MODE", ""]]), len: 2.2 };
+  if (/travel|trip/.test(k)) return { key: "vlog", words: pick([["Trip diaries", ""], ["Weekend escape", ""]]), len: 2.6 };
+  if (o.firstDrop !== null && o.firstDrop <= 10) return { key: "headline", words: pick([["WAIT FOR THE DROP", "sound on 🔊"], ["WAIT FOR IT", "🔥"], ["DON'T SKIP", "the best part is coming"]]), len: 2.2 };
+  return { key: "headline", words: pick([["SOUND ON", "🔊"], ["WATCH TILL THE END", ""], ["THIS VIBE", "✨"]]), len: 2.2 };
 }

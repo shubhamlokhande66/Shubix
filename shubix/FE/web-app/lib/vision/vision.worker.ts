@@ -1,14 +1,17 @@
 /// <reference lib="webworker" />
 import * as ort from "onnxruntime-web/wasm";
 import { ortThreads } from "../ortThreads";
+import { popInput, popMaskBytes, POP_MODEL, POP_SIDE } from "@shubix/video-engine";
 
 /** Fast Studio's eyes on the phone, in a worker (ONNX Runtime WebAssembly): MediaPipe Selfie Segmentation (who is the
  * person: a 256x256 mask) and BlazeFace short range (where faces are), both Apache-2.0, converted to ONNX
- * (server/vision/data). Inputs arrive as RGBA pixels and are turned into the tensors each model wants here. */
+ * (server/vision/data), and U²-Net small (Apache-2.0: the subject of a frame, for the subject pop). Inputs arrive as RGBA
+ * pixels and are turned into the tensors each model wants here. */
 
 type Msg =
   | { id: number; type: "seg"; rgba: Uint8ClampedArray; base: string; wasm: string }
-  | { id: number; type: "face"; rgba: Uint8ClampedArray[]; base: string; wasm: string };
+  | { id: number; type: "face"; rgba: Uint8ClampedArray[]; base: string; wasm: string }
+  | { id: number; type: "pop"; rgba: Uint8ClampedArray; base: string; wasm: string };
 const CACHE = "brs-models-v1";
 const sessions = new Map<string, Promise<ort.InferenceSession>>();
 
@@ -45,6 +48,11 @@ self.onmessage = async (e: MessageEvent<Msg>) => {
       const s = await session("selfie_segmentation.onnx", m.base, m.wasm);
       const o = await s.run({ input_1: tensor(m.rgba, 256, 0, 1) });
       const mask = Float32Array.from(o.activation_10.data as Float32Array);
+      post({ id: m.id, type: "done", mask }, [mask.buffer]);
+    } else if (m.type === "pop") {
+      const s = await session(POP_MODEL, m.base, m.wasm);
+      const o = await s.run({ [s.inputNames[0]]: new ort.Tensor("float32", popInput(m.rgba), [1, 3, POP_SIDE, POP_SIDE]) });
+      const mask = popMaskBytes(o[s.outputNames[0]].data as Float32Array);
       post({ id: m.id, type: "done", mask }, [mask.buffer]);
     } else {
       const s = await session("face_detection_short_range.onnx", m.base, m.wasm), all: number[][][] = [];

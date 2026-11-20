@@ -11,7 +11,7 @@ import { StatTile } from "@/components/molecules/StatTile";
 import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { PICKER_VIDEO, isVideoFile } from "@/lib/format";
-import type { LearnedTrend, StyleSuggestion, TrendLook, TrendProfile } from "@/types/api";
+import type { LearnedTrend, LearningOdd, StyleSuggestion, TrendLook, TrendProfile } from "@/types/api";
 
 /** The measurements in plain words (what an editor would say about the trend), each with its icon. */
 function trendFacts(p: TrendProfile): [icon: string, text: string][] {
@@ -197,12 +197,64 @@ function Suggestions() {
   );
 }
 
+/** One row of what could not be learned: what it looks like, how often, in how many Reels, and whether the studio has it */
+function OddRow({ o }: { o: LearningOdd }) {
+  return (
+    <li className="flex flex-col gap-1 rounded-xl border border-border bg-surface-2/40 px-3 py-2.5 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold">{o.guess}</span>
+        {o.ours ? <Badge tone="neutral">Studio has it: {o.ours}</Badge> : <Badge tone="brand">New: not in the studio</Badge>}
+        <span className="ml-auto text-muted">{o.n}× in {o.reels} Reel{o.reels === 1 ? "" : "s"}</span>
+      </div>
+      {o.looks.length > 0 && <span className="text-[12px] text-muted">Looks like: {o.looks.map((l) => `${l.sig} (${l.n})`).join(" · ")}</span>}
+    </li>
+  );
+}
+
+/** The learning log: for the Reels taught from many, how many transitions the reader knew, and apart from them the
+ * transitions it does not know and the effects in a shot it does not learn (new ones, and ones the studio has). */
+function LearningLogView() {
+  const q = useQuery({ queryKey: ["learning-log"], queryFn: api.learningLog, refetchInterval: 15000 });
+  const d = q.data;
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="m-0 text-[12.5px] text-muted">Every Reel taught from “Teach from many Reels”. Known: the transitions Shubix reads and learns. Not learned: what it saw but cannot learn yet, kept apart, so you see what the studio still lacks. Only the numbers are kept, never the video.</p>
+      {q.isLoading && <Spinner size="sm" label="Loading…" />}
+      {q.error && <ErrorBanner message={errorMessage(q.error)} />}
+      {d && d.reels + d.failed === 0 && <EmptyState icon="trend" title="Nothing taught yet" hint="Teach from many Reels: each one shows up here." />}
+      {d && d.reels + d.failed > 0 && (<>
+        <div className="grid grid-cols-2 gap-2">
+          <StatTile icon="video" label="Reels learned" value={d.reels} />
+          <StatTile icon="close" label="Could not be read" value={d.failed} />
+          <StatTile icon="check" label="Transitions known" value={d.cuts ? `${d.read} of ${d.cuts} (${Math.round((d.read / d.cuts) * 100)}%)` : "0"} />
+          <StatTile icon="plus" label="Transitions not known" value={d.unreadCuts} />
+        </div>
+        <Heading size="section" as="h3">Transitions known</Heading>
+        <p className="m-0 text-[12.5px] text-muted">{d.known.map((k) => `${k.kind} ${k.n}`).join(" · ") || "None yet"}</p>
+        <Heading size="section" as="h3">Transitions not known</Heading>
+        {d.newTransitions.length ? <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Transitions not known">{d.newTransitions.map((o) => <OddRow key={o.guess + o.ours} o={o} />)}</ul> : <p className="m-0 text-[12.5px] text-muted">None: every transition was read.</p>}
+        <Heading size="section" as="h3">Effects in a shot not learned</Heading>
+        {d.effects.length ? <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Effects not learned">{d.effects.map((o) => <OddRow key={o.guess + o.ours} o={o} />)}</ul> : <p className="m-0 text-[12.5px] text-muted">None seen.</p>}
+        <Heading size="section" as="h3">Latest Reels</Heading>
+        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[12.5px]" aria-label="Latest Reels taught">
+          {d.recent.map((r) => (
+            <li key={r.category + r.name} className="flex flex-wrap gap-x-2 border-b border-border py-1.5">
+              <span className="min-w-0 flex-1 truncate">{r.name}</span><span className="text-muted">{r.category}</span>
+              <span className={r.ok ? "text-muted" : "text-danger"}>{r.ok ? `${r.cuts - r.unreadCuts}/${r.cuts} known${r.unreadCuts ? `, ${r.unreadCuts} not` : ""}${r.effects ? `, ${r.effects} effects` : ""}` : `not read: ${r.reason ?? ""}`}</span>
+            </li>
+          ))}
+        </ul>
+      </>)}
+    </div>
+  );
+}
+
 /** My trends (Admin → Tools → My trends, and /trends): the trends Shubix learned from Reels you gave it, and the Reels
  * people made or copied waiting to teach its styles. Learning and the waiting Reels open on the right. */
 export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) {
   const q = useQuery({ queryKey: ["references"], queryFn: api.references });
   const waiting = useQuery({ queryKey: ["style-suggestions"], queryFn: api.styleSuggestions });
-  const [panel, setPanel] = useState<"learn" | "users" | null>(null);
+  const [panel, setPanel] = useState<"learn" | "users" | "log" | null>(null);
   const trends = q.data ?? [], reels = trends.reduce((n, t) => n + t.videos.length, 0), waitingN = waiting.data?.total ?? 0;
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
@@ -214,6 +266,18 @@ export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) 
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
+        <a href="/create/music?teach=1"
+          className="flex items-center gap-3 rounded-2xl border border-accent/50 bg-surface px-4 py-3.5 text-left shadow-[var(--shadow)] transition-colors hover:border-accent/60">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="video" size={19} /></span>
+          <span className="min-w-0 flex-1"><Heading size="section" as="h2">Teach from many Reels</Heading><span className="block truncate text-[12.5px] text-muted">400–500 at a time, read on this computer: the styles Shubix makes Reels with</span></span>
+          <Icon name="chevron" size={18} className="shrink-0 text-muted" />
+        </a>
+        <button type="button" onClick={() => setPanel("log")} aria-haspopup="dialog"
+          className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 text-left shadow-[var(--shadow)] transition-colors hover:border-accent/60">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="trend" size={19} /></span>
+          <span className="min-w-0 flex-1"><Heading size="section" as="h2">Learning log</Heading><span className="block truncate text-[12.5px] text-muted">What was learned, and transitions and effects it could not learn</span></span>
+          <Icon name="chevron" size={18} className="shrink-0 text-muted" />
+        </button>
         <button type="button" onClick={() => setPanel("learn")} aria-haspopup="dialog"
           className="flex items-center gap-3 rounded-2xl border border-accent/50 bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_14%,var(--surface)),var(--surface))] px-4 py-3.5 text-left shadow-[var(--shadow)] transition-colors hover:border-accent">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-on-accent [background:var(--gold-gradient)]"><Icon name="plus" size={19} /></span>
@@ -241,6 +305,7 @@ export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) 
       {trends.length > 0 && <div className="grid gap-3 lg:grid-cols-2">{trends.map((t) => <TrendCard key={t.id} t={t} />)}</div>}
 
       <SidePanel open={panel === "learn"} onClose={() => setPanel(null)} title="Learn a new trend" where="My trends"><LearnForm onDone={() => setPanel(null)} /></SidePanel>
+      <SidePanel open={panel === "log"} onClose={() => setPanel(null)} title="Learning log" where="My trends"><LearningLogView /></SidePanel>
       <SidePanel open={panel === "users"} onClose={() => setPanel(null)} title="Reels from users" where="My trends" badge={waitingN ? <Badge tone="brand">{waitingN} waiting</Badge> : undefined}><Suggestions /></SidePanel>
     </div>
   );

@@ -4,7 +4,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Shubix · Reels video studio",
+    name: "Shubix",
     short_name: "Shubix",
     description: "Turn your clips, photos and a song into a beat-synced Reel.",
     start_url: "/?source=app",

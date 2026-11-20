@@ -4,10 +4,11 @@ import { STUDIO_HTML } from "@/components/studio/markup";
 import { initViews, PLAN_TOOLS } from "@/components/studio/views";
 
 describe("plan locks: Studio tools", () => {
-  it("Motion, Layers, Background and Voice need Pro by default", () => {
+  // "edit" (the full editor) joined the Studio tools when Edit became Pro (plan-locks.ts); this test still had the four
+  it("Edit, Motion, Layers, Background and Voice need Pro by default", () => {
     const g = DEFAULT_LOCKS.groups.find((x) => x.id === "studio")!;
-    expect(g.items.map((it) => [it.key, it.plan])).toEqual([["motion", "pro"], ["layers", "pro"], ["bg", "pro"], ["voice", "pro"]]);
-    expect([...PLAN_TOOLS]).toEqual(["motion", "layers", "bg", "voice"]);
+    expect(g.items.map((it) => [it.key, it.plan])).toEqual([["edit", "pro"], ["motion", "pro"], ["layers", "pro"], ["bg", "pro"], ["voice", "pro"]]);
+    expect([...PLAN_TOOLS]).toEqual(["edit", "motion", "layers", "bg", "voice"]);
   });
   it("the administrator can move a Studio tool to another plan", () => {
     expect(needMap(applyOverrides({ items: { "studio:voice": "creator" } }))["studio:voice"]).toBe("creator");

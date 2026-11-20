@@ -9,7 +9,10 @@ import { AppError } from "./errors";
  * and `db()` then shows only that user's documents. Same password hashes and tokens as the Python backend. */
 
 export const COOKIE = "reel_session", SESSION_DAYS = 30;
-const PUBLIC_PATHS = ["/api/cron/", "/api/contact", "/api/help", "/api/boot", "/api/offer", "/api/marketing/click", "/api/health", "/api/auth/", "/api/admin/session", "/api/public/", "/api/partner/", "/api/plans", "/api/site", "/api/texts", "/api/content", "/api/plan-locks", "/api/features", "/api/access"];
+const PUBLIC_PATHS = ["/api/cron/", "/api/contact", "/api/help", "/api/boot", "/api/offer", "/api/marketing/click", "/api/health", "/api/auth/", "/api/admin/session", "/api/public/", "/api/partner/", "/api/plans", "/api/site", "/api/texts", "/api/content", "/api/plan-locks", "/api/features", "/api/access",
+  // connecting YouTube / Instagram from the Android app happens in the phone's browser, where nobody is signed in: these
+  // check who is connecting themselves (the app's sealed ticket, or the session when there is one), server/social.ts
+  "/api/social/youtube/connect", "/api/social/instagram/connect", "/api/social/youtube/callback", "/api/social/instagram/callback"];
 const PENDING_PATHS = ["/api/auth/", "/api/admin/session", "/api/boot"];
 const userCtx = new AsyncLocalStorage<string | null>();
 export const currentUser = (): string | null => userCtx.getStore() ?? null;

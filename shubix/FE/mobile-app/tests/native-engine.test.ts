@@ -363,3 +363,27 @@ describe("the clips before Shubix AI", () => {
     expect(f.have).toBeLessThanOrEqual(24);   // three clips of 8 s
   });
 });
+
+describe("an AI voice's WAV (the server's /api/studio/speak)", () => {
+  const wav = (samples: number[], sr: number, ch = 1, extra = false) => {
+    const data = samples.length * 2, pre = extra ? 12 : 0, b = new ArrayBuffer(44 + pre + data), v = new DataView(b), tag = (o: number, t: string) => { for (let i = 0; i < 4; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    tag(0, "RIFF"); v.setUint32(4, 36 + pre + data, true); tag(8, "WAVE"); tag(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2 * ch, true); v.setUint16(32, 2 * ch, true); v.setUint16(34, 16, true);
+    let o = 36; if (extra) { tag(o, "LIST"); v.setUint32(o + 4, 4, true); o += 12; }
+    tag(o, "data"); v.setUint32(o + 4, data, true); samples.forEach((s, i) => v.setInt16(o + 8 + i * 2, s, true));
+    return b;
+  };
+  it("is read as samples at its own rate", async () => {
+    const { pcmOfWav } = await import("../lib/nativeEngine");
+    const r = pcmOfWav(wav([0, 16384, -16384, 32767], 24000));
+    expect(r.sr).toBe(24000);
+    expect([...r.pcm].map((x) => +x.toFixed(2))).toEqual([0, 0.5, -0.5, 1]);
+  });
+  it("two channels become one; a chunk before the sound is passed over", async () => {
+    const { pcmOfWav } = await import("../lib/nativeEngine");
+    expect([...pcmOfWav(wav([16384, 0, -16384, -16384], 48000, 2, true)).pcm].map((x) => +x.toFixed(2))).toEqual([0.25, -0.5]);
+  });
+  it("what is not a WAV is refused", async () => {
+    const { pcmOfWav } = await import("../lib/nativeEngine");
+    expect(() => pcmOfWav(new ArrayBuffer(60))).toThrow();
+  });
+});

@@ -9,6 +9,7 @@ import { tokenStore } from "../../lib/device";
 import { mobileApi } from "../../lib/api";
 import { AdminCode, adminCodeWanted } from "../organisms/AdminCode";
 import { AUTH_PAGES, PUBLIC_PAGES, showTabs } from "@mobile/core/lib/nav";
+import { DEFAULT_ACCESS, isOpen } from "@mobile/core/lib/access";
 import { TopBar } from "../organisms/TopBar";
 import { BottomNav } from "../organisms/BottomNav";
 import { MenuDrawer } from "../organisms/MenuDrawer";
@@ -30,13 +31,17 @@ function WakeMark() {
 }
 
 /** The website's phone frame (FE/web-app/components/templates/AppShell.tsx): the top bar, the page, the bottom bar
- * (not in the studio: /create and /editor keep the screen, as on the website) and the menu. The sign-in pages stand alone; signed out, the other pages lead to sign in. */
+ * (not in the studio: /create and /editor keep the screen, as on the website) and the menu. The sign-in pages stand alone.
+ * Signed out, the pages the administrator opened (Sign-in rules: Home, the studio, the editor... as on the website) stay
+ * open and Make Reel asks for an account; the person's own pages lead to sign in. The page stays mounted under the
+ * sign-in screen (one tree for both), so after signing in the studio is where it was. */
 export function AppFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname(), { me, refresh } = useApi(), insets = useSafeAreaInsets(), text = useText();
   const words = useStudioText();
   const feedback = <><TaskHost cancel={words("Stop")} cancelReel={words("Discard Reel")} cantCancel={words("Shubix AI has started working on this Reel. You can't cancel now.")} hide={words("Hide")} words={words} /><FeedbackHost ok={text("common.ok")} cancel={text("common.cancel")} /></>;
   const [menu, setMenu] = useState(false), [noToken, setNoToken] = useState(false), [slow, setSlow] = useState(false);
-  const authPage = AUTH_PAGES.includes(pathname), open = authPage || PUBLIC_PAGES.includes(pathname);
+  const access = useQuery({ queryKey: ["native-access"], queryFn: mobileApi.access, staleTime: 60_000, retry: 1 }).data ?? DEFAULT_ACCESS;
+  const authPage = AUTH_PAGES.includes(pathname), open = authPage || PUBLIC_PAGES.includes(pathname) || isOpen(pathname, access);
   // who is signed in is not known yet: no token on this phone means signed out at once; with one, the app waits for the
   // server (a sleeping server wakes in 20-30 s) and offers to try again when it takes too long
   const unknown = me === null && !open, signedOut = (!!me?.authEnabled && !me.user) || (me === null && noToken);
@@ -55,7 +60,6 @@ export function AppFrame({ children }: { children: ReactNode }) {
     const handler = BackHandler.addEventListener("hardwareBackPress", () => { setMenu(false); return true; }); // Android back closes the menu
     return () => handler.remove();
   }, [menu]);
-  if (authPage) return <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>{children}{feedback}</View>;
   if (needsCode) return <View className="flex-1 items-center justify-center bg-background"><WakeMark /></View>;
   // an administrator whose daily code is due (still signed in): the code first, emailed at once
   if (adminQ.data?.otp && adminCodeWanted() && !open) return <AdminCode onDone={() => void qc.invalidateQueries({ queryKey: ["native-admin"] })} />;
@@ -67,12 +71,12 @@ export function AppFrame({ children }: { children: ReactNode }) {
     </View>
   );
   return (
-    <View className="flex-1 bg-background">
-      <TopBar pathname={pathname} onMenu={() => setMenu(true)} />
+    <View className="flex-1 bg-background" style={authPage ? { paddingTop: insets.top } : undefined}>
+      {!authPage && <TopBar pathname={pathname} onMenu={() => setMenu(true)} />}
       <View className="flex-1">{children}</View>
-      {showTabs(pathname) && <BottomNav pathname={pathname} />}
-      <MenuDrawer open={menu} onClose={() => setMenu(false)} pathname={pathname} />
-      <HelpChat pathname={pathname} bottom={showTabs(pathname) ? 84 : 16} />
+      {!authPage && showTabs(pathname) && <BottomNav pathname={pathname} />}
+      {!authPage && <MenuDrawer open={menu} onClose={() => setMenu(false)} pathname={pathname} />}
+      {!authPage && <HelpChat pathname={pathname} bottom={showTabs(pathname) ? 84 : 16} />}
       {feedback}
     </View>
   );

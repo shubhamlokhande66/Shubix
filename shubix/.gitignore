@@ -32,3 +32,7 @@ FE/mobile-app/keys/
 
 # Cloudflare Workers build (OpenNext)
 .open-next/
+
+# the beat benchmark: generated songs and real songs (never in the repository)
+FE/web-app/scripts/studio-beats/out/
+FE/web-app/scripts/studio-beats/real/

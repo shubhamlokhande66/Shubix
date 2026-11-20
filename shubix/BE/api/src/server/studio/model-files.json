@@ -5,6 +5,7 @@
     { "name": "mel-filterbank.bin", "dir": "src/server/audio/data/beat-this" },
     { "name": "silero_vad_16k_op15.onnx", "dir": "src/server/audio/data/vad" },
     { "name": "selfie_segmentation.onnx", "dir": "src/server/vision/data" },
-    { "name": "face_detection_short_range.onnx", "dir": "src/server/vision/data" }
+    { "name": "face_detection_short_range.onnx", "dir": "src/server/vision/data" },
+    { "name": "u2netp.onnx", "dir": "src/server/vision/data" }
   ]
 }

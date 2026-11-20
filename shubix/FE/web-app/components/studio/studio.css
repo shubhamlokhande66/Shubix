@@ -108,6 +108,8 @@
 .brs:not(.admin) #stsaverow,.brs:not(.admin) #teach,.brs:not(.admin) #stmine,.brs:not(.admin) #learnrow{display:none !important}
 .brs .stdetails{flex-basis:100%;font-size:13px;color:var(--muted)}
 .brs .stdetails ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
+.brs .stdetails.teachtop{display:block;margin:0 0 14px;padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}
+.brs .stdetails.teachtop .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 /* ◆ keyframes */
 .brs .kfbox{border:1px solid var(--line);border-radius:12px;padding:8px 10px;display:grid;gap:8px}
 .brs .kfbox summary{cursor:pointer;font-weight:600}
@@ -325,6 +327,11 @@
 .brs.photomode .ponly{display:inline}
 @media (min-width:1024px){.brs.photomode .ponly.fmob{display:none}} /* computers: "Drag & drop photos", not the phones' "Tap to Add Photos" */
 .brs.photomode .vonly{display:none}
+/* Mix: videos and photos together (the clips step's third choice, steps.ts) */
+.brs .monly{display:none}
+.brs.mixmode .monly{display:inline}
+@media (min-width:1024px){.brs.mixmode .monly.fmob{display:none}}
+.brs.mixmode .vonly{display:none}
 /* notifications: short notes at the bottom (above the save bar on phones), and the in-app yes / no question */
 .brs .toasts{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:80;display:grid;gap:9px;width:min(92vw,420px);pointer-events:none}
 @media (max-width:1023px){.brs.fopen .toasts{bottom:calc(150px + env(safe-area-inset-bottom))}}
@@ -561,7 +568,7 @@
 .brs.talkmode .fsugg{display:none}
 
 /* 2 Add Your Clips: Videos / Photos, the drop area, the clips as pictures */
-.brs .ftabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);max-width:420px}
+.brs .ftabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:4px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);max-width:420px}
 .brs .ftabs button{height:40px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:600 14px var(--body);cursor:pointer}
 .brs .ftabs button[aria-pressed=true]{background:var(--gold-gradient);color:var(--on-accent)}
 .brs.fopen .drop{display:grid;justify-items:center;gap:4px;padding:28px 18px;border-radius:18px;background:var(--surface-2);color:var(--muted)}
@@ -745,7 +752,7 @@
   /* 4 Add Clips: Videos / Photos, "Tap to Add Videos", the clips three across with a "+" at the end */
   .brs.fopen .fdesk{display:none !important}
   .brs.fopen .fmob{display:block}
-  .brs.fopen.photomode .vonly.fmob,.brs.fopen:not(.photomode) .ponly.fmob{display:none}
+  .brs.fopen.photomode .vonly.fmob,.brs.fopen:not(.photomode) .ponly.fmob,.brs.fopen.mixmode .vonly.fmob,.brs.fopen:not(.mixmode) .monly.fmob{display:none}
   .brs.fopen .ftabs{max-width:none}
   .brs.fopen .drop{min-height:190px;align-content:center;border-radius:18px;padding:24px 16px}
   .brs.fopen .drop b.fmob{font:600 16px var(--body)}
@@ -1136,7 +1143,7 @@
   .brs.noir .ptabs button[aria-pressed=true]{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);box-shadow:inset 0 -2px 0 var(--accent)}
   /* Media: Videos / Photos, the drop zone, the clips three a row */
   .brs.noir #mslot{display:grid;gap:12px}
-  .brs.noir #mslot .ftabs{display:grid !important;grid-template-columns:1fr 1fr;gap:4px;padding:3px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+  .brs.noir #mslot .ftabs{display:grid !important;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:3px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
   .brs.noir #mslot .ftabs button{height:34px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 13px var(--body);cursor:pointer}
   .brs.noir #mslot .ftabs button[aria-pressed=true]{background:var(--gold-gradient);color:var(--on-accent,#fff)}
   .brs.noir #mslot .drop{display:grid;justify-items:center;gap:4px;padding:18px 12px;border:1.5px dashed color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:14px;
@@ -1419,7 +1426,8 @@
 .brs .fref .fsongt small{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .brs .fref .frefbtns{display:flex;flex-wrap:wrap;gap:8px}
 /* Copy a Reel: its song comes with the Reel copied, so the Music card shows only after "Different song?" (.pickown) */
-.brs.fopen[data-fkind="copy"]:not(.pickown) #s1{display:none !important}
+/* (not on Adjust Music: there the card is the song being adjusted; hidden, the screen was empty) */
+.brs.fopen[data-fkind="copy"]:not(.pickown):not([data-fstep="adjust"]) #s1{display:none !important}
 /* phones: the box with the screens it belongs to (Music and the clips), not on the first screen or while analysing */
 @media (max-width:1023px){
   .brs.fopen[data-fkind="copy"]:not([data-fstep="choose"]):not([data-fstep="adjust"]):not([data-fstep="clips"]) .fref{display:none !important}
@@ -1427,7 +1435,17 @@
 /* Clip order (Mix all clips / In my order): not for a talking Reel (its clips are always in order). In my order: each
    clip card shows its place */
 .brs .seqrow{align-items:center;gap:8px}
-.brs.talkmode #seqrow{display:none}
+/* the clips the song asks for ("For this song: 8 clips + 2 photos", engine.ts clipWantPaint) */
+.brs .clipwant{margin:0;font-weight:600;color:var(--foreground)}
+/* one box a clip, with the seconds it should have (✓ long enough, amber when shorter) */
+.brs .clipboxes{display:grid;gap:6px}
+.brs .clipboxes[hidden]{display:none}
+.brs .cboxes{display:flex;flex-wrap:wrap;gap:6px}
+.brs .cbox{display:grid;place-items:center;min-width:56px;padding:6px 8px;border:1.5px dashed var(--line);border-radius:10px;font:600 12.5px var(--body);color:var(--muted);background:var(--surface-2)}
+.brs .cbox b{font-size:11px;font-weight:600;opacity:.75}
+.brs .cbox.ok{border-style:solid;border-color:var(--accent);color:var(--foreground)}
+.brs .cbox.short{border-style:solid;border-color:var(--warning);color:var(--warning)}
+.brs.talkmode #seqrow,.brs.talkmode #hookrow{display:none}
 .brs.seqon .clips{counter-reset:clipn}
 .brs.seqon .clips .clip{position:relative}
 .brs.seqon .clips .clip::before{counter-increment:clipn;content:counter(clipn);position:absolute;top:6px;left:6px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:11px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font:600 12px var(--body)}
@@ -3644,7 +3662,7 @@ html:has(.brs .cconf:not([hidden])) body,html:has(.brs .xsheet:not([hidden])) bo
 .brs.fopen .clip .cv.on{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;z-index:1;pointer-events:none}
 .brs.fopen .clip .meta{z-index:2}
 .brs.fopen .clip .cnum{top:6px !important;left:6px !important;height:22px;min-width:22px;padding:0 5px;font-size:11px}
-.brs.fopen .clip .clip-status{position:absolute !important;inset:7px auto auto 32px !important;width:20px !important;height:20px !important;min-width:0 !important;font-size:11px !important;z-index:3}
+.brs.fopen .clip .clip-status{position:absolute !important;inset:7px auto auto 36px !important;width:20px !important;height:20px !important;min-width:0 !important;font-size:11px !important;z-index:3}
 .brs.fopen .clip .del{top:6px !important;right:6px !important}
 /* the Create page has Ask Shubix at its top: no floating button over its buttons as well */
 .brs.fopen .chatfab{display:none !important}

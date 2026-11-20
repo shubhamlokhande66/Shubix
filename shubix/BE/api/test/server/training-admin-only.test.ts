@@ -33,6 +33,7 @@ describe("training is the administrator's", () => {
     const vid = await import("../../src/routes/api/references/[refId]/videos/[index]/route");
     const styles = await import("../../src/routes/api/studio/styles/route");
     const sugg = await import("../../src/routes/api/admin/style-suggestions/route");
+    const learning = await import("../../src/routes/api/admin/learning/route");
     const id = "0123456789abcdef01234567";
     const calls: [string, (admin: boolean) => Promise<Response>][] = [
       ["new trend", (a) => refs.POST(req("/api/references", "POST", a), ctx() as never)],
@@ -42,6 +43,8 @@ describe("training is the administrator's", () => {
       ["remove a Reel", (a) => vid.DELETE(req(`/api/references/${id}/videos/0`, "DELETE", a), ctx({ refId: id, index: "0" }) as never)],
       ["save a style", (a) => styles.POST(req("/api/studio/styles", "POST", a, { name: "x", category: "dance", fp: { dur: 15, bpm: 120, medianBeats: 1, medianSec: 0.5, hookBeats: 2, hookSec: 1, onBeat: 0.9, energy: "steady", zoomShare: 0.3, trans: {} } }), ctx() as never)],
       ["list users' Reels", (a) => sugg.GET(req("/api/admin/style-suggestions", "GET", a), ctx() as never)],
+      ["the learning log", (a) => learning.GET(req("/api/admin/learning", "GET", a), ctx() as never)],
+      ["log a taught Reel", (a) => learning.POST(req("/api/admin/learning", "POST", a, { name: "x", category: "dance", ok: true, cuts: 3, known: { hard: 2 }, unread: { cuts: [{ at: 1.2, guess: "not known", ours: null, sig: "2 frames" }], fx: [] } }), ctx() as never)],
     ];
     for (const [what, call] of calls) {
       expect((await call(false)).status, what + " (user)").toBe(403);

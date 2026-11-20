@@ -6,7 +6,7 @@ export function Logo({ height = 40, className = "" }: { height?: number; classNa
   return (
     <img
       src={height > 60 ? "/brand/shubix-studio.webp" : "/brand/shubix-studio-sm.webp"}
-      alt="Shubix · Reels video studio"
+      alt="Shubix - Video Maker"
       height={height}
       width={Math.round(height * LOGO_RATIO)}
       className={`block select-none ${className}`}

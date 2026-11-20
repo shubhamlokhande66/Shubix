@@ -5,6 +5,7 @@ import type { Features } from "@mobile/core/lib/features-list";
 import type { Content } from "@mobile/core/lib/collections";
 import type { CloudReel, CloudUsage, Credits, MyMarketing, Pricing } from "@mobile/types";
 import type { PlanLocks } from "@mobile/core/lib/plan-locks";
+import type { Access } from "@mobile/core/lib/access";
 
 /** Every call goes to BE/api through the shared client (lib/session.ts, @mobile/api-client): the Bearer token from
  * secure storage, the app's error messages, the same logic as the website. */
@@ -19,11 +20,16 @@ const json = async <T = unknown>(path: string, init?: RequestInit): Promise<T> =
 export type AdPlace = "home" | "homeEnd" | "reels" | "rewards" | "account";
 export type AdsConfig = { enabled: boolean; places: Record<AdPlace, boolean>; admob: { android: string; ios: string; interstitial?: string; rewarded?: string; rewardCredits?: number; rewardDaily?: number } };
 
+export type SocialPlatform = { id: "youtube" | "instagram"; ready: boolean; connected: boolean; name: string; needsReconnect: boolean };
+export type SocialPost = { id: string; platform: SocialPlatform["id"]; reelId: string; reelName: string; caption: string; title: string; at: string; status: "scheduled" | "working" | "published" | "failed" | "cancelled"; step: string; url: string; error: string; stats: { views?: number; likes?: number; comments?: number } | null };
+
 /** One of the administrator's messages (Admin → Messages: the bell) */
 export interface Notice { id: string; title: string; body: string; link: string; button: string; at: string; unread: boolean }
 
 export const mobileApi = {
   me: () => api.auth.me(),
+  /** the sign-in rules (Administration → Settings → Sign-in rules): the pages open before signing in, as on the website */
+  access: () => api.request<Access & { googleReady: boolean }>("/api/access"),
   signIn: (email: string, password: string) => api.auth.login(email, password),
   signUp: (email: string, password: string) => api.auth.register(email, password),
   forgotPassword: (email: string) => api.auth.forgot(email),
@@ -68,6 +74,20 @@ export const mobileApi = {
   deleteAccount: (password: string, confirm: string) => json("/api/auth/delete-account", { method: "POST", body: JSON.stringify({ password, confirm }) }),
   contact: (body: { email: string; name?: string; topic: string; message: string; website?: string }) => json<{ ok: boolean; ticket: string }>("/api/contact", { method: "POST", body: JSON.stringify(body) }),
   content: () => json<Content>("/api/content"),
+  /** Publish to Instagram and YouTube (BE/api/src/server/social.ts): the accounts and the posts, posting, the link that
+   * connects an account in the phone's browser (it comes back to the app: shubix://reels), Shubix AI's caption */
+  /** an AI picture for the studio (B-roll: /api/studio/broll, credits), as a JPEG data URL at the Reel's shape */
+  aiPicture: (prompt: string, aspect = "9:16") => json<{ image: string; source: string; charged: number }>("/api/studio/broll", { method: "POST", body: JSON.stringify({ prompt, aspect }) }),
+  /** one line in the Reel's log (Admin → Logs), as the website's studio sends: the export's "Export started" carries how
+   * many changes the creator made after Shubix's edit (Admin → Overview, "Kept as Shubix made it") */
+  reelLog: (reelId: string, line: { step: string; msg: string; data?: unknown }) =>
+    json<{ ok: boolean }>("/api/public/reel-log", { method: "POST", body: JSON.stringify({ reelId, lines: [{ t: Date.now(), seq: 1, level: "info", ...line }] }) }),
+  social: () => json<{ platforms: SocialPlatform[]; posts: SocialPost[] }>("/api/social"),
+  socialConnectLink: (p: SocialPlatform["id"]) => json<{ url: string }>(`/api/social/${p}/connect`, { method: "POST" }),
+  socialDisconnect: (p: SocialPlatform["id"]) => json<{ ok: boolean }>(`/api/social/${p}`, { method: "DELETE" }),
+  publish: (body: { reelId: string; platforms: SocialPlatform["id"][]; caption: string; title: string; at: string | null }) => json<{ posts: SocialPost[] }>("/api/social/posts", { method: "POST", body: JSON.stringify(body) }),
+  cancelPost: (id: string) => json<{ ok: boolean }>(`/api/social/posts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  writeCaption: (about: string, platform: SocialPlatform["id"]) => json<{ title: string; caption: string; charged: number }>("/api/social/caption", { method: "POST", body: JSON.stringify({ about, platform }) }),
   absoluteAsset: (path: string) => path.startsWith("http") ? path : `${API_URL}${path}`,
   /** A saved Reel needs the sign-in token, which a video player cannot send: a copy to play (device.ts). */
   downloadReel: (id: string) => fetchWithToken(`${API_URL}/api/studio/reels/${encodeURIComponent(id)}/file`, `reel-${id}.mp4`),

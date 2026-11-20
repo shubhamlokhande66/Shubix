@@ -8,6 +8,8 @@
  * Photos to Reel: each photo becomes a short moving shot (a slow push-in, encoded in the browser with WebCodecs),
  * then goes into the engine exactly like a video clip. Nothing is uploaded. */
 
+import { mediaKindOf, pickTakes, type MediaPick } from "@shubix/video-engine";
+
 const SHOT_SECONDS = 3;
 const FPS = 30;
 
@@ -19,7 +21,23 @@ export function initSteps(root: HTMLElement): () => void {
   // Music Reel with no song: the clips' own sound becomes the song (or, when people talk in them, a talking Reel)
   let clipSound = false, clipSoundAsked = false;
   const vfile = $("vfile") as HTMLInputElement;
-  const VIDEO_ACCEPT = vfile.accept;
+  // the clips step's three choices take only what they say: Videos videos, Photos photos (a Photo Reel), Mix both (a photo
+  // becomes a short moving shot, photoClip, beside the videos). A talking Reel and Copy a Reel have no choice: both.
+  const IMAGES = "image/*,.jpg,.jpeg,.png,.webp,.heic";
+  const VIDEOS = "video/*,.mov,.mp4,.m4v,.3gp";
+  const BOTH = `${VIDEOS},${IMAGES}`;   // (not read from the input: the studio can start twice on a page)
+  const choosing = () => !root.classList.contains("talkmode") && kindNow !== "copy";
+  const pickNow = (): MediaPick => root.classList.contains("photomode") ? "photos" : root.classList.contains("mixmode") ? "mix" : "videos";
+  const setAccept = () => { const p = pickNow(); vfile.accept = !choosing() || p === "mix" ? BOTH : p === "photos" ? IMAGES : VIDEOS; };
+  vfile.accept = VIDEOS;
+  // a file the choice does not take is left out, and said (Mix takes both)
+  const toast = (text: string) => window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "info", text } }));
+  const keepTaken = (list: File[]) => {
+    if (!choosing()) return list;
+    const p = pickNow(), kept = list.filter((f) => pickTakes(p, mediaKindOf(f)));
+    if (kept.length < list.length) toast(p === "videos" ? "Photos are not added under Videos. Choose Mix for videos and photos together." : p === "photos" ? "Videos are not added under Photos. Choose Mix for videos and photos together." : "Only videos and photos can be added.");
+    return kept;
+  };
 
   const press = (which: "music" | "talk" | "photo" | "copy" | null) => {
     root.querySelectorAll<HTMLButtonElement>("#kind button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === which)));
@@ -28,7 +46,8 @@ export function initSteps(root: HTMLElement): () => void {
   };
   const setPhoto = (on: boolean) => {
     root.classList.toggle("photomode", on);
-    vfile.accept = on ? "image/*,.jpg,.jpeg,.png,.webp,.heic" : VIDEO_ACCEPT;
+    if (on) root.classList.remove("mixmode");
+    setAccept();
     const h = $("s2").querySelector("h2")!, st = $("s2st");
     const idle = (t: string) => /^(Several clips or one long video|Add your photos.*)$/.test(t);
     if (on) {
@@ -48,6 +67,7 @@ export function initSteps(root: HTMLElement): () => void {
     // after the engine has handled the same click
     setTimeout(() => {
       press(which);
+      setAccept();
       $("s0st").textContent = label;
       update();
     });
@@ -92,16 +112,19 @@ export function initSteps(root: HTMLElement): () => void {
   // photos: turn them into short moving shots, then hand them to the engine as clips
   let feeding = false;
   const feed = async (list: File[]) => {
-    const imgs = list.filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
-    const rest = list.filter((f) => !imgs.includes(f));
-    const out: File[] = [...rest];
+    const isImg = (f: File) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+    const imgs = list.filter(isImg);
+    // in the order they were chosen, videos and photos mixed ("In my order" plays them so)
+    const out: File[] = [];
     const st = $("s2st");
-    for (let i = 0; i < imgs.length; i++) {
-      st.textContent = `Turning photo ${i + 1} of ${imgs.length} into a moving shot…`;
+    let k = 0;
+    for (const f of list) {
+      if (!isImg(f)) { out.push(f); continue; }
+      st.textContent = `Turning photo ${++k} of ${imgs.length} into a moving shot…`;
       try {
-        out.push(await photoClip(imgs[i]));
+        out.push(await photoClip(f));
       } catch {
-        st.textContent = `${imgs[i].name} could not be read. Use JPG, PNG or WEBP.`;
+        st.textContent = `${f.name} could not be read. Use JPG, PNG or WEBP.`;
       }
     }
     if (!out.length) return;
@@ -116,11 +139,12 @@ export function initSteps(root: HTMLElement): () => void {
   root.addEventListener(
     "change",
     (e) => {
-      if (e.target !== vfile || feeding || !hasImages(vfile.files)) return;
+      if (e.target !== vfile || feeding || !vfile.files?.length) return;
+      const list = [...vfile.files], kept = keepTaken(list);
+      if (kept.length === list.length && !hasImages(kept)) return;   // only videos, all taken: on to the engine as they are
       e.stopPropagation();
-      const list = [...vfile.files!];
       vfile.value = "";
-      void feed(list);
+      if (kept.length) void feed(kept);
     },
     { capture: true, signal: ac.signal },
   );
@@ -128,11 +152,14 @@ export function initSteps(root: HTMLElement): () => void {
     "drop",
     (e) => {
       const dz = (e.target as HTMLElement).closest("#dropzone");
-      if (!dz || !hasImages(e.dataTransfer?.files)) return;
+      const list = dz && e.dataTransfer?.files ? [...e.dataTransfer.files] : [];
+      if (!list.length) return;
+      const kept = keepTaken(list);
+      if (kept.length === list.length && !hasImages(kept)) return;
       e.preventDefault();
       e.stopPropagation();
-      dz.classList.remove("over");
-      void feed([...e.dataTransfer!.files]);
+      dz!.classList.remove("over");
+      if (kept.length) void feed(kept);
     },
     { capture: true, signal: ac.signal },
   );

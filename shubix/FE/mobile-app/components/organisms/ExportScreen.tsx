@@ -3,6 +3,7 @@ import { showInterstitial } from "../../lib/ads";
 import { useEffect, useState } from "react";
 import { Image, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
+import { SMALL_BUFFER } from "./CreateFlow";
 import * as MediaLibrary from "expo-media-library/legacy";
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
@@ -18,6 +19,7 @@ import { FlowAnalyse } from "./CreateFlow";
 import { notifyAway } from "../../lib/notify";
 import { useThumb } from "../../lib/thumbs";
 import { engine, keepAwake, type ExportChoice, type ExportOptions } from "../../lib/engine";
+import { mobileApi } from "../../lib/api";
 
 // the website's Exporting list: each line done once the Reel is that far
 const STEPS: [IconName, string, number][] = [["search", "Preparing clips", 0.02], ["sparkle", "Applying effects", 0.3], ["image", "Rendering video", 0.85], ["music", "Finalizing audio", 1]];
@@ -34,7 +36,7 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
   const [step, setStep] = useState<"choose" | "make" | "done">("choose"), [allowed, setAllowed] = useState<ExportOptions | null>(null);
   const [choice, setChoice] = useState<Required<Omit<ExportChoice, "fixLocked">>>({ res: "1080", fps: 30, noWatermark: false, noSong: false, myReels: true });
   const [pct, setPct] = useState(0), [done, setDone] = useState<Made | null>(null), [saved, setSaved] = useState(false), [notice, setNotice] = useState(""), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
-  const player = useVideoPlayer(done?.uri ?? null, (p) => { p.loop = true; if (done) p.play(); });
+  const player = useVideoPlayer(done?.uri ?? null, (p) => { p.bufferOptions = SMALL_BUFFER; p.loop = true; if (done) p.play(); });
   const first = reel?.clips[0], picture = useThumb(first?.uri, first?.kind === "image" ? "image" : "video");
   // the plans with ads: a full-screen ad once the Reel is made (never while editing)
   const { ads, adPlan } = useAdPlan(), full = Platform.OS === "android" ? ads.data?.admob?.interstitial ?? "" : "";
@@ -57,7 +59,20 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
         const rows = await engine.tool("layerList"), layers = Array.isArray(rows) ? rows as NativeLayerRow[] : [];
         const gaps = nativeExportGaps(reel, layers);
         if (gaps.length) tell(words("This export leaves out: {gaps}", { gaps: gaps.join(", ") }), "info");
-        return exportReel(reel, (p) => live && setPct(p), { mix: path, layers, plan });
+        // the video read back and checked against the edit; a renderer fault (a stalled decoder, black where footage
+        // belongs, a short file) is made once more. A finished Reel is never thrown away: a second miss keeps it.
+        const once = () => exportReel(reel, (p) => live && setPct(p), { mix: path, layers, plan });
+        const checked = async (made: Made, take: number) => {
+          const v = (await engine.checkExport(made.uri).catch(() => null))?.verdict ?? null;
+          if (v && !v.ok) void mobileApi.reelLog(reel.id, { step: "export", msg: `Export check (take ${take}): ${v.problems.map((x) => x.msg).join(" ")}`.slice(0, 500), data: { ...v, take } }).catch(() => undefined);
+          return v;
+        };
+        const made = await once(), first = await checked(made, 1);
+        if (!first?.retake || !live) return made;
+        tell(words("Fixing a glitch in the video…"), "info"); setPct(0);
+        const again = await once(), second = await checked(again, 2);
+        if (second && !second.ok) tell(words("Your Reel is ready. Watch it once: a part of it may not look right."), "info");
+        return again;
       }
       if (canUseSharedAndroidRenderer(reel)) return exportReelWithSharedRenderer(reel, (p) => live && setPct(p));
       return exportReel(reel, (p) => live && setPct(p));

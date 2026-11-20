@@ -210,6 +210,7 @@ export const STUDIO_HTML = `
     <div class="fchoose">
     <div class="row fpickrow">
       <button class="${Button.primary}" id="mpick">${IC.music}<span>Add your song</span></button>
+      <button class="${Button.secondary}" id="mauto" type="button" hidden>${IC.spark}<span>Choose a song for me</span></button>
       <input id="mfile" type="file" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav,.mov,.mp4" hidden>
       <span class="fname" id="mname">MP3, M4A, WAV or any video's sound (iPhone: from Files or Photos)</span>
       <button class="${Button.ghost}" id="skipmusic" type="button" hidden>Continue without music</button>
@@ -255,11 +256,13 @@ export const STUDIO_HTML = `
     <button type="button" class="sh ${stepHead} max-lg:hidden" aria-expanded="true"><span class="${stepNumber}">2</span><span class="${stepText}"><h2 class="${stepTitle}">Clips</h2><small class="fsh ${stepNote}">Add multiple videos or photos. The more clips, the better!</small></span><span class="hidden" id="s2st">Several clips or one long video</span></button>
     <div class="grid min-w-0 gap-3.5">
     <button type="button" class="${Button.secondary} lg:hidden" id="fadjust" hidden>Adjust music</button>
-    <div class="ftabs" id="ftabs" role="group" aria-label="Videos or photos"><button type="button" data-ft="videos" aria-pressed="true">Videos</button><button type="button" data-ft="photos" aria-pressed="false">Photos</button></div>
-    <div class="drop" id="dropzone" role="button" tabindex="0">${IC.upload}<b class="vonly fdesk">Drag &amp; drop videos here</b><b class="ponly fdesk">Drag &amp; drop photos here</b><b class="vonly fmob">Tap to Add Videos</b><b class="ponly fmob">Tap to Add Photos</b><span class="vonly fdesk">or tap to choose · you can add more at any time</span><span class="ponly fdesk">or tap to choose · each photo becomes a short moving shot</span><span class="fmob">or choose from gallery</span><small>Supports MP4, MOV, 3GP, JPG, PNG</small></div>
+    <div class="ftabs" id="ftabs" role="group" aria-label="Videos, photos or both"><button type="button" data-ft="videos" aria-pressed="true">Videos</button><button type="button" data-ft="photos" aria-pressed="false">Photos</button><button type="button" data-ft="mix" aria-pressed="false">Mix</button></div>
+    <p class="hint clipwant" id="clipwant" role="status" hidden></p>
+    <div class="clipboxes" id="clipboxes" hidden><div class="cboxes" id="cboxes" role="list" aria-label="The clips this song asks for, and how long each should be"></div><small class="hint">A longer clip is fine: Shubix keeps its best part and leaves the rest out.</small></div>
+    <div class="drop" id="dropzone" role="button" tabindex="0">${IC.upload}<b class="vonly fdesk">Drag &amp; drop videos here</b><b class="ponly fdesk">Drag &amp; drop photos here</b><b class="monly fdesk">Drag &amp; drop videos and photos here</b><b class="vonly fmob">Tap to Add Videos</b><b class="ponly fmob">Tap to Add Photos</b><b class="monly fmob">Tap to Add Videos and Photos</b><span class="vonly fdesk">or tap to choose · you can add more at any time</span><span class="ponly fdesk">or tap to choose · each photo becomes a short moving shot</span><span class="monly fdesk">or tap to choose · Shubix mixes them</span><span class="fmob">or choose from gallery</span><small>Supports MP4, MOV, 3GP, JPG, PNG</small></div>
     <input id="vfile" type="file" accept="video/*,.mov,.mp4,.m4v" multiple hidden>
     <div class="row">
-      <button class="${Button.primary}" id="addv"><span class="vonly">+ Add videos</span><span class="ponly">+ Add photos</span></button>
+      <button class="${Button.primary}" id="addv"><span class="vonly">+ Add videos</span><span class="ponly">+ Add photos</span><span class="monly">+ Add videos and photos</span></button>
       <button class="${Button.secondary}" id="clearv" hidden>Remove all</button>
       <span class="fname" id="qinfo"></span>
     </div>
@@ -268,6 +271,10 @@ export const STUDIO_HTML = `
       <div class="${Segmented.normal}" id="seq" role="group" aria-label="Clip order"><button type="button" data-q="mix" aria-pressed="false">Mix all clips</button><button type="button" data-q="order" aria-pressed="true">In my order</button></div>
       <span class="fname" id="seqhelp">Your clips play one after another, in the order you added them</span>
       <small class="text-[12px] text-muted" id="crev" hidden>Drag a clip to move it (on a phone, hold it first)</small></div>
+    <!-- Shubix's opening words on a Reel with no text (autoHook, engine.ts): Auto, or None for a creator who wants no text -->
+    <div class="row seqrow" id="hookrow"><span class="label">Opening text</span>
+      <div class="${Segmented.normal}" id="htext" role="group" aria-label="Opening text"><button type="button" data-h="auto" aria-pressed="true">Auto</button><button type="button" data-h="none" aria-pressed="false">None</button></div>
+      <span class="fname">Auto: a short line in the first 2 seconds when your Reel has no text</span></div>
     <div class="row items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2" id="corder" hidden><span class="flex-1 text-[13px] font-semibold">Tap your clips in the order they should play: 1, 2, 3…</span><button type="button" class="${Button.small}" id="corderskip">Keep as is</button></div>
     <span class="flabel fcliplabel">Selected Clips</span>
     <div class="fclipgrid"><div class="clips" id="clips"></div><button type="button" class="hidden max-lg:in-[.fopen_#s2:has(.clip)]:grid aspect-square place-items-center rounded-[14px] border-[1.5px] border-dashed border-border bg-surface-2 [&>svg]:size-7 in-[.noir_#mslot]:hidden!" id="fadd" aria-label="Add more clips">${IC.plus}</button></div>
@@ -498,11 +505,14 @@ export const STUDIO_HTML = `
             <label class="tog" id="capwrap" hidden><input type="checkbox" id="caps"> Captions: the words, word by word</label>
             <p class="hint capnone">Captions appear here once a song with words or a talking video is in.</p>
             <div class="row" id="caprow" hidden><select id="caplang" aria-label="Language of the song"><option value="">Language: detect</option><option value="hi">Hindi</option><option value="mr">Marathi</option><option value="en">English</option><option value="gu">Gujarati</option><option value="pa">Punjabi</option><option value="bn">Bengali</option><option value="ta">Tamil</option><option value="te">Telugu</option></select><select id="captr" aria-label="Also show the captions in"><option value="">Translation: off</option><option value="mr">+ मराठी (Marathi)</option><option value="hi">+ हिंदी (Hindi)</option><option value="en">+ English</option><option value="hinglish">+ Hinglish</option><option value="gu">+ ગુજરાતી</option><option value="bn">+ বাংলা</option><option value="ta">+ தமிழ்</option><option value="te">+ తెలుగు</option><option value="pa">+ ਪੰਜਾਬੀ</option></select><label class="tog" id="trwrap" hidden><input type="checkbox" id="tronly"> Only the translation</label><span class="fname" id="capstat"></span><label class="tog" id="kwwrap"><input type="checkbox" id="kwon" checked> Key words + zoom (talking, voiceover)</label></div>
+            <div class="row talkonly" id="brollrow" hidden><button type="button" class="${Button.secondary}" id="brollauto">${IC.plus}Add pictures for what you say</button><span class="hint" id="brollnote">Shubix AI picks the moments and makes a picture for each (B-roll over you for 3 s). Credits per picture.</span></div>
+            <div class="row talkonly" id="dubrow" hidden><select id="dublang" aria-label="AI dub: the talk in another language"><option value="">AI dub: off (your own voice)</option><option value="hi">AI dub: Hindi</option><option value="mr">AI dub: Marathi</option><option value="en">AI dub: English</option><option value="hinglish">AI dub: Hinglish</option><option value="gu">AI dub: Gujarati</option><option value="bn">AI dub: Bengali</option><option value="ta">AI dub: Tamil</option><option value="te">AI dub: Telugu</option><option value="pa">AI dub: Punjabi</option></select><select id="dubvoice" aria-label="Voice of the dub (AI voice)"></select></div>
           </section>
 
           <section class="panel" data-panel="look">${panelHead("look")}
             <label class="tog aitog"><input type="checkbox" id="aitouch" checked> Shubix touch-ups: fit wide clips, fix dark shots, keep voices, one reversed drop, fade out at the end</label>
             <div class="${Segmented.normal}" id="look"><button data-l="natural" aria-pressed="false">Natural</button><button data-l="vivid" aria-pressed="true">Vivid</button><button data-l="cine" aria-pressed="false">Cinematic</button><button data-l="mono" aria-pressed="false">B&amp;W</button><button data-l="copy" aria-pressed="false" hidden>Copied</button></div>
+            <div class="row" id="finrow" role="group" aria-label="Finish"><label class="tog"><input type="checkbox" id="fxbars"> Cinematic bars</label><label class="tog"><input type="checkbox" id="fxtint"> Colour flash on the beat</label><label class="tog"><input type="checkbox" id="fxbw"> Black and white until the drop</label></div>
           </section>
 
           <section class="panel" data-panel="bg">${panelHead("bg")}
@@ -514,6 +524,18 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="layers">${panelHead("layers")}
             <div class="row"><button type="button" class="${Button.secondary}" id="lyadd">${IC.plus}Add a video or photo on top</button><input id="lyfile" type="file" accept="video/*,image/*,.mov,.mp4,.jpg,.jpeg,.png,.webp" multiple hidden></div>
             <p class="hint">It starts at the playhead. Picture in picture, split screen, a masked shape, a logo…</p>
+            <div class="brandbox" id="brandbox">
+              <span class="label">My brand · on every Reel you make here</span>
+              <div class="row"><input id="brhandle" type="text" maxlength="40" placeholder="@yourname" aria-label="Your @handle"><button type="button" class="${Button.secondary}" id="brlogobtn">${IC.plus}Logo</button><img id="brlogo" alt="Your logo" hidden style="height:36px;width:auto;border-radius:6px"><button type="button" class="${Button.small}" id="brlogodel" hidden>Remove logo</button><input id="brlogofile" type="file" accept="image/png,image/jpeg,image/webp" hidden></div>
+              <label class="tog"><input type="checkbox" id="brmark" checked> My logo small in the corner</label>
+              <label class="tog"><input type="checkbox" id="brend" checked> End card: my logo, my @handle, Follow for more</label>
+            </div>
+            <div class="row musiconly" id="poprow"><button type="button" class="${Button.secondary}" id="popout">${IC.plus}Pop out the subject</button><span class="hint">A car, a bike or a person cut out of a shot: small at first while the Reel plays behind it, growing until the Reel cuts to it.</span></div>
+            <div class="aibroll" id="brbox" hidden>
+              <label class="label" for="brtext">AI picture (B-roll) · made by AI</label>
+              <textarea id="brtext" rows="2" maxlength="400" placeholder="Describe the picture: a chai stall in the Mumbai rain at night, warm lights…"></textarea>
+              <div class="row"><select id="brstyle" aria-label="Picture style"></select><label class="tog" id="brhdwrap" hidden><input type="checkbox" id="brhd"> HD</label><button type="button" class="${Button.secondary}" id="bradd">${IC.plus}Make and add at the playhead</button></div>
+            </div>
             <div class="lylist" id="lylist"></div>
             <div class="lyedit" id="lyedit" hidden>
               <span class="label">Layout</span>
@@ -557,7 +579,7 @@ export const STUDIO_HTML = `
           <section class="panel" data-panel="voice">${panelHead("voice")}
             <div class="row vorow" id="vorow"><button class="${Button.secondary}" id="vorec" type="button">${IC.voice}Record voiceover</button><button class="${Button.small}" id="vodel" type="button" hidden>Remove voiceover</button><label class="tog"><input type="checkbox" id="dn2" checked> Clean up noise</label><span class="fname" id="vostat"></span></div>
             <div class="ttsbox musiconly" id="ttsbox">
-              <label class="label" for="ttstext">Text to speech</label>
+              <label class="label" for="ttstext">Text to speech · AI voice</label>
               <textarea id="ttstext" rows="2" maxlength="1200" placeholder="Type what the voice should say… (English, हिन्दी, मराठी, తెలుగు, മലയാളം)"></textarea>
               <div class="row"><select id="ttsvoice" aria-label="Voice"></select><button type="button" class="${Button.secondary}" id="ttsadd">${IC.voice}Add at the playhead</button></div>
               <p class="hint">Made on this phone. Each voice is downloaded once (about 60 MB).</p>

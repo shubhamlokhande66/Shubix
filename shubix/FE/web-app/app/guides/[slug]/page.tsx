@@ -13,7 +13,7 @@ export const generateStaticParams = () => GUIDES.map((g) => ({ slug: g.slug }));
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const g = guide((await params).slug);
-  return g ? { title: g.title, description: g.description, openGraph: { type: "article", title: g.title, description: g.description } } : {};
+  return g ? { title: g.title, description: g.description, alternates: { canonical: `/guides/${g.slug}` }, openGraph: { type: "article", title: g.title, description: g.description } } : {};
 }
 
 /** One guide, written on the server; the other guides follow it. */

@@ -18,7 +18,7 @@ Android's voice choice is now by language, not by person. A language must be ins
 
 | What | Where | Status |
 |---|---|---|
-| Website voice | Website | Off until a voice that is safe for a paid product is chosen. Story Maker's other code is kept for that |
+| Website voice | Website | On with the server's AI voices (OpenAI, Gemini text to speech: allowed in a paid product; OpenAI asks that people are told the voice is AI, so the tool says "AI voice"). Off when the server has neither key |
 | Licence notices screen | App and website | Not built. MIT, BSD, Apache, MPL and LGPL parts ask for their notices to be kept |
 | `zod`, `glob`, `minimatch` (moderate to high) | Inside `@expo/cli`, a build tool | Not shipped in the app. Waits for an Expo update |
 | `deepmerge` (low) | Inside `@expo/config` | No fixed version exists |

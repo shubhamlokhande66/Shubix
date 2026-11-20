@@ -2,8 +2,8 @@ name: Deploy to Cloudflare
 on:
   # by hand only (Actions, Deploy to Cloudflare, Run workflow, pick qa / uat / prod): a merge does not deploy by itself,
   # so Actions minutes are spent only when the owner chooses (the free ones ran out in 3 days, 2026-11-03).
-  # Each environment deploys its own branch (qa, uat, main), whatever branch the workflow is started from
-  # (docs/environments.md).
+  # qa deploys the branch the workflow is started from ("Use workflow from": qa itself, or a feature branch to try on QA);
+  # uat always deploys uat and prod always main, whatever branch is picked (docs/environments.md).
   workflow_dispatch:
     inputs:
       target:
@@ -19,13 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     # GitHub environments (Settings, Environments): "production" can ask for an approval before it runs
     environment: ${{ inputs.target == 'prod' && 'production' || inputs.target }}
+    env:
+      SOURCE: ${{ inputs.target == 'qa' && github.ref_name || (inputs.target == 'prod' && 'main' || 'uat') }}
     defaults:
       run:
         working-directory: shubix/infra/cloudflare
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target == 'prod' && 'main' || inputs.target }}
+          ref: ${{ env.SOURCE }}
+      - name: What is deployed
+        run: echo "::notice::${{ inputs.target }} gets branch ${{ env.SOURCE }} at $(git rev-parse --short HEAD)"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -87,7 +87,7 @@ const LEGAL_PRIVACY = `This policy explains what {name} collects, why, and the c
 - AI services (for example Google Gemini) receive the text, keyframes or a short sample of your song needed for a feature you use, such as planning a story, making a narration or choosing an AI Reel's edit. We do not keep the keyframes or the song's sample, only labels such as what a clip shows or a song's mood, so the work is not repeated; these labels are deleted after 30 days.
 - Cloud services host the app and its database, and may make AI pictures for story scenes.
 - Cashfree processes payments (it also receives your mobile number and email, which it needs to take the payment). Social networks receive a Reel only when you ask us to post it.
-- Google AdSense on the website and Google AdMob in the phone app may show ads on the Free plan (only on pages like Home and My Reels, never in the editor).
+- Google AdSense on the website (on the Home page only) and Google AdMob in the phone app may show ads on the Free plan (never in the editor).
 - An email service sends account emails (sign-up and password codes, a welcome email about the app and its plans, payment receipts) and notes about your invites, credits and affiliate earnings.
 - The Help chat sends your questions to the AI service that answers them. Messages you send from the Contact page, and the questions you ask the Help chat, are kept so our team can help you and improve the answers.
 
@@ -457,7 +457,7 @@ export const TEXT_GROUPS: TextGroup[] = [
   page(EVERY, "nav", "Menu & top bar",
     S("Menu",
       C("Headings", T("nav.studio", "Studio", "Studio"), T("nav.library", "Library", "Library"), T("nav.account", "Account", "Account")),
-      C("Links", T("nav.voices", "Voice profiles", "Voice profiles"), T("nav.rewardsLink", "Invite & earn", "Invite & earn"), T("nav.home", "Home", "Home"), T("nav.music", "Beat Reel", "Beat Reel"), T("nav.talking", "Talking Reel", "Talking Reel"), T("nav.photo", "Photo Reel", "Photo Reel"),
+      C("Links", T("nav.voices", "Voice profiles", "Voice profiles"), T("nav.rewardsLink", "Invite & earn", "Invite & earn"), T("nav.home", "Home", "Home"), T("nav.music", "Beat Reel", "Beat Reel"), T("nav.talking", "Talking Reel", "Talking Reel"), T("nav.clips", "Clips from a Video", "Clips from a Video"), T("nav.vlog", "Vlog / Talking video", "Vlog / Talking video"), T("nav.photo", "Photo Reel", "Photo Reel"),
         T("nav.copy", "Match a Reel's Style", "Match a Reel's Style"), T("nav.story", "Story Maker", "Story Maker"), T("nav.reels", "My Reels", "My Reels"), T("nav.templates", "Templates", "Templates"),
         T("nav.brands", "Brands", "Brands"), T("nav.pricing", "Pricing & plans", "Pricing & plans")),
       C("Bottom", T("nav.newReel", "New Reel button", "New Reel"), T("nav.adminDashboard", "Phone app menu: the administrators' link", "Admin dashboard"), T("nav.signOut", "Sign out", "Sign out"), T("nav.studioTag", "Tag next to the email", "STUDIO"), T("common.adminDashboard", "Admin dashboard", "Admin dashboard"))),

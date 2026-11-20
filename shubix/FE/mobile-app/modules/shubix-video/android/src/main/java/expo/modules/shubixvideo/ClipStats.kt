@@ -12,7 +12,9 @@ const val CLIP_SW = 48
 const val CLIP_SH = 27
 const val CLIP_FEAT = 64 + 16 + 40
 
-class FrameRow(val m: Double, val b: Double, val cx: Double, val sh: Double, val sx: Double, val sy: Double, val sw: Double, val gx: Double, val gy: Double, val ax: Double, val ay: Double, val aw: Double)
+// sat, warm, sd: the frame's colour (how saturated, red minus blue, the spread of its light) for matching shots' colour
+class FrameRow(val m: Double, val b: Double, val cx: Double, val sh: Double, val sx: Double, val sy: Double, val sw: Double, val gx: Double, val gy: Double, val ax: Double, val ay: Double, val aw: Double,
+               val sat: Double = 0.0, val warm: Double = 0.0, val sd: Double = 0.0)
 class FrameStats(val lum: FloatArray, val hist: FloatArray, val row: FrameRow)
 
 private fun u(d: ByteArray, i: Int) = d[i].toInt() and 255
@@ -82,8 +84,13 @@ private fun subjectMotion(prev: FloatArray, cur: FloatArray): Point {
 }
 
 fun frameStats(small: ByteArray, big: ByteArray, prev: FloatArray?): FrameStats {
-  val n = CLIP_SW * CLIP_SH; val lum = FloatArray(n); var b = 0.0
-  for (i in 0 until n) { val y = (u(small, i * 4) * 0.3 + u(small, i * 4 + 1) * 0.59 + u(small, i * 4 + 2) * 0.11) / 255; lum[i] = y.toFloat(); b += y }
+  val n = CLIP_SW * CLIP_SH; val lum = FloatArray(n); var b = 0.0; var b2 = 0.0; var sat = 0.0; var warm = 0.0
+  for (i in 0 until n) {
+    val r = u(small, i * 4) / 255.0; val g = u(small, i * 4 + 1) / 255.0; val bl = u(small, i * 4 + 2) / 255.0
+    val y = (u(small, i * 4) * 0.3 + u(small, i * 4 + 1) * 0.59 + u(small, i * 4 + 2) * 0.11) / 255; lum[i] = y.toFloat(); b += y; b2 += y * y
+    val mx = max(r, max(g, bl)); val mn = min(r, min(g, bl)); if (mx > 0.04) sat += (mx - mn) / mx; warm += r - bl
+  }
+  val sd = sqrt(max(0.0, b2 / n - (b / n) * (b / n)))
   val hist = colorHist(small); val sal = saliency(small)
   var m = 0.0; var mx = 0.0
   if (prev != null) for (i in 0 until n) { val df = abs(lum[i].toDouble() - prev[i]); m += df; mx += df * (i % CLIP_SW + 0.5) / CLIP_SW }
@@ -93,5 +100,5 @@ fun frameStats(small: ByteArray, big: ByteArray, prev: FloatArray?): FrameStats 
   var sm = 0.0; var sq = 0.0; var c = 0
   for (y in 1 until 71) for (x in 1 until 127) { val i = y * 128 + x; val lap = 4.0 * L2[i] - L2[i - 1] - L2[i + 1] - L2[i - 128] - L2[i + 128]; sm += lap; sq += lap * lap; c++ }
   val sh = sq / c - (sm / c) * (sm / c)
-  return FrameStats(lum, hist, FrameRow(if (prev != null) m / n else 0.0, b / n, if (m > 1e-6) mx / m else 0.5, sh, sub?.x ?: -1.0, sub?.y ?: -1.0, sub?.w ?: 0.0, sub?.gx ?: 0.0, sub?.gy ?: 0.0, sal.x, sal.y, sal.w))
+  return FrameStats(lum, hist, FrameRow(if (prev != null) m / n else 0.0, b / n, if (m > 1e-6) mx / m else 0.5, sh, sub?.x ?: -1.0, sub?.y ?: -1.0, sub?.w ?: 0.0, sub?.gx ?: 0.0, sub?.gy ?: 0.0, sal.x, sal.y, sal.w, sat / n, warm / n, sd))
 }

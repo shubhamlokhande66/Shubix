@@ -6,6 +6,7 @@ import { ActivityIndicator, Animated, Image, PanResponder, Pressable, ScrollView
 import Svg, { Circle } from "react-native-svg";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import type { ImagePickerAsset } from "expo-image-picker";
+import type { MediaPick } from "@mobile/video-engine";
 import { useStudioText } from "@mobile/hooks";
 import { Button, Gold, Icon, IconButton, Input, Segmented, useColors } from "@mobile/ui-mobile";
 import type { IconName } from "@mobile/ui-core";
@@ -211,19 +212,23 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
 export type ClipOrder = "mix" | "order";
 export type Aspect = "9:16" | "4:5" | "1:1" | "16:9" | "3:4" | "4:3" | "2:1" | "2.35:1";
 export type TalkPace = "tight" | "natural" | "relaxed" | "off";
-export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; under: string; fit: boolean };
+export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; under: string; fit: boolean; text?: "auto" | "none" };
 
 /** Add Your Clips: Videos / Photos, the tap-to-add area, the clips as squares (their length, remove), the clip order,
  * a Talking Reel's pauses and music, and the format. */
 /** How many clips play at once: each holds a decoder and its frames, and many would run a phone out of memory. */
 const CARD_PLAYERS = 4;
+/** A player keeps a few seconds ahead, at most 16 MB: by default it fills up to ~130 MB of the app's Java memory (256 MB in
+ * all) with a high-bitrate clip, and three of them closed the app (OutOfMemoryError, 2026-11-20). */
+export const SMALL_BUFFER = { preferredForwardBufferDuration: 4, minBufferForPlayback: 1, maxBufferBytes: 16 * 1024 * 1024 };
 /** A clip's card: it plays itself, muted and looping (a very big clip keeps its picture, for the same reason), and goes where it is
  * dragged after holding it a moment, so a quick swipe still scrolls the page. */
 export type ClipState = "wait" | "ok" | "bad";
 function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { asset: ImagePickerAsset; n: number; of: number; size: number; playing: boolean; state?: ClipState; onMove: (from: number, to: number) => void; onRemove: (i: number) => void }) {
   const words = useStudioText(), shift = useRef(new Animated.ValueXY()).current, [held, setHeld] = useState(false);
-  const light = asset.type !== "image" && (asset.width ?? 0) * (asset.height ?? 0) <= 2_400_000, on = playing && light;
-  const player = useVideoPlayer(on ? asset.uri : null, (p) => { p.loop = true; p.muted = true; p.play(); });
+  // a clip whose size the picker did not say is taken as big: three 4K HEVC clips played here closed the app (2026-11-20)
+  const w = asset.width ?? 0, h = asset.height ?? 0, light = asset.type !== "image" && w > 0 && h > 0 && w * h <= 2_400_000, on = playing && light;
+  const player = useVideoPlayer(on ? asset.uri : null, (p) => { p.bufferOptions = SMALL_BUFFER; p.loop = true; p.muted = true; p.play(); });
   const step = size + 8, perRow = 3;
   const drag = Gesture.Pan().runOnJS(true).activateAfterLongPress(220)
     .onStart(() => setHeld(true))
@@ -245,16 +250,16 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
   );
 }
 
-export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; photos: boolean; states?: (ClipState | undefined)[]; onTab: (photos: boolean) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
+export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
   const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3;
   return (
     <FlowCard>
       {kind !== "talking" && kind !== "copy" && (
         <View accessibilityRole="radiogroup" className="flex-row gap-1.5 rounded-[14px] border border-border bg-surface-2 p-1">
-          {[false, true].map((p) => (
-            <Pressable key={String(p)} onPress={() => onTab(p)} accessibilityRole="radio" accessibilityState={{ checked: photos === p }} className="h-10 flex-1 items-center justify-center overflow-hidden rounded-[10px]">
-              {photos === p && <Gold />}
-              <Text className={`text-[14px] font-semibold ${photos === p ? "text-on-accent" : "text-muted"}`}>{words(p ? "Photos" : "Videos")}</Text>
+          {(["videos", "photos", "mix"] as const).map((p) => (
+            <Pressable key={p} onPress={() => onTab(p)} accessibilityRole="radio" accessibilityState={{ checked: pick === p }} className="h-10 flex-1 items-center justify-center overflow-hidden rounded-[10px]">
+              {pick === p && <Gold />}
+              <Text className={`text-[14px] font-semibold ${pick === p ? "text-on-accent" : "text-muted"}`}>{words(p === "photos" ? "Photos" : p === "mix" ? "Mix" : "Videos")}</Text>
             </Pressable>
           ))}
         </View>
@@ -262,7 +267,7 @@ export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove,
       {media.length === 0 ? (
         <Pressable onPress={onAdd} accessibilityRole="button" className="items-center gap-1 rounded-[18px] border-[1.5px] border-dashed border-accent/45 bg-surface-2 px-[18px] py-7 active:opacity-80">
           <View className="mb-1.5"><Icon name="upload" size={34} /></View>
-          <Text className="text-[15px] font-semibold text-foreground">{words(photos ? "Tap to Add Photos" : "Tap to Add Videos")}</Text>
+          <Text className="text-[15px] font-semibold text-foreground">{words(pick === "photos" ? "Tap to Add Photos" : pick === "mix" ? "Tap to Add Videos and Photos" : "Tap to Add Videos")}</Text>
           <Text className="text-[13px] text-muted">{words("or choose from gallery")}</Text>
           <Text className="mt-2 text-[12px] text-muted">{words("Supports MP4, MOV, 3GP, JPG, PNG")}</Text>
         </Pressable>
@@ -284,6 +289,11 @@ export function FlowClips({ kind, photos, onTab, media, states, onAdd, onRemove,
       ) : (
         <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks the best moments from all your clips" : "Your clips play one after another, as you added them")}>
           <Segmented small value={settings.order} onChange={(order) => onSettings({ order })} options={[{ value: "mix" as ClipOrder, label: words("Mix all clips") }, { value: "order" as ClipOrder, label: words("In my order") }]} />
+        </Row>
+      )}
+      {kind !== "talking" && (
+        <Row label={words("Opening text")} note={words(settings.text === "none" ? "No text unless you add one" : "A short line in the first 2 seconds when your Reel has no text")}>
+          <Segmented small value={settings.text ?? "auto"} onChange={(text) => onSettings({ text })} options={[{ value: "auto" as const, label: words("Auto") }, { value: "none" as const, label: words("None") }]} />
         </Row>
       )}
       {kind !== "talking" && (

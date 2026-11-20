@@ -1,6 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
-import { goodSecs, limitStereo } from "../engine/brain/pure";
+import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
+import { checkExportedReel, clipAdvice, reactionsOf, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -71,8 +72,31 @@ export function wavOf(buf: { length: number; sampleRate: number; numberOfChannel
   return out;
 }
 
+/** A WAV file's sound as one channel of samples (16-bit PCM, as the server's AI voices come: /api/studio/speak). */
+export function pcmOfWav(bytes: ArrayBuffer): { pcm: Float32Array; sr: number } {
+  const v = new DataView(bytes), tag = (o: number) => String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3));
+  if (bytes.byteLength < 44 || tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new Error("The voice could not be read. Please try again.");
+  let ch = 1, sr = 24000, bits = 16, at = -1, size = 0;
+  for (let o = 12; o + 8 <= bytes.byteLength;) {
+    const id = tag(o), n = v.getUint32(o + 4, true);
+    if (id === "fmt ") { ch = v.getUint16(o + 10, true) || 1; sr = v.getUint32(o + 12, true) || sr; bits = v.getUint16(o + 22, true) || 16; }
+    if (id === "data") { at = o + 8; size = Math.min(n, bytes.byteLength - at); break; }
+    o += 8 + n + (n & 1);
+  }
+  if (at < 0 || bits !== 16) throw new Error("The voice could not be read. Please try again.");
+  const frames = Math.floor(size / (2 * ch)), pcm = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) { let s = 0; for (let c = 0; c < ch; c++) s += v.getInt16(at + (i * ch + c) * 2, true); pcm[i] = s / ch / 32768; }
+  return { pcm, sr };
+}
+
+/** the layers that need no file: the end card's black, cinematic bars, a colour flash (StudioLayers.kt draws them) */
+const FILL_KINDS = ["shade", "bars", "tint"];
+
 export function createNativeEngine(io: NativeIo) {
-  const make = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  // My brand (the app keeps it: lib/engine.ts): every new Reel's host gets it
+  let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
+  const make = () => { const h = make0(); h.ES.brand = brand; return h; };
   let host = make(), signedIn = false;
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: { name: string; path: string; w: number; h: number }[] = [];
@@ -109,11 +133,39 @@ export function createNativeEngine(io: NativeIo) {
     if (!res.ok) throw new Error(await res.text());
     return (await res.json() as (string | null)[]).map((image, i) => image ? { t: +ts[i].toFixed(2), image } : null).filter(Boolean);
   }
-  /** the phone's own voice speaks: its samples and rate (SystemVoice.kt) */
+  // the server's AI voices (OpenAI, Gemini: /api/studio/speak, 1 credit a piece), offered after the phone's own languages
+  let aiVoices: { key: string; label: string; lang: string }[] | null = null;
+  async function voicesNow() {
+    if (!aiVoices) try {
+      const r = await apiFetch("/api/studio/speak"), j = (r.ok ? await r.json() : {}) as { available?: boolean; voices?: { key: string; label: string }[] };
+      aiVoices = j.available ? (j.voices ?? []).map((x) => ({ key: x.key, label: `AI · ${x.label}`, lang: "AI voice" })) : [];
+    } catch { return TTS_VOICES; }   // (not reached now: asked again the next time the list is opened)
+    return [...TTS_VOICES, ...aiVoices];
+  }
+  /** the phone's own voice speaks: its samples and rate (SystemVoice.kt); an AI voice ("openai:nova") comes from the server */
   async function speak(text: string, voice: string) {
+    if (voice.includes(":")) {
+      const r = await apiFetch("/api/studio/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})) as { error?: { message?: string } }; throw new Error(j.error?.message || (r.status === 402 ? "AI voices are part of the Editor and Pro plans, or use credits." : "The AI voice could not be made. Please try again.")); }
+      return pcmOfWav(await r.arrayBuffer());
+    }
     const res = await io.fetch(url("speak", `&v=${encodeURIComponent(voiceLanguage(voice))}`), { method: "POST", body: text });
     if (!res.ok) throw new Error(await res.text());
     return { pcm: new Float32Array(await res.arrayBuffer()), sr: Number((res as unknown as { headers?: { get(k: string): string | null } }).headers?.get("X-Sample-Rate")) || 22050 };
+  }
+  /** the subject pop: a clip's frame at `t` (320x320) and its subject, read by the phone (SubjectPop.kt); null: no frame */
+  async function popMask(path: string, t: number) {
+    const res = await io.fetch(url("popmask", `&p=${encodeURIComponent(path)}&t=${Math.max(0, t).toFixed(3)}`), { method: "POST", body: "" });
+    if (!res.ok) throw new Error(await res.text());
+    const b = new Uint8Array(await res.arrayBuffer()), n = 320 * 320;
+    if (b[0] !== 1 || b.length < 1 + n * 5) return null;
+    return { mask: b.slice(1, 1 + n), rgba: b.slice(1 + n, 1 + n * 5) };
+  }
+  /** the subject cut out of that frame at w x h with the brain's alpha, kept as a PNG on the phone */
+  async function popCut(path: string, t: number, w: number, h: number, alpha: Uint8Array, box: number[]) {
+    const res = await io.fetch(url("popcut", `&p=${encodeURIComponent(path)}&t=${Math.max(0, t).toFixed(3)}&w=${w}&h=${h}&box=${box.map((x) => x.toFixed(4)).join(",")}`), { method: "POST", body: alpha });
+    if (!res.ok) throw new Error(await res.text());
+    return await res.json() as { path: string; w: number; h: number };
   }
   async function analyse(mono: Float32Array, sr: number, opts: Args = {}) {
     const head = new TextEncoder().encode(JSON.stringify({ ...opts, sr })), body = new Uint8Array(4 + head.length + mono.byteLength);
@@ -203,6 +255,8 @@ export function createNativeEngine(io: NativeIo) {
     let raw: { t: number; rects: unknown[] }[] = [];
     try { raw = lastLine(await (await io.fetch(url("faces", `${q}&w=${W}&h=${H}`), { method: "POST" })).text(), "["); } catch { /* no faces read: the Reel is still made */ }
     const src = host.addClip({ name: c.name, path, soundPath: c.path, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface" });
+    // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
+    try { const s = await readSound(c.path); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
     readBefore.set(c.name, src);
   }
   async function clips(a: Args) {
@@ -233,18 +287,20 @@ export function createNativeEngine(io: NativeIo) {
     return { clips: host.ES.sources.length, names: host.ES.sources.map((s: { name: string }) => s.name), failed };
   }
   const kfRow = () => { const T = host.brain.kfTarget(); return T ? { ok: true, index: T.i, what: T.what, a: T.a, b: T.b, keyframes: ((T.obj.uk || []) as Args[]).map((k) => ({ ...k })) } : null; };
-  function state(){ return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
+  function state(){ host.brain.clearTexts?.(); return ({ edit: host.brain.editOf(), overlays: host.ES.overlays, mode: host.ES.mode, settings: { au: host.ES.au, capsOn: !!host.ES.capsOn, caplang: host.ES.capLang ?? "", captr: host.ES.trTo ?? "", textStyle: host.ES.textStyle ?? "pop" } }); }
   const work = () => ({ clips: host.ES.sources.length, shots: host.ES.edit.length, songReady: !!host.ES.song?.r, pending: reading });
 
   const ops: Record<string, (a: Args) => unknown> = {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
+    advice: (a) => clipAdvice(host.ES.song?.r ? host.ES.plan : null, a.pick === "photos" || a.pick === "mix" ? a.pick : a.photo === true ? "photos" : "videos"),
     cancel: () => { stops++; return { ok: true }; },
     clips,
     choose: async (a) => {
       if (a.mode) { host.ES.mode = String(a.mode); }
       if (a.order) host.ES.seqOn = a.order === "order";
+      if (a.text) { host.ES.hookNone = a.text === "none"; if (a.text === "auto") { host.ES.autoHookOff = false; host.ES.autoHookUsed = false; } else host.ES.overlays = host.ES.overlays.filter((o: { auto?: boolean }) => !o.auto); }   // Opening text (engine.ts setHookPref alike)
       if (a.aspect) host.ES.aspect = String(a.aspect);
       if (a.length !== undefined) { host.sec.len = Number(a.length); host.sec.auto = true; await host.useSection(); }
       else host.makeReel();
@@ -252,6 +308,28 @@ export function createNativeEngine(io: NativeIo) {
     },
     part: async (a) => { host.sec.start = Number(a.start); host.sec.auto = false; await host.useSection(); return { start: host.ES.secStart ?? 0 }; },
     ready: () => ({ work: work(), state: state() }),
+    // the edit's own review (shared/video-engine review.ts) and how many takes and repairs it had: read only
+    review: () => ({ review: host.brain.editReview?.() ?? null, takes: host.ES.editTakes ?? null }),
+    // the finished video read back on this phone (its clip scan) and checked against the edit (video-engine
+    // exportCheck.ts): a stalled decoder, black where footage belongs or a short file. null: no edit to check against
+    checkExport: async (a) => {
+      type Shot = { start: number; end: number; src: number; in: number; scaleR?: number; sp?: { pos: (l: number) => number } };
+      const edit = (host.ES.edit ?? []) as Shot[];
+      if (!edit.length) return { verdict: null };
+      const t0 = edit[0].start, want: ExportExpect = { dur: edit[edit.length - 1].end - t0, cuts: edit.slice(1).map((e) => e.start - t0), dark: [] };
+      for (const e of edit) {   // the shots the edit knows are dark (a night clip): black there is the footage
+        const src = host.ES.sources[e.src], need = (e.sp ? e.sp.pos(e.end - e.start) : e.end - e.start) * (e.scaleR || 1);
+        if (src && windowStats(src, e.in, e.in + Math.max(need, 0.05)).dark > 0.5) want.dark!.push([e.start - t0, e.end - t0]);
+      }
+      const p = `&p=${encodeURIComponent(String(a.path))}`;
+      try {
+        const probe = await io.fetch(url("probe", p));
+        if (!probe.ok) return { verdict: checkExportedReel({ dur: 0, w: 0, h: 0, samples: [] }, want) };
+        const { dur, w, h } = await probe.json() as { dur: number; w: number; h: number };
+        const scan = lastLine(await (await io.fetch(url("scan", `${p}&dur=${dur}`), { method: "POST" })).text(), "{") as { samples?: { t: number; b: number; m: number }[]; scenes?: { t0: number; t1: number }[] };
+        return { verdict: checkExportedReel({ dur, w, h, samples: scan.samples ?? [], scenes: scan.scenes ?? [] }, want) };
+      } catch { return { verdict: checkExportedReel({ dur: 0, w: 0, h: 0, samples: [] }, want) }; }
+    },
     state,
     edit: (a) => { const list = a.shots as Args[]; if (list.length) { const last = list[list.length - 1]; if (Number(last.end) < host.ES.buf.duration) last.end = host.ES.buf.duration; } const ok = !!host.brain.restoreEdit(list) || true; if (Array.isArray(a.overlays)) host.ES.overlays = a.overlays; return { ok }; },
     shotCs: () => host.brain.shotCs(),
@@ -263,7 +341,8 @@ export function createNativeEngine(io: NativeIo) {
     remix: () => { host.brain.remixNow?.(); return { ok: true, state: state() }; },
     aiState: async () => { if (!signedIn) { signedIn = true; await host.account().catch(() => false); } return { on: !!host.ES.aiOn }; },
     /** the good footage in the clips read, in whole seconds, and the Reel's length: enough clips? */
-    footage: () => ({ have: Math.floor(host.ES.sources.reduce((t: number, c: Parameters<typeof goodSecs>[0]) => t + goodSecs(c), 0)), need: (host.ES.buf?.duration as number | undefined) ?? 0 }),
+    footage: () => { const exact = host.ES.sources.reduce((t: number, c: Parameters<typeof goodSecs>[0]) => t + goodSecs(c), 0) as number;
+      return { have: Math.floor(exact), exact, clips: host.ES.sources.length as number, period: Number(host.ES.song?.r?.period) || 0, need: (host.ES.buf?.duration as number | undefined) ?? 0 }; },
     /** Shubix AI's price for this Reel and the person's balance, read again each time: shown before Make Reel */
     aiPrice: async () => { signedIn = true; await host.account().catch(() => false); return { on: !!host.ES.aiOn, cost: host.brain.aiCostOf("reel") as number, balance: host.brain.aiBal() as number | null, paid: host.ES.planNow !== "free" }; },
     /** Make Reel was pressed with the price on the screen: that is the person's answer, so nothing is asked again */
@@ -288,7 +367,7 @@ export function createNativeEngine(io: NativeIo) {
     kfSet: (a) => { host.brain.kfSet(a.values); return { ok: true }; },
     audioMix: (a) => { host.ES.au = { ...host.ES.au, ...(a as object), ...("mfout" in a ? { mfoutManual: true } : {}) }; host.ES.clipMixKey = ""; host.brain.applyVo(); return host.ES.au; },
     sfx: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); host.brain.sfxAdd(String(a.kind)); return { ok: true }; },
-    mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; f(); return { ok: true, state: state() }; },
+    mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; const ok = (f as (t: number) => unknown)(host.ES.pos) !== false; return { ok, state: state() }; },
     shotStyle: (a) => { const i = host.brain.segAt(host.ES.pos), e = host.ES.edit[i]; if (!e) throw new Error("There is no selected shot"); if (a.kind === "transition") e.tr = String(a.value); else if (a.kind === "effect") e.efx = String(a.value); return { ok: true, state: state() }; },
     exportOptions: async (a) => {
       const base = host.exportOptions(a) as Args, u = await myReelsRoom();
@@ -300,7 +379,7 @@ export function createNativeEngine(io: NativeIo) {
       const M = host.ES.lmedia[L.m as number] as { path?: string; kind?: string } | undefined;
       return { index, id: L.id, t0: L.t0, t1: L.t1, x: L.x, y: L.y, scale: L.s, opacity: L.op, rotation: L.r, mask: L.mask, blend: L.blend || "source-over", follow: L.follow || "none", followOffsetX: L.followOffsetX || 0, followOffsetY: L.followOffsetY || 0,
         maskWidth: L.mk?.w ?? 0.8, maskHeight: L.mk?.h ?? 0.8, maskThreshold: L.mk?.th ?? 0.5, maskFeather: L.mk?.f ?? 0.12, maskAngle: L.mk?.a ?? 0, maskInverted: !!L.mk?.inv, chromaKey: !!L.key?.on, chromaColor: L.key?.c ?? "#00FF00", chromaTolerance: L.key?.tol ?? 0.35,
-        native: M?.path ? { path: M.path, kind: M.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend } : null };
+        native: M?.path || FILL_KINDS.includes(String(M?.kind)) ? { path: M?.path || "", kind: M?.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend, ...(L.grow ? { grow: L.grow } : {}), ...(L.shade ? { shade: L.shade } : {}), ...(L.ratio ? { ratio: L.ratio } : {}), ...(L.pulses ? { pulses: L.pulses } : {}) } : null, pop: L.pop || null, brand: L.brand || null, finish: L.finish || null };
     }),
     layerAdd: async (a) => {
       const path = String(a.path), name = String(a.name || "overlay"), p = await io.fetch(url("probe", `&p=${encodeURIComponent(path)}`));
@@ -308,10 +387,20 @@ export function createNativeEngine(io: NativeIo) {
       await host.brain.layerAdd([{ kind: video ? "video" : "photo", path, name, ...facts }]);
       return { ok: true, count: host.ES.layers.length };
     },
+    /** My brand from the app: the @handle, the logo's file on the phone and its size, the logo in the corner, the end card */
+    brandSet: async (a) => {
+      const b = a && (a.handle || a.logoPath) ? { handle: String(a.handle || "").slice(0, 40), logoPath: a.logoPath ? String(a.logoPath) : null, logoW: Number(a.logoW) || 512, logoH: Number(a.logoH) || 512, mark: a.mark !== false, end: a.end !== false } : null;
+      brand = b; host.ES.brand = b; host.ES.brandOff = { mark: false, end: false };
+      if (host.ES.edit.length) await host.brain.brandFinish();
+      return { ok: true, brand: b };
+    },
+    finish: (a) => { const what = String(a.what); if (!["bars", "tint", "bw"].includes(what)) throw new Error("No such finish"); return { ok: !!host.brain.finishSet(what, a.on !== false), on: { bars: !!host.brain.finishOn("bars"), tint: !!host.brain.finishOn("tint"), bw: !!host.brain.finishOn("bw") } }; },
+    finishState: () => ({ bars: !!host.brain.finishOn("bars"), tint: !!host.brain.finishOn("tint"), bw: !!host.brain.finishOn("bw") }),
+    subjectPop: async () => { const r = await host.brain.subjectPop(false); return { ok: !!r, ...(r || {}), count: host.ES.layers.length }; },
     layerSelect: async (a) => ({ ok: !!(await host.brain.lySelect(Number(a.index))), selected: Number(a.index) }),
     layerSet: (a) => { host.brain.lySet(String(a.key), a.value); return { ok: true }; },
     layerDelete: () => ({ ok: host.brain.lyDelete() }),
-    ttsVoices: () => TTS_VOICES,
+    ttsVoices: () => voicesNow(),
     ttsAdd: (a) => host.addTtsAtPlayhead(String(a.text || ""), String(a.voice || "")),
     ttsClear: () => ({ ok: host.brain.clearTts() }),
     captions: (a) => host.setCaptions(!!a.enabled, a.language === undefined ? undefined : String(a.language), a.translation === undefined ? undefined : String(a.translation)),
@@ -355,6 +444,13 @@ export function createNativeEngine(io: NativeIo) {
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
     fresh: () => { stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
-    call: async (op: string, a: Args = {}) => { const f = ops[op]; if (!f) throw new Error(`Not on the phone's own engine yet: ${op}`); return f(a); },
+    // Undo: the website keeps a step whenever the Reel stops changing (a ticker, every 500 ms); here there is no ticker,
+    // so each tool's change is kept as its step around the call (Undo did nothing on the phone: no step was ever kept)
+    call: async (op: string, a: Args = {}) => {
+      const f = ops[op]; if (!f) throw new Error(`Not on the phone's own engine yet: ${op}`);
+      const tick = () => { try { host.brain.histTick(); } catch { /* not ready: no Reel yet */ } };
+      tick(); const out = await f(a); tick(); tick();
+      return out;
+    },
   };
 }

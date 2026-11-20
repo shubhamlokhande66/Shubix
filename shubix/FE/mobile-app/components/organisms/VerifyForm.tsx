@@ -1,5 +1,5 @@
 import { Text } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useSignOut, useVerifyFlow } from "@mobile/hooks";
 import { Button, ErrorBanner, OtpInput } from "@mobile/ui-mobile";
 import { AuthFrame } from "../templates/AuthFrame";
@@ -7,7 +7,8 @@ import { AuthFrame } from "../templates/AuthFrame";
 /** Verify the email with the 6-digit code from the sign-up email (the website's app/verify/page.tsx); the sixth digit
  * sends it. Logic: @mobile/hooks useVerifyFlow. */
 export function VerifyForm() {
-  const f = useVerifyFlow(() => router.replace("/"));
+  const { back } = useLocalSearchParams<{ back?: string }>(); // sent by Make Reel: the code entered, back to the studio
+  const f = useVerifyFlow(() => back === "1" && router.canGoBack() ? router.back() : router.replace("/"));
   const { t: text } = f, signOut = useSignOut(() => router.replace("/login"));
   return (
     <AuthFrame title={text("auth.verifyTitle")}>

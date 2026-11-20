@@ -2,7 +2,7 @@ name: Deploy website (Cloudflare Workers)
 
 # The website (shubix/FE/web-app) on Cloudflare Workers through OpenNext, by hand: Actions, Deploy website (Cloudflare
 # Workers), Run workflow, pick qa / uat / prod. Built here (OpenNext on Linux), deployed with wrangler to shubix-web-<target>
-# (shubix/FE/web-app/wrangler.jsonc). Each deploys its own branch (qa, uat). The same Cloudflare secrets as the API's
+# (shubix/FE/web-app/wrangler.jsonc). qa deploys the branch the workflow is started from; uat always uat, prod always main. The same Cloudflare secrets as the API's
 # workflow: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID. All three websites run here (Vercel is no longer used, 2026-11-12).
 on:
   workflow_dispatch:
@@ -24,6 +24,8 @@ jobs:
     environment: ${{ inputs.target == 'prod' && 'production' || inputs.target }}
     env:
       TARGET: ${{ inputs.target }}
+      # the code deployed: qa takes the branch picked in "Use workflow from"; uat and prod never do (uat, main)
+      SOURCE: ${{ inputs.target == 'qa' && github.ref_name || (inputs.target == 'prod' && 'main' || 'uat') }}
       # the build bakes these in (next.config.ts's /api rewrite, the pages' address)
       API_URL: ${{ inputs.target == 'prod' && 'https://api.shubix.in' || format('https://api-{0}.shubix.in', inputs.target) }}
       PUBLIC_BASE_URL: ${{ inputs.target == 'prod' && 'https://shubix.in' || format('https://{0}.shubix.in', inputs.target) }}
@@ -36,7 +38,9 @@ jobs:
         run: test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to the repo secrets first."; exit 1; }
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target == 'prod' && 'main' || inputs.target }}
+          ref: ${{ env.SOURCE }}
+      - name: What is deployed
+        run: echo "::notice::${{ inputs.target }} gets branch ${{ env.SOURCE }} at $(git rev-parse --short HEAD)"
       - uses: pnpm/action-setup@v4
         with:
           version: 10.20.0

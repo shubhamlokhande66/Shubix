@@ -1,8 +1,9 @@
 import { AppRegistry, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
 import { ShubixVideo } from "../modules/shubix-video";
 import { clipDuration, type ChatLine, type ProjectClip, type ReelProject } from "@mobile/validations";
-import { buildSpeedRampSegments } from "@mobile/video-engine";
+import { buildSpeedRampSegments, type ClipAdvice, type ExportVerdict, type MediaPick } from "@mobile/video-engine";
 import { tokenStore } from "./device";
 import { API_URL } from "./session";
 import { fitShot } from "./shotFit";
@@ -54,6 +55,19 @@ const native = files ? createNativeEngine({
   task: (state, id, title, detail, kind, p) => onTask({ event: "task", id, state, p: p ?? null, title, detail, kind: kind as TaskKind | undefined }),
 }) : null;
 
+/** My brand: the @handle and the logo (a file kept on the phone), on every Reel made here: the logo small in a corner and
+ * an end card (the brain's brandFinish, as the website's). Kept in the app's storage; the engine gets it at start. */
+const BRAND_KEY = "shubix.brand";
+export type MyBrand = { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean };
+export async function brandGet(): Promise<MyBrand | null> { try { return JSON.parse((await AsyncStorage.getItem(BRAND_KEY)) || "null") as MyBrand | null; } catch { return null; } }
+export async function brandSave(b: MyBrand | null) {
+  const keep = b && (b.handle.trim() || b.logoPath) ? b : null;
+  if (keep) await AsyncStorage.setItem(BRAND_KEY, JSON.stringify(keep)); else await AsyncStorage.removeItem(BRAND_KEY);
+  if (native) await native.call("brandSet", (keep ?? {}) as Record<string, unknown>);
+  return keep;
+}
+if (native) void brandGet().then((b) => (b ? native.call("brandSet", b as unknown as Record<string, unknown>) : null)).catch(() => {});
+
 async function call<T>(op: string, args: Record<string, unknown> = {}): Promise<T> {
   if (!native) throw new Error("Making Reels needs the Shubix app (not Expo Go).");
   return native.call(op, args) as Promise<T>;
@@ -74,9 +88,11 @@ export const engine = {
   /** the song: the website analyses it (beats, drops, breaks) and checks its beats */
   song: (uri: string, name: string) => call<SongAnalysis>("song", { path: pathOf(uri), name }),
   /** the Reel's choices, as the website's buttons: length (0 = the whole song), clip order, format, style */
-  choose: (c: { length?: number; order?: "mix" | "order"; aspect?: string; mode?: "auto" | "smooth" | "fast" }) => call<{ start: number }>("choose", c),
+  choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast" }) => call<{ start: number }>("choose", c),
   /** the song's part moved on the waves: the Reel uses the song from `start` */
   part: (start: number) => call<{ start: number }>("part", { start }),
+  /** how many clips this song's part asks for: videos, photos, or either under Mix (video-engine clipAdvice.ts); null: no song yet */
+  advice: (pick: MediaPick) => call<ClipAdvice | null>("advice", { pick }),
   /** the clips: the website reads them (motion, scenes, faces) and makes the Reel on the beats */
   clips: (list: { uri: string; name: string }[]) => call<{ clips: number; names: string[] }>("clips", { paths: list.map((c) => ({ path: pathOf(c.uri), name: c.name })) }),
   /** once the Reel is made: its shots (`id`: the phone's draft, which the studio now holds) */
@@ -155,6 +171,8 @@ export const engine = {
   },
   /** for the native export: the Reel's whole sound as a WAV on the phone (null: no sound), and what the studio decided from the plan and these choices */
   exportMix: (name: string, o: ExportChoice = {}) => call<{ path: string | null; plan: StudioExportPlan }>("exportMix", { name, ...o }),
+  /** the finished video read back and checked against the edit: retake says making it again should fix it */
+  checkExport: (uri: string) => call<{ verdict: ExportVerdict | null }>("checkExport", { path: pathOf(uri) }),
   /** a finished Reel saved to My Reels too */
   saveToMyReels: (uri: string, name: string) => call("saveToMyReels", { path: pathOf(uri), name }),
   /** the website's Export sheet with these choices: what the plan and the phone allow, the size, the file name, My Reels */
@@ -170,8 +188,8 @@ export const engine = {
   /** Make new Reel: charged as a new Reel; Keep old Reel: the studio holds that Reel again */
   newReel: () => call<{ ok: boolean }>("newReel"),
   keptOldReel: () => call<{ ok: boolean }>("keptOldReel"),
-  /** the good footage in the clips read (whole seconds) and the Reel's length */
-  footage: () => call<{ have: number; need: number }>("footage"),
+  /** the good footage in the clips read (whole seconds; `exact`: not rounded), the Reel's length, and the song's beat (seconds apart, 0: none) */
+  footage: () => call<{ have: number; need: number; exact?: number; period?: number; clips?: number }>("footage"),
   /** Shubix AI's price for this Reel and the balance */
   aiPrice: () => call<{ on: boolean; cost: number; balance: number | null; paid: boolean }>("aiPrice"),
   /** whether this person's plan has Shubix AI */
@@ -191,7 +209,9 @@ export const engine = {
    * the Reel's clips come back (null: the studio does not hold this Reel) */
   chat: async (p: ReelProject, text: string) => {
     if (!engine.holds(p.id)) return null;
-    await engine.edit(p).catch(() => false);
+    // the studio's copy could not be brought to this Reel (a change it cannot hold): its answer would put older shots
+    // back over the ones on the phone, so the phone's own changes answer instead
+    if (!(await engine.edit(p).catch(() => false))) return null;
     const r = await call<{ answer: string; applied: boolean; state?: { edit?: EngineShot[]; overlays?: ReelProject["overlays"] } }>("chat", { text });
     return { answer: r.answer, clips: r.applied && Array.isArray(r.state?.edit) ? shotsOf(r.state!.edit!, sources) : null, overlays: textsOf(r.state?.overlays) };
   },

@@ -4,7 +4,7 @@ import { route, sendFile } from "../../../../../server/core/http";
 import MODEL_FILES from "../../../../../server/studio/model-files.json";
 
 /** The model files Fast Studio downloads once (then keeps in the browser): the 8-bit Beat This! beat tracker and its mel
- * filterbank (the same files the server uses), Silero VAD (speech detection, MIT), MediaPipe selfie segmentation and BlazeFace (Apache-2.0). Cached for a year; the file name
+ * filterbank (the same files the server uses), Silero VAD (speech detection, MIT), MediaPipe selfie segmentation and BlazeFace (Apache-2.0), U²-Net small (the subject pop, Apache-2.0). Cached for a year; the file name
  * changes with the model. */
 // the list is shared with scripts/cf-assets.mjs, which puts the same files on Cloudflare's static assets (free, and the
 // app's container is not woken for them); this route serves them everywhere else (and on Cloudflare if one is missing)
