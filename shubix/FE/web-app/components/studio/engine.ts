@@ -8244,31 +8244,41 @@ function autoUse(){
 // of the kind already learned are skipped (taught again after a Stop or a closed tab, it goes on where it was).
 let teachStop = false, teaching = false;
 $('tpick').addEventListener('click', () => { if(teaching){ teachStop = true; $('tpick').textContent = 'Stopping…'; return; } $('tfiles').click(); }, SIG);
-$('tfiles').addEventListener('change', async e => {
-  const files = [...(e.target.files || [])]; e.target.value = ''; if(!files.length) return;
-  const cat = $('tcat').value, shared = $('tshare').checked, admin = root.classList.contains('admin');
+// one teaching run: each Reel read on this device (the video never leaves it), its numbers saved to the kind; the studio's
+// own "Choose Reels" and Admin -> My trends -> Learn a new trend (window.shubixTeach, the studio in a hidden frame) use it
+async function teachMany(files, cat, shared, say){
+  const admin = root.classList.contains('admin');
   const nameOf = f => (f.name || 'Reel').replace(/\.[^.]+$/, '').slice(0, 120);
   let ok = 0, bad = 0, skip = 0, cutsN = 0, oddN = 0, fxN = 0, done = new Set();
   if(admin){ try{ done = new Set((await api('/api/admin/learning?names=' + encodeURIComponent(cat))).names || []); }catch(err){ /* no log: all are read */ } }
   const log = d => admin ? api('/api/admin/learning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: cat, ...d }) }).catch(() => {}) : null;
-  teaching = true; teachStop = false; $('tpick').textContent = 'Stop';
+  teaching = true; teachStop = false;
   try{
     for(const [i, f] of files.entries()){
       if(teachStop) break;
       const head = 'Reel ' + (i+1) + ' of ' + files.length + ': ', name = nameOf(f);
       if(done.has(name)){ skip++; continue; }
       try{
-        const R = await analyzeReference(f, (p, what) => { $('tstat').textContent = head + what + ' ' + Math.round(p*100) + '%'; });
+        const R = await analyzeReference(f, (p, what) => say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length));
         if(!R.cuts || R.cuts.length < 2) throw new Error('too few cuts to learn from');
-        $('tstat').textContent = head + 'saving';
+        say(head + 'saving', (i + 1)/files.length);
         await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, category: cat, shared, fp: fingerprintOf(R) }) });
         const known = {}; R.cuts.forEach(c => { if(!(c.kind === 'hard' && R.unread.cuts.some(o => Math.abs(o.at - c.t) < 0.02))) known[c.kind] = (known[c.kind] || 0) + 1; });
         await log({ name, ok: true, cuts: R.cuts.length, known, unread: R.unread });
         ok++; done.add(name); cutsN += R.cuts.length; oddN += R.unread.cuts.length; fxN += R.unread.fx.length;
       }catch(err){ console.warn('not learned from', f.name, err); bad++; await log({ name, ok: false, reason: String(err && err.message || err).slice(0, 200) }); }
     }
-  } finally { teaching = false; $('tpick').textContent = 'Choose Reels'; $('tpick').disabled = false; }
-  $('tstat').textContent = (teachStop ? 'Stopped. ' : '') + 'Learned from ' + ok + ' Reel' + (ok === 1 ? '' : 's') + ' (' + STYLE_KINDS[cat] + ')' + (skip ? ' · ' + skip + ' already learned, skipped' : '') +
+  } finally { teaching = false; }
+  return { ok, bad, skip, cuts: cutsN, newCuts: oddN, effects: fxN, stopped: teachStop };
+}
+window.shubixTeach = { run: teachMany, stop: () => { teachStop = true; }, busy: () => teaching, kinds: STYLE_KINDS };
+$('tfiles').addEventListener('change', async e => {
+  const files = [...(e.target.files || [])]; e.target.value = ''; if(!files.length) return;
+  const cat = $('tcat').value;
+  $('tpick').textContent = 'Stop';
+  let r; try{ r = await teachMany(files, cat, $('tshare').checked, text => { $('tstat').textContent = text; }); } finally { $('tpick').textContent = 'Choose Reels'; $('tpick').disabled = false; }
+  const { ok, bad, skip, cuts: cutsN, newCuts: oddN, effects: fxN } = r;
+  $('tstat').textContent = (r.stopped ? 'Stopped. ' : '') + 'Learned from ' + ok + ' Reel' + (ok === 1 ? '' : 's') + ' (' + STYLE_KINDS[cat] + ')' + (skip ? ' · ' + skip + ' already learned, skipped' : '') +
     (bad ? ' · ' + bad + ' could not be read (too short or no cuts)' : '') + (ok ? ' · ' + (cutsN - oddN) + ' of ' + cutsN + ' transitions known, ' + oddN + ' new' + (fxN ? ', ' + fxN + ' effects not learned' : '') + ' (Admin → My trends → Learning log) ✓' : '');
   if(ok){ await loadKinds(); $('lcat').value = cat; if(learnedKind === cat) $('luse').click(); }
 }, SIG);

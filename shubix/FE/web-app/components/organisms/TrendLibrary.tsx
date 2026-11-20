@@ -31,8 +31,133 @@ function trendFacts(p: TrendProfile): [icon: string, text: string][] {
 
 const looks = (p: TrendProfile): TrendLook[] => (!p.described ? [] : Array.isArray(p.described) ? p.described : [p.described]);
 
-/** Learn a new trend: a name, a line, 1–6 Reels; it is measured, the videos are not kept. */
+/** The studio's own reader (components/studio/engine.ts, window.shubixTeach): the same reading as "Copy a Reel", so the
+ * styles learned here are the ones every Reel is made with. */
+type TeachResult = { ok: number; bad: number; skip: number; cuts: number; newCuts: number; effects: number; stopped: boolean };
+type Teacher = { run: (files: File[], kind: string, shared: boolean, say: (text: string, part?: number) => void) => Promise<TeachResult>; stop: () => void; busy: () => boolean };
+type KindSkill = { n: number; accuracy: { n: number; learned: number; baseline: number } | null };
+const skillOf = async (kind: string): Promise<KindSkill> => {
+  const r = await fetch(`/api/studio/styles/learned?category=${encodeURIComponent(kind)}&scope=all`, { credentials: "same-origin" });
+  if (!r.ok) throw new Error(`Could not read the ${kind} style (${r.status})`);
+  return r.json();
+};
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const readerOf = (f: HTMLIFrameElement | null) => (f?.contentWindow as (Window & { shubixTeach?: Teacher }) | null | undefined)?.shubixTeach;
+
+/** Many Reels at once (any number: 400–500 is fine), each read on this device by the studio's reader in a frame no one
+ * sees; the video never leaves the device, only its numbers go to the database, shared, so every creator's Reels of
+ * that kind are made with them. Before and after: how close Shubix's style of the kind comes to a real Reel of it. */
+function TeachForm() {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const qc = useQueryClient();
+  const [kind, setKind] = useState("wedding");
+  const [files, setFiles] = useState<File[]>([]);
+  const [load, setLoad] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [part, setPart] = useState(0);
+  const [result, setResult] = useState<{ r: TeachResult; before: KindSkill | null; after: KindSkill | null; kind: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const skill = useQuery({ queryKey: ["kind-skill", kind], queryFn: () => skillOf(kind), staleTime: 60_000, retry: 1 });
+
+  // the reader: the studio page in a tiny frame (kept on screen: a frame that is not shown does not decode video)
+  async function teacher(): Promise<Teacher> {
+    setLoad(true);
+    for (let i = 0; i < 240; i++) {
+      const t = readerOf(frame.current);
+      if (t) return t;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+    throw new Error("Shubix's reader did not start. Reload the page and try again.");
+  }
+  async function start() {
+    setError(null); setResult(null); setBusy(true); setPart(0); setStatus("Starting Shubix's reader…");
+    const k = kind, list = files;
+    try {
+      const before = await skillOf(k).catch(() => null);
+      const t = await teacher();
+      const r = await t.run(list, k, true, (text, p) => { setStatus(text); if (p !== undefined) setPart(p); });
+      const after = await skillOf(k).catch(() => null);
+      setResult({ r, before, after, kind: k }); setFiles([]);
+      qc.invalidateQueries({ queryKey: ["kind-skill", k] });
+      qc.invalidateQueries({ queryKey: ["learning-log"] });
+    } catch (e) { setError(errorMessage(e)); }
+    finally { setBusy(false); setStatus(""); }
+  }
+  const stop = () => { readerOf(frame.current)?.stop(); setStatus("Stopping after this Reel…"); };
+  const name = (k: string) => KINDS.find(([v]) => v === k)?.[1] ?? k;
+  const s = skill.data;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="m-0 text-[12.5px] text-muted">Choose the kind, then as many Reels of it as you like (400–500 at a time is fine). Each one is read here, on this device: its cuts, transitions, pace on the beat, zooms and look. The video never leaves the device; only those numbers are saved, and every {name(kind)} Reel Shubix makes follows them.</p>
+      <Card className="flex flex-col gap-3">
+        <Field label="Kind of Reel">
+          <Select aria-label="Kind of Reel" value={kind} disabled={busy} onChange={(e) => { setKind(e.target.value); setResult(null); }} className="h-10 text-[13px]">
+            {KINDS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+          </Select>
+        </Field>
+        <div className="rounded-xl border border-border bg-surface-2/50 p-3 text-[12.5px]" aria-live="polite">
+          {skill.isLoading ? <span className="text-muted">Reading what Shubix knows about {name(kind)} Reels…</span>
+            : !s || !s.n ? <span className="text-muted">Shubix has not learned any {name(kind)} Reel yet.</span>
+            : <span>Shubix knows <b>{s.n}</b> {name(kind)} Reel{s.n === 1 ? "" : "s"}{s.accuracy
+              ? <>: its {name(kind)} style comes <b>{pct(s.accuracy.learned)}</b> close to a real one (a style that knows nothing: {pct(s.accuracy.baseline)}).</>
+              : ". With three or more it shows how close it comes."}</span>}
+        </div>
+        <Dropzone label={`Drop ${name(kind)} Reels here`} hint="MP4, MOV, WEBM · as many as you like" accept={PICKER_VIDEO} multiple disabled={busy} validate={isVideoFile}
+          onReject={(n) => setError(`Not a video: ${n.join(", ")}`)} onFiles={(f) => { setError(null); setResult(null); setFiles((cur) => [...cur, ...f]); }} />
+        {files.length > 0 && (
+          <div className="flex items-center gap-2 text-[13px]">
+            <Icon name="video" size={15} className="shrink-0 text-accent" />
+            <span className="min-w-0 flex-1">{files.length} Reel{files.length === 1 ? "" : "s"} chosen ({Math.round(files.reduce((a, f) => a + f.size, 0) / 1e6)} MB)</span>
+            {!busy && <Button size="sm" variant="ghost" onClick={() => setFiles([])}>Clear</Button>}
+          </div>
+        )}
+      </Card>
+      {error && <ErrorBanner title="Could not learn from these Reels" message={error} />}
+      {busy && <ProgressBar value={part * 100} label={status || "Reading"} showEta />}
+      {busy && <p className="m-0 text-[12px] text-muted">Keep this panel and this tab open while it reads (about 10–30 s a Reel). Stopped or closed, it goes on where it was next time: Reels already learned are skipped.</p>}
+      {result && (
+        <Card className="flex flex-col gap-1.5 text-[13px]" aria-label="What was learned">
+          <p className="m-0 font-semibold">{result.r.stopped ? "Stopped. " : ""}Learned from {result.r.ok} {name(result.kind)} Reel{result.r.ok === 1 ? "" : "s"} ✓</p>
+          {result.r.skip > 0 && <p className="m-0 text-muted">{result.r.skip} already learned, skipped</p>}
+          {result.r.bad > 0 && <p className="m-0 text-muted">{result.r.bad} could not be read (too short, or no cuts): see the Learning log</p>}
+          {result.r.cuts > 0 && <p className="m-0 text-muted">{result.r.cuts - result.r.newCuts} of {result.r.cuts} transitions known{result.r.newCuts ? `, ${result.r.newCuts} new ones Shubix cannot make yet` : ""}{result.r.effects ? `, ${result.r.effects} effects not learned` : ""}</p>}
+          {result.after?.accuracy && (
+            <p className="m-0">Shubix&apos;s {name(result.kind)} style now comes <b>{pct(result.after.accuracy.learned)}</b> close to a real one
+              {result.before?.accuracy ? ` (before: ${pct(result.before.accuracy.learned)})` : ""}, from {result.after.n} Reels.</p>
+          )}
+        </Card>
+      )}
+      <div className="flex justify-end gap-2">
+        {busy && <Button variant="ghost" onClick={stop}>Stop</Button>}
+        <Button icon="trend" loading={busy} disabled={busy || files.length === 0} onClick={() => void start()}>
+          {busy ? "Learning…" : files.length ? `Teach Shubix ${files.length} Reel${files.length === 1 ? "" : "s"}` : "Teach Shubix"}
+        </Button>
+      </div>
+      {load && <iframe ref={frame} src="/engine" title="Shubix's reader" aria-hidden tabIndex={-1} className="pointer-events-none fixed bottom-0 right-0 h-[4px] w-[4px] border-0 opacity-0" />}
+    </div>
+  );
+}
+
+/** Learn a new trend: many Reels read here into a kind's style (the default), or a named trend from 1–6 uploaded Reels. */
 function LearnForm({ onDone }: { onDone: () => void }) {
+  const [how, setHow] = useState<"many" | "named">("many");
+  return (
+    <div className="flex flex-col gap-3">
+      <div role="tablist" aria-label="How to learn" className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-surface-2/50 p-1">
+        {([["many", "Many Reels → a kind's style"], ["named", "A named trend"]] as const).map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={how === k} onClick={() => setHow(k)}
+            className={cn("rounded-lg px-3 py-2 text-[12.5px] font-semibold transition-colors", how === k ? "bg-surface text-foreground shadow-[var(--shadow)]" : "text-muted hover:text-foreground")}>{label}</button>
+        ))}
+      </div>
+      {how === "many" ? <TeachForm /> : <NamedTrendForm onDone={onDone} />}
+    </div>
+  );
+}
+
+/** A named trend: a name, a line, 1–6 Reels; it is measured, the videos are not kept. */
+function NamedTrendForm({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -218,7 +343,7 @@ function LearningLogView() {
   const d = q.data;
   return (
     <div className="flex flex-col gap-3">
-      <p className="m-0 text-[12.5px] text-muted">Every Reel taught from “Teach from many Reels”. Known: the transitions Shubix reads and learns. Not learned: what it saw but cannot learn yet, kept apart, so you see what the studio still lacks. Only the numbers are kept, never the video.</p>
+      <p className="m-0 text-[12.5px] text-muted">Every Reel taught from “Learn a new trend → Many Reels”. Known: the transitions Shubix reads and learns. Not learned: what it saw but cannot learn yet, kept apart, so you see what the studio still lacks. Only the numbers are kept, never the video.</p>
       {q.isLoading && <Spinner size="sm" label="Loading…" />}
       {q.error && <ErrorBanner message={errorMessage(q.error)} />}
       {d && d.reels + d.failed === 0 && <EmptyState icon="trend" title="Nothing taught yet" hint="Teach from many Reels: each one shows up here." />}
@@ -266,12 +391,6 @@ export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) 
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <a href="/create/music?teach=1"
-          className="flex items-center gap-3 rounded-2xl border border-accent/50 bg-surface px-4 py-3.5 text-left shadow-[var(--shadow)] transition-colors hover:border-accent/60">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="video" size={19} /></span>
-          <span className="min-w-0 flex-1"><Heading size="section" as="h2">Teach from many Reels</Heading><span className="block truncate text-[12.5px] text-muted">400–500 at a time, read on this computer: the styles Shubix makes Reels with</span></span>
-          <Icon name="chevron" size={18} className="shrink-0 text-muted" />
-        </a>
         <button type="button" onClick={() => setPanel("log")} aria-haspopup="dialog"
           className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 text-left shadow-[var(--shadow)] transition-colors hover:border-accent/60">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name="trend" size={19} /></span>
@@ -281,7 +400,7 @@ export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) 
         <button type="button" onClick={() => setPanel("learn")} aria-haspopup="dialog"
           className="flex items-center gap-3 rounded-2xl border border-accent/50 bg-[linear-gradient(120deg,color-mix(in_srgb,var(--accent)_14%,var(--surface)),var(--surface))] px-4 py-3.5 text-left shadow-[var(--shadow)] transition-colors hover:border-accent">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-on-accent [background:var(--gold-gradient)]"><Icon name="plus" size={19} /></span>
-          <span className="min-w-0 flex-1"><Heading size="section" as="h2">Learn a new trend</Heading><span className="block truncate text-[12.5px] text-muted">Upload 1–6 Reels you like: their cuts, pace and look are learned</span></span>
+          <span className="min-w-0 flex-1"><Heading size="section" as="h2">Learn a new trend</Heading><span className="block truncate text-[12.5px] text-muted">Many Reels read here into a kind&apos;s style, or a named trend</span></span>
           <Icon name="chevron" size={18} className="shrink-0 text-muted" />
         </button>
         <button type="button" onClick={() => setPanel("users")} aria-haspopup="dialog"
