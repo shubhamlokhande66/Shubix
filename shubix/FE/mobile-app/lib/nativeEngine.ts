@@ -101,6 +101,16 @@ export function createNativeEngine(io: NativeIo) {
   let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
   const make = () => { const h = make0(); h.ES.brand = brand; return h; };
   let host = make(), signedIn = false;
+  /** Shubix AI did not edit this Reel: the reason, in Ask Shubix's history (it was silent before) */
+  function aiWhyOff() {
+    const i = host.ES.aiInfo as { available?: boolean; planAi?: boolean } | null;
+    const why = !i ? "Shubix AI could not be reached (signed out, or no internet): this Reel was edited on your phone."
+      : !i.available ? "Shubix AI is off right now: this Reel was edited on your phone."
+      : i.planAi === false ? "Shubix AI is not in your plan: this Reel was edited on your phone. Editor and Pro, or credits, add it."
+      : "This Reel was edited on your phone.";
+    const msgs = (host.ES.chatMsgs ||= []) as { at: number; who: string; text: string; log?: boolean }[];
+    if (msgs[msgs.length - 1]?.text !== why) msgs.push({ at: Date.now(), who: "ai", text: why, log: true });
+  }
   /** The template's kind of Reel (the website's TPL_STYLE and styleForTemplate, components/studio/engine.ts): with Shubix
    * AI on, the kind's trend leads the AI's guide (reelKind); without it, the kind's learned style (the Reels the
    * administrator taught, Admin -> My trends) is put on unseen, as a learned "Copy a Reel". */
@@ -369,7 +379,13 @@ export function createNativeEngine(io: NativeIo) {
     aiPrice: async () => { signedIn = true; await host.account().catch(() => false); return { on: !!host.ES.aiOn, cost: host.brain.aiCostOf("reel") as number, balance: host.brain.aiBal() as number | null, paid: host.ES.planNow !== "free" }; },
     /** Make Reel was pressed with the price on the screen: that is the person's answer, so nothing is asked again */
     ai: async () => {
-      if (!signedIn) { signedIn = true; await host.account().catch(() => false); }
+      // asked again at every Make Reel: an earlier check that failed (signed in a moment later, no network) left
+      // Shubix AI off for the whole session, with no word of it
+      signedIn = true; await host.account().catch(() => false);
+      if (!host.ES.aiOn) { aiWhyOff(); return { went: true }; }   // the phone's own edit, and Ask Shubix says why
+      // Make Reel is the person's answer: a Reel whose clips or song changed after the last AI Reel is made by the AI
+      // again (aiHeldBack held it back without a word, and the phone's own edit came out instead)
+      host.ES.regenOk = true;
       const g = stops, id = host.brain.reelIdNow(), cost = host.brain.aiCostOf("reel") as number, balance = host.brain.aiBal() as number | null;
       const low = !!cost && balance !== null && balance < cost;
       if (low && host.ES.planNow !== "free") return { went: false };   // a plan's Reel is made by Shubix AI only: it waits for credits
