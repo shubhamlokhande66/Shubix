@@ -4,6 +4,9 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <!-- the app is portrait, but a portrait screen is not required: without this Play counts it as a needed feature and
+       some tablets, Chromebooks and Android XR cannot install the app (Play refused release 6 for review, 2026-11-20) -->
+  <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
   <!-- Android 11 and later: without this the app cannot see the phone's text-to-speech (SystemVoice.kt) -->
   <queries>
     <intent>
