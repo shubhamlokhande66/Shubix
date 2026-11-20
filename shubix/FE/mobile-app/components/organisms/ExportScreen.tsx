@@ -3,6 +3,7 @@ import { showInterstitial } from "../../lib/ads";
 import { useEffect, useState } from "react";
 import { Image, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
+import { SMALL_BUFFER } from "./CreateFlow";
 import * as MediaLibrary from "expo-media-library/legacy";
 import * as Sharing from "expo-sharing";
 import * as Clipboard from "expo-clipboard";
@@ -35,7 +36,7 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
   const [step, setStep] = useState<"choose" | "make" | "done">("choose"), [allowed, setAllowed] = useState<ExportOptions | null>(null);
   const [choice, setChoice] = useState<Required<Omit<ExportChoice, "fixLocked">>>({ res: "1080", fps: 30, noWatermark: false, noSong: false, myReels: true });
   const [pct, setPct] = useState(0), [done, setDone] = useState<Made | null>(null), [saved, setSaved] = useState(false), [notice, setNotice] = useState(""), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
-  const player = useVideoPlayer(done?.uri ?? null, (p) => { p.loop = true; if (done) p.play(); });
+  const player = useVideoPlayer(done?.uri ?? null, (p) => { p.bufferOptions = SMALL_BUFFER; p.loop = true; if (done) p.play(); });
   const first = reel?.clips[0], picture = useThumb(first?.uri, first?.kind === "image" ? "image" : "video");
   // the plans with ads: a full-screen ad once the Reel is made (never while editing)
   const { ads, adPlan } = useAdPlan(), full = Platform.OS === "android" ? ads.data?.admob?.interstitial ?? "" : "";

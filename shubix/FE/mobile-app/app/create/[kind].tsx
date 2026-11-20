@@ -5,7 +5,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useStudioText } from "@mobile/hooks";
+import { useApi, useStudioText } from "@mobile/hooks";
 import { Button, askAction, confirmAction, tasks, tell } from "@mobile/ui-mobile";
 import { PlanGate } from "../../components/templates/PlanGate";
 import type { ProjectClip } from "@mobile/validations";
@@ -34,6 +34,10 @@ function CreateFlowScreen() {
   const kind: FlowKind = (["music", "talking", "photo", "copy"] as const).find((k) => k === asked) ?? "music";
   const words = useStudioText(), insets = useSafeAreaInsets(), queryClient = useQueryClient(), order = ORDER[kind];
   const [step, setStep] = useState<FlowStep>("intro");
+  // Make Reel needs an account (free or paid), as on the website: signed out, the sign-in opens over this screen, which
+  // stays as it is; signed in (and the email's code entered), back here the Reel is made without pressing again
+  const { me } = useApi(), signedIn = !!me?.user && me.user.emailVerified !== false, signInFirst = useRef(false), makeNow = useRef<() => Promise<void>>(async () => {});
+  useFocusEffect(useCallback(() => { if (signInFirst.current && signedIn) { signInFirst.current = false; void makeNow.current(); } }, [signedIn]));
   const [music, setMusic] = useState<SongAnalysis | null>(null), [song, setSong] = useState<Song | null>(null), [recent, setRecent] = useState<Song[]>([]), [reading, setReading] = useState(false);
   const [length, setLength] = useState(0), [start, setStart] = useState(0), [pick, setPick] = useState<MediaPick>(kind === "photo" ? "photos" : "videos"), [media, setMedia] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const photos = pick === "photos", choosing = kind !== "talking" && kind !== "copy";   // the clips step's choice: Videos, Photos or Mix
@@ -228,7 +232,9 @@ function CreateFlowScreen() {
     if (target !== length) { lengthChosen.current = true; if (now.current.music) await lengthTo(target); else { setLength(target); lengthLater.current = target || -1; } await new Promise((ok) => setTimeout(ok, 0)); }
     return "go";
   }
+  makeNow.current = make;
   async function make() {
+    if (me?.authEnabled !== false && !signedIn) { signInFirst.current = true; router.push({ pathname: "/login", params: { back: "1" } }); return; }
     // the one popup from here on, and the screen stays on
     tasks.quiet(false); keepAwake(true, words("Shubix is making your Reel"));
     try { await makeReel(); } finally { keepAwake(false); tasks.note(""); if (onScreen.current) tasks.quiet(true); }

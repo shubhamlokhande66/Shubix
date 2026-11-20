@@ -218,13 +218,17 @@ export type ClipSettings = { order: ClipOrder; aspect: Aspect; pace: TalkPace; u
  * a Talking Reel's pauses and music, and the format. */
 /** How many clips play at once: each holds a decoder and its frames, and many would run a phone out of memory. */
 const CARD_PLAYERS = 4;
+/** A player keeps a few seconds ahead, at most 16 MB: by default it fills up to ~130 MB of the app's Java memory (256 MB in
+ * all) with a high-bitrate clip, and three of them closed the app (OutOfMemoryError, 2026-11-20). */
+export const SMALL_BUFFER = { preferredForwardBufferDuration: 4, minBufferForPlayback: 1, maxBufferBytes: 16 * 1024 * 1024 };
 /** A clip's card: it plays itself, muted and looping (a very big clip keeps its picture, for the same reason), and goes where it is
  * dragged after holding it a moment, so a quick swipe still scrolls the page. */
 export type ClipState = "wait" | "ok" | "bad";
 function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { asset: ImagePickerAsset; n: number; of: number; size: number; playing: boolean; state?: ClipState; onMove: (from: number, to: number) => void; onRemove: (i: number) => void }) {
   const words = useStudioText(), shift = useRef(new Animated.ValueXY()).current, [held, setHeld] = useState(false);
-  const light = asset.type !== "image" && (asset.width ?? 0) * (asset.height ?? 0) <= 2_400_000, on = playing && light;
-  const player = useVideoPlayer(on ? asset.uri : null, (p) => { p.loop = true; p.muted = true; p.play(); });
+  // a clip whose size the picker did not say is taken as big: three 4K HEVC clips played here closed the app (2026-11-20)
+  const w = asset.width ?? 0, h = asset.height ?? 0, light = asset.type !== "image" && w > 0 && h > 0 && w * h <= 2_400_000, on = playing && light;
+  const player = useVideoPlayer(on ? asset.uri : null, (p) => { p.bufferOptions = SMALL_BUFFER; p.loop = true; p.muted = true; p.play(); });
   const step = size + 8, perRow = 3;
   const drag = Gesture.Pan().runOnJS(true).activateAfterLongPress(220)
     .onStart(() => setHeld(true))

@@ -5,6 +5,7 @@ import type { Features } from "@mobile/core/lib/features-list";
 import type { Content } from "@mobile/core/lib/collections";
 import type { CloudReel, CloudUsage, Credits, MyMarketing, Pricing } from "@mobile/types";
 import type { PlanLocks } from "@mobile/core/lib/plan-locks";
+import type { Access } from "@mobile/core/lib/access";
 
 /** Every call goes to BE/api through the shared client (lib/session.ts, @mobile/api-client): the Bearer token from
  * secure storage, the app's error messages, the same logic as the website. */
@@ -27,6 +28,8 @@ export interface Notice { id: string; title: string; body: string; link: string;
 
 export const mobileApi = {
   me: () => api.auth.me(),
+  /** the sign-in rules (Administration → Settings → Sign-in rules): the pages open before signing in, as on the website */
+  access: () => api.request<Access & { googleReady: boolean }>("/api/access"),
   signIn: (email: string, password: string) => api.auth.login(email, password),
   signUp: (email: string, password: string) => api.auth.register(email, password),
   forgotPassword: (email: string) => api.auth.forgot(email),

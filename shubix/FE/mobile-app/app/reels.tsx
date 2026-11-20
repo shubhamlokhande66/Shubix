@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, Pressable, Share, Text, View, useWindowDimens
 import { useQuery } from "@tanstack/react-query";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { useVideoPlayer, VideoView } from "expo-video";
+import { SMALL_BUFFER } from "../components/organisms/CreateFlow";
 import { useText } from "@mobile/hooks";
 import { Badge, Button, Card, EmptyState, Gold, Icon, IconButton, Page, ReelCover, Segmented, colors, confirmAction, tell } from "@mobile/ui-mobile";
 import type { CloudReel } from "@mobile/types";
@@ -145,7 +146,7 @@ function SavedCard({ reel, onWatch, onChange, onPublish }: { reel: CloudReel; on
 
 /** A saved Reel playing over the page, with a close button. */
 function Player({ uri, name, onClose }: { uri: string; name: string; onClose: () => void }) {
-  const text = useText(), player = useVideoPlayer(uri, (p) => { p.loop = true; p.play(); });
+  const text = useText(), player = useVideoPlayer(uri, (p) => { p.bufferOptions = SMALL_BUFFER; p.loop = true; p.play(); });
   return (
     <Modal visible animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View className="flex-1 bg-black">
