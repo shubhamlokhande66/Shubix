@@ -398,7 +398,15 @@ export function createNativeEngine(io: NativeIo) {
     },
     newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
-    aiPlan: () => { const d = host.ES.director; return d && d.slots && !d.interim ? { story: d.story || "", lines: [] } : null; },
+    // the plan shot by shot, as the website's Shubix AI report (planData): the clip and what is in it, its transition,
+    // effect, speed and keyframes (it was sent with no lines, so Ask Shubix showed only the story)
+    aiPlan: () => {
+      const d = host.ES.director; if (!d || !d.slots || d.interim) return null;
+      const plan = (host.ES.plan || []) as unknown[];
+      let lines: string[] = [];
+      try { lines = plan.map((s, i) => String(host.brain.planLine(s, i, d.slots)).split("\n").filter(Boolean).join(" · ")); } catch { lines = []; }
+      return { story: d.story || "", lines };
+    },
     history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),
     undo: () => ({ ok: !!host.brain.histGo(true), state: state() }),
     redo: () => ({ ok: !!host.brain.histGo(false), state: state() }),
