@@ -156,7 +156,7 @@ function CreateFlowScreen() {
           if (length) await engine.choose({ length });
           if (start) await engine.part(start);
         }
-        await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: styleNow() || "auto" });
+        await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: styleNow() || "auto", template: params.templateId ?? "" });
         // each clip numbered once (phones name many clips the same): the ones the studio kept, in its order
         const names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
         if (!making.current) return false;
