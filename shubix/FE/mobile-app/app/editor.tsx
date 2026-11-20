@@ -174,7 +174,7 @@ export default function EditorScreen() {
   const [mixing, setMixing] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [aiPlan, setAiPlan] = useState<AiPlan | null | undefined>(undefined);
-  const [exporting, setExporting] = useState<ReelProject | null>(null), [sound, setSound] = useState(true), [saved, setSaved] = useState(true), [tool, setTool] = useState<{ key: string; name: string } | null>(null), [allTools, setAllTools] = useState(false), [chatBusy, setChatBusy] = useState(false), [chatStatus, setChatStatus] = useState(""), [review, setReview] = useState(false), [planLocked, setPlanLocked] = useState<string[]>([]), [draft, setDraft] = useState("");
+  const [exporting, setExporting] = useState<ReelProject | null>(null), [sound, setSound] = useState(true), [saved, setSaved] = useState(true), [tool, setTool] = useState<{ key: string; name: string } | null>(null), [allTools, setAllTools] = useState(false), [versions, setVersions] = useState<{ at: number; label: string; p: ReelProject }[]>([]), [chatBusy, setChatBusy] = useState(false), [chatStatus, setChatStatus] = useState(""), [review, setReview] = useState(false), [planLocked, setPlanLocked] = useState<string[]>([]), [draft, setDraft] = useState("");
   const [studioLayers, setStudioLayers] = useState<Array<{ index: number; id: number; t0: number; t1: number; x: number; y: number; scale: number; opacity: number; rotation: number; mask: string; blend: string; follow: string; followOffsetX: number; followOffsetY: number; maskWidth: number; maskHeight: number; maskThreshold: number; maskFeather: number; maskAngle: number; maskInverted: boolean; chromaKey: boolean; chromaColor: string; chromaTolerance: number; native?: unknown }>>([]), [studioLayerIndex, setStudioLayerIndex] = useState(0);
   const [canvasCol, setCanvasCol] = useState("#4F7CFF");
   const [ttsVoices, setTtsVoices] = useState<Array<{ key: string; label: string }>>([]), [ttsVoice, setTtsVoice] = useState(""), [voiceDraft, setVoiceDraft] = useState("");
@@ -481,8 +481,11 @@ export default function EditorScreen() {
       setClips(replace && clip ? clips.map((c, i) => (i === selected ? { ...got[0], id: c.id } : c)) : [...clips, ...got]);
     } catch (e) { tell(errorMessage(e), "danger"); }
   }
+  // the Reel as it was before an Ask Shubix change or another mix: Earlier versions in Ask Shubix (the last 5, this visit)
+  const keepVersion = (label: string) => { if (p) setVersions((v) => [...v, { at: Date.now(), label, p }].slice(-5)); };
   async function mixVideo() {
     if (!p || clips.length < 2 || mixing) return;
+    keepVersion(words("Before another mix"));
     if (p.studio && !engine.holds(p.id)) {
       return tell(words("Reopen this Reel from Fast Studio to create another mix without losing its advanced effects."));
     }
@@ -998,13 +1001,13 @@ export default function EditorScreen() {
           <Text className="text-center text-[11.5px] text-muted">{words("Same song and clips, arranged again · free · Undo brings this one back")}</Text>
         </View>
         <Transport now={now} total={total} playing={playing} sound={sound} onPrev={() => go(selected - 1)} onToggle={() => setPlaying(!playing)} onNext={() => go(selected + 1)} onSound={() => setSound(!sound)} />
-        <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} log={p.chat ?? []} onLog={addChat} status={chatStatus} review={review}
+        <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} log={p.chat ?? []} onLog={addChat} status={chatStatus} review={review} versions={versions} onVersion={(i) => { const v = versions[i]; if (!v) return; setReview(false); keepVersion(words("Before going back")); change({ ...v.p }); setSelected(0); tell(words("Your Reel is back to this version. Undo brings the last one back."), "info"); }}
           onKeep={() => setReview(false)} onUndo={() => { setReview(false); void undoNow().then(() => addChat((l) => [...l, { at: Date.now(), me: false, text: words("Undone: your Reel is back as it was before this change.") }])); }} onAsk={async (t) => {
           // a Reel the studio made and still holds: Shubix AI itself (the website's chat: its credit question asked here,
           // its plan applied there, the clips back here); otherwise the phone's own changes below
           if (p.studio && engine.holds(p.id)) {
             try {
-              setReview(false); setChatBusy(true);
+              setReview(false); setChatBusy(true); keepVersion(words("Before “{ask}”", { ask: t.slice(0, 40) }));
               const r = await engine.chat(p, t).finally(() => setChatBusy(false));
               if (r) {
                 if (r.clips) setReview(true);

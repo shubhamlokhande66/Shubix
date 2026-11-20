@@ -14,11 +14,13 @@ const IDEAS: [string, string][] = [["Fast & energetic", "Fast cuts on every beat
 /** Ask Shubix AI (the website's studio askbar): a card that opens to a box where you say how you want your Reel, the
  * ideas to tap, and the conversation with Shubix AI's history, each with its time. `onAsk` does what was asked and returns
  * the answer; `log` and `onLog` keep the conversation with the Reel (without them it lives only on this screen). */
-export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, review, onKeep, onUndo }: { onAsk: (text: string) => string | Promise<string>; plan?: { story: string; lines: string[] } | null; planned?: boolean; log?: ChatLine[]; onLog?: (add: (l: ChatLine[]) => ChatLine[]) => void;
+export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, review, onKeep, onUndo, versions, onVersion }: { onAsk: (text: string) => string | Promise<string>; plan?: { story: string; lines: string[] } | null; planned?: boolean; log?: ChatLine[]; onLog?: (add: (l: ChatLine[]) => ChatLine[]) => void;
   /** what Shubix is doing now (a change in the editor: no full-screen popup), `review`: the change just made, with Keep and Undo */
-  status?: string; review?: boolean; onKeep?: () => void; onUndo?: () => void }) {
+  status?: string; review?: boolean; onKeep?: () => void; onUndo?: () => void;
+  /** the Reel before each change (this visit): one tap goes back to it */
+  versions?: { at: number; label: string }[]; onVersion?: (i: number) => void }) {
   const words = useStudioText(), look = useColors();
-  const [open, setOpen] = useState(false), [said, setSaid] = useState(""), [own, setOwn] = useState<ChatLine[]>([]), [busy, setBusy] = useState(false), [shots, setShots] = useState(false);
+  const [older, setOlder] = useState(false), [open, setOpen] = useState(false), [said, setSaid] = useState(""), [own, setOwn] = useState<ChatLine[]>([]), [busy, setBusy] = useState(false), [shots, setShots] = useState(false);
   const log = kept ?? own, setLog = onLog ?? setOwn;
   async function ask(text: string) {
     text = text.trim().slice(0, 300);
@@ -52,6 +54,16 @@ export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, revi
             <View className="flex-row gap-2 self-start">
               <Pressable onPress={onKeep} accessibilityRole="button" className="overflow-hidden rounded-full px-4 py-2"><Gold /><Text className="text-[12.5px] font-semibold text-on-accent">{words("Keep")}</Text></Pressable>
               <Pressable onPress={onUndo} accessibilityRole="button" className="rounded-full border border-border px-4 py-2"><Text className="text-[12.5px] font-semibold text-foreground">{words("Undo")}</Text></Pressable>
+            </View>
+          )}
+          {!!versions?.length && (
+            <View className="gap-1.5 rounded-2xl border border-border bg-surface-2 p-3">
+              <Pressable onPress={() => setOlder(!older)} accessibilityRole="button" accessibilityState={{ expanded: older }}><Text className="text-[12px] font-semibold text-accent">{words(older ? "Hide earlier versions" : "Earlier versions")} ({versions.length})</Text></Pressable>
+              {older && [...versions].reverse().map((v, k) => { const i = versions.length - 1 - k; return (
+                <View key={v.at} className="flex-row items-center gap-2">
+                  <Text numberOfLines={1} className="flex-1 text-[12px] text-foreground">{v.label} · <Text className="text-muted">{when(v.at)}</Text></Text>
+                  <Pressable onPress={() => onVersion?.(i)} disabled={busy} accessibilityRole="button" className="rounded-full border border-accent/40 px-3 py-1"><Text className="text-[11.5px] font-semibold text-accent">{words("Use this")}</Text></Pressable>
+                </View>); })}
             </View>
           )}
           {log.some((m) => !m.me) && <Pressable onPress={() => router.push({ pathname: "/contact", params: { topic: "reels", message: `${words("Report an AI answer")}: ` } })} accessibilityRole="link" className="self-end py-1"><Text className="text-[12px] font-semibold text-muted underline">{words("Report an AI answer")}</Text></Pressable>}
