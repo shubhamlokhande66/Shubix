@@ -196,7 +196,7 @@ export default function EditorScreen() {
     }).catch(() => {});
   }, [tool?.key, p?.id]);
   // what Shubix AI planned for this Reel, shown in Ask Shubix (read when the Reel opens, and again after each answer)
-  useEffect(() => { if (p?.studio && engine.holds(p.id)) { void engine.aiPlan().then(setAiPlan).catch(() => setAiPlan(undefined)); aiHistory(); } else setAiPlan(undefined); }, [p?.id, p?.studio]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (p?.studio && engine.holds(p.id)) { void engine.aiPlan().then(keepPlan).catch(() => setAiPlan(p?.aiPlan)); aiHistory(); } else setAiPlan(p?.aiPlan ?? undefined); }, [p?.id, p?.studio]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!p?.studio || !engine.holds(p.id)) { setStudioLayers([]); return; }
     void engine.tool("layerList").then((r) => setStudioLayers(Array.isArray(r) ? r as typeof studioLayers : [])).catch(() => setStudioLayers([]));
@@ -244,6 +244,8 @@ export default function EditorScreen() {
   const change = (next: Partial<ReelProject>) => setP((old) => { if (!old) return old; const history = recordEdit(undo.current, old, 30); undo.current = history.undo; redo.current = history.redo; return { ...old, ...next, studio: next.studio ?? (old.studio && !("audioUri" in next) && !("overlays" in next)) }; }); // the song or the texts changed: the phone's export makes it (the clips' changes go back to the studio: engine.edit)
   // Ask Shubix and Shubix AI's history, kept with the Reel (not an edit: undo leaves it); what Shubix AI did is added from the studio
   const addChat = (add: (l: ChatLine[]) => ChatLine[]) => setP((old) => old ? { ...old, chat: add(old.chat ?? []).slice(-40) } : old);
+  // the plan shown, and kept with the Reel: opened again (from My Reels, after the app was closed) Ask Shubix still shows it
+  const keepPlan = (plan: AiPlan | null) => { setAiPlan(plan ?? undefined); if (plan && plan.lines.length) setP((old) => old ? { ...old, aiPlan: plan } : old); };
   const aiHistory = () => void engine.history().then((h) => addChat((l) => { const seen = new Set(l.map((m) => m.at + m.text)); return [...l, ...h.filter((m) => !seen.has(m.at + m.text))].sort((a, b) => a.at - b.at); })).catch(() => {});
   const setClips = (next: ProjectClip[]) => { change({ clips: next }); setSelected((i) => Math.min(i, Math.max(0, next.length - 1))); };
   const patch = (x: Partial<ProjectClip>) => clip && setClips(clips.map((c, i) => (i === selected ? { ...c, ...x } : c)));
@@ -964,7 +966,7 @@ export default function EditorScreen() {
               setPlaying(false);
               const r = await engine.chat(p, t);
               if (r) {
-                void engine.aiPlan().then(setAiPlan).catch(() => {}); aiHistory();
+                void engine.aiPlan().then(keepPlan).catch(() => {}); aiHistory();
                 if (r.clips) { const next = r.clips; setP((old) => old ? { ...old, clips: next, ...(r.overlays ? { overlays: r.overlays } : {}), studio: true } : old); setSelected(0); }
                 return r.answer;
               }

@@ -88,7 +88,7 @@ export const engine = {
   /** the song: the website analyses it (beats, drops, breaks) and checks its beats */
   song: (uri: string, name: string) => call<SongAnalysis>("song", { path: pathOf(uri), name }),
   /** the Reel's choices, as the website's buttons: length (0 = the whole song), clip order, format, style */
-  choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast" }) => call<{ start: number }>("choose", c),
+  choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast"; template?: string }) => call<{ start: number }>("choose", c),
   /** the song's part moved on the waves: the Reel uses the song from `start` */
   part: (start: number) => call<{ start: number }>("part", { start }),
   /** how many clips this song's part asks for: videos, photos, or either under Mix (video-engine clipAdvice.ts); null: no song yet */
@@ -230,7 +230,12 @@ export function shotsOf(shots: EngineShot[], list: ProjectClip[]): ProjectClip[]
   return shots.map((e, i) => {
     const c = list[e.src] ?? list[0], timeline = e.end - e.start;
     const { start, end, speed } = c.kind === "image" ? { start: 0, end: timeline, speed: 1 } : fitShot(timeline, SPEED[e.sp] ?? 1, c.sourceDuration, e.in);
-    const clip = { ...c, id: `${c.id}-s${i}`, start, end, duration: end - start, speed, transition: e.tr || "hard", ...(e.tr === "whip" && e.trRev ? { trRev: true } : {}), effect: e.efx || undefined, keyframes: e.uk, ...(e.cs ? { cs: e.cs } : {}) };
+    // the shot's own sound, as the website (csVoiced): it plays only when the studio gave it a volume (talk, a kept
+    // moment, a volume keyframe); otherwise the song alone (the clip kept its full sound under the song before)
+    const cs = (e.cs ?? {}) as { vol?: number; kx?: { vol?: number }[] }, vol = Number(cs.vol) || 0;
+    const voiced = vol > 0 || (Array.isArray(cs.kx) && cs.kx.some((k) => Number(k?.vol) > 0));
+    const sound = c.kind === "image" ? {} : { muted: !voiced, volume: voiced ? Math.min(1, vol || 1) : 1 };
+    const clip = { ...c, id: `${c.id}-s${i}`, start, end, duration: end - start, speed, transition: e.tr || "hard", ...(e.tr === "whip" && e.trRev ? { trRev: true } : {}), effect: e.efx || undefined, keyframes: e.uk, ...sound, ...(e.cs ? { cs: e.cs } : {}) };
     made.set(clip.id, { shot: e, clip });
     return clip;
   });

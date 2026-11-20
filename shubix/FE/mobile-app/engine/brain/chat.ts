@@ -98,10 +98,10 @@ async function chatSend(text){
   if(!ready){ ES.wish = ES.chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800); chatAnswer('Got it! I\'ll edit your Reel this way as soon as it is made.'); return; }
   if(!EH.aiReelOk() && !(await EH.aiGate(EH.aiNeedOn()))){ chatAnswer('This Reel is edited on your phone, so I can only switch its style (say "faster" or "calmer").'); return; }
   // what this change costs, asked first: a few named shots or the whole Reel
-  const size = EH.chatSize(text), freeN = EH.aiFreeChats(), free = bal0 => bal0 !== null && ES.chatUsed < freeN, bal = EH.aiBal();
+  const size = EH.chatSize(text), freeN = EH.aiFreeChats(), free = bal0 => bal0 !== null && (ES.chatUsed || 0) < freeN, bal = EH.aiBal();
   const cost = free(bal) ? 0 : EH.aiCostOf(size === 'small' ? 'small' : 'big');
   if(free(bal)){
-    const left = freeN - ES.chatUsed - 1;
+    const left = freeN - (ES.chatUsed || 0) - 1;
     const ok = await EH.askCredits({ title: size === 'small' ? 'A small change · free' : 'Change the whole Reel · free', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + 'Your plan has ' + freeN + ' free changes per Reel: this one is free, ' + (left ? left + ' more free after it.' : 'after it each change uses credits.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
   } else if(!cost || bal === null){

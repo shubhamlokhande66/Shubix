@@ -20,6 +20,9 @@ export type NativeIo = { base: string; key: string; fetch: Fetch; /** the pause 
 type Args = Record<string, unknown>;
 type Clip = { path: string; name: string };
 
+/** A template's kind of Reel (the website's TPL_STYLE, components/studio/engine.ts): its learned style and AI trend */
+const TPL_STYLE: Record<string, string> = { wedding: "wedding", travel: "travel", tripphotos: "travel", ganpati: "festival", diwali: "festival", navratri: "festival", holi: "festival", padwa: "festival", eid: "festival",
+  christmas: "festival", newyear: "festival", product: "product", sale: "product", recipe: "food", gym: "fitness", birthday: "birthday", bdayphotos: "birthday", dayinlife: "vlog", cardelivery: "car", opening: "shop", party: "event" };
 const ascii = (b: Uint8Array) => { let s = ""; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return s; };
 
 /** A clip's frame gaps say whether its frame rate varies: screen recordings, WhatsApp, many Android phones in low light. */
@@ -98,6 +101,34 @@ export function createNativeEngine(io: NativeIo) {
   let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
   const make = () => { const h = make0(); h.ES.brand = brand; return h; };
   let host = make(), signedIn = false;
+  /** Shubix AI did not edit this Reel: the reason, in Ask Shubix's history (it was silent before) */
+  function aiWhyOff() {
+    const i = host.ES.aiInfo as { available?: boolean; planAi?: boolean } | null;
+    const why = !i ? "Shubix AI could not be reached (signed out, or no internet): this Reel was edited on your phone."
+      : !i.available ? "Shubix AI is off right now: this Reel was edited on your phone."
+      : i.planAi === false ? "Shubix AI is not in your plan: this Reel was edited on your phone. Editor and Pro, or credits, add it."
+      : "This Reel was edited on your phone.";
+    const msgs = (host.ES.chatMsgs ||= []) as { at: number; who: string; text: string; log?: boolean }[];
+    if (msgs[msgs.length - 1]?.text !== why) msgs.push({ at: Date.now(), who: "ai", text: why, log: true });
+  }
+  /** The template's kind of Reel (the website's TPL_STYLE and styleForTemplate, components/studio/engine.ts): with Shubix
+   * AI on, the kind's trend leads the AI's guide (reelKind); without it, the kind's learned style (the Reels the
+   * administrator taught, Admin -> My trends) is put on unseen, as a learned "Copy a Reel". */
+  async function templateKind(id: string) {
+    const ES = host.ES, k = TPL_STYLE[id] ?? "";
+    ES.tplName = id; ES.tplKind = k;
+    const dropLearned = () => { if (ES.refProfile?.learned && ES.refProfile.byTpl) { const shown = ES.refProfile.shown; ES.refProfile = null; if (ES.mode === "copy") ES.mode = shown || "auto"; } };
+    if (ES.refProfile && !ES.refProfile.learned) return;   // a Reel the creator is copying comes first
+    if (!k || ES.kind === "talk" || ES.aiOn) return dropLearned();
+    try {
+      const r = await apiFetch(`/api/studio/styles/learned?category=${encodeURIComponent(k)}&scope=all`);
+      const j = (r.ok ? await r.json() : {}) as { fp?: Record<string, unknown> | null };
+      if (!j.fp) return dropLearned();
+      const shown = ES.mode === "copy" ? ES.refProfile?.shown || "auto" : ES.mode;
+      ES.refProfile = { ...j.fp, name: "Learned style", cuts: [], learned: true, byTpl: true, silent: true, shown };
+      ES.mode = "copy";
+    } catch { /* signed out or offline: the template as it is */ }
+  }
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: { name: string; path: string; w: number; h: number }[] = [];
   const url = (path: string, q = "") => `${io.base}/${path}?k=${io.key}${q}`;
@@ -299,6 +330,7 @@ export function createNativeEngine(io: NativeIo) {
     clips,
     choose: async (a) => {
       if (a.mode) { host.ES.mode = String(a.mode); }
+      if (a.template !== undefined) await templateKind(String(a.template));
       if (a.order) host.ES.seqOn = a.order === "order";
       if (a.text) { host.ES.hookNone = a.text === "none"; if (a.text === "auto") { host.ES.autoHookOff = false; host.ES.autoHookUsed = false; } else host.ES.overlays = host.ES.overlays.filter((o: { auto?: boolean }) => !o.auto); }   // Opening text (engine.ts setHookPref alike)
       if (a.aspect) host.ES.aspect = String(a.aspect);
@@ -347,7 +379,13 @@ export function createNativeEngine(io: NativeIo) {
     aiPrice: async () => { signedIn = true; await host.account().catch(() => false); return { on: !!host.ES.aiOn, cost: host.brain.aiCostOf("reel") as number, balance: host.brain.aiBal() as number | null, paid: host.ES.planNow !== "free" }; },
     /** Make Reel was pressed with the price on the screen: that is the person's answer, so nothing is asked again */
     ai: async () => {
-      if (!signedIn) { signedIn = true; await host.account().catch(() => false); }
+      // asked again at every Make Reel: an earlier check that failed (signed in a moment later, no network) left
+      // Shubix AI off for the whole session, with no word of it
+      signedIn = true; await host.account().catch(() => false);
+      if (!host.ES.aiOn) { aiWhyOff(); return { went: true }; }   // the phone's own edit, and Ask Shubix says why
+      // Make Reel is the person's answer: a Reel whose clips or song changed after the last AI Reel is made by the AI
+      // again (aiHeldBack held it back without a word, and the phone's own edit came out instead)
+      host.ES.regenOk = true;
       const g = stops, id = host.brain.reelIdNow(), cost = host.brain.aiCostOf("reel") as number, balance = host.brain.aiBal() as number | null;
       const low = !!cost && balance !== null && balance < cost;
       if (low && host.ES.planNow !== "free") return { went: false };   // a plan's Reel is made by Shubix AI only: it waits for credits
@@ -358,9 +396,17 @@ export function createNativeEngine(io: NativeIo) {
       if (host.ES.aiDown) throw new Error("Our team is working on it. Please try again in a little while. No credits were used.");
       return { went: went && stops === g };
     },
-    newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
+    newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.chatUsed = 0; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
-    aiPlan: () => { const d = host.ES.director; return d && d.slots && !d.interim ? { story: d.story || "", lines: [] } : null; },
+    // the plan shot by shot, as the website's Shubix AI report (planData): the clip and what is in it, its transition,
+    // effect, speed and keyframes (it was sent with no lines, so Ask Shubix showed only the story)
+    aiPlan: () => {
+      const d = host.ES.director; if (!d || !d.slots || d.interim) return null;
+      const plan = (host.ES.plan || []) as unknown[];
+      let lines: string[] = [];
+      try { lines = plan.map((s, i) => String(host.brain.planLine(s, i, d.slots)).split("\n").filter(Boolean).join(" · ")); } catch { lines = []; }
+      return { story: d.story || "", lines };
+    },
     history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),
     undo: () => ({ ok: !!host.brain.histGo(true), state: state() }),
     redo: () => ({ ok: !!host.brain.histGo(false), state: state() }),

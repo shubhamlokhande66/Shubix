@@ -32,6 +32,8 @@ export const projectSchema = z.object({
   id: z.string(), title: z.string().max(120), kind: z.enum(["music", "talking", "photo", "copy", "story"]), clips: z.array(clipSchema).min(1),
   audioUri: z.string().optional(), audioName: z.string().optional(), templateId: z.string().optional(), overlays: z.array(overlaySchema),
   chat: z.array(chatLineSchema).max(40).optional(),
+  // Shubix AI's plan of this Reel (its story and a line per shot), kept so Ask Shubix shows it when the Reel is opened again
+  aiPlan: z.object({ story: z.string().max(400), lines: z.array(z.string().max(400)).max(120) }).optional(),
   createdAt: z.string(), updatedAt: z.string(), status: z.enum(["draft", "rendered"]), outputUri: z.string().optional(),
   // the Create flow's choices: how much of the song (seconds, 0 = all), the clip order, the format, a Talking Reel's pauses and music under the voice, and what was asked of Shubix AI
   // the song as the website's engine heard it (its tempo, beats, drops, breaks), and whether that engine made the Reel (its shots: the clips)

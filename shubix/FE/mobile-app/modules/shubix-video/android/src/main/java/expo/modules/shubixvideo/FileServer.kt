@@ -42,7 +42,7 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
   private val models = Models(File(context.filesDir, "models"), api)
   private val voice = SystemVoice(context, outDir)
 
-  init { thread(isDaemon = true, name = "shubix-files") { while (!server.isClosed) try { val s = server.accept(); thread(isDaemon = true) { serve(s) } } catch (_: Exception) {} } }
+  init { thread(isDaemon = true, name = "shubix-files") { while (!server.isClosed) try { val s = server.accept(); thread(isDaemon = true) { try { serve(s) } catch (_: Exception) { /* the caller went away (a stopped AI call, a closed preview): its connection only, never the app */ } } } catch (_: Exception) {} } }
   fun close() { try { server.close() } catch (_: Exception) {}; voice.close() }
 
   private fun inside(f: File) = roots.any { f.canonicalPath.startsWith(it.canonicalPath + File.separator) }
@@ -185,7 +185,11 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
       write(out, code, c.responseMessage ?: "OK", h)
       (if (code >= 400) c.errorStream else c.inputStream)?.use { i -> copy(i, out, -1L) }
       out.flush()
-    } catch (e: Exception) { reply(out, 502, "Bad Gateway", mapOf("Content-Type" to "application/json"), "{\"error\":\"The app could not reach the server.\"}".toByteArray()) }
+    } catch (e: Exception) {
+      // the answer could not be sent on: the server did not answer (502), or the app stopped waiting and closed the
+      // connection (Broken pipe, SM-S918B 2026-11-20: thrown again here, it closed the whole app)
+      try { reply(out, 502, "Bad Gateway", mapOf("Content-Type" to "application/json"), "{\"error\":\"The app could not reach the server.\"}".toByteArray()) } catch (_: Exception) {}
+    }
   }
   private fun copy(from: InputStream, to: OutputStream, size: Long) {
     val buf = ByteArray(64 * 1024); var left = size
