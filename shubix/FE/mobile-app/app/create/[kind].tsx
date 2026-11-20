@@ -13,7 +13,7 @@ import { engine, engineOn, keepAwake, onClipRead, shotsOf, type SongAnalysis } f
 import { errorMessage } from "@mobile/api-client";
 import { adviceLine, boxFit, boxWords, mediaKindOf, pickTakes, shortReelFor, SHORT_REEL, oneTakeLength, type ClipAdvice, type MediaPick, type ShortReel } from "@mobile/video-engine";
 import { forgetKeptFiles, keepPickedAssets, keepPickedFile, removeProject, saveProject, takeNewReelSeed } from "../../lib/projects";
-import { notifyAway } from "../../lib/notify";
+import { askNotify, notifyAway } from "../../lib/notify";
 import { pickSong, recentSongs, songLength, type Song } from "../../lib/songs";
 import { AskShubix, styleFromWords } from "../../components/organisms/AskShubix";
 import { pickInOrder } from "../../components/organisms/Gallery";
@@ -235,6 +235,7 @@ function CreateFlowScreen() {
   makeNow.current = make;
   async function make() {
     if (me?.authEnabled !== false && !signedIn) { signInFirst.current = true; router.push({ pathname: "/login", params: { back: "1" } }); return; }
+    await askNotify(); // first Reel only: may we tell you when it's ready (it can finish while you're away)
     // the one popup from here on, and the screen stays on
     tasks.quiet(false); keepAwake(true, words("Shubix is making your Reel"));
     try { await makeReel(); } finally { keepAwake(false); tasks.note(""); if (onScreen.current) tasks.quiet(true); }
