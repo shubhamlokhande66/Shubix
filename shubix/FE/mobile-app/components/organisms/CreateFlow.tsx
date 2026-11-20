@@ -105,7 +105,10 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
       )}
       <FlowCard>
         <Button full size="lg" icon="music" loading={busy} title={words("Add your song")} onPress={onPick} />
-        <Text className="text-[12.5px] leading-[18px] text-muted">{words(kind === "copy" ? "Different song? Choose it here" : "MP3, M4A, WAV or any video's sound (iPhone: from Files or Photos)")}</Text>
+        <Text className="text-[12.5px] leading-[18px] text-muted">{words(kind === "copy" ? "Different song? Choose it here" : "An MP3, M4A or WAV song file")}</Text>
+        {/* most people have the song only in a video (a Reel they saved, a WhatsApp video): its sound is the song (the review with ChatGPT, 2026-11-20) */}
+        {kind !== "copy" && <Button full variant="secondary" icon="video" disabled={busy} title={words("Use the song from a video")} onPress={onPickReel} />}
+        {kind !== "copy" && <Text className="text-[12.5px] leading-[18px] text-muted">{words("A Reel you saved, a WhatsApp video, any video on your phone: Shubix uses its sound. Only its sound is used, not the video.")}</Text>}
         {recent.length > 0 && (
           <View className="gap-2.5">
             <Label>{words("Recent songs")}</Label>
