@@ -189,7 +189,7 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
       <View className="gap-2.5">
         <Label>{words("Reel length")}</Label>
         {/* "Make the Reel as long as my clips": the clips decide, these are off */}
-        {locked && <Text className="-mt-1 text-[12px] text-muted">{words("Set by your clips (Make the Reel as long as my clips)")}</Text>}
+        {locked && <Text className="-mt-1 text-[12px] text-muted">{words("Set by your clips (Match the Reel to my clips, under More options)")}</Text>}
         <View className={`flex-row flex-wrap gap-2 ${locked ? "opacity-40" : ""}`} pointerEvents={locked ? "none" : "auto"}>
           {[...LENGTHS, -1].map((n) => {
             const on = n === -1 ? custom : !custom && length === n; // -1: Custom
@@ -242,8 +242,9 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
         {on && <View pointerEvents="none" className="absolute inset-0"><VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="cover" nativeControls={false} /></View>}
         <View className="absolute left-1.5 top-1.5 h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5"><Text className="text-[11px] font-bold text-background">{n + 1}</Text></View>
         <View className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5"><Text className="text-[11px] font-semibold text-white">{asset.type === "image" ? "5s" : clock((asset.duration ?? 0) / 1000)}</Text></View>
-        {state === "wait" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/35"><ActivityIndicator color="#ffffff" /></View>}
-        {state === "bad" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/75 px-2"><Text className="text-center text-[11px] font-semibold text-white">{words("This clip could not be read")}</Text></View>}
+        {state === "wait" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center gap-1 bg-black/45 px-1.5"><ActivityIndicator color="#ffffff" /><Text className="text-center text-[10.5px] font-semibold text-white">{words("Finding the best moments…")}</Text></View>}
+        {state === "ok" && <View pointerEvents="none" className="absolute bottom-1.5 left-1.5 flex-row items-center gap-0.5 rounded-full bg-black/65 px-1.5 py-0.5"><Icon name="check" size={11} stroke={2.6} color="#fff" /><Text className="text-[10.5px] font-semibold text-white">{words("Ready")}</Text></View>}
+        {state === "bad" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/75 px-2"><Text className="text-center text-[11px] font-semibold text-white">{words("Couldn't read this video. Remove it or add another.")}</Text></View>}
         <Pressable onPress={() => onRemove(n)} accessibilityLabel={words("Remove")} hitSlop={6} className="absolute right-1.5 top-1.5 h-6 w-6 items-center justify-center rounded-full bg-black/70"><Icon name="close" size={13} color="#fff" /></Pressable>
       </Animated.View>
     </GestureDetector>
@@ -251,7 +252,7 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
 }
 
 export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
-  const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3;
+  const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3, [more, setMore] = useState(false);
   return (
     <FlowCard>
       {kind !== "talking" && kind !== "copy" && (
@@ -268,8 +269,8 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
         <Pressable onPress={onAdd} accessibilityRole="button" className="items-center gap-1 rounded-[18px] border-[1.5px] border-dashed border-accent/45 bg-surface-2 px-[18px] py-7 active:opacity-80">
           <View className="mb-1.5"><Icon name="upload" size={34} /></View>
           <Text className="text-[15px] font-semibold text-foreground">{words(pick === "photos" ? "Tap to Add Photos" : pick === "mix" ? "Tap to Add Videos and Photos" : "Tap to Add Videos")}</Text>
-          <Text className="text-[13px] text-muted">{words("or choose from gallery")}</Text>
-          <Text className="mt-2 text-[12px] text-muted">{words("Supports MP4, MOV, 3GP, JPG, PNG")}</Text>
+          <Text className="text-[13px] text-muted">{words("Choose up to 30 from your gallery")}</Text>
+          <Text className="mt-2 text-[12px] text-muted">{words(pick === "photos" ? "JPG, PNG" : pick === "mix" ? "Videos: MP4, MOV, 3GP · Photos: JPG, PNG" : "MP4, MOV, 3GP")}</Text>
         </Pressable>
       ) : (
         <View className="gap-2.5">
@@ -287,7 +288,7 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
           <Row label={words("Music under voice")}><Segmented small value={settings.under} onChange={(under) => onSettings({ under })} options={[["0", "Off"], ["0.05", "Soft"], ["0.09", "Medium"], ["0.16", "Loud"]].map(([v, l]) => ({ value: v, label: words(l) }))} /></Row>
         </>
       ) : (
-        <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks the best moments from all your clips" : "Your clips play one after another, as you added them")}>
+        <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks and arranges the best moments from all your clips" : "Your clips stay in your order. Shubix cuts them on the beat")}>
           <Segmented small value={settings.order} onChange={(order) => onSettings({ order })} options={[{ value: "mix" as ClipOrder, label: words("Mix all clips") }, { value: "order" as ClipOrder, label: words("In my order") }]} />
         </Row>
       )}
@@ -296,13 +297,24 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
           <Segmented small value={settings.text ?? "auto"} onChange={(text) => onSettings({ text })} options={[{ value: "auto" as const, label: words("Auto") }, { value: "none" as const, label: words("None") }]} />
         </Row>
       )}
+      <Row label={words("Format")}><Segmented small value={settings.aspect} onChange={(aspect) => onSettings({ aspect })} options={(["9:16", "4:5", "1:1", "16:9", "3:4", "4:3", "2:1", "2.35:1"] as Aspect[]).map((a) => ({ value: a, label: a === "9:16" ? words("9:16 Reel") : a }))} /></Row>
       {kind !== "talking" && (
-        <View className="flex-row items-center gap-3">
-          <Text className="flex-1 text-[13px] text-foreground">{words("Make the Reel as long as my clips (the rest of the song is left out)")}</Text>
-          <Switch value={settings.fit !== false} onValueChange={(fit) => onSettings({ fit })} trackColor={{ true: look.accent }} />
+        <View className="gap-2.5 border-t border-border pt-3">
+          <Pressable onPress={() => setMore(!more)} accessibilityRole="button" accessibilityState={{ expanded: more }} className="flex-row items-center justify-between">
+            <Text className="text-[13px] font-semibold text-foreground">{words("More options")}</Text>
+            <View style={{ transform: [{ rotate: more ? "180deg" : "0deg" }] }}><Icon name="down" size={18} color="muted" /></View>
+          </Pressable>
+          {more && (
+            <View className="flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-[13px] font-semibold text-foreground">{words("Match the Reel to my clips")}</Text>
+                <Text className="text-[12px] text-muted">{words(settings.fit !== false ? "On: the Reel is as long as your good video, the rest of the song is left out" : "Off: choose the Reel's length in Change song part")}</Text>
+              </View>
+              <Switch value={settings.fit !== false} onValueChange={(fit) => onSettings({ fit })} trackColor={{ true: look.accent }} />
+            </View>
+          )}
         </View>
       )}
-      <Row label={words("Format")}><Segmented small value={settings.aspect} onChange={(aspect) => onSettings({ aspect })} options={(["9:16", "4:5", "1:1", "16:9", "3:4", "4:3", "2:1", "2.35:1"] as Aspect[]).map((a) => ({ value: a, label: a === "9:16" ? words("9:16 Reel") : a }))} /></Row>
     </FlowCard>
   );
 }
