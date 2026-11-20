@@ -401,9 +401,14 @@ function clipWantPaint(){
   const key = !talking && song && buf && plan.length && planSong === song.key ? [mode, pick, secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
   if(!key) wantMemo = { key: '', song: '', a: null };
   else if(key !== wantMemo.key && (!have || !wantMemo.a || wantMemo.song !== song.key || wantMemo.key.split('|')[1] !== pick)) wantMemo = { key, song: song.key, a: clipAdvice(plan, pick) };
-  const line = adviceLine(wantMemo.a, have);
+  // "Your Reel has about N shots" and how far the clips are, a bar; the seconds a clip behind a link (the flow review with
+  // ChatGPT, 2026-11-20: 15 boxes before any clip read as 15 clips required)
+  const a = wantMemo.a, want = a ? a.clips + a.photos + (a.either || 0) : 0;
+  const line = a ? 'Your Reel has about ' + a.shots + ' shots · ' + (have ? adviceLine(a, have) : 'about ' + want + ' clips is ideal. Fewer or longer clips are fine: Shubix finds several moments in a long clip.') : '';
   if(el.textContent !== line) el.textContent = line;
   el.hidden = !line;
+  const bar = $('cwbar'), fill = $('cwfill');
+  if(bar && fill){ bar.hidden = !line; fill.style.width = Math.min(100, Math.round(have / Math.max(1, want) * 100)) + '%'; }
   // one box a clip, with its seconds; the clips in the order added fill them (video-engine clipAdvice.ts adviceBoxes)
   const wrap = $('clipboxes'), list = $('cboxes'), boxes = (line && wantMemo.a && wantMemo.a.boxes) || [];
   if(!wrap || !list) return;
