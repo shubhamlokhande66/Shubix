@@ -53,6 +53,10 @@ jobs:
           printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=upload\nkeyPassword=%s\n' "$PWD/FE/mobile-app/keys/shubix-upload.jks" "$SP" "$KP" > FE/mobile-app/keystore.properties
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @shubix/mobile-app exec expo prebuild --platform android --clean --no-install
+      # Gradle gets 6 GB (Expo's default 2 GB ran out: "Java heap space", APK #33, 2026-11-19); the runner has 16 GB
+      - name: More memory for Gradle
+        working-directory: shubix/FE/mobile-app/android
+        run: sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError/' gradle.properties && grep jvmargs gradle.properties
       - name: Bundle the release (.aab)
         working-directory: shubix/FE/mobile-app/android
         run: ./gradlew bundleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
