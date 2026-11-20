@@ -88,7 +88,7 @@ export const engine = {
   /** the song: the website analyses it (beats, drops, breaks) and checks its beats */
   song: (uri: string, name: string) => call<SongAnalysis>("song", { path: pathOf(uri), name }),
   /** the Reel's choices, as the website's buttons: length (0 = the whole song), clip order, format, style */
-  choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast" }) => call<{ start: number }>("choose", c),
+  choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast"; template?: string }) => call<{ start: number }>("choose", c),
   /** the song's part moved on the waves: the Reel uses the song from `start` */
   part: (start: number) => call<{ start: number }>("part", { start }),
   /** how many clips this song's part asks for: videos, photos, or either under Mix (video-engine clipAdvice.ts); null: no song yet */
