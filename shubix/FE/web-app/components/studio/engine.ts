@@ -13,7 +13,7 @@ import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
-import { budgetEffects, budgetLiftFrom, describeBudget } from '@shubix/video-engine';
+import { budgetEffects, budgetLiftFrom, describeBudget, shotWords } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
@@ -2654,12 +2654,14 @@ function reportBox(r, at){
   det.appendChild(ol); box.appendChild(det);
   return box;
 }
-function planData(slots, story, changed){
+function planData(slots, story, changed, real){
   const n = plan.length, tr = slots.filter((d,i) => i && d && d.tr && d.tr !== 'hard').length, fx = slots.filter((d,i) => d && d.fx && d.fx !== 'none' && !(i === 0 && d.fx === 'hook')).length,
     keys = slots.reduce((a,d) => a + (d && d.keys ? d.keys.length : 0) + (d && d.move && d.move.length ? 1 : 0), 0);
   const chg = !!(changed && changed.size), items = [];
   const head = chg ? 'Shubix changes ' + (changed.size === 1 ? 'shot ' : 'shots ') + [...changed].sort((a, b) => a - b).map(i => i + 1).join(', ') + ' (the rest stays as it is)'
     : 'Shubix\'s plan: ' + n + ' shots · ' + tr + ' transitions · ' + fx + ' effects · ' + keys + ' keyframes';
+  // the Reel as made (real): the shots it really shows, in plain words (shotLines); a proposal: the plan asked for
+  if(real && !chg && edit.length === plan.length){ shotLines().forEach(t => items.push({ c: 0, t })); return { head, story: story || '', chg, items }; }
   plan.forEach((s, i) => {
     if(chg && !changed.has(i)) return;
     const d = slots[i] || {}, c = d.cand, src = c ? sources[c.src] : null;
@@ -2822,7 +2824,7 @@ async function chatGenerate(btn){
 // a plan the AI made by itself (no chat): its report goes into the chat too, and the button shows there is one
 function chatReportAuto(){
   if(chatWaiting || chatPending || !aiOn || !director || director.key !== dirKey() || chatReported === director.key) return;
-  chatReported = director.key; const rep = planData(director.slots, director.story); aiLog(rep.head + (rep.story ? ' — ' + rep.story : ''), rep);
+  chatReported = director.key; const rep = planData(director.slots, director.story, null, true); aiLog(rep.head + (rep.story ? ' — ' + rep.story : ''), rep);
 }
 // the phone app's Ask Shubix: the website's own chat (the same AI, its credit questions asked on the phone); the plan it
 // makes is applied at once (the phone has no Generate button of the studio's), and the answer goes back to the phone
@@ -3956,6 +3958,47 @@ function seqSlots(n){
 // with no such moment (after 1.5 s, with 2 s left): the walk below, as before.
 const SEQ_FAST = 0.5, SEQ_MAX = 40;
 let seqFloor = 0.4;   // the slowest a clip plays "In my order" (lower only when the clips are far shorter than the song)
+// "In my order" (agreed with ChatGPT, 2026-11-20): the clips keep the person's order and each clip's moments go forward
+// in time, but a clip with footage for them keeps the song's cuts inside its share, so a Beat Reel still cuts on the
+// beat (each clip one shot gave 6 shots of 3.7 s on a fast 22 s song whose cuts were 15). A cut inside a clip is let go
+// (the shots beside it become one) when a shot would be shorter than the song's pace allows (fast 0.8 s, normal 1 s,
+// slow 1.5 s) or the clip has not footage enough for its shots and a jump forward between them (SEQ_JUMP: a cut to the
+// very next frame of the same clip looks like a glitch); the cut least worth keeping goes first (a plain cut before a
+// hit, a break, a drop).
+const SEQ_JUMP = 0.6;
+function seqMinShot(){ const bpm = period > 0 ? 60/period : 110; return bpm >= 115 ? 0.8 : bpm >= 85 ? 1 : 1.5; }
+function seqKeepCuts(seq){
+  const P = plan, minL = seqMinShot(), rank = { cut: 0, hit: 1, break: 2, drop: 3 }, len = i => P[i].end - P[i].start;
+  for(let guard = 0; guard < 500; guard++){
+    let worst = -1, wc = -Infinity;
+    for(let i = 1; i < P.length; i++){
+      if(seq[i] !== seq[i-1]) continue;
+      const si = seq[i]; let a = i; while(a > 0 && seq[a-1] === si) a--; let b = i; while(b + 1 < P.length && seq[b+1] === si) b++;
+      let need = SEQ_JUMP*(b - a); for(let k = a; k <= b; k++) need += len(k);
+      const short = Math.min(len(i), len(i-1)) < minL, tight = need > Math.max(0.05, sources[si].dur - TAIL);
+      if(!short && !tight) continue;
+      const c = (short ? 2 : 1) - (rank[P[i].type] || 0)*0.5 - (len(i) + len(i-1))*0.05;
+      if(c > wc){ wc = c; worst = i; }
+    }
+    if(worst < 0) break;
+    P[worst-1] = { ...P[worst-1], end: P[worst].end, sp: slowAll ? SPEED.slow : SPEED.normal }; P.splice(worst, 1); seq.splice(worst, 1);
+  }
+}
+// The shots the Reel really shows, in plain words (Shared/video-engine shotWords.ts, "one true shot plan"): Ask
+// Shubix's list is made from the finished edit, so "In my order" (which keeps the person's order, not the clips Shubix
+// AI asked for) and the repairs show as they are; what is in a shot is Shubix AI's note on that moment of the clip.
+function shotLines(){
+  const E = edit || [];
+  return E.map((e, i) => {
+    const src = sources[e.src], len = e.end - e.start;
+    const cand = ((dirCands && dirCands[i]) || []).find(x => x.si === e.src && Math.abs(x.a - e.in) < 0.6);
+    const ai = cand || !src ? null : aiAt(src, e.in, e.in + len);
+    return shotWords({ start: e.start, type: e.type, first: i === 0, clip: e.src + 1, at: e.in, what: (cand && cand.note) || (ai && ai.note) || '',
+      transition: i && e.tr && e.tr !== 'hard' && e.tr !== 'fadein' ? (TR_NAME[e.tr] || e.tr) : '',
+      effect: e.efx && e.efx !== 'none' && e.efx !== 'hook' ? (FX_NAME[e.efx] || e.efx) : '',
+      keys: (e.acc || []).map(k => k.do), move: !!(e.ak && e.ak.length), speed: e.sp && e.sp.label && e.sp.label !== '1×' ? e.sp.label : '' });
+  });
+}
 function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
@@ -4001,7 +4044,9 @@ function seqPick(seq, res, gmax){
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
-      for(let a = cur; a <= hi + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
+      // (a later shot of the same clip jumps forward a little, SEQ_JUMP, where the clip has room: a cut to the very next frame looks like a glitch)
+      const a0 = k > 0 && !fast[i] ? Math.min(Math.max(cur, hi), cur + SEQ_JUMP) : cur;
+      for(let a = a0; a <= Math.max(a0, hi) + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
         const w = scoreWindow(i, src, a, nd, gmax), sc = w.sc - (crossesScene(src, a, a + nd) ? 1 : 0) + rng()*0.15;
         if(sc > bs){ const st = w.st; bs = sc; best = { src: si, in: a, scaleR: scale[k], cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false }; }
       }
@@ -4161,9 +4206,11 @@ function makeEditNow(){
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
   // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
   if(seq && (seqOn || thin) && sources.length > 1 && !copyExact()){
-    for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
+    // (very little video in all: each clip one shot, as before; otherwise the cuts a clip has footage for stay: seqKeepCuts)
+    if(thin){ for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: slowAll ? SPEED.slow : SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
-    }
+    } }
+    else seqKeepCuts(seq);
     // a shot no slower than 0.4x can fill (a 2.5 s clip under a 9 s shot stood still for 3 s, its camera move still
     // drifting over the stopped picture): its cut moves, its time goes to the clips beside it that have footage to
     // spare, on a beat where one is near

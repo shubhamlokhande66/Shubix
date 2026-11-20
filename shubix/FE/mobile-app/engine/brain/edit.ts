@@ -3,7 +3,7 @@
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
 import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
-import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus } from '@mobile/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -800,6 +800,47 @@ function seqSlots(n){
   // clip; never back to a clip already left (moving a shot to avoid a repeat sent the Reel back to the clip before)
   return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
 }
+// "In my order" (agreed with ChatGPT, 2026-11-20): the clips keep the person's order and each clip's moments go forward
+// in time, but a clip with footage for them keeps the song's cuts inside its share, so a Beat Reel still cuts on the
+// beat (each clip one shot gave 6 shots of 3.7 s on a fast 22 s song whose cuts were 15). A cut inside a clip is let go
+// (the shots beside it become one) when a shot would be shorter than the song's pace allows (fast 0.8 s, normal 1 s,
+// slow 1.5 s) or the clip has not footage enough for its shots and a jump forward between them (SEQ_JUMP: a cut to the
+// very next frame of the same clip looks like a glitch); the cut least worth keeping goes first (a plain cut before a
+// hit, a break, a drop).
+const SEQ_JUMP = 0.6;
+function seqMinShot(){ const bpm = ES.period > 0 ? 60/ES.period : 110; return bpm >= 115 ? 0.8 : bpm >= 85 ? 1 : 1.5; }
+function seqKeepCuts(seq){
+  const P = ES.plan, minL = seqMinShot(), rank = { cut: 0, hit: 1, break: 2, drop: 3 }, len = i => P[i].end - P[i].start;
+  for(let guard = 0; guard < 500; guard++){
+    let worst = -1, wc = -Infinity;
+    for(let i = 1; i < P.length; i++){
+      if(seq[i] !== seq[i-1]) continue;
+      const si = seq[i]; let a = i; while(a > 0 && seq[a-1] === si) a--; let b = i; while(b + 1 < P.length && seq[b+1] === si) b++;
+      let need = SEQ_JUMP*(b - a); for(let k = a; k <= b; k++) need += len(k);
+      const short = Math.min(len(i), len(i-1)) < minL, tight = need > Math.max(0.05, ES.sources[si].dur - TAIL);
+      if(!short && !tight) continue;
+      const c = (short ? 2 : 1) - (rank[P[i].type] || 0)*0.5 - (len(i) + len(i-1))*0.05;
+      if(c > wc){ wc = c; worst = i; }
+    }
+    if(worst < 0) break;
+    P[worst-1] = { ...P[worst-1], end: P[worst].end, sp: ES.slowAll ? EH.SPEED.slow : EH.SPEED.normal }; P.splice(worst, 1); seq.splice(worst, 1);
+  }
+}
+// The shots the Reel really shows, in plain words (Shared/video-engine shotWords.ts, "one true shot plan"): Ask
+// Shubix's list is made from the finished edit, so "In my order" (which keeps the person's order, not the clips Shubix
+// AI asked for) and the repairs show as they are; what is in a shot is Shubix AI's note on that moment of the clip.
+function shotLines(){
+  const E = ES.edit || [];
+  return E.map((e, i) => {
+    const src = ES.sources[e.src], len = e.end - e.start;
+    const cand = ((ES.dirCands && ES.dirCands[i]) || []).find(x => x.si === e.src && Math.abs(x.a - e.in) < 0.6);
+    const ai = cand || !src ? null : aiAt(src, e.in, e.in + len);
+    return shotWords({ start: e.start, type: e.type, first: i === 0, clip: e.src + 1, at: e.in, what: (cand && cand.note) || (ai && ai.note) || '',
+      transition: i && e.tr && e.tr !== 'hard' && e.tr !== 'fadein' ? (EH.TR_NAME[e.tr] || e.tr) : '',
+      effect: e.efx && e.efx !== 'none' && e.efx !== 'hook' ? (EH.FX_NAME[e.efx] || e.efx) : '',
+      keys: (e.acc || []).map(k => k.do), move: !!(e.ak && e.ak.length), speed: e.sp && e.sp.label && e.sp.label !== '1×' ? e.sp.label : '' });
+  });
+}
 function seqPick(seq, res, gmax){
   const n = ES.plan.length, lenOf = i => ES.plan[i].end - ES.plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= EH.SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
@@ -845,7 +886,9 @@ function seqPick(seq, res, gmax){
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
-      for(let a = cur; a <= hi + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
+      // (a later shot of the same clip jumps forward a little, SEQ_JUMP, where the clip has room: a cut to the very next frame looks like a glitch)
+      const a0 = k > 0 && !fast[i] ? Math.min(Math.max(cur, hi), cur + SEQ_JUMP) : cur;
+      for(let a = a0; a <= Math.max(a0, hi) + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
         const w = scoreWindow(i, src, a, nd, gmax), sc = w.sc - (crossesScene(src, a, a + nd) ? 1 : 0) + rng()*0.15;
         if(sc > bs){ const st = w.st; bs = sc; best = { src: si, in: a, scaleR: scale[k], cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false }; }
       }
@@ -1301,5 +1344,5 @@ function remakeOk(){ if(!ES.restoring) ES.keepSaved = false; }
 function editOf(){
   return ES.kind === 'talk' ? [] : ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: EH.speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
-  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, flowNear, storyRole, teaserOpen, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
+  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, flowNear, storyRole, teaserOpen, ukKeep, ukRestore, seqSlots, seqKeepCuts, shotLines, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
 }
