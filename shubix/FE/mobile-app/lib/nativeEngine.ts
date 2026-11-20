@@ -404,7 +404,8 @@ export function createNativeEngine(io: NativeIo) {
       const d = host.ES.director; if (!d || !d.slots || d.interim) return null;
       const plan = (host.ES.plan || []) as unknown[];
       let lines: string[] = [];
-      try { lines = plan.map((s, i) => String(host.brain.planLine(s, i, d.slots)).split("\n").filter(Boolean).join(" · ")); } catch { lines = []; }
+      // the shots the Reel really shows (shotLines: "one true shot plan"); the AI's plan lines only while there is no edit
+      try { lines = host.ES.edit?.length ? host.brain.shotLines() : plan.map((s, i) => String(host.brain.planLine(s, i, d.slots)).split("\n").filter(Boolean).join(" · ")); } catch { lines = []; }
       return { story: d.story || "", lines };
     },
     history: () => (host.ES.chatMsgs || []).filter((m: { log?: boolean }) => m.log).slice(-40).map((m: { at?: number; text: string }) => ({ at: m.at || Date.now(), me: false, text: m.text })),

@@ -114,9 +114,11 @@ function makeEditNow(){
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
   // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
   if(seq && (ES.seqOn || thin) && ES.sources.length > 1 && !EH.copyExact()){
-    for(let i = ES.plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
+    // (very little video in all: each clip one shot, as before; otherwise the cuts a clip has footage for stay: seqKeepCuts)
+    if(thin){ for(let i = ES.plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       ES.plan[i-1] = { ...ES.plan[i-1], end: ES.plan[i].end, sp: ES.slowAll ? EH.SPEED.slow : EH.SPEED.normal }; ES.plan.splice(i, 1); seq.splice(i, 1);
-    }
+    } }
+    else EH.seqKeepCuts(seq);
     // a shot no slower than 0.4x can fill (a 2.5 s clip under a 9 s shot stood still for 3 s, its camera move still
     // drifting over the stopped picture): its cut moves, its time goes to the clips beside it that have footage to
     // spare, on a beat where one is near
