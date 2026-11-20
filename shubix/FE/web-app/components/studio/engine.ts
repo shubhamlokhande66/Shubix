@@ -1612,7 +1612,7 @@ async function readVideo(src){
   // still reading after 2 minutes: reported too (a phone where it hangs instead of failing)
   const slow = setTimeout(() => { try{ window.__shubixReport && window.__shubixReport('clip', 'Clip still reading after 2 min at "' + stage + '" · ' + ((src.file && src.file.type) || 'no type') + ' · ' + dd.textContent, JSON.stringify({ size: src.file && src.file.size, dur: src.dur, w: src.w, h: src.h, webcodecs: typeof VideoDecoder !== 'undefined' })); }catch(x){} }, 120000);
   try{
-    dd.textContent = 'Reading video…'; dd.dataset.st = 'read'; dd.dataset.p = '0'; setClipStatus(src,'reading');
+    dd.textContent = 'Finding the best moments…'; dd.dataset.st = 'read'; dd.dataset.p = '0'; setClipStatus(src,'reading');
     // a format the browser's player cannot open: an edit copy (this device or Shubix), then the clip is read from it
     const reopen = async () => { stage = 'converting the format'; if(!(await rescueClip(src, dd))) return false; if(v){ v.removeAttribute('src'); v.load(); } v = makeVideo(src.url); stage = 'metadata'; await waitEv(v,'loadedmetadata', 15000); if(src.edFile && v.videoWidth){ src.edW = v.videoWidth; src.edH = v.videoHeight; } return true; };
     v = makeVideo(src.url);
@@ -1637,7 +1637,7 @@ async function readVideo(src){
     if(src.removed) return;
     // action + scene changes and faces are read at the same time (two decoders): about 40% faster per clip
     const tq = performance.now(); let pm = 0, pf = 0;
-    const show = () => { const f = pm*0.6 + pf*0.4; dd.textContent = 'reading ' + Math.round(f*100) + '%'; dd.dataset.p = String(Math.round(f*100)); if(previewBatchUi) previewBatchShow(src, 'Analysing selected videos… '+Math.round((batchDone+f)/Math.max(1,batchN)*100)+'%', (batchDone+f)/Math.max(1,batchN));
+    const show = () => { const f = pm*0.6 + pf*0.4; dd.textContent = 'Finding the best moments ' + Math.round(f*100) + '%'; dd.dataset.p = String(Math.round(f*100)); if(previewBatchUi) previewBatchShow(src, 'Analysing selected videos… '+Math.round((batchDone+f)/Math.max(1,batchN)*100)+'%', (batchDone+f)/Math.max(1,batchN));
       tasks.update('clips', (batchDone + f) / Math.max(1, batchN), 'Clip ' + Math.min(batchN, batchDone + 1) + ' of ' + batchN + ' · ' + src.name); };
     src.readMs = {};
     const kept = await scanGet(src);   // read before (a saved Reel opened again, or the same clip added again): used as it is

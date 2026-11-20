@@ -122,6 +122,7 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
                       <Text numberOfLines={2} className="text-[14px] font-semibold text-foreground">{r.name}</Text>
                       <Text className="text-[12px] font-medium text-muted">{r.duration ? clock(r.duration) : "—"}</Text>
                     </Pressable>
+                    <View className="absolute left-1.5 top-1.5"><SongPlay uri={r.uri} /></View>
                     <Pressable onPress={() => { void forgetSong(r.uri); onForget(r.uri); }} accessibilityLabel={words("Remove")} hitSlop={6} className="absolute right-1.5 top-1.5 h-[26px] w-[26px] items-center justify-center rounded-full bg-black/35"><Icon name="close" size={13} color="#fff" /></Pressable>
                     {on && <View className="absolute bottom-2.5 right-2.5 h-6 w-6 items-center justify-center rounded-full bg-accent"><Icon name="check" size={14} stroke={3} color="#fff" /></View>}
                   </View>
@@ -133,6 +134,24 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
       </FlowCard>
     </View>
   );
+}
+
+/** A recent song's play button: hear it before choosing it (a tap on the card chooses it, never plays it). Its player is
+ * made only while it plays (a player for each recent song held memory on small phones). */
+function SongPlay({ uri }: { uri: string }) {
+  const words = useStudioText(), [on, setOn] = useState(false);
+  return (
+    <Pressable onPress={() => setOn(!on)} accessibilityRole="button" accessibilityLabel={words(on ? "Stop" : "Play")} hitSlop={6} className="h-[26px] w-[26px] items-center justify-center rounded-full bg-black/35">
+      <Icon name={on ? "pause" : "play"} size={12} color="#fff" />
+      {on && <SongPlaying uri={uri} onEnd={() => setOn(false)} />}
+    </Pressable>
+  );
+}
+function SongPlaying({ uri, onEnd }: { uri: string; onEnd: () => void }) {
+  const player = useAudioPlayer(uri), status = useAudioPlayerStatus(player);
+  useEffect(() => { player.play(); return () => { try { player.pause(); } catch { /* already gone */ } }; }, [player]);
+  useEffect(() => { if (status.didJustFinish) onEnd(); }, [status.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
 }
 
 /** "Preview selected part" on the clips step's song card: plays the part the Reel uses (from `from`, `len` seconds, or
