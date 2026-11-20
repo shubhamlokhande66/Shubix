@@ -8,6 +8,8 @@ import { TR_DUR } from '@mobile/core/lib/shaders';
 import { autoHook } from '@mobile/core/lib/text-templates';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate, pictureOf, fitLook } from '@mobile/video-engine';
 
+import { budgetEffects, budgetLiftFrom } from '@mobile/video-engine';
+
 export function createCoreBrain(ES, EH){
 // the preview: the video's own frame times (requestVideoFrameCallback), the picture mixed toward the next one
 function smoothLive(e, local){ const v = e.el; if(!v || v.readyState < 2 || !v.requestVideoFrameCallback) return v;
@@ -286,8 +288,27 @@ function applyDirectorStyle(){
     if(d.keys && d.keys.length){ asked += d.keys.length;
       for(const k of d.keys){ if(EH.ACCENTS.includes(k.do)){ s.acc.push({at: Math.min(Math.max(0.04, k.at), Math.max(0.04, len-0.05)), do:k.do}); used++; } else fixed++; } }
   });
+  aiBudget();
   EH.finishTransitions();
   return {used, fixed, asked};
+}
+// The effect budget (Shared/video-engine budget.ts, agreed with ChatGPT 2026-11-20), as the website's engine.ts aiBudget:
+// Shubix AI's plan kept within it (a normal shot: a transition or one thing inside it; a hero shot three; 30% plain; no
+// loud tools on a calm Reel's quiet parts), what the creator asked for in their own words kept. The AI's flags stay on.
+function aiBudget(){
+  ES.lastBudget = null;
+  if(!ES.plan.length || (EH.copyExact() && !ES.wish && !ES.chatN)) return;
+  let music = []; try{ music = EH.cutMusic(); }catch(e){ music = []; }
+  const words = [ES.wish, ...(ES.chatMsgs || []).filter(m => m.who === 'me').map(m => m.text)].join(' ');
+  const shots = ES.plan.map((s, i) => ({ start: s.start, end: s.end, type: s.type, tr: s.tr, fx: s.efx, keys: (s.acc || []).map(k => ({ at: k.at, do: k.do })),
+    move: !!(s.ak && s.ak.length), loud: music[i] && typeof music[i].loud === 'number' ? music[i].loud : null }));
+  const r = budgetEffects(shots, { mood: [ES.director && ES.director.story, ES.tplKind].filter(Boolean).join(' '), lift: budgetLiftFrom(words) });
+  r.shots.forEach((b, i) => { const s = ES.plan[i];
+    if(b.tr !== s.tr) s.tr = b.tr;
+    if(b.fx !== s.efx) s.efx = b.fx;
+    if((b.keys || []).length !== (s.acc || []).length) s.acc = (b.keys || []).map(k => ({ at: k.at, do: k.do }));
+    if(!b.move && s.ak && s.ak.length) s.ak = []; });
+  if(r.changes.length) ES.lastBudget = r;
 }
 function dirRequest(cands){
   const per = Math.max(1, ES.buf.duration/30), music = EH.cutMusic(), pc = EH.paceNow();

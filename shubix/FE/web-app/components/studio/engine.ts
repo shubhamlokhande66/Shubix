@@ -13,6 +13,7 @@ import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
+import { budgetEffects, budgetLiftFrom, describeBudget } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
@@ -3069,8 +3070,30 @@ function applyDirectorStyle(){
     if(d.keys && d.keys.length){ asked += d.keys.length;
       for(const k of d.keys){ if(ACCENTS.includes(k.do)){ s.acc.push({at: Math.min(Math.max(0.04, k.at), Math.max(0.04, len-0.05)), do:k.do}); used++; } else fixed++; } }
   });
+  aiBudget();
   finishTransitions();
   return {used, fixed, asked};
+}
+// The effect budget (Shared/video-engine budget.ts, agreed with ChatGPT 2026-11-20): Shubix AI's plan kept within it, as
+// the rules' own edit is (tastePlan). It put a flash, a shake or an RGB split on 5 shots of 6 of a Reel it called
+// devotional: a normal shot now gets a transition or one thing inside it, a hero shot three, 30% of the shots stay plain,
+// and a calm Reel has no loud tools on its quiet parts. What the creator asked for in their own words is kept.
+// The AI's flags stay on (trByDir / fxByDir): nothing of the rules' own is added back where the budget took one away.
+let lastBudget = null, budgetTold = '';
+function aiBudget(){
+  lastBudget = null;
+  if(!plan.length || (copyExact() && !wish && !chatN)) return;
+  let music = []; try{ music = cutMusic(); }catch(e){ music = []; }
+  const words = [wish, ...chatMsgs.filter(m => m.who === 'me').map(m => m.text)].join(' ');
+  const shots = plan.map((s, i) => ({ start: s.start, end: s.end, type: s.type, tr: s.tr, fx: s.efx, keys: (s.acc || []).map(k => ({ at: k.at, do: k.do })),
+    move: !!(s.ak && s.ak.length), loud: music[i] && typeof music[i].loud === 'number' ? music[i].loud : null }));
+  const r = budgetEffects(shots, { mood: [director && director.story, tplKind].filter(Boolean).join(' '), lift: budgetLiftFrom(words) });
+  r.shots.forEach((b, i) => { const s = plan[i];
+    if(b.tr !== s.tr) s.tr = b.tr;
+    if(b.fx !== s.efx) s.efx = b.fx;
+    if((b.keys || []).length !== (s.acc || []).length) s.acc = (b.keys || []).map(k => ({ at: k.at, do: k.do }));
+    if(!b.move && s.ak && s.ak.length) s.ak = []; });
+  if(r.changes.length) lastBudget = r;
 }
 // One last pass over every cut: the AI's transitions all stay (shortened to fit a short shot); the rules' own special
 // transitions stay within their ration, finish well inside both shots, and the same one never runs twice in a row.
@@ -4282,7 +4305,10 @@ function makeEditNow(){
     //  - a clip of the creator's that no shot shows takes a shot from a clip shown more than once: the shot that loses
     //    least by it, and only when that is less than the scorer takes off for footage it calls bad (the opening stays).
     // No repair shows footage twice or puts two parts of one clip in a row, and the random numbers go on as before it.
-    if(mode !== 'copy' && !aiTrusted()){
+    // On Shubix AI's plan too (2026-11-20, agreed with ChatGPT: every clip of the creator's once before any is shown
+    // twice): the AI's own moment may give way for a clip left out, never on the opening or a drop (the hero shots),
+    // keeping its place, timing and transition; its camera move goes (it was framed for the other footage)
+    if(mode !== 'copy'){
       const seedR = seed, len = i => plan[i].sp.pos(plan[i].end - plan[i].start), span = i => len(i)*res[i].scaleR;
       const stat = i => { const s = sources[res[i].src]; return s && s.samples && s.samples.length ? windowStats(s, res[i].in, res[i].in + Math.max(span(i), 0.05)) : null; };
       const put = (i, alt) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in); if(k >= 0) u.splice(k, 1);
@@ -4298,13 +4324,13 @@ function makeEditNow(){
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
         const count = sources.map((_, k) => res.filter(r => r.src === k).length);
         // the shots it may take: of the clips shown most, eight at most (each one tried is a search of the clip)
-        const tryAt = res.map((_, i) => i).filter(i => i > 0 && !res[i].byDir && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
+        const tryAt = res.map((_, i) => i).filter(i => i > 0 && (!res[i].byDir || (aiTrusted() && plan[i].type !== 'drop')) && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
         let bi = -1, balt = null, least = 1;
         for(const i of tryAt){
           const alt = other(i, si); if(!alt) continue;
           const loss = scoreWindow(i, sources[res[i].src], res[i].in, span(i), gmax).sc - scoreWindow(i, src, alt.in, len(i)*alt.scaleR, gmax).sc;
           if(loss < least){ least = loss; bi = i; balt = alt; } }
-        if(bi >= 0){ put(bi, balt); addedClips++; } });
+        if(bi >= 0){ const was = res[bi]; put(bi, balt); addedClips++; if(was.byDir){ res[bi].swapIn = true; plan[bi].ak = []; } } });
       editTakes.fixedDark = fixedDark; editTakes.addedClips = addedClips; seed = seedR;
     }
   }
@@ -4316,7 +4342,7 @@ function makeEditNow(){
   const taste = { n: edit.length, moves: 0, prevZoom: false, lastZoom: -99, shape: false, drops: edit.filter(x => x.type === 'drop').map(x => x.start) };
   edit.forEach((e,i)=>{
     const d = dirSlotOf(i), shared = sharedDirector.shots.find(x => x.sourceIndex === e.src);
-    e.dirWhy = d ? d.why : '';
+    e.dirWhy = e.swapIn ? 'Shubix brought in a clip of yours that no shot showed' : d ? d.why : '';
     e.cx = 0.5 + (e.cx-0.5)*(e.face>0.3 ? 1 : 0.8);
     if(mode!=='smooth' && !e.fxByDir) suitFx(e);
     tasteFx(e, i, taste);
@@ -4365,6 +4391,9 @@ function makeEditNow(){
   if(dupCount) showMsg(dupCount + ' shot' + (dupCount>1?'s repeat':' repeats') + ': your clips are short for this song · add more clips to avoid it', false, 'addclips');
   else $('xmsg').hidden = true;
   ['play','remix','export','cover'].forEach(id=>$(id).disabled=false);
+  if(dirInfo && !director.interim && lastBudget){ const said = describeBudget(lastBudget.changes), key = reelIdNow() + '|' + said;
+    if(said && budgetTold !== key){ budgetTold = key; aiLog('Shubix checked its plan against the limits a pro editor keeps: ' + said + ' (' + lastBudget.changes.length + ' change' + (lastBudget.changes.length > 1 ? 's' : '') + ').');
+      rlog('budget', 'Effect budget · ' + lastBudget.changes.length + ' changes · ' + said, { changes: lastBudget.changes.slice(0, 40), heroes: lastBudget.heroes }); } }
   if(dirInfo && !director.interim){ const shots = edit.filter((e,i)=>dirShot(i)).length, kept = edit.filter(e=>e.byDir).length;
     const keys = edit.reduce((n,e)=>n+((e.acc&&e.acc.length)||0), 0);
     // what the AI really decided: the cuts it answered; the rest are the phone's (said, never hidden)

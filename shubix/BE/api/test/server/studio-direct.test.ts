@@ -54,7 +54,7 @@ describe("request limits", () => {
     expect(text).toContain("Style: auto");
     expect(text).toContain("hook");
     expect(text).not.toContain('{"whip":2}');   // no budget: the AI uses any tool as often as it likes
-    expect(text).toContain("boxgrow"); expect(text).toContain("no limit on style");
+    expect(text).toContain("boxgrow"); expect(text).toContain("EFFECT BUDGET"); expect(text).toContain("COVERAGE"); expect(text).not.toContain("no limit on style");
     const fresh = prompt(DirectIn.parse({ ...req(3), recent: ["boxgrow", "flash", "speed 0.5×"] }));
     expect(fresh).toContain("Used in this creator's last Reels (make this one feel fresh where the feel allows: other tools, other combinations): boxgrow, flash, speed 0.5×.");
   });

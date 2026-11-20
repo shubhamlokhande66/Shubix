@@ -24,8 +24,8 @@ Both engines use it when they make a Reel (`FE/web-app/components/studio/engine.
 `FE/mobile-app/engine/brain/reel.ts`, `makeEditNow`): when the first take has a fault another take can change
 (`editNeedsAnotherTake`), up to two more takes are made and the best review is kept. The first take wins a tie and the
 random numbers go on from the first take's, so a clean edit is unchanged and the same clips and song make the same Reel.
-After the takes, two repairs with one right answer are made on the kept take (not on a copied Reel, Shubix AI's plan
-or a shot the director chose): a shot too dark to see moves to a moment that can be seen, when unused footage has one;
+After the takes, two repairs with one right answer are made on the kept take (not on a copied Reel; on
+Shubix AI's plan only the unused-clip one, see the effect budget below): a shot too dark to see moves to a moment that can be seen, when unused footage has one;
 and a clip of the creator's that no shot shows takes a shot from a clip shown more than once (the shot that loses least
 by it, never the opening, never a dark or soft moment). This holds with fewer shots than clips too: 10 shots from 12 clips show 10 clips, not 6. A soft shot is not moved: fast action is soft too. No repair
 shows footage twice, puts two parts of one clip in a row, or moves a cut.
@@ -51,6 +51,27 @@ before, the first clip held 7.3 s and five clips 0.6-0.7 s each, the drop had no
 are 0.9-2.7 s, the drop is cut on, the review says 88.5 (`FE/mobile-app/tests/brain-edit.test.ts` keeps it so).
 
 The website writes each review to the Reel's log (Admin → Logs, step `review`) and keeps it in `root.__lastEditReview`.
+
+## The effect budget
+
+`budgetEffects` (`src/budget.ts`) keeps a Reel's transitions, effects, keyframes and camera moves within what a pro
+editor would use (agreed with ChatGPT, 2026-11-20). Both engines run it on Shubix AI's plan (`aiBudget`, at the end of
+`applyDirectorStyle`); the rules' own edit has kept these limits since 2026-11-19 (`tastePlan`).
+
+- a normal shot: a transition OR one thing inside it; a hero shot (the first drop, or the bass back after a real break,
+  one in any 10 s): up to 3; the first shot: a hard cut and one thing inside it
+- in any 10 s: 2 flashy transitions (2.5 s apart), 2 strong things inside shots, 3 in all; one strong thing in a shot
+- 30% of the shots plain; a calm, sad or devotional Reel has no shake, flash, RGB or glitch where its song is quiet
+- what the creator asked for in their own words is kept (`budgetLiftFrom`: "more transitions", "flash", a named tool)
+
+Over budget, the weakest keyframes go first, then the effect, then the camera move, the transition last. Every change
+is listed (rule, shot, before, after, why): the website writes it to the Reel's log (step `budget`) and both engines
+say it once in Ask Shubix's history. On a real phone Reel (22 s, 6 shots) Shubix AI had put a flash, a shake or an RGB
+split on 5 shots of 6; within the budget: the hook's zoom, a camera move, the drop's whip and shake, two plain shots
+and a dip to black at the end (`FE/mobile-app/tests/effect-budget.test.ts`).
+
+The unused-clip repair (above) now runs on Shubix AI's plan too: the AI's moment gives way for a clip of the creator's
+that no shot showed, never on the opening or a drop, keeping the shot's place, timing and transition.
 
 ## A Reel from very little video
 

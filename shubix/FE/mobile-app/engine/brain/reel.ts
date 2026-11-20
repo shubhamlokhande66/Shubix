@@ -6,7 +6,7 @@ import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowSta
 import { repace } from '../components/studio/soundmap';
 import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, SHORT_REEL } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
-import { toneOf, matchTones } from '@mobile/video-engine';
+import { toneOf, matchTones, describeBudget } from '@mobile/video-engine';
 
 export function createReelBrain(ES, EH){
 // The edit's own review (shared/video-engine review.ts), as the website's studio gives it (engine.ts reviewOf): the same
@@ -258,7 +258,9 @@ function makeEditNow(){
     //  - a clip of the creator's that no shot shows takes a shot from a clip shown more than once: the shot that loses
     //    least by it, and only when that is less than the scorer takes off for footage it calls bad (the opening stays).
     // No repair shows footage twice or puts two parts of one clip in a row, and the random numbers go on as before it.
-    if(ES.mode !== 'copy' && !EH.aiTrusted()){
+    // On Shubix AI's plan too (2026-11-20, as the website's engine.ts): the AI's own moment may give way for a clip left
+    // out, never on the opening or a drop, keeping its place, timing and transition; its camera move goes
+    if(ES.mode !== 'copy'){
       const seedR = ES.seed, len = i => ES.plan[i].sp.pos(ES.plan[i].end - ES.plan[i].start), span = i => len(i)*res[i].scaleR;
       const stat = i => { const s = ES.sources[res[i].src]; return s && s.samples && s.samples.length ? windowStats(s, res[i].in, res[i].in + Math.max(span(i), 0.05)) : null; };
       const put = (i, alt) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in); if(k >= 0) u.splice(k, 1);
@@ -274,13 +276,13 @@ function makeEditNow(){
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
         const count = ES.sources.map((_, k) => res.filter(r => r.src === k).length);
         // the shots it may take: of the clips shown most, eight at most (each one tried is a search of the clip)
-        const tryAt = res.map((_, i) => i).filter(i => i > 0 && !res[i].byDir && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
+        const tryAt = res.map((_, i) => i).filter(i => i > 0 && (!res[i].byDir || (EH.aiTrusted() && ES.plan[i].type !== 'drop')) && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
         let bi = -1, balt = null, least = 1;
         for(const i of tryAt){
           const alt = other(i, si); if(!alt) continue;
           const loss = EH.scoreWindow(i, ES.sources[res[i].src], res[i].in, span(i), gmax).sc - EH.scoreWindow(i, src, alt.in, len(i)*alt.scaleR, gmax).sc;
           if(loss < least){ least = loss; bi = i; balt = alt; } }
-        if(bi >= 0){ put(bi, balt); addedClips++; } });
+        if(bi >= 0){ const was = res[bi]; put(bi, balt); addedClips++; if(was.byDir){ res[bi].swapIn = true; ES.plan[bi].ak = []; } } });
       ES.editTakes.fixedDark = fixedDark; ES.editTakes.addedClips = addedClips; ES.seed = seedR;
     }
   }
@@ -291,7 +293,7 @@ function makeEditNow(){
   const taste = { n: ES.edit.length, moves: 0, prevZoom: false, lastZoom: -99, shape: false, drops: ES.edit.filter(x => x.type === 'drop').map(x => x.start) };
   ES.edit.forEach((e,i)=>{
     const d = EH.dirSlotOf(i), shared = sharedDirector.shots.find(x => x.sourceIndex === e.src);
-    e.dirWhy = d ? d.why : '';
+    e.dirWhy = e.swapIn ? 'Shubix brought in a clip of yours that no shot showed' : d ? d.why : '';
     e.cx = 0.5 + (e.cx-0.5)*(e.face>0.3 ? 1 : 0.8);
     if(ES.mode!=='smooth' && !e.fxByDir) suitFx(e);
     tasteFx(e, i, taste);
@@ -334,6 +336,9 @@ function makeEditNow(){
     // what the AI really decided: the cuts it answered; the rest are the phone's (said, never hidden)
     const answered = ES.plan.filter((_, i) => { const d = ES.director.slots[i]; return d && !d.auto; }).length;
     if(answered) EH.aiLog('Shubix AI planned your Reel: ' + answered + ' of ' + ES.plan.length + ' shots' + (ES.director.story ? ' — ' + ES.director.story : '') + '.');
+    // what the effect budget changed in the AI's plan (aiBudget), said once a Reel, as the website says it
+    if(answered && ES.lastBudget){ const said = describeBudget(ES.lastBudget.changes), key = EH.reelIdNow() + '|' + said;
+      if(said && ES.budgetTold !== key){ ES.budgetTold = key; EH.aiLog('Shubix checked its plan against the limits a pro editor keeps: ' + said + ' (' + ES.lastBudget.changes.length + ' change' + (ES.lastBudget.changes.length > 1 ? 's' : '') + ').'); } }
     if(!answered) EH.aiStat('Shubix could not plan this Reel. Your Reel uses the phone\'s own smart edit.');
     else EH.aiStat('Shubix planned your Reel' + (ES.director.story ? ': ' + ES.director.story : '') + (answered < ES.plan.length ? ' (' + answered + ' of ' + ES.plan.length + ' shots; the rest from your phone\'s edit)' : '') + (keys ? ' · ' + keys + ' keyframe' + (keys>1?'s':'') + ' on the hits' : '') + (answered < ES.plan.length || ES.director.story ? '' : '.')); }
   // made while the person was in another app (the clips read, the AI's plan arrived): they are told
