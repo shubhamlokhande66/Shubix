@@ -396,7 +396,7 @@ export function createNativeEngine(io: NativeIo) {
       if (host.ES.aiDown) throw new Error("Our team is working on it. Please try again in a little while. No credits were used.");
       return { went: went && stops === g };
     },
-    newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
+    newReel: () => { host.brain.newReel?.(); host.ES.regenOk = true; host.ES.chatUsed = 0; host.ES.reelId = ""; host.ES.aiReel = ""; host.ES.gateNo = ""; host.ES.director = null; return { ok: true }; },
     keptOldReel: () => ({ ok: true }),
     // the plan shot by shot, as the website's Shubix AI report (planData): the clip and what is in it, its transition,
     // effect, speed and keyframes (it was sent with no lines, so Ask Shubix showed only the story)
