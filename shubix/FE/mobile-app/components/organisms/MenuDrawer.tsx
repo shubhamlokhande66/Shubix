@@ -17,6 +17,14 @@ import { ThemeToggle } from "../molecules/ThemeToggle";
 // Google Play: the app has no pricing page, only your credits
 const CREDITS: NavItem = { href: "/credits", label: "Your credits", tk: "pricing.yourCredits", icon: "coins" };
 
+/** Rate & send feedback: the app's Play Store page, where testers write the private feedback Play Console shows under
+ * Testing feedback (and everyone else rates the app). The Play Store app first, the web page if it is missing. */
+const STORE_ID = "in.shubix.reelmaker";
+async function openStoreFeedback() {
+  try { await Linking.openURL(`market://details?id=${STORE_ID}`); }
+  catch { await Linking.openURL(`https://play.google.com/store/apps/details?id=${STORE_ID}`); }
+}
+
 export function MenuDrawer({ open, onClose, pathname }: { open: boolean; onClose: () => void; pathname: string }) {
   const text = useText(), { me } = useApi(), insets = useSafeAreaInsets();
   // administrators: the website's admin dashboard, in the phone's browser (once per sign-in, kept 10 minutes)
@@ -77,6 +85,11 @@ export function MenuDrawer({ open, onClose, pathname }: { open: boolean; onClose
               <Icon name="arrow" size={16} color="muted" />
             </Pressable>
           )}
+          <Pressable onPress={() => { onClose(); void openStoreFeedback(); }} accessibilityRole="link" className="mt-3 min-h-[44px] flex-row items-center gap-3 rounded-[12px] border border-accent/20 bg-accent/5 px-2.5">
+            <Icon name="star" size={18} color="accent" />
+            <Text className="min-w-0 flex-1 text-[12.5px] font-semibold text-foreground">{text("nav.feedback")}</Text>
+            <Icon name="arrow" size={16} color="muted" />
+          </Pressable>
           <View className="flex-1" />
           <View className="border-t border-accent/10 pt-3"><ThemeToggle /></View>
           {email && (
