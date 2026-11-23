@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useSafeQuery as useQuery } from "@/lib/useSafeQuery";
 import { Icon } from "@/components/atoms/Icon";
+import { Spinner } from "@/components/atoms/Spinner";
 import { listCloudReels } from "@/lib/cloudReels";
 import { api } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
@@ -92,7 +93,7 @@ export function NotificationBell() {
               ))}
             </div>
           )}
-          {items.length ? (
+          {q.isLoading && !items.length ? <Spinner size="sm" /> : items.length ? (
             items.map((r) => (
               <Link key={r.id} href="/reels?tab=saved" onClick={() => setOpen(false)} className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 hover:bg-surface-2">
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-success/15 text-success">

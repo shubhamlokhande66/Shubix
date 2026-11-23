@@ -1,11 +1,15 @@
 /** Publish to Instagram and YouTube (BE/api/src/server/social.ts): the platforms, the posts, posting, and Shubix AI's caption. */
 
+import { tracked } from "./activity";
+
 export type Platform = "youtube" | "instagram";
 export type SocialPlatform = { id: Platform; ready: boolean; connected: boolean; name: string; needsReconnect: boolean };
 export type SocialPost = { id: string; platform: Platform; reelId: string; reelName: string; caption: string; title: string; at: string; status: "scheduled" | "working" | "published" | "failed" | "cancelled"; step: string; url: string; error: string; stats: { views?: number; likes?: number; comments?: number } | null };
 export const PLATFORM_NAME: Record<Platform, string> = { youtube: "YouTube Shorts", instagram: "Instagram Reels" };
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** an action (publish, cancel, disconnect): the button pressed shows its spinner meanwhile (lib/activity.ts) */
+const call = <T>(path: string, init: RequestInit = {}): Promise<T> => (init.method ? tracked(send<T>(path, init)) : send<T>(path, init));
+async function send<T>(path: string, init: RequestInit = {}): Promise<T> {
   let r: Response;
   try { r = await fetch(path, { ...init, credentials: "include", headers: init.body ? { "Content-Type": "application/json" } : undefined }); }
   catch { throw new Error("No connection. Check your internet and try again."); }

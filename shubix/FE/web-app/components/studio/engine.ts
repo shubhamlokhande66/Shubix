@@ -7724,13 +7724,13 @@ $('mode').addEventListener('click', e=>{ const b=e.target.closest('button'); if(
   if(b.dataset.m === 'copy' && (!refProfile || silentStyle())){ $('reffile').click(); return; }
   if(silentStyle() && mode === 'copy' && b.dataset.m === (refProfile.shown || 'auto')) return;   // already what they see
   setMode(b.dataset.m); });
-$('cover').onclick = async () => {
+$('cover').onclick = () => busyBtn($('cover'), async () => {
   // cover: the best drop shot (or the hook) with the hook text, full frame
   const d = edit.find(x=>x.type==='drop') || edit[0], tt = d.start + Math.min(0.6, (d.end-d.start)*0.6);
   setCanvas(true); coverMode = true; const i = segAt(tt); await prepare(i, tt); drawFrame(tt);
   const blob = await new Promise(r=>out.toBlob(r,'image/jpeg',0.92)); coverMode = false; setCanvas(false); captureLoop();
   const sh = saveFile(blob, fileTitle() + ' cover.jpg'); showMsg(savedMsg(sh, 'Cover') + '. Pick it under "Edit cover" when you post.');
-};
+});
 
 
 /* =============== COPY A REEL ===============
@@ -8425,13 +8425,15 @@ function suggestRef(name){
   api('/api/studio/styles/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: (name || 'Reel').replace(/\.[^.]+$/, '').slice(0, 120) || 'Reel', fp: fingerprintOf(refProfile) }) })
     .catch(err => console.info('copied Reel not offered for the styles:', err && err.message));
 }
-$('stsave').addEventListener('click', async () => {
+// a button that works for a moment: a spinner in it, no second press (app/globals.css)
+async function busyBtn(b, run){ if(b.getAttribute('aria-busy') === 'true') return; b.setAttribute('aria-busy', 'true'); try{ return await run(); } finally{ b.removeAttribute('aria-busy'); } }
+$('stsave').addEventListener('click', () => busyBtn($('stsave'), async () => {
   if(!refProfile || refProfile.learned) return;
   $('ststat').textContent = 'Saving…';
   try{ const r = await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: (refProfile.name || 'Reel').slice(0, 120), category: $('stcat').value, shared: $('stshare').checked, fp: fingerprintOf(refProfile) }) });
     $('ststat').textContent = 'Saved to your ' + STYLE_KINDS[r.category] + ' styles ✓'; loadKinds(); }
   catch(err){ console.warn('style not saved:', err); $('ststat').textContent = 'Could not save your style. Please try again.'; notify('Could not save your style. Please try again.', 'err'); }
-}, SIG);
+}), SIG);
 async function loadKinds(){
   try{ const r = await api('/api/studio/styles'); const sel = $('lcat'), keep = sel.value; sel.innerHTML = '';
     for(const [k, name] of Object.entries(STYLE_KINDS)){ const c = r.categories[k] || { mine: 0, shared: 0 }; const o = new Option(name + ' (' + c.mine + ' mine' + (c.shared ? ', ' + c.shared + ' shared' : '') + ')', k); o.disabled = !c.mine && !c.shared; sel.add(o); }
@@ -8439,10 +8441,10 @@ async function loadKinds(){
     const tc = $('tcat'); if(!tc.options.length) for(const [k, name] of Object.entries(STYLE_KINDS)) tc.add(new Option(name, k));
     autoUse();
     $('stlist').innerHTML = ''; for(const s of r.mine.slice(0, 40)){ const li = document.createElement('li'); li.textContent = STYLE_KINDS[s.category] + ': ' + s.name + ' · ' + s.pace + (s.trans ? ' · ' + s.trans : '') + (s.shared ? ' · shared' : '') + ' ';
-      const del = document.createElement('button'); del.className = Button.small; del.textContent = 'Delete'; del.addEventListener('click', async () => { try{ await api('/api/studio/styles/' + s.id, { method: 'DELETE' }); loadKinds(); }catch(e){} }); li.appendChild(del); $('stlist').appendChild(li); }
+      const del = document.createElement('button'); del.className = Button.small; del.textContent = 'Delete'; del.addEventListener('click', () => busyBtn(del, async () => { try{ await api('/api/studio/styles/' + s.id, { method: 'DELETE' }); await loadKinds(); }catch(e){} })); li.appendChild(del); $('stlist').appendChild(li); }
   }catch(err){ $('learnrow').hidden = true; }
 }
-$('luse').addEventListener('click', async () => {
+$('luse').addEventListener('click', () => busyBtn($('luse'), async () => {
   const k = $('lcat').value; if(!k) return; $('linfo').textContent = 'Learning…';
   try{ const scope = $('lscope').querySelector('[aria-pressed="true"]').dataset.s, r = await api('/api/studio/styles/learned?category=' + encodeURIComponent(k) + '&scope=' + scope);
     if(!r.fp){ $('linfo').textContent = 'No Reels of this kind yet.'; return; }
@@ -8453,7 +8455,7 @@ $('luse').addEventListener('click', async () => {
     $('linfo').textContent = 'Learned from ' + r.n + ' Reel' + (r.n > 1 ? 's' : '') + (r.accuracy ? ' · predicts a new ' + STYLE_KINDS[k].toLowerCase() + ' Reel ' + Math.round(r.accuracy.learned*100) + '% (default style ' + Math.round(r.accuracy.baseline*100) + '%)' : '') + (r.corrections ? ' · ' + r.corrections + ' of your changes' : '');
     setMode('copy'); $('refinfo').textContent = refProfile.name + ': ' + describeRef(refProfile); $('stsaverow').hidden = true;
   }catch(err){ console.warn('learned style:', err); $('linfo').textContent = 'Your learned style is not ready yet.'; }
-}, SIG);
+}), SIG);
 $('lscope').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; [...$('lscope').children].forEach(x => x.setAttribute('aria-pressed', String(x === b))); if($('lauto').checked) autoSave(); }, SIG);
 // "Use for my next Reels": the kind and scope are remembered on this device, and the learned style is put on when the studio opens
 const AUTO_KEY = 'brs-auto-style';

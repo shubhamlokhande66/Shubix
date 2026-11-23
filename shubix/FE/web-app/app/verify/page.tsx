@@ -52,7 +52,7 @@ export default function VerifyPage() {
     <AuthFrame>
       <Card className="flex flex-col gap-3">
         <h1 className="m-0 font-[family-name:var(--font-display)] text-[21px] font-semibold tracking-[-0.015em]">{text("auth.verifyTitle")}</h1>
-        <Suspense fallback={null}><Verify /></Suspense>
+        <Suspense fallback={<Spinner size="sm" />}><Verify /></Suspense>
       </Card>
     </AuthFrame>
   );

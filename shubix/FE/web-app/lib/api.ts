@@ -385,7 +385,7 @@ export const api = {
   aiUsage: () => request<AiUsage>("/api/ai/usage"),
   /** The song's audio as a File, so every existing "song file" flow (waveform, upload) works unchanged. */
   songFile: async (song: Song): Promise<File> => {
-    const res = await fetch(assetUrl(song.url) as string);
+    const res = await clickBusy(fetch(assetUrl(song.url) as string));
     if (!res.ok) throw await parseError(res);
     const blob = await res.blob();
     const ext = (blob.type.split("/")[1] ?? "mp3").replace("mpeg", "mp3").replace("x-wav", "wav");
@@ -398,11 +398,11 @@ export const api = {
   updateVoice: (id: string, v: VoiceProfileInput) => request<VoiceProfile>(`/api/voices/${id}`, { method: "PATCH", body: JSON.stringify(v) }),
   deleteVoice: (id: string) => request<void>(`/api/voices/${id}`, { method: "DELETE" }),
   previewVoice: async (id: string, text?: string): Promise<Blob> => {
-    const res = await fetch(`${API_URL}/api/voices/${id}/preview`, {
+    const res = await tracked(fetch(`${API_URL}/api/voices/${id}/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
-    }).catch(() => {
+    })).catch(() => {
       throw new ApiError(0, { code: "NETWORK_ERROR", message: TECH_ISSUE });
     });
     if (!res.ok) throw await parseError(res);
