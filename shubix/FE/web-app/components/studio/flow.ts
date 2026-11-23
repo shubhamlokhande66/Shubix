@@ -555,7 +555,7 @@ export function initFlow(root: HTMLElement): () => void {
       const want = ft.dataset.ft, photos = want === "photos";
       if (photos !== has("photomode")) (photos ? $("photokind") : root.querySelector<HTMLButtonElement>('#kind [data-k="music"]'))?.click();
       root.classList.toggle("mixmode", want === "mix");
-      const vf = $<HTMLInputElement>("vfile"), IMG = "image/*,.jpg,.jpeg,.png,.webp,.heic", VID = "video/*,.mov,.mp4,.m4v,.3gp";
+      const vf = $<HTMLInputElement>("vfile"), IMG = "image/*,.jpg,.jpeg,.png,.webp,.heic,.heif", VID = "video/*,.mov,.mp4,.m4v,.3gp";
       vf.accept = want === "mix" ? `${VID},${IMG}` : photos ? IMG : VID;
       setTimeout(() => { (live() as { wantPaint?: () => void } | undefined)?.wantPaint?.(); apply(); });
       return;

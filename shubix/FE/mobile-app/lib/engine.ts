@@ -76,7 +76,10 @@ if (native) void brandGet().then((b) => (b ? native.call("brandSet", b as unknow
 
 async function call<T>(op: string, args: Record<string, unknown> = {}): Promise<T> {
   if (!native) throw new Error("Making Reels needs the Shubix app (not Expo Go).");
-  return native.call(op, args) as Promise<T>;
+  // whatever takes more than a moment (Ask Shubix, captions, Remix, a tool) goes on in another app and with the screen off
+  let held = false;
+  const t = setTimeout(() => { held = true; keepAwake(true); }, 400);
+  try { return await (native.call(op, args) as Promise<T>); } finally { clearTimeout(t); if (held) keepAwake(false); }
 }
 /** the studio's texts as the phone keeps them (its own: a number id, t0 / t1, size as a multiple of 36); every setting kept */
 export function textsOf(list: unknown): ReelProject["overlays"] | undefined {

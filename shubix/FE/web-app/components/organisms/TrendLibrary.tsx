@@ -8,6 +8,7 @@ import { Badge, Button, Card, Heading, Icon, IconButton, Select, Spinner } from 
 import { EmptyState, ErrorBanner, Field, PageHeader, SidePanel } from "@/components/molecules";
 import { StatTile } from "@/components/molecules/StatTile";
 import { api, errorMessage } from "@/lib/api";
+import { askToNotify, stayAlive, titleDone, titleProgress } from "@/lib/background";
 import { PICKER_VIDEO, isVideoFile } from "@/lib/format";
 import type { LearningOdd, StyleSuggestion } from "@/types/api";
 
@@ -27,7 +28,7 @@ const readerOf = (f: HTMLIFrameElement | null) => (f?.contentWindow as (Window &
 /** Many Reels at once (any number: 400–500 is fine), each read on this device by the studio's reader in a frame no one
  * sees; the video never leaves the device, only its numbers go to the database, shared, so every creator's Reels of
  * that kind are made with them. Before and after: how close Shubix's style of the kind comes to a real Reel of it. */
-function TeachForm({ first = "wedding" }: { first?: string }) {
+function TeachForm({ first = "wedding", onBusy }: { first?: string; onBusy?: (busy: boolean) => void }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const qc = useQueryClient();
   const [kind, setKind] = useState(first);
@@ -51,18 +52,20 @@ function TeachForm({ first = "wedding" }: { first?: string }) {
     throw new Error("Shubix's reader did not start. Reload the page and try again.");
   }
   async function start() {
-    setError(null); setResult(null); setBusy(true); setPart(0); setStatus("Starting Shubix's reader…");
+    setError(null); setResult(null); setBusy(true); setPart(0); setStatus("Starting Shubix's reader…"); onBusy?.(true);
+    const rest = stayAlive(); askToNotify();   // from this tap: it goes on in another tab, and minimized
+    const ask = (e: BeforeUnloadEvent) => e.preventDefault(); window.addEventListener("beforeunload", ask);
     const k = kind, list = files;
     try {
       const before = await skillOf(k).catch(() => null);
       const t = await teacher();
-      const r = await t.run(list, k, true, (text, p) => { setStatus(text); if (p !== undefined) setPart(p); });
+      const r = await t.run(list, k, true, (text, p) => { setStatus(text); if (p !== undefined) { setPart(p); titleProgress("learn", "Learning Reels", p); } });
       const after = await skillOf(k).catch(() => null);
       setResult({ r, before, after, kind: k }); setFiles([]);
       qc.invalidateQueries({ queryKey: ["kind-skill", k] });
       qc.invalidateQueries({ queryKey: ["learning-log"] }); qc.invalidateQueries({ queryKey: ["style-kinds"] });
     } catch (e) { setError(errorMessage(e)); }
-    finally { setBusy(false); setStatus(""); }
+    finally { rest(); titleDone("learn"); window.removeEventListener("beforeunload", ask); setBusy(false); setStatus(""); onBusy?.(false); }
   }
   const stop = () => { readerOf(frame.current)?.stop(); setStatus("Stopping after this Reel…"); };
   const name = (k: string) => KINDS.find(([v]) => v === k)?.[1] ?? k;
@@ -96,7 +99,7 @@ function TeachForm({ first = "wedding" }: { first?: string }) {
       </Card>
       {error && <ErrorBanner title="Could not learn from these Reels" message={error} />}
       {busy && <ProgressBar value={part * 100} label={status || "Reading"} showEta />}
-      {busy && <p className="m-0 text-[12px] text-muted">Keep this panel and this tab open while it reads (about 10–30 s a Reel). Stopped or closed, it goes on where it was next time: Reels already learned are skipped.</p>}
+      {busy && <p className="m-0 text-[12px] text-muted">You can use another tab or app, or minimize this window: it goes on. Keep this tab open and the computer awake. Stopped or closed, it goes on where it was next time: Reels already learned are skipped.</p>}
       {result && (
         <Card className="flex flex-col gap-1.5 text-[13px]" aria-label="What was learned">
           <p className="m-0 font-semibold">{result.r.stopped ? "Stopped. " : ""}Learned from {result.r.ok} {name(result.kind)} Reel{result.r.ok === 1 ? "" : "s"} ✓</p>
@@ -233,7 +236,7 @@ export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) 
   const q = useQuery({ queryKey: ["style-kinds"], queryFn: kindsNow });
   const waiting = useQuery({ queryKey: ["style-suggestions"], queryFn: api.styleSuggestions });
   const [panel, setPanel] = useState<"learn" | "users" | "log" | null>(null);
-  const [startKind, setStartKind] = useState("wedding");
+  const [startKind, setStartKind] = useState("wedding"), [teaching, setTeaching] = useState(false);
   const cats = q.data?.categories ?? {}, waitingN = waiting.data?.total ?? 0;
   // what every creator's Reels use: the shared Reels of each kind (the app's own Reels, and the ones taught here)
   const known = KINDS.map(([k, n]) => ({ k, n, reels: cats[k]?.shared ?? 0 }));
@@ -289,7 +292,7 @@ export function TrendLibrary({ embedded = false }: { embedded?: boolean } = {}) 
         </div>
       )}
 
-      <SidePanel open={panel === "learn"} onClose={() => setPanel(null)} title="Learn a new trend" where="My trends"><TeachForm key={startKind} first={startKind} /></SidePanel>
+      <SidePanel open={panel === "learn"} onClose={() => { if (!teaching) setPanel(null); }} title="Learn a new trend" where="My trends"><TeachForm onBusy={setTeaching} key={startKind} first={startKind} /></SidePanel>
       <SidePanel open={panel === "log"} onClose={() => setPanel(null)} title="Learning log" where="My trends"><LearningLogView /></SidePanel>
       <SidePanel open={panel === "users"} onClose={() => setPanel(null)} title="Reels from users" where="My trends" badge={waitingN ? <Badge tone="brand">{waitingN} waiting</Badge> : undefined}><Suggestions /></SidePanel>
     </div>

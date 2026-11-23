@@ -1297,3 +1297,4 @@ export * from "./shotFlow";
 export * from "./reactions";
 export * from "./shotWords";
 export * from "./bestMoment";
+export * from "./compare";

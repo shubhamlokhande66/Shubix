@@ -14,9 +14,12 @@ import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './d
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
 import { budgetEffects, budgetLiftFrom, describeBudget, shotWords, momentsFound, bestMoment, bestMomentWords } from '@shubix/video-engine';
+import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { showablePhoto } from '@/lib/heic';
+import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -30,7 +33,7 @@ import { revealShape, motionBetween, shotMove, shapeInside, SHAPE_REACH } from '
 import { onsetCurve, alignInSong, refineAlign } from './songAlign';
 import { Button, Chip } from "./ui";
 import { createPreviewProxy, previewProxyPlan, probeVideo, editCopyPlan, convertOnServer, SERVER_CONVERT_MAX_BYTES, hasPicture } from '../../lib/previewProxy';
-import { isHidden, whenVisible, isReclaimed, titleProgress, titleDone, askToNotify, notifyDone, holdAwake } from '../../lib/background';
+import { isHidden, whenVisible, isReclaimed, titleProgress, titleDone, askToNotify, notifyDone, holdAwake, breathe, stayAlive } from '../../lib/background';
 // was the page in the background at any time since `mark` (work that failed then is tried again when the page is back)
 let readyToldGen = '', bgSeq = 0; if(typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if(isHidden()) bgSeq++; });
 // the file the decoders read: an iPhone 4K HDR 60 fps clip's edit copy (H.264, 1080p, 30 fps) when it has one
@@ -891,10 +894,10 @@ async function clipReader(src, maxSide){
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
     // the clip lasts as long as its picture: a phone clip's sound often runs on after the last frame, and a shot there freezes
     const vEnd = await track.computeDuration().catch(() => 0) - first; if(vEnd > 0.3 && vEnd < src.dur - 0.04) src.dur = vEnd;
-    const sink = new mb.CanvasSink(track, { width: Math.max(2, Math.round(src.w*sc/2)*2), height: Math.max(2, Math.round(src.h*sc/2)*2), fit: 'fill', poolSize: 2 });
+    const sink = smallFrames(mb, track, Math.max(2, Math.round(src.w*sc/2)*2), Math.max(2, Math.round(src.h*sc/2)*2), 2);
     return { fast: true,
-      async *frames(ts){ for await (const wc of sink.canvasesAtTimestamps(ts.map(t=>first + t))) yield wc ? wc.canvas : null; },
-      async at(t){ const wc = await sink.getCanvas(first + t); return wc ? wc.canvas : null; },
+      frames: ts => sink.at(ts.map(t=>first + t)),
+      at: t => sink.one(first + t),
       close(){ try{ input.dispose(); }catch(e){} } };
   }catch(err){
     const v = makeVideo(src.url); await videoData(v);
@@ -945,7 +948,7 @@ async function scanMotion(src, onProgress, faces){
   try{
     let k = 0;
     let fi = 0; const half = step/2;
-    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img) grab(img, t); if(k % 8 === 0){ onProgress(t/src.dur); await new Promise(r=>setTimeout(r,0)); }
+    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img) grab(img, t); if(k % 8 === 0){ onProgress(t/src.dur); await breathe(); }
       // the faces' times this frame stands for (within half a step: at most 0.1 s off)
       if(faces && img) while(fi < faces.ts.length && faces.ts[fi] <= t + half){ if(faces.ts[fi] >= t - half && !(await faces.each(img, faces.ts[fi]))){ faces = null; break; } fi++; }
     }
@@ -1044,9 +1047,18 @@ async function findScenes(rd, src, S, H, LM){
     if(histD(H[pre], H[post]) < 0.5*c[i]) continue;
     isCut[i] = 1;
   }
-  const grabH = async (t) => { let v; try{ v = await rd.at(t); }catch(e){ return null; } if(!v) return null;
-    const cv = grabH.cv || (grabH.cv = Object.assign(document.createElement('canvas'), {width:SW, height:SH})), g = cv.getContext('2d', {willReadFrequently:true});
+  const histOf = v => { const cv = histOf.cv || (histOf.cv = Object.assign(document.createElement('canvas'), {width:SW, height:SH})), g = cv.getContext('2d', {willReadFrequently:true});
     g.drawImage(v,0,0,SW,SH); return colorHist(g.getImageData(0,0,SW,SH).data); };
+  // every moment the bisections below may ask for, decoded in one pass (asked one by one, each is decoded from the key
+  // frame before it: 57 cuts took 20 s)
+  const ahead = new Map();
+  if(rd.fast){
+    const ts = [], halve = (lo, hi, it) => { if(it >= 4 || hi - lo <= 1/60) return; const mid = (lo+hi)/2; ts.push(mid); halve(lo, mid, it+1); halve(mid, hi, it+1); };
+    for(let i=1;i<n;i++) if(isCut[i]) halve(S[i-1].t, S[i].t, 0);
+    ts.sort((x, y) => x - y);
+    try{ let k = 0; for await (const v of rd.frames(ts)){ const t = ts[k++]; if(v) ahead.set(t, histOf(v)); if(k % 8 === 0) await breathe(); } }catch(e){ /* asked one by one */ }
+  }
+  const grabH = async (t) => { if(ahead.has(t)) return ahead.get(t); let v; try{ v = await rd.at(t); }catch(e){ return null; } return v ? histOf(v) : null; };
   for(let i=1;i<n;i++) if(isCut[i]){
     // bisection between the last sample of the old scene and the first of the new one, to about one frame
     let lo = S[i-1].t, hi = S[i].t; const hA = H[i-1], hB = H[i];
@@ -1147,7 +1159,7 @@ async function scanFaces(src, onProgress){
   try{ for await (const v of rd.frames(ts)){ const tt = ts[k++]; if(!v) continue;
     if(!(await fs.each(v, tt))) break;
     onProgress(tt/src.dur);
-    await new Promise(r=>setTimeout(r,0));
+    await breathe();
   } }catch(err){ console.warn('reading frames for faces failed', err); } finally { rd.close(); }
   fs.done();
 }
@@ -1763,7 +1775,7 @@ async function denoise(pcm, sr){
       for(let k=0;k<F;k++) fr[k] = (x[i+k] || 0)*32768;
       st.processFrame(fr);
       for(let k=0;k<F;k++){ const o = i + k - D; if(o >= 0 && o < y.length) y[o] = fr[k]/32768; }
-      if((i/F) % 500 === 499) await new Promise(r => setTimeout(r, 0));
+      if((i/F) % 500 === 499) await breathe();
     }
   } finally { st.destroy(); }
   return resampleTo(y, 48000, sr);
@@ -2486,30 +2498,34 @@ function aiTags(src){
 function aiAt(src, a, b){
   if(!aiOn || !src.ai || !src.ai.frames.length) return null;
   const F = src.ai.frames, sg = Math.max(0.6, 0.45*src.dur/F.length);
-  let w = 0, s = 0, bw = 0, best = null; const R = {};
+  let w = 0, s = 0, bw = 0, best = null, cw = 0, op = 0, ps = 0; const R = {};
   for(const f of F){
     const d = f.t < a ? a-f.t : f.t > b ? f.t-b : 0;
     if(d > 0 && crossesScene(src, Math.min(f.t,a), Math.max(f.t,b))) continue;   // another scene says nothing about this one
     const k = Math.exp(-0.5*(d/sg)**2); if(k < 0.02) continue;
     w += k; s += k*f.score; f.roles.forEach(r=>{ R[r] = (R[r]||0) + k; }); if(k > bw){ bw = k; best = f; }
+    if(f.open != null){ cw += k; op += k*f.open; ps += k*f.pos; }   // compared with the Reel's other moments (compare-shots)
   }
   if(w < 0.05) return null;
   const roles = {}; for(const r in R) roles[r] = R[r]/w;
-  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '' };
+  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '', ...(cw >= 0.05 ? { open: op/cw, pos: ps/cw } : {}) };
 }
 // how much the AI's opinion adds to a candidate moment for this slot. Measured on 17 human-edited Reels (the rebuild
 // test, FE/mobile-app/tests/human-rebuild.test.ts, with GPT-5.6 Luna's answers): editors open on a reveal (the subject
 // coming into view) far more than on action, ease in with reveals and details, and end on a shot the AI scores low (a
 // logo, a fade, a quiet look). So the hook goes by reveal, the setup by reveal and detail, and the last shot by the AI's
 // "ending" alone, without its quality score (with it, editors' last shots ranked 26%; without, 41%).
-function aiBonus(ai, slot, last, part){
+function aiBonus(ai, slot, last, part, at){
   const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : null;
   let fit = 0;
   if(slot==='hook') fit = 0.6*(ai.roles.reveal || 0) + 0.3*(ai.roles.hook || 0);
   else if(last) fit = 0.6*(ai.roles.ending || 0);
   else if(part==='setup') fit = 0.4*((ai.roles.reveal || 0) + (ai.roles.detail || 0));
   else if(role) fit = 0.6*(ai.roles[role] || 0);
-  return ai.conf * ((last ? 0 : 2.2*(ai.score - 0.5)) + fit);
+  // the Reel's moments seen side by side (compare-shots): what opens best among them, and where each belongs
+  if(ai.open != null && slot==='hook') fit = 1.6*(ai.open - 0.5);
+  else if(ai.pos != null && !last && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
+  return ai.conf * ((last || (slot==='hook' && ai.open != null) ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
@@ -2546,11 +2562,30 @@ function aiRestore(src){
 let aiHeld = location.pathname.startsWith('/create');
 // …and the API (asleep after a quiet while: 20-30 s to wake) is woken now, so Generate does not wait for it
 if(aiHeld) fetch('/api/health').catch(() => {});
+// the Reel's moments side by side (compare-shots): asked once the clips are seen, so Shubix knows which one opens best and
+// what belongs where. Only a help: when it fails or takes too long the Reel is made as before.
+const aiPics = new WeakMap();
+async function aiCompare(stop){
+  const list = sources.filter(s=>!s.removed), want = compareMoments(list); if(want.length < 3) return;
+  const cut = new AbortController(), end = () => cut.abort(), timer = setTimeout(end, 30000); stop.addEventListener('abort', end);
+  try{
+    aiStat('Shubix is comparing your best moments…');
+    for(const s of list) if(s.ai && !aiPics.has(s)){ if(cut.signal.aborted) return; aiPics.set(s, await aiFrames(s)); }   // (seen in an earlier Reel)
+    const moments = want.map(([i, k]) => ({ id: i + '_' + k, image: (aiPics.get(list[i]).find(f => Math.abs(f.t - list[i].ai.frames[k].t) < 0.02) || {}).image })).filter(m => m.image);
+    if(cut.signal.aborted || moments.length < 3) return;
+    const r = await apiFetch('/api/studio/compare-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: cut.signal, body: JSON.stringify({ moments }) });
+    if(!r.ok) return;
+    const res = await r.json(); if(cut.signal.aborted) return;
+    if(applyCompared(list, res.moments)) for(const s of list) if(s.ai){ const fp = fpOf(s); aiCache.set(fp, s.ai); try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(s.ai)); }catch(e){} }
+  }catch(e){ console.info('moments not compared:', e && e.message); }
+  finally{ clearTimeout(timer); stop.removeEventListener('abort', end); list.forEach(s => aiPics.delete(s)); keepOneComparison(list); }
+}
 async function aiRun(){
   // keepSaved: a Reel opened with its own edit is not looked at again by itself (a change, Make new Reel or the chat does)
   if(!aiOn || aiBusy || !sources.length || aiHeldBack() || keepSaved) return;
   if(!aiReelOk()){ aiBusy = true; const go = await aiGate(); aiBusy = false; if(!go) return; }
   sources.forEach(s=>{ if(!s.ai) aiRestore(s); });
+  keepOneComparison(sources.filter(s=>!s.removed));
   const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
   if(!need.length){ aiDone(); return; }
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
@@ -2586,7 +2621,7 @@ async function aiRun(){
       tasks.lock();
       charged += res.charged || 0; if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
-        delete j.src.aiFramesMade;   // answered: its pictures are not needed again, only the labels stay
+        aiPics.set(j.src, j.frames); delete j.src.aiFramesMade;   // answered: its pictures are not needed again, only the labels stay
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = fpOf(j.src); aiCache.set(fp, j.src.ai);
         try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){}
         found.push({ clip: sources.indexOf(j.src) + 1, what: c.summary }); }
@@ -2598,6 +2633,8 @@ async function aiRun(){
     } };
     try{ await Promise.all([framing, ...Array.from({ length: 3 }, askPart)]); }
     catch(e){ broke = true; nudge(); throw e; }   // the pictures still being made stop too
+    if(stop.aborted) return;
+    if(!sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) await aiCompare(stop);
     if(stop.aborted) return;
     aiBusy = false;
     if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
@@ -3958,7 +3995,7 @@ function scoreWindow(i, src, a, need, gmax, near){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1, storyRole(i));
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1, storyRole(i), i/Math.max(1, plan.length-1));
   // the shot's part in the story (Shared/video-engine story.ts): wide and steady to set the scene, people close up at
   // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
   if(mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
@@ -4605,7 +4642,7 @@ function repick(i, avoidCurrent, onlySrc){
       if(e.type!=='drop' && slowMo(e.sp, len)) sc = slowFit(m);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i));
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i), i/Math.max(1, edit.length-1));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });
@@ -5091,7 +5128,8 @@ let lmedia = [], layers = [], lySeq = 0, lySel = -1;
 const LY0 = { x:0.5, y:0.5, s:0.5, r:0, op:1, fh:false, fv:false, crop:{l:0,t:0,r:0,b:0}, mask:'none', mk:{w:0.8,h:0.8,a:0,f:0.12,th:0.5,inv:false,points:[[0.5,0.02],[0.92,0.25],[0.92,0.75],[0.5,0.98],[0.08,0.75],[0.08,0.25]]}, fin:0, fout:0, vol:0, rad:0 };
 let lyBuf = null, lyG = null;
 async function addLayerMedia(file){
-  const url = URL.createObjectURL(file), photo = /^image\//.test(file.type) || /\.(jpe?g|png|webp|heic|gif)$/i.test(file.name);
+  file = await showablePhoto(file).catch(() => { throw new Error('This photo cannot be read here.'); });
+  const url = URL.createObjectURL(file), photo = /^image\//.test(file.type) || /\.(jpe?g|png|webp|hei[cf]|gif)$/i.test(file.name);
   if(photo && (file.type === 'image/gif' || /\.gif$/i.test(file.name)) && typeof ImageDecoder !== 'undefined'){   // an animated GIF: its frames, played in a loop
     try{ const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: 'image/gif' }); await dec.tracks.ready; const n = Math.min(240, dec.tracks.selectedTrack.frameCount || 1), frames = [], times = []; let t = 0;
       for(let k = 0; k < n; k++){ const r = await dec.decode({ frameIndex: k }); frames.push(await createImageBitmap(r.image)); times.push(t); t += Math.max(0.02, (r.image.duration || 100000)/1e6); r.image.close(); }
@@ -6207,7 +6245,7 @@ $('bgmode').addEventListener('click', e => { const b = e.target.closest('button'
   b.addEventListener('click', () => { bgColor = c; [...$('bgcolors').children].forEach(x => x.classList.toggle('on', x === b)); redrawFrame(); }); $('bgcolors').appendChild(b); });
 $('bgpick').addEventListener('click', () => $('bgfile').click(), SIG);
 $('bgfile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if(!f) return;
-  bgFile = f; const im = new Image(); im.onload = () => { bgImg = im; bgStat(); redrawFrame(); }; im.onerror = () => { $('bgstat').textContent = 'This photo cannot be read here.'; }; im.src = URL.createObjectURL(f); }, SIG);
+  void showablePhoto(f).catch(() => f).then(f => { bgFile = f; const im = new Image(); im.onload = () => { bgImg = im; bgStat(); redrawFrame(); }; im.onerror = () => { $('bgstat').textContent = 'This photo cannot be read here.'; }; im.src = URL.createObjectURL(f); }); }, SIG);
 // the song as speech recognition wants it: 16 kHz mono, the vocal band (drums and bass mostly out), normalised, as WAV
 async function songWav(src = mono, sr = buf.sampleRate, from = 0){
   const a = Math.round(from*sr), len = Math.min(src.length - a, Math.round(180*sr)), n16 = Math.max(1, Math.ceil(len*16000/sr));
@@ -7725,25 +7763,32 @@ async function frameLook(v, t, w, h){
 }
 // Frames of a video at exact times. WebCodecs (through mediabunny) decodes them in one pass, in order; without it the
 // video element seeks to each one (slower, works everywhere).
-async function frameSource(file, v, w, h){
+async function frameSource(file, player, w, h, dur){
   const SH2 = Math.max(8, Math.round(64*h/w));
   try{
     const mb = await loadMediabunny();
     const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS });
     const track = await input.getPrimaryVideoTrack(); if(!track || !(await track.canDecode())) throw new Error('no decoder');
     const first = await track.getFirstTimestamp();
-    const small = new mb.CanvasSink(track, { width: 64, height: SH2, fit: 'fill' }), full = new mb.CanvasSink(track, {});
-    const at = async (sink, ts) => { const order = ts.map((t,i)=>[t,i]).sort((x,y)=>x[0]-y[0]), out = new Array(ts.length); let k = 0;
-      for await (const wc of sink.canvasesAtTimestamps(order.map(o=>first + Math.max(0, o[0])))){ out[order[k][1]] = wc ? wc.canvas : null; k++; }
+    const small = smallFrames(mb, track, 64, SH2), whole = new mb.CanvasSink(track, { poolSize: 1 }), full = { async *at(ts){ for await (const wc of whole.canvasesAtTimestamps(ts)) yield wc ? wc.canvas : null; } };
+    const at = async (sink, ts, of = c => c) => { const order = ts.map((t,i)=>[t,i]).sort((x,y)=>x[0]-y[0]), out = new Array(ts.length); let k = 0;
+      for await (const c of sink.at(order.map(o=>first + Math.max(0, o[0])))) out[order[k++][1]] = c ? of(c) : null;
       return out; };
-    return { small: ts => at(small, ts), full: ts => at(full, ts), close: () => { try{ input.dispose && input.dispose(); }catch(e){} }, fast: true };
+    // (looks: one big frame at a time; 24 kept at once filled the graphics memory, some came back black and the same Reel
+    // was read differently each time)
+    // a Reel of 30 frames a second or fewer, up to 90 s: every frame is kept small (some 25 MB), so the cuts, the transitions
+    // and the zooms are read from one decoding; a longer or faster one is decoded for each, as it was
+    const few = dur <= 90 && await track.computePacketStats(100).then(s => s.averagePacketRate <= 31, () => false); let kept = null;
+    const smallAt = async ts => { if(!few) return at(small, ts); kept = kept || small.all().catch(e => { kept = null; throw e; }); const list = await kept;
+      return ts.map(t => { const f = frameAt(list, first + Math.max(0, t)); return f ? f.c : null; }); };
+    return { small: smallAt, looks: ts => at(full, ts, c => lookOfImage(c, c.width, c.height)), close: () => { try{ input.dispose && input.dispose(); }catch(e){} }, fast: true };
   }catch(e){
-    try{ await videoData(v); }catch(err){}
+    const v = await player(); try{ await videoData(v); }catch(err){}
     const grab = async (ts, cw, ch) => { const out = [];
       for(const t of ts){ v.currentTime = Math.min(Math.max(0.01, t), v.duration-0.02); try{ await waitEv(v,'seeked',3000); }catch(err){ out.push(null); continue; }
         const c = document.createElement('canvas'); c.width = cw || v.videoWidth; c.height = ch || v.videoHeight; c.getContext('2d').drawImage(v,0,0,c.width,c.height); out.push(c); }
       return out; };
-    return { small: ts => grab(ts, 64, SH2), full: ts => grab(ts), close: () => {}, fast: false };
+    return { small: ts => grab(ts, 64, SH2), looks: async ts => (await grab(ts)).map(c => c && lookOfImage(c, c.width, c.height)), close: () => {}, fast: false };
   }
 }
 const CUT_K = 7;   // frames each side of a cut that are looked at (a fade's dark middle and its clean ends both fit)
@@ -7895,7 +7940,11 @@ function refSpeedOf(smp, a, b, mMax, freeze){
 async function analyzeReference(file, onP){
   const url = URL.createObjectURL(file);
   try{
-    const v = makeVideo(url); await waitEv(v,'loadedmetadata', 15000); const dur = v.duration, w = v.videoWidth, h = v.videoHeight;
+    // its length and size from the file itself: a hidden page's <video> may not open for as long as it is hidden (the Reel
+    // counted as bad). The player is used only where the decoder cannot read the file.
+    const facts = await probeVideo(file); let dur = facts && facts.decodes ? facts.duration : 0, w = facts ? facts.width : 0, h = facts ? facts.height : 0, v = null;
+    const player = async () => { if(!v){ v = makeVideo(url); await waitEv(v,'loadedmetadata', 15000); } return v; };
+    if(!(dur > 0) || !w || !h){ await player(); dur = v.duration; w = v.videoWidth; h = v.videoHeight; }
     if(!isFinite(dur) || dur <= 1 || !w) throw new Error('This video cannot be read here.');
     onP(0.02, 'listening to its music');
     // its music: the beats (shot lengths are measured in beats, so the pace carries over to another tempo)
@@ -7910,7 +7959,7 @@ async function analyzeReference(file, onP){
     const ps = { url, dur, w, h, file }; let refCutsOut = []; const fxOdd = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
     await scanMotion(ps, p => onP(0.05 + 0.35*p, 'finding its cuts'));
     const shots = [], looks = [];
-    const fs = await frameSource(file, v, w, h);
+    const fs = await frameSource(file, player, w, h, dur);
     try{
       // black bars (letterbox): the rows that stay dark in every one of 12 frames
       refBars = null;
@@ -7992,12 +8041,12 @@ async function analyzeReference(file, onP){
       const lookEvery = Math.max(1, Math.ceil(sh.length/24));   // the colour look: 24 shots are plenty
       sh.forEach((x,i)=>{ const L = x.b - x.a, m = Math.min(0.25, Math.max(0.18, 0.15*L)), n = !x.flick && L - 2*m >= 0.24 ? Math.max(3, Math.min(9, Math.round((L-2*m)/0.12)+1)) : 0;
         for(let k=0;k<n;k++){ const t = x.a + m + (L-2*m)*k/(n-1); zt.push(t); zi.push([i, (t - x.a)/L]); } lt.push(!x.flick && i % lookEvery === 0 ? x.a + 0.5*L : null); });
-      const zf = await fs.small(zt), lq = lt.filter(t => t !== null), lr = lq.length ? await fs.full(lq) : [], lf = []; { let q = 0; lt.forEach((t,i)=>{ lf[i] = t === null ? null : lr[q++]; }); }
+      const zf = await fs.small(zt), lq = lt.filter(t => t !== null), lr = lq.length ? await fs.looks(lq) : [], lf = []; { let q = 0; lt.forEach((t,i)=>{ lf[i] = t === null ? null : lr[q++]; }); }
       sh.forEach((x,i)=>{ const L = x.b - x.a, mine = zi.map((z,k)=>[z,k]).filter(([z])=>z[0]===i), gr = mine.map(([,k])=>zf[k] ? greyOf(zf[k]) : null);
         let move = null;
         if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g.Y), mine.map(([z])=>z[1]), gr[0].FW, gr[0].FH);
         shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick });
-        const lk = lf[i] ? lookOfImage(lf[i], lf[i].width, lf[i].height) : null; if(lk) looks.push(lk);
+        const lk = lf[i]; if(lk) looks.push(lk);
         // the learning log: an effect in the shot the styles do not learn yet (the studio has each of these)
         if(!x.flick){ const cv = mine.map(([,k]) => zf[k]).filter(Boolean), found = [];
           if(cv.filter(c => rgbShiftOf(c) >= 2).length >= 2) found.push(['RGB split in the shot', 'rgbpulse']);
@@ -8009,7 +8058,7 @@ async function analyzeReference(file, onP){
       refCutsOut = cuts;
     } finally { fs.close(); refBars = null; }
     const cuts = refCutsOut;
-    v.removeAttribute('src'); v.load();
+    if(v){ v.removeAttribute('src'); v.load(); }
     // pace
     const P = rb ? (()=>{ const ib = rb.slice(1).map((t,i)=>t-rb[i]).sort((x,y)=>x-y); return ib[ib.length>>1]; })() : 0;
     const shotSec = shots.map(s=>s.b-s.a), toBeats = x => P ? Math.max(0.5, Math.round(x/P*2)/2) : 0;
@@ -8427,13 +8476,16 @@ async function teachMany(files, cat, shared, say){
   if(admin){ try{ done = new Set((await api('/api/admin/learning?names=' + encodeURIComponent(cat))).names || []); }catch(err){ /* no log: all are read */ } }
   const log = d => admin ? api('/api/admin/learning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: cat, ...d }) }).catch(() => {}) : null;
   teaching = true; teachStop = false;
+  const rest = stayAlive();   // it goes on in another tab and minimized
   try{
     for(const [i, f] of files.entries()){
       if(teachStop) break;
       const head = 'Reel ' + (i+1) + ' of ' + files.length + ': ', name = nameOf(f);
       if(done.has(name)){ skip++; continue; }
       try{
-        const R = await analyzeReference(f, (p, what) => say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length));
+        const read = () => analyzeReference(f, (p, what) => { say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length); titleProgress('learn', 'Learning Reels', (i + p)/files.length); });
+        // the browser took the video decoder back while the page was hidden: the Reel is read again, not counted as bad
+        const R = await read().catch(err => { if(!isReclaimed(err)) throw err; return read(); });
         if(!R.cuts || R.cuts.length < 2) throw new Error('too few cuts to learn from');
         say(head + 'saving', (i + 1)/files.length);
         await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, category: cat, shared, fp: fingerprintOf(R) }) });
@@ -8442,7 +8494,8 @@ async function teachMany(files, cat, shared, say){
         ok++; done.add(name); cutsN += R.cuts.length; oddN += R.unread.cuts.length; fxN += R.unread.fx.length;
       }catch(err){ console.warn('not learned from', f.name, err); bad++; await log({ name, ok: false, reason: String(err && err.message || err).slice(0, 200) }); }
     }
-  } finally { teaching = false; }
+  } finally { teaching = false; rest(); titleDone('learn'); }
+  void notifyDone('Shubix has learned your Reels', ok + ' of ' + files.length + ' learned', 'shubix-learn');
   return { ok, bad, skip, cuts: cutsN, newCuts: oddN, effects: fxN, stopped: teachStop };
 }
 window.shubixTeach = { run: teachMany, stop: () => { teachStop = true; }, busy: () => teaching, kinds: STYLE_KINDS };

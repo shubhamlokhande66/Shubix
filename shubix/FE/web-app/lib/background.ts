@@ -32,6 +32,36 @@ export function nap(ms: number): Promise<void> {
   });
 }
 
+/** Lets the page breathe in the middle of long work. On screen: a timer of nothing. Hidden: a message to itself, because a
+ * browser runs a hidden page's timers once a second, after five minutes once a minute (clips were read 8 frames a second,
+ * then 8 a minute, so the work looked stopped). Messages are not slowed. */
+let hop: MessageChannel | null = null;
+const hops: (() => void)[] = [];
+export function breathe(): Promise<void> {
+  if (!isHidden() || typeof MessageChannel === "undefined") return new Promise((ok) => setTimeout(ok, 0));
+  if (!hop) { hop = new MessageChannel(); hop.port1.onmessage = () => hops.shift()?.(); }
+  const h = hop;
+  return new Promise((ok) => { hops.push(ok); h.port2.postMessage(0); });
+}
+
+/** Keeps long work at full speed while the person is in another tab or app, or the window is minimized: a held Web Lock
+ * (the browser does not freeze or throw away the page) and a sound too low and too quiet to hear (a page that plays sound
+ * keeps its timers on time and is not slowed). Called from a tap. Returns what ends it. */
+export function stayAlive(): () => void {
+  const free = holdAwake();
+  let hum: AudioContext | null = null;
+  try {
+    if (typeof AudioContext !== "undefined") {
+      hum = new AudioContext();
+      const o = hum.createOscillator(), g = hum.createGain();
+      // -60 dB: under about -72 dB Chrome takes it for silence (it was -80 dB, so it did nothing); 30 Hz: no phone or laptop speaker plays it
+      o.frequency.value = 30; g.gain.value = 0.001; o.connect(g); g.connect(hum.destination); o.start();
+      void hum.resume().catch(() => undefined);
+    }
+  } catch { /* no sound here: only the lock */ }
+  return () => { free(); void hum?.close().catch(() => undefined); hum = null; };
+}
+
 /** The browser took the video decoder / encoder back from a page in the background (Chrome: "Codec reclaimed"). */
 export function isReclaimed(err: unknown): boolean {
   const e = err as { name?: string; message?: string } | null;

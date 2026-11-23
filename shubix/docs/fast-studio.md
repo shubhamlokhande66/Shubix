@@ -815,6 +815,14 @@ that way (`BEST=1 BLIND=1`), not 50%. Each shot is now judged once, over its mid
 | last shot | 17 | 32% | 32% | 36% | 36% |
 | all | 245 | 50% | 51% | 52% | 53% |
 
+**The moments seen side by side (2026-11-23).** rank-shots looks at each clip on its own, so it cannot compare clips.
+`compare-shots` (server/studio/compareShots.ts, after rank-shots, no credits of its own) shows one to three moments of
+every clip together and gets back which opens best and the order. Asked so on the 17 Reels (GPT-5.6 Luna, about 2,600
+tokens a Reel, shots shuffled): the editors' openings 62% +-7 and their shots in the right order two by two 63% +-4 (50% =
+random). In the scorer (`aiBonus`: `open`, `pos`) with Shubix AI: all 53% -> 57%, middle 56% -> 62%, opening 52% -> 57%,
+setup 46% -> 44%, drops 53% -> 56%, last shot 36% as before. The test shows two frames a shot and finished Reels (texts
+in them may tell their order); the app shows one frame a moment of raw clips, so the gain there is not measured yet.
+
 Openings are 17, so each figure is +-7 points; movement alone, weights learned on the other 16 Reels, gives 64%. The
 last shot cannot be learned here: 12 of the 17 end in a fade to black, which is the editing, not the footage. The setup
 gains only where movement outweighs blur and darkness, so it gets none.
@@ -848,3 +856,11 @@ test carry only their song; the real test (raw clips with their sound and the ed
 
 Benchmark: `FE/mobile-app/tests/human-rebuild.test.ts` reports "flow off / flow on" (the shot before is the human's own,
 and no longer a choice). Tests: `FE/web-app/tests/video-engine-flow-reactions.test.ts`.
+
+**Learning Reels, faster and while the page is hidden (2026-11-23).** Measured on two of the 17 Reels in Chrome on a small
+laptop, window minimized: a 24 s Reel 89 s -> 21 s, a 29 s Reel with 57 cuts over 200 s -> 39 s. Why it was slow:
+mediabunny's CanvasSink draws its canvas onto itself when it makes a frame small (`lib/smallFrames.ts` does not), and the
+Reel was decoded again for each reading (its small frames are now kept). Why it stopped in another tab: a timer every 8 frames
+(a hidden page's timers run once a second, later once a minute: `breathe()`), a `<video>` that does not open while hidden
+(the Reel counted as bad: its facts now come from the file), and a keep-alive sound so quiet Chrome took it for silence
+(`stayAlive()`). The same Reel read twice now gives the same numbers: 24 full-size frames kept at once came back black in part.

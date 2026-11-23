@@ -123,14 +123,17 @@ export function keyframesFor(e){
 // coming into view) far more than on action, ease in with reveals and details, and end on a shot the AI scores low (a
 // logo, a fade, a quiet look). So the hook goes by reveal, the setup by reveal and detail, and the last shot by the AI's
 // "ending" alone, without its quality score (with it, editors' last shots ranked 26%; without, 41%).
-export function aiBonus(ai, slot, last, part){
+export function aiBonus(ai, slot, last, part, at){
   const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : null;
   let fit = 0;
   if(slot==='hook') fit = 0.6*(ai.roles.reveal || 0) + 0.3*(ai.roles.hook || 0);
   else if(last) fit = 0.6*(ai.roles.ending || 0);
   else if(part==='setup') fit = 0.4*((ai.roles.reveal || 0) + (ai.roles.detail || 0));
   else if(role) fit = 0.6*(ai.roles[role] || 0);
-  return ai.conf * ((last ? 0 : 2.2*(ai.score - 0.5)) + fit);
+  // the Reel's moments seen side by side (compare-shots): what opens best among them, and where each belongs
+  if(ai.open != null && slot==='hook') fit = 1.6*(ai.open - 0.5);
+  else if(ai.pos != null && !last && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
+  return ai.conf * ((last || (slot==='hook' && ai.open != null) ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 /** a part of the song as a 16 kHz mono WAV: what Shubix AI hears */
 export function songSample(M, sr, from, secs){

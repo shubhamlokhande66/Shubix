@@ -415,16 +415,17 @@ function aiTags(src){
 function aiAt(src, a, b){
   if(!ES.aiOn || !src.ai || !src.ai.frames.length) return null;
   const F = src.ai.frames, sg = Math.max(0.6, 0.45*src.dur/F.length);
-  let w = 0, s = 0, bw = 0, best = null; const R = {};
+  let w = 0, s = 0, bw = 0, best = null, cw = 0, op = 0, ps = 0; const R = {};
   for(const f of F){
     const d = f.t < a ? a-f.t : f.t > b ? f.t-b : 0;
     if(d > 0 && crossesScene(src, Math.min(f.t,a), Math.max(f.t,b))) continue;   // another scene says nothing about this one
     const k = Math.exp(-0.5*(d/sg)**2); if(k < 0.02) continue;
     w += k; s += k*f.score; f.roles.forEach(r=>{ R[r] = (R[r]||0) + k; }); if(k > bw){ bw = k; best = f; }
+    if(f.open != null){ cw += k; op += k*f.open; ps += k*f.pos; }   // compared with the Reel's other moments (compare-shots)
   }
   if(w < 0.05) return null;
   const roles = {}; for(const r in R) roles[r] = R[r]/w;
-  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '' };
+  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '', ...(cw >= 0.05 ? { open: op/cw, pos: ps/cw } : {}) };
 }
 // how much the AI's opinion adds to a candidate moment for this slot
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
@@ -749,7 +750,7 @@ function scoreWindow(i, src, a, need, gmax, near){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1, storyRole(i));
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1, storyRole(i), i/Math.max(1, ES.plan.length-1));
   // the shot's part in the story (shared/video-engine story.ts): wide and steady to set the scene, people close up at
   // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
   if(ES.mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
@@ -972,7 +973,7 @@ function repick(i, avoidCurrent, onlySrc){
       if(e.type!=='drop' && slowMo(e.sp, len)) sc = slowFit(m);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1, storyRole(i));
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1, storyRole(i), i/Math.max(1, ES.edit.length-1));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });

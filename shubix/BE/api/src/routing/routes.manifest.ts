@@ -124,6 +124,7 @@ export const ROUTES: [string, () => Record<string, unknown>][] = [
   ["api/studio/direct", () => require("../routes/api/studio/direct/route")],
   ["api/studio/model/[name]", () => require("../routes/api/studio/model/[name]/route")],
   ["api/studio/moments", () => require("../routes/api/studio/moments/route")],
+  ["api/studio/compare-shots", () => require("../routes/api/studio/compare-shots/route")],
   ["api/studio/pace", () => require("../routes/api/studio/pace/route")],
   ["api/studio/rank-shots", () => require("../routes/api/studio/rank-shots/route")],
   ["api/studio/reels", () => require("../routes/api/studio/reels/route")],

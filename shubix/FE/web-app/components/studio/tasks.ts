@@ -9,6 +9,7 @@
  * Create flow's "Analysing" screen (flow.ts) shows the same progress.
  */
 
+import { stayAlive } from "../../lib/background";
 import { tx } from "./i18n";
 import { Button } from "./ui";
 
@@ -95,18 +96,8 @@ export function createTasks(host: HTMLElement) {
   let awake: { release: () => Promise<void> } | null = null, asking = false;
   // in another tab: a held lock keeps the browser from freezing this one, and a sound nobody can hear keeps its timers on time
   // (a phone's browser with its screen off may still stop the page: the words say so)
-  let stayEnd: (() => void) | null = null, hum: AudioContext | null = null;
-  const stayAlive = (on: boolean) => {
-    if (!on) { stayEnd?.(); stayEnd = null; void hum?.close().catch(() => undefined); hum = null; return; }
-    if (stayEnd) return;
-    const held = new Promise<void>((done) => { stayEnd = done; });
-    try { void (navigator as unknown as { locks?: { request(n: string, f: () => Promise<void>): Promise<void> } }).locks?.request("shubix-work", () => held).catch(() => undefined); } catch { /* an older browser */ }
-    try {
-      if (typeof AudioContext === "undefined") return;
-      hum = new AudioContext(); const o = hum.createOscillator(), g = hum.createGain(); g.gain.value = 0.0001; o.connect(g); g.connect(hum.destination); o.start();
-      void hum.resume().catch(() => undefined);
-    } catch { /* no sound here: only the lock */ }
-  };
+  let stayEnd: (() => void) | null = null;
+  const keepGoing = (on: boolean) => { if (!on) { stayEnd?.(); stayEnd = null; } else stayEnd ??= stayAlive(); };
   const stayAwake = async (on: boolean) => {
     if (!on) { const a = awake; awake = null; await a?.release().catch(() => undefined); return; }
     if (awake || asking) return;
@@ -121,7 +112,7 @@ export function createTasks(host: HTMLElement) {
   // the popup shows while a process with no screen of its own runs
   function refresh() {
     const shown = [...cards].filter(([id, c]) => !onOwnScreen(c) && !hiddenIds.has(id));
-    stayAlive(cards.size > 0);
+    keepGoing(cards.size > 0);
     // one card, the newest: the popup never scrolls (the others are in its steps)
     const newest = shown[shown.length - 1]?.[0];
     cards.forEach((c, id) => { c.el.hidden = id !== newest; });
