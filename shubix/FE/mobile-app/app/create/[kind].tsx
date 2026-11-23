@@ -44,7 +44,7 @@ function CreateFlowScreen() {
   const photos = pick === "photos", choosing = kind !== "talking" && kind !== "copy";   // the clips step's choice: Videos, Photos or Mix
   const [settings, setSettings] = useState<ClipSettings>({ order: "order", aspect: "9:16", pace: "natural", under: "0.09", fit: true });
   const [wish, setWish] = useState(""), [working, setWorking] = useState(false), [focused, setFocused] = useState(true);
-  const [clipState, setClipState] = useState<Record<string, ClipState>>({});
+  const [clipState, setClipState] = useState<Record<string, ClipState>>({}), [clipBest, setClipBest] = useState<Record<string, number>>({});
   const clipBad = useRef(clipState); clipBad.current = clipState;
   // the song and the clips are read one after another behind the screen (one heavy job at a time on a phone)
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -138,7 +138,7 @@ function CreateFlowScreen() {
     tasks.start("flow", "clips", words("Adding your clips"), `${words("Clip")} 1 / ${list.length}`);
     // each clip's card says how it goes (its number in the name it is read by)
     setClipState((was) => Object.fromEntries(list.map((m) => [m.uri, was[m.uri] === "ok" ? "ok" : "wait"])));
-    onClipRead((name, ok) => { const m = list.find((x) => keptBy.current.get(x.uri)?.name === name); if (m) setClipState((was) => ({ ...was, [m.uri]: ok ? "ok" : "bad" })); });
+    onClipRead((name, ok, best) => { const m = list.find((x) => keptBy.current.get(x.uri)?.name === name); if (!m) return; setClipState((was) => ({ ...was, [m.uri]: ok ? "ok" : "bad" })); if (ok && best != null) setClipBest((was) => ({ ...was, [m.uri]: best })); });
     try {
       // only the new ones are copied and read: what is kept stays, also when a clip is taken out or moved
       const rest = list.filter((m) => !keptBy.current.has(m.uri)), from = copied.current;
@@ -165,7 +165,7 @@ function CreateFlowScreen() {
         // preview and export decode them easily; the Reel is the same)
         const copies = new Map((await engine.copies()).map((c) => [c.name, c]));
         const byName = new Map([...keptBy.current.values()].map((k) => [k.name, k.clip]));
-        sources = names.map((n) => { const c = byName.get(n), copy = copies.get(n); return c && copy ? { ...c, uri: `file://${copy.path}` } : c; }).filter((c): c is ProjectClip => !!c);
+        sources = names.map((n) => { const c = byName.get(n), copy = copies.get(n); return c && copy ? { ...c, uri: `file://${copy.path}`, ...(copy.photo ? { kind: "video" as const, duration: copy.photo, sourceDuration: copy.photo, end: copy.photo } : {}) } : c; }).filter((c): c is ProjectClip => !!c);
       }
       if (!making.current) return false;
       read.current = { key: keyOf(list), clips, sources }; askAgain.current = false;
@@ -427,7 +427,7 @@ function CreateFlowScreen() {
             <Text className="text-[12px] text-muted">{words("A longer clip is fine: Shubix keeps its best part and leaves the rest out.")}</Text>
           </View>
         )}
-        {step === "clips" && <FlowClips kind={kind} pick={pick} onTab={(p) => { setPick(p); setMedia((m) => m.filter((x) => pickTakes(p, mediaKindOf(x)))); }} media={media} states={media.map((m) => clipState[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
+        {step === "clips" && <FlowClips kind={kind} pick={pick} onTab={(p) => { setPick(p); setMedia((m) => m.filter((x) => pickTakes(p, mediaKindOf(x)))); }} media={media} states={media.map((m) => clipState[m.uri])} bests={media.map((m) => clipBest[m.uri])} onAdd={() => void addMedia()} onRemove={(i) => setMedia((m) => m.filter((_, j) => j !== i))} onMove={(from, to) => setMedia((m) => { const list = [...m], [one] = list.splice(from, 1); list.splice(to, 0, one); return list; })} play={focused && !working && step === "clips"} settings={settings} onSettings={(s) => setSettings((o) => ({ ...o, ...s }))} />}
       </ScrollView>
       {button && <View className="gap-1.5 px-4 pt-2" style={{ paddingBottom: Math.max(12, insets.bottom + 4) }}>{step === "clips" && badNow > 0 && <Text className="text-center text-[12.5px] font-semibold text-warning">{words(badNow > 1 ? "{n} clips couldn't be read and will be left out. Remove them or continue without them." : "1 clip couldn't be read and will be left out. Remove it or continue without it.", { n: String(badNow) })}</Text>}{step === "clips" && !!priceLine && <Text className="text-center text-[12.5px] font-semibold text-muted">{priceLine}</Text>}<Button full size="xl" title={button.title} iconAfter={button.on ? "arrow" : undefined} disabled={!button.on} onPress={() => { Keyboard.dismiss(); button.press(); }} /></View>}
     </View>

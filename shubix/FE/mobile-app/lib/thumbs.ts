@@ -2,15 +2,16 @@ import { useEffect, useState } from "react";
 import { getThumbnailAsync } from "expo-video-thumbnails";
 
 const made = new Map<string, Promise<string | null>>();
-/** A picture of a video (its frame at `at` seconds) to show for it, made once per video; a photo is its own picture.
+/** A picture of a video (its frame at `at` seconds) to show for it, made once per video and moment; a photo is its own picture.
  * null while it is made, or when it cannot be. */
 export function useThumb(uri: string | undefined, kind: "video" | "image" = "video", at = 0.5): string | null {
   const [thumb, setThumb] = useState<string | null>(kind === "image" ? uri ?? null : null);
   useEffect(() => {
     if (!uri || kind === "image") { setThumb(uri ?? null); return; }
     let live = true;
-    if (!made.has(uri)) made.set(uri, getThumbnailAsync(uri, { time: Math.round(at * 1000), quality: 0.6 }).then((t) => t.uri).catch(() => null));
-    void made.get(uri)!.then((t) => live && setThumb(t));
+    const key = at === 0.5 ? uri : `${uri}#${Math.round(at * 10)}`;   // (a shot list asks for several moments of one clip)
+    if (!made.has(key)) made.set(key, getThumbnailAsync(uri, { time: Math.round(at * 1000), quality: 0.6 }).then((t) => t.uri).catch(() => null));
+    void made.get(key)!.then((t) => live && setThumb(t));
     return () => { live = false; };
   }, [uri, kind, at]);
   return thumb;

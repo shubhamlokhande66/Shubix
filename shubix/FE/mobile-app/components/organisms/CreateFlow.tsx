@@ -261,7 +261,7 @@ export const SMALL_BUFFER = { preferredForwardBufferDuration: 4, minBufferForPla
 /** A clip's card: it plays itself, muted and looping (a very big clip keeps its picture, for the same reason), and goes where it is
  * dragged after holding it a moment, so a quick swipe still scrolls the page. */
 export type ClipState = "wait" | "ok" | "bad";
-function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { asset: ImagePickerAsset; n: number; of: number; size: number; playing: boolean; state?: ClipState; onMove: (from: number, to: number) => void; onRemove: (i: number) => void }) {
+function ClipTile({ asset, n, of, size, playing, state, best, onMove, onRemove }: { asset: ImagePickerAsset; n: number; of: number; size: number; playing: boolean; state?: ClipState; best?: number; onMove: (from: number, to: number) => void; onRemove: (i: number) => void }) {
   const words = useStudioText(), shift = useRef(new Animated.ValueXY()).current, [held, setHeld] = useState(false);
   // a clip whose size the picker did not say is taken as big: three 4K HEVC clips played here closed the app (2026-11-20)
   const w = asset.width ?? 0, h = asset.height ?? 0, light = asset.type !== "image" && w > 0 && h > 0 && w * h <= 2_400_000, on = playing && light;
@@ -278,17 +278,17 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
         <Thumb uri={asset.uri} kind={asset.type === "image" ? "image" : "video"} />
         {on && <View pointerEvents="none" className="absolute inset-0"><VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="cover" nativeControls={false} /></View>}
         <View className="absolute left-1.5 top-1.5 h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5"><Text className="text-[11px] font-bold text-background">{n + 1}</Text></View>
-        <View className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5"><Text className="text-[11px] font-semibold text-white">{asset.type === "image" ? "5s" : clock((asset.duration ?? 0) / 1000)}</Text></View>
+        <View className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5"><Text className="text-[11px] font-semibold text-white">{asset.type === "image" ? "3s" : clock((asset.duration ?? 0) / 1000)}</Text></View>
         {state === "wait" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center gap-1 bg-black/45 px-1.5"><ActivityIndicator color="#ffffff" /><Text className="text-center text-[10.5px] font-semibold text-white">{words("Finding the best moments…")}</Text></View>}
-        {state === "ok" && <View pointerEvents="none" className="absolute bottom-1.5 left-1.5 flex-row items-center gap-0.5 rounded-full bg-black/65 px-1.5 py-0.5"><Icon name="check" size={11} stroke={2.6} color="#fff" /><Text className="text-[10.5px] font-semibold text-white">{words("Ready")}</Text></View>}
-        {state === "bad" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/75 px-2"><Text className="text-center text-[11px] font-semibold text-white">{words("Couldn't read this video. Remove it or add another.")}</Text></View>}
+        {state === "ok" && <View pointerEvents="none" className="absolute bottom-1.5 left-1.5 flex-row items-center gap-0.5 rounded-full bg-black/65 px-1.5 py-0.5"><Icon name="check" size={11} stroke={2.6} color="#fff" /><Text className="text-[10.5px] font-semibold text-white">{best != null ? words("Best moment {t}", { t: clock(best) }) : words("Ready")}</Text></View>}
+        {state === "bad" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/75 px-2"><Text className="text-center text-[11px] font-semibold text-white">{words(asset.type === "image" ? "Couldn't read this photo. Use JPG, PNG or WEBP." : "Couldn't read this video. Remove it or add another.")}</Text></View>}
         <Pressable onPress={() => onRemove(n)} accessibilityLabel={words("Remove")} hitSlop={6} className="absolute right-1.5 top-1.5 h-6 w-6 items-center justify-center rounded-full bg-black/70"><Icon name="close" size={13} color="#fff" /></Pressable>
       </Animated.View>
     </GestureDetector>
   );
 }
 
-export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
+export function FlowClips({ kind, pick, onTab, media, states, bests, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; bests?: (number | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
   const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3, [more, setMore] = useState(false);
   return (
     <FlowCard>
@@ -314,7 +314,7 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
           <Label>{words("Selected Clips")}</Label>
           {media.length > 1 && <Text className="-mt-1 text-[12px] text-muted">{words("Hold a clip and drag it to move it. The numbers are the order.")}</Text>}
           <View className="flex-row flex-wrap gap-2">
-            {media.map((m, i) => <ClipTile key={`${m.uri}-${i}`} asset={m} n={i} of={media.length} size={tile} playing={play && i < CARD_PLAYERS} state={states?.[i]} onMove={onMove} onRemove={onRemove} />)}
+            {media.map((m, i) => <ClipTile key={`${m.uri}-${i}`} asset={m} n={i} of={media.length} size={tile} playing={play && i < CARD_PLAYERS} state={states?.[i]} best={bests?.[i]} onMove={onMove} onRemove={onRemove} />)}
             <Pressable onPress={onAdd} accessibilityLabel={words("Add more clips")} className="items-center justify-center rounded-[14px] border-[1.5px] border-dashed border-border bg-surface-2 active:opacity-80" style={{ width: tile, height: tile }}><Icon name="plus" size={28} /></Pressable>
           </View>
         </View>

@@ -124,6 +124,9 @@ export const DirectIn = z.object({
   /** a small change: the plan now, and what to change in it; only the cuts that change come back */
   patch: z.object({ ask: z.string().min(1).max(300), current: z.array(z.object({ i: z.number().int().min(0).max(LIMITS.slots - 1), clip: z.string().max(8), at: z.number().min(0).max(36_000),
     transition: z.string().max(24), effect: z.string().max(24), speed: z.string().max(24) })).max(LIMITS.slots) }).optional(),
+  /** a whole-Reel chat change: the Reel as it is now (as patch.current), so a plan that changes nothing is not charged */
+  current: z.array(z.object({ i: z.number().int().min(0).max(LIMITS.slots - 1), clip: z.string().max(8), at: z.number().min(0).max(36_000),
+    transition: z.string().max(24), effect: z.string().max(24), speed: z.string().max(24) })).max(LIMITS.slots).optional(),
   /** 0 = the plan; 1-4 = that many different alternative plans for the same cuts (New mix) */
   variants: z.number().int().min(0).max(MAX_VARIANTS).default(0),
   slots: z.array(z.object({
@@ -538,4 +541,23 @@ export function parsePace(d: PaceIn, a: z.infer<typeof PaceAnswer>) {
 export async function pace(d: PaceIn, provider: ManagedProvider = getProvider(TASK), taste = "", trends = "") {
   const ans = await provider.structured(SYSTEM, pacePrompt(d, taste, trends), PaceAnswer, { task: TASK, temperature: 0.3, maxOutputTokens: 300 + d.sections.length * 60 });
   return { ...parsePace(d, ans), model: provider.model, provider: provider.name };
+}
+
+/** Did a chat answer change the Reel? A cut changes when its clip or moment (more than 0.15 s), transition, effect or speed
+ * is not what the Reel has now, or it gets keyframes or a camera move; new texts or other tools' steps are a change too.
+ * Without the Reel as it is now (an older app) every answer counts as a change. A paid chat change that changes nothing
+ * gives its credits back (agreed in the Beat Reel review, 2026-11-20). */
+export function planChanged(d: DirectIn, res: { slots: DirectedSlot[]; texts?: unknown[]; actions?: unknown[] }, current = d.patch?.current ?? d.current): boolean {
+  if (!current) return true;
+  if ((res.texts?.length ?? 0) > 0 || (res.actions?.length ?? 0) > 0) return true;
+  const now = new Map(current.map((c) => [c.i, c]));
+  const norm = (v: unknown, none: string) => String(v ?? none).trim().toLowerCase() || none;
+  for (const s of res.slots) {
+    const c = now.get(s.i); if (!c) return true;
+    const cand = d.slots.find((x) => x.i === s.i)?.candidates.find((x) => x.id === s.shot);
+    if (cand && (cand.clip !== c.clip || Math.abs(cand.at - c.at) > 0.15)) return true;
+    if (norm(s.transition, "hard") !== norm(c.transition, "hard") || norm(s.effect, "none") !== norm(c.effect, "none") || norm(s.speed, "normal") !== norm(c.speed, "normal")) return true;
+    if (s.keys.length || s.move.length || s.clip) return true;
+  }
+  return false;
 }

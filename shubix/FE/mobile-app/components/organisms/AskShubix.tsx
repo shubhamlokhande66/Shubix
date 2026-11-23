@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from "react-native";
+import { useThumb } from "../../lib/thumbs";
 import { router } from "expo-router";
 import { useStudioText } from "@mobile/hooks";
 import { Bubble, ChatChip, Gold, Icon, useColors } from "@mobile/ui-mobile";
@@ -14,11 +15,18 @@ const IDEAS: [string, string][] = [["Fast & energetic", "Fast cuts on every beat
 /** Ask Shubix AI (the website's studio askbar): a card that opens to a box where you say how you want your Reel, the
  * ideas to tap, and the conversation with Shubix AI's history, each with its time. `onAsk` does what was asked and returns
  * the answer; `log` and `onLog` keep the conversation with the Reel (without them it lives only on this screen). */
-export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, review, onKeep, onUndo, versions, onVersion }: { onAsk: (text: string) => string | Promise<string>; plan?: { story: string; lines: string[] } | null; planned?: boolean; log?: ChatLine[]; onLog?: (add: (l: ChatLine[]) => ChatLine[]) => void;
+export type ShotPic = { uri: string; kind: "video" | "image"; at: number };
+function ShotThumb({ pic }: { pic: ShotPic }) {
+  const t = useThumb(pic.uri, pic.kind, pic.at);
+  return <View className="h-11 w-8 overflow-hidden rounded-md bg-black/70">{t ? <Image source={{ uri: t }} style={{ width: "100%", height: "100%" }} resizeMode="cover" /> : null}</View>;
+}
+export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, review, onKeep, onUndo, versions, onVersion, shotPics }: { onAsk: (text: string) => string | Promise<string>; plan?: { story: string; lines: string[] } | null; planned?: boolean; log?: ChatLine[]; onLog?: (add: (l: ChatLine[]) => ChatLine[]) => void;
   /** what Shubix is doing now (a change in the editor: no full-screen popup), `review`: the change just made, with Keep and Undo */
   status?: string; review?: boolean; onKeep?: () => void; onUndo?: () => void;
   /** the Reel before each change (this visit): one tap goes back to it */
-  versions?: { at: number; label: string }[]; onVersion?: (i: number) => void }) {
+  versions?: { at: number; label: string }[]; onVersion?: (i: number) => void;
+  /** each shot's picture (its clip at the moment the shot starts), beside its line in the shot list, when they match */
+  shotPics?: ShotPic[] }) {
   const words = useStudioText(), look = useColors();
   const [older, setOlder] = useState(false), [open, setOpen] = useState(false), [said, setSaid] = useState(""), [own, setOwn] = useState<ChatLine[]>([]), [busy, setBusy] = useState(false), [shots, setShots] = useState(false);
   const log = kept ?? own, setLog = onLog ?? setOwn;
@@ -45,7 +53,12 @@ export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, revi
               <Text className="text-[13px] font-bold text-foreground">{words("Shubix's plan for this Reel")}</Text>
               {!!plan.story && <Text className="text-[12.5px] leading-[18px] text-foreground">{plan.story}</Text>}
               <Pressable onPress={() => setShots(!shots)} accessibilityRole="button" accessibilityState={{ expanded: shots }}><Text className="text-[12px] font-semibold text-accent">{words(shots ? "Hide the shots" : "See every shot")} ({plan.lines.length})</Text></Pressable>
-              {shots && plan.lines.map((line, i) => <Text key={i} className="text-[11.5px] leading-[16px] text-muted">{i + 1}. {line}</Text>)}
+              {shots && plan.lines.map((line, i) => (
+                <View key={i} className="flex-row items-start gap-2">
+                  {shotPics?.[i] && <ShotThumb pic={shotPics[i]} />}
+                  <Text className="flex-1 text-[11.5px] leading-[16px] text-muted">{i + 1}. {line}</Text>
+                </View>
+              ))}
             </View>
           ) : planned === false ? <Text className="text-[12px] leading-[17px] text-muted">{words("Shubix AI has not edited this Reel. This is the phone's own edit.")}</Text> : null}
           {log.map((m, i) => <View key={i} className={m.me ? "items-end" : "items-start"}><Bubble mine={m.me}>{m.text}</Bubble><Text className="mt-0.5 px-1 text-[10.5px] text-muted">{when(m.at)}</Text></View>)}

@@ -7,7 +7,7 @@ import { chatSize } from "@shubix/core/lib/chatSize";
 import { requireFeature } from "../../../../server/core/features";
 import { route } from "../../../../server/core/http";
 import { recordRun, taste } from "../../../../server/studio/brain";
-import { direct, DirectIn, directPatch, directVariants } from "../../../../server/studio/direct";
+import { direct, DirectIn, directPatch, directVariants, planChanged } from "../../../../server/studio/direct";
 import { limits } from "../../../../server/core/rateLimit";
 
 /** Fast Studio's AI director: for every cut, which offered moment, its transition, effect, speed and the keyframes on
@@ -25,7 +25,7 @@ export const POST = route(async (req) => {
   const chatCharge = d.chat ? await chatTurn(d.reelId, d.chat.id || `n${d.chat.n}`, chatSize(d.chat.text) === "small" ? "studio_chat_small" : "studio_chat_big", "Ask Shubix: " + d.chat.text.slice(0, 60)) : null;
   const chatOut = chatCharge ? { chat: { free: chatCharge.free, used: chatCharge.used, left: chatCharge.left, charged: chatCharge.taken } } : {};
   if (d.patch) {
-    try { const res = await directPatch(d, undefined, await taste()); await markDelivered(reelCharge.ref); recordRun({ kind: "plan", cuts: res.slots.length, mode: d.mode, provider: res.provider, model: res.model, ms: Date.now() - t0, ok: true }); return { ...res, ...chatOut, balance: await balanceNow() }; }
+    try { const res = await directPatch(d, undefined, await taste()); await markDelivered(reelCharge.ref); recordRun({ kind: "plan", cuts: res.slots.length, mode: d.mode, provider: res.provider, model: res.model, ms: Date.now() - t0, ok: true }); return { ...res, ...(await noChangeBack(d, res, chatCharge, chatOut)), balance: await balanceNow() }; }
     catch (e) { await chatCharge?.undo(); await refundUndelivered(reelCharge.ref); throw e; }
   }
   if (d.variants) {
@@ -47,7 +47,7 @@ export const POST = route(async (req) => {
     recordRun({ kind: "plan", cuts: d.slots.length, mode: d.mode, provider: res.provider, model: res.model, ms: Date.now() - t0, ok: true,
       transitions: res.slots.filter((s) => s.transition && s.transition !== "hard").length,
       effects: res.slots.filter((s) => s.effect && s.effect !== "none").length, keys: res.slots.reduce((n, s) => n + s.keys.length, 0) });
-    return { ...res, ...chatOut, balance: await balanceNow() };
+    return { ...res, ...(await noChangeBack(d, res, chatCharge, chatOut)), balance: await balanceNow() };
   } catch (e) {
     recordRun({ kind: "plan", cuts: d.slots.length, mode: d.mode, provider: "", model: "", ms: Date.now() - t0, ok: false });
     // no plan for this Reel yet (the first one failed): its credits come back; a Reel already planned keeps them
@@ -55,3 +55,11 @@ export const POST = route(async (req) => {
     throw e;
   }
 });
+
+/** A chat change that succeeded but changes nothing in the Reel: its credits (or its free turn) come back, and the phone
+ * is told (chat.unchanged), so it says "nothing changed, no credits used". Undo never gives credits back. */
+async function noChangeBack(d: DirectIn, res: Parameters<typeof planChanged>[1], charge: Awaited<ReturnType<typeof chatTurn>> | null, out: { chat?: Record<string, unknown> }) {
+  if (!charge || !d.chat || planChanged(d, res)) return out;
+  await charge.undo();
+  return { chat: { ...out.chat, charged: 0, unchanged: true, used: Math.max(0, charge.used - 1), left: charge.free ? charge.left + 1 : charge.left } };
+}

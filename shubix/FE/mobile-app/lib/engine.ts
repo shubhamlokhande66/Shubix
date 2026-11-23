@@ -26,7 +26,7 @@ export type ExportChoice = { res?: "720" | "1080" | "4k"; fps?: 30 | 60; noWater
 export type ExportOptions = { res: Record<"720" | "1080" | "4k", { locked: boolean; off: boolean }>; fps60Locked: boolean; watermarkOff: boolean;
   size: string; fileName: string; myReels: boolean; myReelsNote: string; locked: { name: string; need: string }[] };
 
-let held = "", clipRead: ((name: string, ok: boolean) => void) | null = null;
+let held = "", clipRead: ((name: string, ok: boolean, best?: number | null) => void) | null = null;
 /** told as each clip is read: its card shows it */
 export const onClipRead = (fn: typeof clipRead) => { clipRead = fn; };
 /** The person's work goes on while they are away (the screen off, another app): a notification says so, the screen stays on
@@ -55,7 +55,7 @@ const native = files ? createNativeEngine({
   // (during an Ask Shubix change the editor stays usable: its line goes to the chat panel, not a full-screen popup)
   stat: (text, err) => { if (chatting) { chatSays.forEach((f) => f(text && !err ? text.replace(/…$/, "") : "")); return; } if (!text) return tasks.clear("ai"); if (text.endsWith("…")) { tasks.start("ai", "ai", "Shubix at work", text.slice(0, -1)); return; } if (err) tasks.fail("ai", text); else tasks.done("ai", text); },
   spent: () => tasks.lock(),
-  clipDone: (name, ok) => clipRead?.(name, ok),
+  clipDone: (name, ok, best) => clipRead?.(name, ok, best),
   readBytes: async (path, at, length) => { const h = new File(`file://${path}`).open(); try { h.offset = at; return h.readBytes(length); } finally { h.close(); } },
   tell: (text) => tell(text, "danger"),
   task: (state, id, title, detail, kind, p) => onTask({ event: "task", id, state, p: p ?? null, title, detail, kind: kind as TaskKind | undefined }),
@@ -210,7 +210,7 @@ export const engine = {
   stop: () => restart(),
   /** the clips' smooth copies the studio made (4K / HDR / 60 fps / a changing frame rate), saved on the phone: the
    * phone's preview and export play these, so heavy footage never stutters or stalls (`name`: the clip as sent) */
-  copies: () => call<{ name: string; path: string; w: number; h: number }[]>("copies").catch(() => []),
+  copies: () => call<{ name: string; path: string; w: number; h: number; photo?: number }[]>("copies").catch(() => []),
   /** Ask Shubix from the editor: the website's own AI chat on the Reel the studio holds; its plan is applied there and
    * the Reel's clips come back (null: the studio does not hold this Reel) */
   chat: async (p: ReelProject, text: string) => {

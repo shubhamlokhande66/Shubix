@@ -404,6 +404,7 @@ export const STUDIO_HTML = `
         </aside>
       </div>
 
+      <div class="lockbar" id="lockbar" role="status" hidden><span id="lockbart"></span><a href="/pricing" id="lockbarp">See plans</a></div>
       <section class="timelineCard" id="timelinecard">
         <header class="timelineHeader">
           <div class="timelineTitle">
@@ -689,6 +690,7 @@ export const STUDIO_HTML = `
     <button type="button" class="${Button.close} shrink-0" id="chatclose" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
   <div class="chatlog" id="chatlog" aria-live="polite"></div>
+  <div class="chatvers" id="chatvers" hidden></div>
   <span class="chatideas">Quick ideas</span>
   <div class="chatchips" id="chatchips">
     <button type="button" data-say="Make it faster and more energetic">Faster</button>

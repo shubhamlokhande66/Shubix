@@ -32,6 +32,8 @@ export const projectSchema = z.object({
   id: z.string(), title: z.string().max(120), kind: z.enum(["music", "talking", "photo", "copy", "story"]), clips: z.array(clipSchema).min(1),
   audioUri: z.string().optional(), audioName: z.string().optional(), templateId: z.string().optional(), overlays: z.array(overlaySchema),
   chat: z.array(chatLineSchema).max(40).optional(),
+  // Earlier versions in Ask Shubix: the Reel before an Ask Shubix change or another mix (the last 5), kept with the Reel
+  versions: z.array(z.object({ at: z.number(), label: z.string().max(80), clips: z.array(clipSchema).min(1), overlays: z.array(overlaySchema), studio: z.boolean().optional() })).max(5).optional(),
   // Shubix AI's plan of this Reel (its story and a line per shot), kept so Ask Shubix shows it when the Reel is opened again
   aiPlan: z.object({ story: z.string().max(400), lines: z.array(z.string().max(400)).max(120) }).optional(),
   createdAt: z.string(), updatedAt: z.string(), status: z.enum(["draft", "rendered"]), outputUri: z.string().optional(),

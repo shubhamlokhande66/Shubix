@@ -809,6 +809,18 @@ function seqSlots(n){
 // hit, a break, a drop).
 const SEQ_JUMP = 0.6;
 function seqMinShot(){ const bpm = ES.period > 0 ? 60/ES.period : 110; return bpm >= 115 ? 0.8 : bpm >= 85 ? 1 : 1.5; }
+// one continuous action (an entry, a garland, a spin): a cut inside one clip is kept for a new moment, not for a beat
+// alone. Where the clip's shots will roughly land (In my order spreads them forward over the clip's footage), a frame
+// Shubix AI saw as action sits right on the cut, with no scene change around it: the cut would split that action, so
+// it is let go (a beat-drop cut stays). The AI looks at up to 8 frames a clip, so this asks for that frame on the cut.
+function oneAction(src, a, i, b, need, len){
+  const F = src && src.ai && src.ai.frames; if(!F || !F.length) return false;
+  const U = Math.max(0.05, src.dur - TAIL), s = Math.max(1, U/Math.max(0.05, need));
+  let t = 0; for(let k = a; k < i; k++) t += len(k) + SEQ_JUMP;
+  const end = Math.min(U, (t - SEQ_JUMP)*s), start = Math.min(U, t*s);
+  if(crossesScene(src, end - 0.3, start + 0.3)) return false;
+  return F.some(f => f.t >= end - 0.3 && f.t <= start + 0.3 && f.note && (f.roles || []).includes('action'));
+}
 function seqKeepCuts(seq){
   const P = ES.plan, minL = seqMinShot(), rank = { cut: 0, hit: 1, break: 2, drop: 3 }, len = i => P[i].end - P[i].start;
   for(let guard = 0; guard < 500; guard++){
@@ -818,8 +830,9 @@ function seqKeepCuts(seq){
       const si = seq[i]; let a = i; while(a > 0 && seq[a-1] === si) a--; let b = i; while(b + 1 < P.length && seq[b+1] === si) b++;
       let need = SEQ_JUMP*(b - a); for(let k = a; k <= b; k++) need += len(k);
       const short = Math.min(len(i), len(i-1)) < minL, tight = need > Math.max(0.05, ES.sources[si].dur - TAIL);
-      if(!short && !tight) continue;
-      const c = (short ? 2 : 1) - (rank[P[i].type] || 0)*0.5 - (len(i) + len(i-1))*0.05;
+      const one = !short && !tight && P[i].type !== 'drop' && oneAction(ES.sources[si], a, i, b, need, len);
+      if(!short && !tight && !one) continue;
+      const c = (short ? 2 : one ? 1.5 : 1) - (rank[P[i].type] || 0)*0.5 - (len(i) + len(i-1))*0.05;
       if(c > wc){ wc = c; worst = i; }
     }
     if(worst < 0) break;
