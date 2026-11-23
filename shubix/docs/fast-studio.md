@@ -864,3 +864,10 @@ Reel was decoded again for each reading (its small frames are now kept). Why it 
 (a hidden page's timers run once a second, later once a minute: `breathe()`), a `<video>` that does not open while hidden
 (the Reel counted as bad: its facts now come from the file), and a keep-alive sound so quiet Chrome took it for silence
 (`stayAlive()`). The same Reel read twice now gives the same numbers: 24 full-size frames kept at once came back black in part.
+
+**Measured again (2026-11-23): the 57% above was partly luck.** The same comparison asked six times (1, 2 or 3 frames a shot,
+two shuffles each): in the scorer all 52-57%, on average 54.3% (53.0% without it); openings 57% (52%), build 58.6% (56%), setup
+43.7% (46%) whichever way it was asked. So the order is not used in the setup (all 54.7%, setup 46%). More frames a shot (54%
+with 3, 55% with 1) and several answers averaged (54-56%) did not help: one frame stays. Its own list of openings: 60-69%.
+Last shots reached 76% with three frames only because the third shows the fade to black. Cutting once the action has settled
+was not built: in 163 human shots the movement at the cut is as strong as in the shot (median 1.05).

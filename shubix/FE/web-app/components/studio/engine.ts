@@ -1627,25 +1627,32 @@ async function readVideo(src){
     dd.textContent = 'Finding the best moments…'; dd.dataset.st = 'read'; dd.dataset.p = '0'; setClipStatus(src,'reading');
     // a format the browser's player cannot open: an edit copy (this device or Shubix), then the clip is read from it
     const reopen = async () => { stage = 'converting the format'; if(!(await rescueClip(src, dd))) return false; if(v){ v.removeAttribute('src'); v.load(); } v = makeVideo(src.url); stage = 'metadata'; await waitEv(v,'loadedmetadata', 15000); if(src.edFile && v.videoWidth){ src.edW = v.videoWidth; src.edH = v.videoHeight; } return true; };
-    v = makeVideo(src.url);
-    try{ await waitEv(v,'loadedmetadata', 15000); if(!isFinite(v.duration) || v.duration<=0 || !v.videoWidth) throw new Error('bad'); }
-    catch(err){ if(src.removed) return; if(!(await reopen())) throw err; }
-    src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight;
+    // the page is hidden: its <video> may not open before the person is back, so the clip is read by the decoder alone
+    let facts = null; const unseen = async () => { if(!isHidden() || !src.file) return false; facts = await probeVideo(decFile(src)).catch(() => null); if(facts && !(facts.decodes && facts.duration > 0 && facts.width)) facts = null; return !!facts; };
+    if(!(await unseen())){
+      v = makeVideo(src.url);
+      try{ await waitEv(v,'loadedmetadata', 15000); if(!isFinite(v.duration) || v.duration<=0 || !v.videoWidth) throw new Error('bad'); }
+      catch(err){ if(src.removed) return; if(!(await unseen()) && !(await reopen())) throw err; }
+    }
+    if(facts){ src.dur = facts.duration; src.w = facts.width; src.h = facts.height; } else { src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight; }
     if(!isFinite(src.dur) || src.dur<=0 || !src.w) throw new Error('bad');
     src.proxyStatus='Checking preview…'; updateClipHoverInfo(src);
     stage = 'preview compression'; await compressHighResolutionPreview(src, dd);
     if(src.removed) return;
-    if(src.previewProxy){ v.removeAttribute('src'); v.load(); v=makeVideo(src.url); await waitEv(v,'loadedmetadata',15000); }
+    if(!facts && src.previewProxy){ v.removeAttribute('src'); v.load(); v=makeVideo(src.url); await waitEv(v,'loadedmetadata',15000); }
     stage = 'first picture';
-    try{ await videoData(v); }
-    catch(err){ if(src.removed) return; if(!(await reopen())) throw err; src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight; stage = 'first picture'; await videoData(v); }
+    if(!facts) try{ await videoData(v); }
+    catch(err){ if(src.removed) return; if(await unseen()){ src.dur = facts.duration; src.w = facts.width; src.h = facts.height; }
+      else { if(!(await reopen())) throw err; src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight; stage = 'first picture'; await videoData(v); } }
     // The first decoded frame is enough for the clip's small queue thumbnail. Avoid a second iPhone seek here;
     // thumbnail choice has no effect on the Reel analysis or export. Keep the existing Android thumbnail unchanged.
-    if(!IOS){ stage = 'seek'; v.currentTime = Math.min(src.dur*0.3, 2); await waitEv(v,'seeked'); }
+    if(!facts && !IOS){ stage = 'seek'; v.currentTime = Math.min(src.dur*0.3, 2); await waitEv(v,'seeked'); }
     stage = 'thumbnail';
     const th = card.querySelector('.th'); th.width=320; th.height=180; const tg=th.getContext('2d');
-    const r = Math.max(320/src.w, 180/src.h); tg.drawImage(v,(320-src.w*r)/2,(180-src.h*r)/2,src.w*r,src.h*r);
-    v.removeAttribute('src'); v.load();
+    const r = Math.max(320/src.w, 180/src.h); let pic = v;
+    if(facts){ const rd = await clipReader(src, 640); try{ pic = await rd.at(Math.min(src.dur*0.3, 2)); } finally { rd.close(); } }
+    if(pic) tg.drawImage(pic,(320-src.w*r)/2,(180-src.h*r)/2,src.w*r,src.h*r);
+    if(v){ v.removeAttribute('src'); v.load(); }
     if(src.removed) return;
     // action + scene changes and faces are read at the same time (two decoders): about 40% faster per clip
     const tq = performance.now(); let pm = 0, pf = 0;
@@ -2524,7 +2531,7 @@ function aiBonus(ai, slot, last, part, at){
   else if(role) fit = 0.6*(ai.roles[role] || 0);
   // the Reel's moments seen side by side (compare-shots): what opens best among them, and where each belongs
   if(ai.open != null && slot==='hook') fit = 1.6*(ai.open - 0.5);
-  else if(ai.pos != null && !last && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
+  else if(ai.pos != null && !last && part !== 'setup' && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
   return ai.conf * ((last || (slot==='hook' && ai.open != null) ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change

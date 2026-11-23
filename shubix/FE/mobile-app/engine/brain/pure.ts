@@ -132,7 +132,7 @@ export function aiBonus(ai, slot, last, part, at){
   else if(role) fit = 0.6*(ai.roles[role] || 0);
   // the Reel's moments seen side by side (compare-shots): what opens best among them, and where each belongs
   if(ai.open != null && slot==='hook') fit = 1.6*(ai.open - 0.5);
-  else if(ai.pos != null && !last && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
+  else if(ai.pos != null && !last && part !== 'setup' && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
   return ai.conf * ((last || (slot==='hook' && ai.open != null) ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 /** a part of the song as a 16 kHz mono WAV: what Shubix AI hears */
