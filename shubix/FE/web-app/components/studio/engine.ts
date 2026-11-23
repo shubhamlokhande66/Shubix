@@ -885,6 +885,15 @@ async function videoData(v, ms=12000){
 // where the browser can (the same frames on every phone, as fast as the decoder, whatever the browser does with <video>
 // elements), else taken from a video element by seeking. frames(ts) gives one drawable per time (null when there is none),
 // to be used before the next one is asked for; at(t) gives one.
+// When a clip's picture really ends (from its first frame): its last frame and one ordinary frame's time. A phone or a
+// trimmed clip can keep its last frame for half a second, and a shot over that time stood still before its cut.
+async function pictureEnd(mb, track, first){
+  const end = (await track.computeDuration().catch(() => 0)) - first;
+  try{ const p = await new mb.EncodedPacketSink(track).getPacket(Infinity, { metadataOnly: true });
+    const st = await track.computePacketStats(90), step = st && st.averagePacketRate > 1 ? 1/st.averagePacketRate : 1/30;
+    if(p && p.timestamp - first > 0.3) return Math.min(end > 0 ? end : Infinity, p.timestamp - first + step); }catch(e){}
+  return end;
+}
 async function clipReader(src, maxSide){
   try{
     const mb = await loadMediabunny();
@@ -893,7 +902,7 @@ async function clipReader(src, maxSide){
     if(!track || !(await track.canDecode())){ try{ input.dispose(); }catch(e){} throw new Error('no WebCodecs decoder'); }
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
     // the clip lasts as long as its picture: a phone clip's sound often runs on after the last frame, and a shot there freezes
-    const vEnd = await track.computeDuration().catch(() => 0) - first; if(vEnd > 0.3 && vEnd < src.dur - 0.04) src.dur = vEnd;
+    const vEnd = await pictureEnd(mb, track, first); if(vEnd > 0.3 && vEnd < src.dur - 0.04) src.dur = vEnd;
     const sink = smallFrames(mb, track, Math.max(2, Math.round(src.w*sc/2)*2), Math.max(2, Math.round(src.h*sc/2)*2), 2);
     return { fast: true,
       frames: ts => sink.at(ts.map(t=>first + t)),
@@ -1376,7 +1385,7 @@ function makeCard(f){
  * same answer for the same file every time. So it is kept in the saved Reels' file store ("a:"/"v:" + the file's
  * fingerprint): opening a draft again, or adding the same clip again, uses it at once. SCAN_V: raise it when the reading
  * changes so old results are read again. They go with their clip's file (lib/drafts.ts deleteDraft; keptSweep for leftovers). */
-const SCAN_V = 1;
+const SCAN_V = 2;
 async function keptGet(pre, f){ if(typeof indexedDB === 'undefined' || !f) return null; try{ return await idb('files', 'readonly', s => s.get(pre + fileFp(f))) || null; }catch(e){ return null; } }
 function keptPut(pre, f, val){ if(typeof indexedDB === 'undefined' || !f) return Promise.resolve(); return idb('files', 'readwrite', s => s.put(val, pre + fileFp(f))).catch(e => { console.info('clip reading not kept:', e && e.message); }); }
 async function scanGet(src){
@@ -7323,7 +7332,7 @@ async function fastExport(){
         inputs.push(input);
         const r = Math.min(1, Math.max(W/sw, H/sh0)*1.3);
         let sfps = 30; try{ const stt = await track.computePacketStats(90); if(stt && stt.averagePacketRate > 1) sfps = stt.averagePacketRate; }catch(err){}
-        const first = await track.getFirstTimestamp(), vEnd = (await track.computeDuration().catch(() => 0)) - first;
+        const first = await track.getFirstTimestamp(), vEnd = await pictureEnd(mb, track, first);
         sinks.set(key, { input, sink: new mb.CanvasSink(track, { width: Math.max(16, Math.round(sw*r/2)*2), height: Math.max(16, Math.round(sh0*r/2)*2), fit: 'fill', poolSize: EXPORT_FRAME_POOL }), first, vEnd, half: 0.5/sfps });
       }
       return sinks.get(key);
