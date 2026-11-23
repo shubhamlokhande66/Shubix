@@ -44,30 +44,81 @@ function Cover({ thumb, dur }: { thumb?: string | null; dur?: number }) {
   );
 }
 
-function Drafts({ drafts, onGone }: { drafts: Draft[] | null; onGone: (id: string) => void }) {
+/** Choosing many at once: Select, tap the Reels (or Select all), delete them in one go. `remove` deletes one; the ones that
+ * could not be deleted stay chosen. */
+function useSelect(ids: string[], remove: (id: string) => Promise<void>, gone: (ids: string[]) => void) {
+  const [on, setOn] = useState(false), [picked, setPicked] = useState<string[]>([]);
+  const [left, setLeft] = useState<number | null>(null);   // how many of them are still to go
+  const chosen = picked.filter((id) => ids.includes(id)), all = ids.length > 0 && chosen.length === ids.length;
+  const stop = () => { setOn(false); setPicked([]); };
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const del = async () => {
+    const n = chosen.length;
+    if (!n || left !== null) return;
+    if (!(await confirmAction({ title: `Delete ${n} Reel${n === 1 ? "" : "s"}?`, body: "They are gone for good. This cannot be undone.", ok: `Delete ${n}`, danger: true }))) return;
+    const failed: string[] = [], ok: string[] = [];
+    setLeft(n);
+    // a few at a time: 20 one after another is slow, all at once is too many requests
+    const queue = [...chosen];
+    const worker = async () => { for (let id = queue.shift(); id; id = queue.shift()) { try { await remove(id); ok.push(id); } catch { failed.push(id); } setLeft((x) => (x ?? 1) - 1); } };
+    await Promise.all([worker(), worker(), worker()]);
+    setLeft(null); gone(ok); setPicked(failed);
+    if (failed.length) toast.error(`${failed.length} of ${n} could not be deleted. Please try again.`);
+    else { toast.success(`${n} Reel${n === 1 ? "" : "s"} deleted.`); stop(); }
+  };
+  const bar = !ids.length ? null : !on
+    ? <div className="flex justify-end"><Button size="sm" variant="secondary" icon="check" onClick={() => setOn(true)}>Select</Button></div>
+    : (
+      <div className="sticky top-[72px] z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-surface p-2 shadow-lg lg:top-2">
+        <b className="mr-auto px-1 text-[13px]" role="status">{left !== null ? `Deleting… ${left} left` : `${chosen.length} selected`}</b>
+        <Button size="sm" variant="secondary" disabled={left !== null} onClick={() => setPicked(all ? [] : ids)}>{all ? "Select none" : "Select all"}</Button>
+        <Button size="sm" variant="danger" icon="trash" loading={left !== null} disabled={!chosen.length} onClick={() => void del()}>Delete{chosen.length ? ` (${chosen.length})` : ""}</Button>
+        <IconButton icon="close" plain size={34} iconSize={16} label="Cancel" disabled={left !== null} onClick={stop} />
+      </div>
+    );
+  return { on, bar, has: (id: string) => chosen.includes(id), toggle, busy: left !== null };
+}
+type Select = ReturnType<typeof useSelect>;
+
+/** over a Reel's card while choosing: the whole card is the tick */
+function SelectOver({ sel, id, name }: { sel: Select; id: string; name: string }) {
+  if (!sel.on) return null;
+  const on = sel.has(id);
+  return (
+    <button type="button" role="checkbox" aria-checked={on} aria-label={`Select ${name}`} disabled={sel.busy} onClick={() => sel.toggle(id)}
+      className={`absolute inset-0 z-10 rounded-2xl ${on ? "bg-accent/20 outline-2 outline-accent" : ""}`}>
+      <span className={`absolute left-2 top-2 grid size-7 place-items-center rounded-full border-2 ${on ? "border-transparent bg-accent text-on-accent" : "border-white bg-black/45"}`}>{on && <Icon name="check" size={15} stroke={3} />}</span>
+    </button>
+  );
+}
+
+function Drafts({ drafts, onGone }: { drafts: Draft[] | null; onGone: (ids: string[]) => void }) {
   const text = useText();
   const [note, setNote] = useState<string | null>(null);
   const remove = async (d: Draft) => {
     if (!(await confirmAction({ title: text("reels.deleteDraftTitle", { name: d.name }), body: text("reels.deleteDraftText"), ok: text("reels.delete"), danger: true }))) return;
     try {
       await deleteDraft(d.id);
-      onGone(d.id);
+      onGone([d.id]);
       setNote(text("reels.deleted", { name: d.name })); toast.success(text("reels.deleted", { name: d.name }));
     } catch {
       setNote(text("reels.deleteFailed"));
     }
     setTimeout(() => setNote(null), 3000);
   };
+  const sel = useSelect((drafts ?? []).map((d) => d.id), deleteDraft, onGone);
   if (drafts === null) return <Spinner />;
   if (!drafts.length) return <EmptyState icon="projects" title={text("reels.noDrafts")} hint={text("reels.noDraftsText")} action={<MakeReel />} />;
   return (
     <div className="flex flex-col gap-3">
       {note && <p role="status" className="m-0 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-[13px] font-semibold text-accent">{note}</p>}
+      {sel.bar}
       <div className={GRID}>
         {drafts.map((d) => {
           const href = `/editor?p=${encodeURIComponent(d.id)}`;
           return (
-            <article key={d.id} className="group flex min-w-0 flex-col gap-2">
+            <article key={d.id} className="group relative flex min-w-0 flex-col gap-2">
+              <SelectOver sel={sel} id={d.id} name={d.name} />
               <a href={href} title={text("reels.open", { name: d.name })}><Cover thumb={d.thumb} dur={d.dur} /></a>
               <div className="flex items-start gap-1">
                 <a href={href} className="min-w-0 flex-1">
@@ -90,7 +141,7 @@ function Drafts({ drafts, onGone }: { drafts: Draft[] | null; onGone: (id: strin
   );
 }
 
-function SavedCard({ r, onChange, onDelete, onPublish }: { r: CloudReel; onChange: (r: CloudReel) => void; onDelete: () => void; onPublish: () => void }) {
+function SavedCard({ r, sel, onChange, onDelete, onPublish }: { r: CloudReel; sel: Select; onChange: (r: CloudReel) => void; onDelete: () => void; onPublish: () => void }) {
   const text = useText();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -116,7 +167,8 @@ function SavedCard({ r, onChange, onDelete, onPublish }: { r: CloudReel; onChang
     catch (e) { flash(e instanceof Error ? e.message : text("reels.failed")); setBusy(null); }
   };
   return (
-    <article className="group flex min-w-0 flex-col gap-2">
+    <article className="group relative flex min-w-0 flex-col gap-2">
+      <SelectOver sel={sel} id={r.id} name={r.name} />
       <a href={cloudReelUrl(r.id)} target="_blank" rel="noreferrer" title={text("reels.watch", { name: r.name })} className="relative block">
         <Cover thumb={r.thumb} dur={r.dur} />
         {r.shared && <Badge tone="dark" className="absolute right-2 top-2"><Icon name="share" size={11} />{text("reels.linkOn")}</Badge>}
@@ -149,6 +201,8 @@ function Saved({ data, error, retry, setData }: { data: { reels: CloudReel[]; us
     else toast.error(res === "cancelled" ? `${name} was not connected.` : `${name} could not be connected. Please try again.`);
     q.delete("social"); q.delete("result"); history.replaceState(history.state, "", `${location.pathname}${q.size ? `?${q}` : ""}`);
   }, []);
+  const sel = useSelect((data?.reels ?? []).map((r) => r.id), async (id) => { await deleteCloudReel(id); },
+    (ids) => setData((d) => d && { reels: d.reels.filter((x) => !ids.includes(x.id)), usage: { ...d.usage, used: Math.max(0, d.usage.used - ids.length) } }));
   if (error) return <ErrorBanner message={error} onRetry={retry} />;
   if (!data) return <Spinner />;
   const { reels, usage } = data;
@@ -171,13 +225,16 @@ function Saved({ data, error, retry, setData }: { data: { reels: CloudReel[]; us
       {!reels.length ? (
         <EmptyState icon="upload" title={text("reels.noSaved")} hint={text("reels.noSavedText")} action={<MakeReel />} />
       ) : (
+        <>
+        {sel.bar}
         <div className={GRID}>
           {reels.map((r) => (
-            <SavedCard key={r.id} r={r} onPublish={() => setPublishing(r)}
+            <SavedCard key={r.id} r={r} sel={sel} onPublish={() => setPublishing(r)}
               onChange={(n) => setData((d) => d && { ...d, reels: d.reels.map((x) => (x.id === n.id ? n : x)) })}
               onDelete={() => setData((d) => d && { reels: d.reels.filter((x) => x.id !== r.id), usage: { ...d.usage, used: Math.max(0, d.usage.used - 1) } })} />
           ))}
         </div>
+        </>
       )}
       <PublishDialog key={publishing?.id ?? "none"} reel={publishing} onClose={() => setPublishing(null)} />
     </div>
@@ -213,7 +270,7 @@ function MyReels() {
         options={[{ value: "drafts", label: <>{text("reels.drafts")}{count(drafts?.length)}</> }, { value: "saved", label: <>{text("reels.saved")}{count(saved?.reels.length)}</> }]} />
       <div role="tabpanel">
         {tab === "drafts"
-          ? <Drafts drafts={drafts} onGone={(id) => setGone((g) => [...g, id])} />
+          ? <Drafts drafts={drafts} onGone={(ids) => setGone((g) => [...g, ...ids])} />
           : <Saved data={saved} error={error} retry={() => setTries((n) => n + 1)} setData={setSaved} />}
       </div>
     </div>

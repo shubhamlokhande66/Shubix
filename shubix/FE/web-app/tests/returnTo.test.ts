@@ -66,3 +66,18 @@ describe("signing in tries 3 times when the server cannot be reached", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("signing in over the Reel", () => {
+  it("opens the popup, and goes on only when it says so", async () => {
+    const { signInHere, SIGN_IN } = await import("@/lib/returnTo");
+    const done = vi.fn();
+    let got: (() => void) | null = null;
+    const on = (e: Event) => { e.preventDefault(); got = (e as CustomEvent<{ onDone: () => void }>).detail.onDone; };
+    window.addEventListener(SIGN_IN, on);
+    signInHere(done);
+    window.removeEventListener(SIGN_IN, on);
+    expect(done).not.toHaveBeenCalled();
+    got!();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+});

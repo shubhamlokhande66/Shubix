@@ -19,6 +19,23 @@ if (typeof document !== "undefined") {
   );
 }
 
+/* A button that opens another page (<Button href>): a spinner in it from the tap until the page is there (a full load, or a
+ * page whose code is still coming, gave no sign of the tap). */
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (e) => {
+    const a = (e.target as Element | null)?.closest?.("a[data-btn]");
+    if (!(a instanceof HTMLAnchorElement) || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if ((a.target && a.target !== "_self") || a.hasAttribute("download") || a.origin !== location.origin) return;
+    if (a.pathname === location.pathname && a.search === location.search) return;
+    const from = location.href, t0 = Date.now();
+    a.setAttribute("aria-busy", "true");
+    const end = () => { clearInterval(t); window.removeEventListener("pageshow", end); a.removeAttribute("aria-busy"); };
+    // the new page is there (the address changed), it did not open, or Back brought this page as it was
+    const t = setInterval(() => { if (location.href !== from || !a.isConnected || Date.now() - t0 > 15_000) end(); }, 150);
+    window.addEventListener("pageshow", end);
+  });
+}
+
 function claimButton(): HTMLElement | null {
   const c = lastClick;
   if (!c || Date.now() - c.at > CLICK_MS || !c.el.isConnected) return null;

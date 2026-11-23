@@ -111,7 +111,7 @@ export function initSteps(root: HTMLElement): () => void {
   );
 
   // photos: turn them into short moving shots, then hand them to the engine as clips
-  let feeding = false;
+  let feeding = false, photoJobs = 0, photoRun = 0;
   const feed = async (list: File[]) => {
     const isImg = (f: File) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|hei[cf])$/i.test(f.name);
     const imgs = list.filter(isImg);
@@ -120,15 +120,23 @@ export function initSteps(root: HTMLElement): () => void {
     const st = $("s2st");
     const bad: File[] = [];
     let k = 0;
+    // seen by the creator (the status line is hidden in the flow, and a phone needs a while): the photo it is at, and the
+    // flow waits for them as for clips being read (flow.ts WAIT)
+    const wait = $("photowait"), run = ++photoRun;
+    const told = (state: "start" | "done") => root.dispatchEvent(new CustomEvent("studio-task", { detail: { id: "photos", state, p: null } }));
+    if (imgs.length) { photoJobs++; wait.hidden = false; told("start"); }
     for (const f of list) {
       if (!isImg(f)) { out.push(f); continue; }
-      st.textContent = `Turning photo ${++k} of ${imgs.length} into a moving shot…`;
+      const words = `Turning photo ${++k} of ${imgs.length} into a moving shot…`;
+      st.textContent = words;
+      if (run === photoRun) $("photowaitt").textContent = words;
       try {
         out.push(await photoClip(f));
       } catch {
         bad.push(f);
       }
     }
+    try {
     // said once, after all of them (the next photo's line wrote over it), by name: the rest are added
     if (bad.length) toast(photosUnread(bad), "error");
     if (!out.length) { st.textContent = photosUnread(bad); return; }
@@ -138,6 +146,7 @@ export function initSteps(root: HTMLElement): () => void {
     vfile.files = dt.files;
     vfile.dispatchEvent(new Event("change", { bubbles: true }));
     feeding = false;
+    } finally { if (imgs.length && --photoJobs === 0) { wait.hidden = true; told("done"); } }
   };
   const hasImages = (fl: FileList | File[] | null | undefined) => !!fl && [...fl].some((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|hei[cf])$/i.test(f.name));
   root.addEventListener(
@@ -227,6 +236,13 @@ export async function photoClip(file: File): Promise<File> {
   c.width = w;
   c.height = h;
   const g = c.getContext("2d")!;
+  // the photo once at the size it is drawn (a camera's 12-50 MP scaled again for each of the 90 frames took seconds)
+  const small = document.createElement("canvas");
+  small.width = Math.min(bmp.width, Math.round(w * 1.08)); small.height = Math.min(bmp.height, Math.round(h * 1.08));
+  const sg = small.getContext("2d")!;
+  sg.imageSmoothingQuality = "high";
+  sg.drawImage(bmp, 0, 0, small.width, small.height);
+  bmp.close();
   const codec = await mb.getFirstEncodableVideoCodec(["avc", "vp9", "vp8"], { width: w, height: h });
   if (!codec) throw new Error("This browser cannot make video from photos.");
   const mp4 = codec === "avc";
@@ -239,11 +255,10 @@ export async function photoClip(file: File): Promise<File> {
     const z = 1 + 0.08 * (k / (frames - 1)); // a slow push-in
     g.fillStyle = "#000";
     g.fillRect(0, 0, w, h);
-    g.drawImage(bmp, (w - w * z) / 2, (h - h * z) / 2, w * z, h * z);
+    g.drawImage(small, (w - w * z) / 2, (h - h * z) / 2, w * z, h * z);
     await vs.add(k / FPS, 1 / FPS);
   }
   await output.finalize();
-  bmp.close();
   const buf = (output.target as InstanceType<typeof mb.BufferTarget>).buffer!;
   return new File([buf], `${file.name.replace(/\.[^.]+$/, "")}.${mp4 ? "mp4" : "webm"}`, { type: mp4 ? "video/mp4" : "video/webm" });
 }

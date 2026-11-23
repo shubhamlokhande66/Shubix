@@ -2868,6 +2868,9 @@ async function chatGenerate(btn){
   remakeOk();
   const pd = chatPending; btn.disabled = true;
   if(!pd || pd.key !== dirKey()){ chatAnswer('The Reel changed since this plan. Tell me again what you want and I\'ll plan it anew.'); return; }
+  // phones: the chat covers the whole screen; it closes, so the Reel being made and then playing is seen (an error opens it again)
+  const small = !!(window.matchMedia && matchMedia('(max-width: 1023px)').matches) && location.pathname !== '/engine', wasOpen = !$('chatbox').hidden;
+  if(small){ if(document.activeElement) document.activeElement.blur(); if(wasOpen) chatOpen(false); else askBar(false); }
   chatPending = null; chatReported = pd.key; director = { key: pd.key, slots: pd.slots, story: pd.story }; dirCache.set(pd.key, director);
   let applied = '';
   const before = edit.length || overlays.length ? histSnap() : null, ask = chatMsgs.filter(m => m.who === 'me').slice(-1)[0]?.text || '';
@@ -2876,7 +2879,7 @@ async function chatGenerate(btn){
     applied = applyChatVisualIntent(pd.intent, pd.slots);
     if(!edit.length) throw new Error('The Reel timeline could not be verified after applying the plan.');
   } catch(error) {
-    btn.textContent = 'Not applied';
+    btn.textContent = 'Not applied'; if(small && wasOpen) chatOpen(true);
     chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error) + ' The Reel was not marked as generated; please try the instruction again.');
     return;
   }
@@ -5526,9 +5529,9 @@ async function brollAuto(){
     tasks.done('brollauto', done + ' picture' + (done > 1 ? 's' : '') + ' added over what you say · each one in Layers');
   }catch(err){ if(err && err.name === 'AbortError') return; tasks.fail('brollauto', (err && err.message) || 'The pictures could not be made. Please try again.'); }
 }
-$('popout').addEventListener('click', async () => { const b = $('popout'); b.disabled = true; try{ await subjectPop(false); } finally{ b.disabled = false; } }, SIG);
-$('brollauto').addEventListener('click', async () => { const b = $('brollauto'); b.disabled = true; try{ await brollAuto(); } finally{ b.disabled = false; } }, SIG);
-$('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; } }, SIG);
+$('popout').addEventListener('click', async () => { const b = $('popout'); b.disabled = true; b.setAttribute('aria-busy', 'true'); try{ await subjectPop(false); } finally{ b.disabled = false; b.removeAttribute('aria-busy'); } }, SIG);
+$('brollauto').addEventListener('click', async () => { const b = $('brollauto'); b.disabled = true; b.setAttribute('aria-busy', 'true'); try{ await brollAuto(); } finally{ b.disabled = false; b.removeAttribute('aria-busy'); } }, SIG);
+$('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; b.setAttribute('aria-busy', 'true'); try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; b.removeAttribute('aria-busy'); } }, SIG);
 $('lyedit').addEventListener('input', e => { const el = e.target, k = el.dataset && el.dataset.ly; if(!k) return; const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' ? el.value : +el.value; lySet(k, v); const o = el.parentElement.querySelector('output'); if(o && el.type !== 'checkbox') o.textContent = lyFmt(k, v); }, SIG);
 $('lyedit').addEventListener('click', e => { const t = e.target.closest('button'); if(!t) return; const L = layers[lySel]; if(!L) return;
   if(t.dataset.m){ L.mask = t.dataset.m; lyUI(); redrawFrame(); }
@@ -7463,7 +7466,7 @@ async function fastExport(){
     if(quality.warnings.length) console.warn('Shubix export quality warnings:', quality.warnings);
     await output.finalize();
     const blob = new Blob([output.target.buffer], {type: mp4 ? 'video/mp4' : 'video/webm'});
-    const name = fileTitle() + '.' + (mp4 ? 'mp4' : 'webm');   // the Reel's own name (Untitled 1, or what it was renamed to)
+    const name = fileTitle() + '.' + (mp4 ? 'mp4' : 'webm');   // the Reel's own name (Shubix 1, or what it was renamed to)
     const sh = saveFile(blob, name);
     tasks.done('export', 'Your Reel is ready · ' + (blob.size/1e6).toFixed(1) + ' MB');
     if(noSong){ notify('Your Reel is ready', 'ok'); $('xmsg').hidden = true; return true; }
@@ -9093,14 +9096,14 @@ $('postcopy').addEventListener('click', () => copyCaption($('postcapt').value.tr
  * texts, the part of the song and the captions already transcribed. It is saved a few seconds after anything changes;
  * "Your Reels" opens one again exactly as it was (the page reloads into it). */
 const PDB = 'brs-projects';
-// the Reel's name: "Untitled 1", "Untitled 2"… for a new one (the next number among this phone's drafts), changed by
+// the Reel's name: "Shubix 1", "Shubix 2"… for a new one (the next number among this phone's drafts), changed by
 // tapping it in the editor's head; it names the draft, the Reel in My Reels and the exported video file
 let reelTitle = '';
 const fileTitle = () => (reelTitle || 'Reel').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Reel';
 async function nextUntitled(){
   let n = 0;
-  try{ const all = await idb('meta', 'readonly', st => st.getAll()); for(const m of all || []){ const x = /^Untitled (\d+)$/.exec(m && m.name || ''); if(x) n = Math.max(n, +x[1]); } }catch(e){}
-  return 'Untitled ' + (n + 1);
+  try{ const all = await idb('meta', 'readonly', st => st.getAll()); for(const m of all || []){ const x = /^Shubix (\d+)$/.exec(m && m.name || ''); if(x) n = Math.max(n, +x[1]); } }catch(e){}
+  return 'Shubix ' + (n + 1);
 }
 function setReelTitle(t){
   const v = String(t || '').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -9323,9 +9326,10 @@ async function forgetSong(fp, quiet){
 }
 // a recent song heard before it is chosen: its play button (one at a time; choosing a song, leaving or the list
 // drawn again stops it)
-let preview = null, previewFp = '', previewUrl = '';
+let preview = null, previewFp = '', previewUrl = '', previewRaf = 0;
 function stopPreview(){
   if(preview){ preview.pause(); preview.removeAttribute('src'); }
+  cancelAnimationFrame(previewRaf); document.querySelectorAll('#rlist .rprog').forEach(x => { x.hidden = true; });
   if(previewUrl) URL.revokeObjectURL(previewUrl);
   preview = null; previewFp = ''; previewUrl = '';
   document.querySelectorAll('#rlist .rplay.on').forEach(b => { b.classList.remove('on'); b.innerHTML = PLAY_SVG; b.setAttribute('aria-label', 'Play ' + (b.dataset.name || 'song')); });
@@ -9337,16 +9341,21 @@ async function togglePreview(fp, btn){
   previewUrl = URL.createObjectURL(b); preview = new Audio(previewUrl); previewFp = fp;
   preview.onended = stopPreview;
   btn.classList.add('on'); btn.innerHTML = PAUSE_SVG; btn.setAttribute('aria-label', 'Pause ' + (btn.dataset.name || 'song'));
+  // how far it is: a line under its row, which can be tapped or dragged along
+  const line = btn.parentElement.querySelector('.rprog'), a = preview;
+  const step = () => { if(preview !== a) return; line.firstElementChild.style.width = (a.duration > 0 ? Math.min(100, a.currentTime / a.duration * 100) : 0).toFixed(2) + '%'; previewRaf = requestAnimationFrame(step); };
+  line.hidden = false; step();
+  line.onpointerdown = line.onpointermove = e => { if(e.type === 'pointermove' && !e.buttons || preview !== a || !(a.duration > 0)) return; const r = line.getBoundingClientRect(); a.currentTime = Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width)) * a.duration; };
   try{ await preview.play(); }catch(e){ stopPreview(); }
 }
 ac.signal.addEventListener('abort', stopPreview);
 async function listRecent(){
-  let all = []; try{ all = (await idb('songs', 'readonly', s => s.getAll()) || []).sort((a, b) => b.usedAt - a.usedAt); }catch(e){ return; }
+  let all = []; try{ all = (await idb('songs', 'readonly', s => s.getAll()) || []).sort((a, b) => b.usedAt - a.usedAt); }catch(e){ $('rwait').hidden = true; return; }
   stopPreview();
   const box = $('rlist'); box.innerHTML = '';
   for(const sg of all){
     const d = document.createElement('div'); d.className = 'rsong' + (song && song.file && fileFp(song.file) === sg.fp ? ' cur' : '');
-    d.innerHTML = '<button class="rplay" type="button">' + PLAY_SVG + '</button><button class="rpick" type="button"><span class="rn"></span><span class="rd"></span></button><button class="rdel" type="button" aria-label="Remove from recent songs" title="Remove"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+    d.innerHTML = '<button class="rplay" type="button">' + PLAY_SVG + '</button><button class="rpick" type="button"><span class="rn"></span><span class="rd"></span></button><button class="rdel" type="button" aria-label="Remove from recent songs" title="Remove"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span class="rprog" hidden aria-hidden="true"><i></i></span>';
     d.querySelector('.rn').textContent = sg.name.replace(/\.[^.]+$/, ''); // the note is the card's picture (::before)
     d.querySelector('.rd').textContent = fmt(sg.dur || 0).replace(/\.\d+$/, '');
     const name = sg.name.replace(/\.[^.]+$/, ''), play = d.querySelector('.rplay');
@@ -9356,7 +9365,8 @@ async function listRecent(){
     d.querySelector('.rdel').addEventListener('click', () => forgetSong(sg.fp));
     box.appendChild(d);
   }
-  $('recent').hidden = !all.length;
+  $('recent').hidden = !all.length; $('rwait').hidden = true;
+  try{ localStorage.setItem('shubix-songs', String(all.length)); }catch(e){}   // (flow.ts: whether to say they are coming, next time)
 }
 async function pickRecent(fp){
   if(recording) return;

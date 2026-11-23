@@ -14,7 +14,7 @@
 
 import type { TaskEvent } from "./tasks";
 import { tx } from "./i18n";
-import { needsSignIn, signInBeside } from "../../lib/returnTo";
+import { needsSignIn, signInHere } from "../../lib/returnTo";
 
 type Kind = "music" | "talk" | "photo" | "copy";
 type Step = "intro" | "choose" | "adjust" | "clips" | "analyse";
@@ -34,7 +34,7 @@ const STEP_NAME: Record<Step, string> = { intro: "Start", choose: "Music", adjus
 type Mark = { step: Step; revealed: boolean; tool: string; n: number };
 // the engine's work the Reel waits for (the song, the beat check, reading the clips, the AI director): Next (phones) and
 // Generate Reel (computers) stay off until all of it is done, so what opens is the finished Reel
-const WAIT = new Set(["song", "beats", "clips", "ai"]);
+const WAIT = new Set(["song", "beats", "clips", "photos", "ai"]);
 
 export function initFlow(root: HTMLElement): () => void {
   const ac = new AbortController(), sig = { signal: ac.signal };
@@ -104,7 +104,7 @@ export function initFlow(root: HTMLElement): () => void {
   const stopped = () => live()?.cancelled?.() ?? { song: false, clips: false };
   let aiRunNo = 0;   // the wait for the Reel that the popup's Cancel ended
   const shubixBusy = () => { const a = $("aistat"); return !a.hidden && /…$/.test(a.textContent ?? ""); };
-  const order = () => ORDER[has("talkmode") ? "talk" : "music"];
+  const order = () => ORDER[has("talkmode") || (!chosen() && urlKind() === "talk") ? "talk" : "music"];   // (/create/talking: no song step, also before the studio has put it in talking)
 
   // the kind in the address (/create/music|talking|photo|copy): the flow is open from the first paint, before the engine
   // has picked that kind (it does a moment later, once it has started)
@@ -121,8 +121,17 @@ export function initFlow(root: HTMLElement): () => void {
 
   // the flow's places: the clips' own sound (from the Music panel) under the clips; the format in the preview card
   const pvbox = root.querySelector<HTMLElement>(".pvbox")!;
+  const lenParts = ["lenrow", "fitw", "fitnote"].map((id) => ({ el: $(id), parent: $(id).parentElement!, next: $(id).nextElementSibling }));
   const homes = { snd: $("clipsnd").parentElement!, sndNext: $("clipsnd").nextElementSibling, asp: $("aspect").closest(".row")!, pv: pvbox.parentElement!, pvNext: pvbox.nextElementSibling };
   const place = (on: boolean) => {
+    // phones: the Reel's length and "Match the Reel to my clips" are asked on the clips screen (they were only behind Adjust
+    // music, which adding a song skips); on Adjust music, and on computers, they are in their own place
+    const ask = on && phone() && step === "clips" && !has("talkmode") && (!!songOk() || working.has("song") || working.has("refsong"));
+    if (ask) { for (const x of lenParts) if (x.el.parentElement !== $("flenslot")) $("flenslot").append(x.el); }
+    else if ($("flenslot").childElementCount) for (const x of [...lenParts].reverse()) x.parent.insertBefore(x.el, x.next);
+    setFlag($("flenbox"), "hidden", !ask);
+    setFlag($("flenwait"), "hidden", !ask || (!!songOk() && !$("lenrow").hidden));
+    setFlag($("flenslot"), "hidden", !ask || $("lenrow").hidden);
     if (on) {
       if ($("clipsnd").parentElement !== $("fsndslot")) $("fsndslot").append($("clipsnd"));
       if (!phone() && $("aspect").parentElement !== $("faspslot")) $("faspslot").append($("aspect"));
@@ -206,7 +215,7 @@ export function initFlow(root: HTMLElement): () => void {
   /* Computers: one section open at a time. Music first, Clips minimised; once the song and its beat check are done, Music
    * minimises with a green tick (its song's name on it) and the page goes on to Clips. A section's head opens it again. */
   let sectionsOn = false, openSec: "s1" | "s2" | "fai" | null = null, songWas = false, clipsWas = false, songTimer: ReturnType<typeof setTimeout> | undefined, clipsTimer: ReturnType<typeof setTimeout> | undefined;
-  const clipsDoneNow = () => clipsOk() && !stopped().clips && !working.has("clips");
+  const clipsDoneNow = () => clipsOk() && !stopped().clips && !working.has("clips") && !working.has("photos");
   const openSection = (id: "s1" | "s2" | "fai") => { openSec = id; apply(); setTimeout(() => $(id).scrollIntoView({ behavior: "smooth", block: "start" }), 60); };
   const songDoneNow = () => !!songOk() && !stopped().song && !working.has("song") && !working.has("beats") && !working.has("refsong");
   const toClips = () => openSection("s2");
@@ -245,6 +254,14 @@ export function initFlow(root: HTMLElement): () => void {
   };
   // leaving the finished Reel (Back to the clips, the song…): its preview stops, the song does not play on under another screen
   let wasRevealed = revealed;
+  // the studio's code is still coming: its buttons wait with a spinner (a tap on them did nothing), the recent songs too
+  const starting = () => !inEngine && !live();
+  if (starting()) {
+    root.classList.add("starting");
+    let n: string | null = null; try { n = localStorage.getItem("shubix-songs"); } catch { /* private mode */ }
+    if (n !== "0") $("rwait").hidden = false;
+  }
+  root.addEventListener("studio-ready", () => { root.classList.remove("starting"); apply(); }, sig);
   const apply = () => {
     if (wasRevealed && !revealed) live()?.stopPreview?.();
     wasRevealed = revealed;
@@ -334,11 +351,11 @@ export function initFlow(root: HTMLElement): () => void {
     // nothing goes forward while the song or the clips are being worked on, or without both. After a Cancel it only offers to continue
     const paused = (stopped().song || songOk()) && (stopped().clips || clipsOk()) && (stopped().song || stopped().clips);
     // every button forward says what it waits for while it is off (phones: Next on each screen; computers: Generate)
-    const reading = !stopped().clips && (working.has("clips") || (!!$("qinfo").textContent && !clipsOk()));
+    const reading = !stopped().clips && (working.has("clips") || working.has("photos") || (!!$("qinfo").textContent && !clipsOk()));
     // on as soon as the clips are chosen: what is still being read is shown in the popup after the press
     const goes = (clipsOk() || reading) && (!!songOk() || songComing);
     setFlag($<HTMLButtonElement>("fclipsnext"), "disabled", (!clipsOk() && !stopped().clips && !reading) || !!stop || wantGen || checking);
-    const missing = stopped().clips ? "" : !clipsOk() ? (reading ? "Reading your clips…" : has("photomode") ? "Add your photos to continue" : "Add your clips to continue")
+    const missing = stopped().clips ? "" : !clipsOk() ? (reading ? (working.has("photos") ? "Preparing your photos…" : "Reading your clips…") : has("photomode") ? "Add your photos to continue" : "Add your clips to continue")
       : !songOk() && !songComing ? "Add your song first" : "";
     setText($("fclipsnt"), checking ? "Getting ready…" : stop || (goes ? "Make Reel" : missing || "Make Reel"));
     // Music (phones): Next only with a song ready (or "use my clips' own sound"), a spinner while it is read
@@ -378,7 +395,8 @@ export function initFlow(root: HTMLElement): () => void {
     // Stop pressed in the popup: the Reel is not made by itself after it (a clip removed then, the rest read, counted down
     // and opened the popup again: QA 2026-11-18); Generate makes it
     if (!autoOff && (stopped().song || stopped().clips)) autoStop(true);
-    const autoCan = !autoOff && !autoGo && !wantGen && !checking && ready && !busy && working.size === 0 && !has("opening") && !revealed && !inEngine && !made();   // a Reel made is never made again by itself (it counted down in the editor)
+    const autoCan = !autoOff && !autoGo && !wantGen && !checking && ready && !busy && working.size === 0 && !has("opening") && !revealed && !inEngine && !made()
+      && (!phone() || has("talkmode"));   // phones: the length is chosen there, Make Reel is pressed (the countdown is not even seen on a phone). A Reel made is never made again by itself (it counted down in the editor)
     if (autoCan && !autoAt) {
       autoAt = Date.now() + AUTO_MS;
       autoTick = setInterval(() => {
@@ -477,14 +495,14 @@ export function initFlow(root: HTMLElement): () => void {
     if (t.closest("#fadjust")) { go("adjust"); return; }
     if (t.closest("#slen") && e.isTrusted) lengthTouched = true;
     if (t.closest("#fgen")) {
-      // Generate needs an account, free or paid: nobody signed in (or it cannot be checked), so sign-in opens in a new tab
-      // and this Reel is generated when it is done (signInBeside). The phone app's hidden studio (/engine) is signed in by
+      // Generate needs an account, free or paid: nobody signed in (or it cannot be checked), so sign-in opens in a popup
+      // over the page and this Reel is generated when it is done (signInHere). The phone app's hidden studio (/engine) is signed in by
       // the app itself.
       if (!signInOk && !inEngine) {
-        // known signed out: the sign-in screen opens straight away, in this same click (a browser lets a window open only then)
+        // known signed out: the sign-in popup opens straight away
         if (signInNeed) { const done = () => { signInNeed = false; signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; checking = true; apply();
             void Promise.resolve(live()?.account?.()).catch(() => {}).finally(() => { checking = false; apply(); g.click(); }); };
-          signInBeside(done, true); return; }
+          signInHere(done); return; }
         void (async () => {
           const go = () => { signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); };
           // just signed in: the studio learns the plan first (it asked while nobody was signed in), so a Free account gets
@@ -492,7 +510,7 @@ export function initFlow(root: HTMLElement): () => void {
           const fresh = async () => { checking = true; apply(); try { await live()?.account?.(); } catch { /* the edit goes on */ } finally { checking = false; apply(); } go(); };
           checking = true; apply();
           const need = await needsSignIn().finally(() => { checking = false; apply(); });
-          if (need) return signInBeside(() => void fresh());   // in a new tab: this one keeps the Reel (no save and reload: an iPhone ran out of memory)
+          if (need) return signInHere(() => void fresh());   // in a popup over this page: the Reel stays (no save and reload: an iPhone ran out of memory)
           go();
         })();
         return;
