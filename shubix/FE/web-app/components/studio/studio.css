@@ -538,7 +538,8 @@
 /* a song being read (engine.ts songBusy): a spinner in Choose song, the recent songs wait */
 .brs #mpick.busy{opacity:1;cursor:progress}
 .brs #mpick.busy svg{display:none}
-.brs #mpick.busy::before{content:"";width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+.brs #mpick.busy::before{content:"";margin:0;width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+.brs #dropzone.busy > svg{display:none}
 .brs .rlist.busy{opacity:.5;pointer-events:none}
 .brs.fopen #mpick{min-height:48px;border-radius:14px;padding:0 18px}
 .brs.fopen .recent{gap:10px}
@@ -3690,20 +3691,18 @@ html:has(.brs .clip.dragging),html:has(.brs .clip.dragging) body{overscroll-beha
 .brs .chatlog .rep .repth{width:32px;height:44px;flex-shrink:0;object-fit:cover;border-radius:6px;background:#000}
 
 /* ===== phones (QA 2026-11-23) ===== */
-/* the studio's code is still coming (flow.ts): its first buttons wait with a spinner, they did nothing when tapped */
-.brs.starting :is(#mpick,#dropzone,#frefpick){pointer-events:none;cursor:progress}
+/* the studio's code is still coming (flow.ts): Add your song and the clips' box already open the picker; what was picked waits with a spinner */
+.brs.starting #frefpick{pointer-events:none;cursor:progress}
 .brs .rprog,.brs .flenbox{display:none}
 .brs [hidden].rprog{display:none !important}
 @media (max-width:1023px){
-  .brs.starting #mpick > svg,.brs.starting #dropzone > svg{display:none}
-  .brs.starting #mpick::before,.brs.starting #dropzone::before{content:"";width:22px;height:22px;border-radius:50%;border:2.5px solid var(--accent);border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+  .brs #dropzone.busy::before{content:"";width:22px;height:22px;border-radius:50%;border:2.5px solid var(--accent);border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
   /* Add your song: the screen's one big box, like the box for the clips */
   .brs.fopen #mpick{display:grid;justify-items:center;justify-content:center;gap:8px;width:100%;min-height:148px;padding:22px 16px;border:2px dashed color-mix(in srgb,var(--accent) 65%,transparent);border-radius:20px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));color:var(--ink);box-shadow:none;white-space:normal;text-align:center}
   .brs.fopen #mpick > svg{width:54px;height:54px;padding:14px;border-radius:16px;background:var(--gold-gradient);color:var(--on-accent,#fff)}
   .brs.fopen #mpick > span{font:700 17px var(--body)}
   .brs.fopen #mpick > small{font:500 12.5px var(--body);color:var(--muted)}
   .brs.fopen #mpick.busy::before{width:30px;height:30px;color:var(--accent)}
-  .brs.fopen #mpick[aria-busy="true"]::after{display:none !important}   /* its own spinner is enough */
   /* a song chosen: the box steps back, the song and Next are what matters */
   .brs.fopen #s1.done #mpick{min-height:64px;padding:10px 14px;grid-template-columns:auto 1fr;justify-items:start;align-items:center;column-gap:12px;row-gap:0;text-align:left}
   .brs.fopen #s1.done #mpick > svg{width:40px;height:40px;padding:10px;border-radius:12px;grid-row:1/3}

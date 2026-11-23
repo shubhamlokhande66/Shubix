@@ -10,6 +10,7 @@ import { applyTheme } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { ThemeToggle } from "@/components/molecules/ThemeToggle";
 import { ConfirmHost } from "@/components/molecules/ConfirmDialog";
+import { afterSignOut, noteLast } from "@/lib/returnTo";
 import { SignInDialog } from "@/components/organisms/SignInDialog";
 import { ReviewPrompt } from "@/components/organisms/ReviewPrompt";
 import { Icon } from "@/components/atoms/Icon";
@@ -287,6 +288,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (signedOut && !authPage && !publicPage) router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); // accounts on and nobody signed in: the sign-in page, then back here
   }, [signedOut, authPage, publicPage, router]);
+  // the page last seen: signing in goes back to it (lib/returnTo.ts)
+  useEffect(() => {
+    if (authPage || partnerPage || enginePage) return;
+    const note = () => noteLast(window.location.pathname + window.location.search);
+    note();
+    window.addEventListener("pagehide", note);   // (the studio changes its own address as it goes)
+    return () => window.removeEventListener("pagehide", note);
+  }, [pathname, authPage, partnerPage, enginePage]);
   // the email's code not entered yet: nothing opens but the code screen (the server refuses the rest too)
   const needsCode = me.data?.user?.emailVerified === false && !authPage && !publicPage;
   useEffect(() => { if (needsCode) router.replace("/verify"); }, [needsCode, router]);
@@ -351,8 +360,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const signOut = me.data?.user
     ? async () => {
         await api.logout();
-        await qc.invalidateQueries();
-        router.replace("/login");
+        afterSignOut();
       }
     : undefined;
   const meta = pageMeta(pathname);

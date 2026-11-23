@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { StoreBadges } from "@/components/molecules/StoreBadges";
 import { emailOk } from "@/lib/validate";
-import { savedRef } from "@/lib/marketing";
+import { googleUrl, openGoogle, watchSignIn } from "@/lib/googlePopup";
 import { useMe, useText } from "@/hooks/useApi";
-import { keepNext, takeNext } from "@/lib/returnTo";
+import { keepNext, lastPage, takeNext } from "@/lib/returnTo";
 import { cn } from "@/lib/cn";
 import { Eyebrow, Icon, Logo } from "@/components/atoms";
 import { SoundBars } from "@/components/molecules";
@@ -31,7 +31,7 @@ export default function LoginPage() {
   // ?next= the page to return to (kept through the email code and Google); ?error= Google's sign-in did not finish
   useEffect(() => {
     const q = new URLSearchParams(window.location.search), next = q.get("next"), err = q.get("error");
-    keepNext(next);
+    keepNext(next ?? lastPage());   // none asked for: back to the page last seen
     setFromStudio(!!next && /^\/(create|editor)/.test(next));
     if (err?.startsWith("google")) setFirstError(text(err === "google_cancelled" ? "auth.googleCancelled" : "auth.googleFailed"));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the page opens
@@ -42,6 +42,9 @@ export default function LoginPage() {
     seen.current = true;
     if (me.data?.user && me.data.user.emailVerified !== false) window.location.replace(takeNext());
   }, [me.isSuccess, me.data]);
+  // Google's window is open beside this page: signed in there, on to the page asked for
+  const [beside, setBeside] = useState(false);
+  useEffect(() => (beside ? watchSignIn(() => window.location.replace(takeNext()), true) : undefined), [beside]);
   const bars = [12, 20, 30, 17, 34, 23, 13, 27, 38, 20, 31, 15, 26, 36, 18, 29, 12, 23, 34, 16, 28, 38, 19, 11, 27, 35, 17, 25, 13, 32, 20, 37, 16, 28, 12, 22];
 
   return (
@@ -100,8 +103,9 @@ export default function LoginPage() {
             <AuthForm subtitle={fromStudio ? text("auth.keepWork") : ""} firstError={firstError} onEmail={setEmail}
               onGoogle={() => {
                 const next = takeNext(); keepNext(next);
-                window.location.assign(`/api/auth/google?next=${encodeURIComponent(next)}&ref=${encodeURIComponent(savedRef() ?? "")}`);
+                window.location.assign(googleUrl(next));
               }}
+              onGooglePopup={() => { const ok = openGoogle(); setBeside(ok); return ok; }}
               onSignedIn={({ needsCode, adminCode }) => {
                 // a new account: the code from the email first; an administrator: the admin code (emailed now) first
                 if (needsCode) return router.replace("/verify?sent=1");
@@ -111,6 +115,7 @@ export default function LoginPage() {
                 if (next === "/") router.replace("/"); else window.location.replace(next); // the studio loads whole (its own page setup)
               }} />
 
+            {beside && <p role="status" className="m-0 mt-3 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-center text-[12.5px] font-semibold">Finish signing in with Google in the window that opened. This page goes on by itself.</p>}
             <Link href={emailOk(email) ? "/affiliate?email=" + encodeURIComponent(email.trim()) : "/affiliate"} className="mt-4 block text-center text-[12px] font-semibold text-muted transition-colors hover:text-foreground">
               {text("auth.partnerLink")}
             </Link>

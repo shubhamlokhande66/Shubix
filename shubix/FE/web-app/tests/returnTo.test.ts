@@ -81,3 +81,22 @@ describe("signing in over the Reel", () => {
     expect(done).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("signing in with no page asked for", () => {
+  it("goes back to the page last seen, and an older wait does not win over it", async () => {
+    const { noteLast } = await import("@/lib/returnTo");
+    keepNext("/pricing");
+    noteLast("/templates?q=beat");
+    expect(takeNext()).toBe("/templates?q=beat");
+    noteLast("//evil.com");
+    expect(takeNext()).toBe("/");
+  });
+});
+
+describe("a busy button", () => {
+  it("has its spinner from one place only (two rules drew two)", async () => {
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync("tailwind.config.ts", "utf8")).not.toContain("aria-busy");
+    expect(readFileSync("app/globals.css", "utf8").match(/busyspin \.8s/g)).toHaveLength(1);
+  });
+});

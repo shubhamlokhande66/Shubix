@@ -3,8 +3,8 @@
 import { toast } from "@/lib/toast";
 import { useState } from "react";
 import { ThemeChoice } from "@/components/molecules/ThemeToggle";
-import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { afterSignOut } from "@/lib/returnTo";
 import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useCredits, useMe, useText } from "@/hooks/useApi";
@@ -92,7 +92,6 @@ function Sessions() {
 }
 
 function DeleteAccount({ email }: { email: string }) {
-  const router = useRouter();
   const qc = useQueryClient();
   const text = useText();
   const [password, setPassword] = useState("");
@@ -109,7 +108,7 @@ function DeleteAccount({ email }: { email: string }) {
     try {
       await api.deleteAccount(password, confirm.trim());
       qc.clear();
-      router.replace("/login");
+      afterSignOut();
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
@@ -163,8 +162,6 @@ function Payments() {
 export default function AccountPage() {
   const me = useMe();
   const credits = useCredits();
-  const qc = useQueryClient();
-  const router = useRouter();
   const text = useText();
   const [panel, setPanel] = useState<Panel | null>(null);
 
@@ -182,7 +179,7 @@ export default function AccountPage() {
   const c = credits.data?.enabled ? credits.data : null;
   const name = user.email.split("@")[0];
   const paid = !!c && c.plan !== "free";
-  const signOut = async () => { await api.logout(); await qc.invalidateQueries(); router.replace("/login"); };
+  const signOut = async () => { await api.logout(); afterSignOut(); };
 
   const row = (id: Panel, icon: string, title: string, line: string, danger = false) => (
     <button type="button" onClick={() => setPanel(id)} aria-haspopup="dialog"

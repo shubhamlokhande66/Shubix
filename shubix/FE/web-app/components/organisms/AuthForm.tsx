@@ -16,7 +16,7 @@ const TAB_ON = "bg-gold text-on-accent shadow-[0_5px_14px_-9px_var(--brand-glow)
 
 /** The sign-in / create-account form: on its own page (app/login) and in the popup over a Reel being made (SignInDialog).
  * Each field says what is wrong as people type (after they leave it); the button waits until the form is right. */
-export function AuthForm({ subtitle, firstError, popup = false, onGoogle, onSignedIn, onEmail }: {
+export function AuthForm({ subtitle, firstError, popup = false, onGoogle, onGooglePopup, onSignedIn, onEmail }: {
   /** the line under the title ("" : the form's own) */
   subtitle?: string;
   /** an error to open with (Google's sign-in did not finish) */
@@ -25,6 +25,8 @@ export function AuthForm({ subtitle, firstError, popup = false, onGoogle, onSign
   popup?: boolean;
   /** Google chosen: goes to Google's page, or opens it beside this one */
   onGoogle: () => void;
+  /** the sign-in page: opens Google's window, true when it opened (else onGoogle, in this tab) */
+  onGooglePopup?: () => boolean;
   /** signed in, or (a new account) the emailed code is next */
   onSignedIn: (r: { needsCode: boolean; adminCode: boolean }) => void;
   onEmail?: (email: string) => void;
@@ -46,6 +48,7 @@ export function AuthForm({ subtitle, firstError, popup = false, onGoogle, onSign
   useEffect(() => { setSlow(false); if (!busy) return; const t = setTimeout(() => setSlow(true), 8_000); return () => clearTimeout(t); }, [busy]);
   const withGoogle = async () => {
     if (popup) { onGoogle(); return; }   // a window opens only inside the click
+    if (onGooglePopup?.()) return;
     setBusyWith("google"); setError(null);
     try { await patiently(() => api.health()); } // awake first: Google's page then comes back to a server that answers
     catch (err) { setError(errorMessage(err)); setBusyWith(null); return; }
@@ -99,7 +102,7 @@ export function AuthForm({ subtitle, firstError, popup = false, onGoogle, onSign
               {google && (
                 <div className="relative z-10 flex flex-col gap-3">
                   <Button type="button" variant="secondary" size="lg" loading={busyWith === "google"} disabled={busy} onClick={() => void withGoogle()} className="!h-12 w-full !rounded-xl !text-[13.5px]">
-                    <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" /><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" /><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z" /><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" /></svg>
+                    {busyWith !== "google" && <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" /><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" /><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z" /><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" /></svg>}
                     {busyWith === "google" ? text(slow ? "auth.waking" : "auth.wait") : text("auth.google")}
                   </Button>
                   <span className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[.1em] text-muted"><i className="h-px flex-1 bg-border" />{text("auth.or")}<i className="h-px flex-1 bg-border" /></span>

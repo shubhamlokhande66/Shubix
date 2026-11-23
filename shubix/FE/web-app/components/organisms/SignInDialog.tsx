@@ -5,9 +5,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { IconButton } from "@/components/atoms";
 import { AuthForm } from "@/components/organisms/AuthForm";
 import { CodeForm } from "@/components/organisms/CodeForm";
-import { savedRef } from "@/lib/marketing";
 import { noteSignedIn } from "@/lib/boot";
-import { needsSignIn, SIGN_IN } from "@/lib/returnTo";
+import { openGoogle, watchSignIn } from "@/lib/googlePopup";
+import { SIGN_IN } from "@/lib/returnTo";
 import { useText } from "@/hooks/useApi";
 
 /** after the emailed code: nothing to show, the popup closes */
@@ -19,7 +19,7 @@ const Nothing = () => null;
 export function SignInDialog() {
   const qc = useQueryClient(), text = useText();
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"form" | "code" | "google">("form");
+  const [step, setStep] = useState<"form" | "code" | "google" | "blocked">("form");
   const onDone = useRef<(() => void) | null>(null), box = useRef<HTMLDivElement>(null);
   const close = () => { setOpen(false); onDone.current = null; };
   const done = () => {
@@ -54,25 +54,10 @@ export function SignInDialog() {
   // Google in its own tab, or a password reset there: looked at when this page is seen again (Google: every 3 s too)
   useEffect(() => {
     if (!open || step === "code") return;
-    let busy = false;
-    const check = async () => {
-      if (busy || document.hidden) return;
-      busy = true;
-      try { if (!(await needsSignIn())) doneRef.current(); } finally { busy = false; }
-    };
-    const t = step === "google" ? setInterval(check, 3000) : undefined;
-    const seen = () => void check();
-    window.addEventListener("focus", seen);
-    document.addEventListener("visibilitychange", seen);
-    return () => { clearInterval(t); window.removeEventListener("focus", seen); document.removeEventListener("visibilitychange", seen); };
+    return watchSignIn(() => doneRef.current(), step === "google");
   }, [open, step]);
-  const google = () => {
-    const url = `/api/auth/google?next=${encodeURIComponent("/signed-in")}&ref=${encodeURIComponent(savedRef() ?? "")}`;
-    const w = 480, h = 720, wide = window.innerWidth >= 700;
-    const feat = wide ? `popup,width=${w},height=${h},left=${Math.round(window.screenX + (window.outerWidth - w) / 2)},top=${Math.round(window.screenY + (window.outerHeight - h) / 2)}` : "";
-    window.open(url, "shubix-signin", feat);
-    setStep("google");
-  };
+  // a browser that opens no window: said (leaving the page would lose the Reel)
+  const google = () => setStep(openGoogle() ? "google" : "blocked");
   if (!open) return null;
   return (
     <div data-popup className="fixed inset-0 z-[1000] grid place-items-end bg-black/60 backdrop-blur-[2px] sm:place-items-center sm:p-4">
@@ -93,7 +78,8 @@ export function SignInDialog() {
         ) : (
           <>
             <AuthForm popup subtitle={text("auth.keepWork")} onGoogle={google} onSignedIn={({ needsCode }) => { if (needsCode) setStep("code"); else done(); }} />
-            {step === "google" && <p role="status" className="m-0 mt-3 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-center text-[12.5px] font-semibold">Finish signing in with Google in the other tab. Your Reel goes on here by itself.</p>}
+            {step === "google" && <p role="status" className="m-0 mt-3 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-center text-[12.5px] font-semibold">Finish signing in with Google in the window that opened. Your Reel goes on here by itself.</p>}
+            {step === "blocked" && <p role="alert" className="m-0 mt-3 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-center text-[12.5px] font-semibold">Your browser did not open the Google window. Allow pop-ups for this site and try again, or sign in with your email.</p>}
           </>
         )}
       </div>

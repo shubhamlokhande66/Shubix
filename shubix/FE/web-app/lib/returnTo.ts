@@ -19,9 +19,20 @@ export function keepNext(next: string | null) {
 }
 export function takeNext(): string {
   let next = "/";
-  try { next = safeNext(sessionStorage.getItem(KEY)); sessionStorage.removeItem(KEY); } catch { /* private mode */ }
+  try { next = safeNext(sessionStorage.getItem(KEY) ?? sessionStorage.getItem(LAST)); sessionStorage.removeItem(KEY); } catch { /* private mode */ }
   return next;
 }
+/** The page last seen in this tab (the app shell notes each one; never a sign-in page): where signing in goes back to when
+ * no page was asked for. A page opened after an older sign-in was left: that one is not waited for any more. */
+const LAST = "shubix-last";
+export function noteLast(page: string) {
+  try { sessionStorage.setItem(LAST, safeNext(page)); sessionStorage.removeItem(KEY); } catch { /* private mode */ }
+}
+export function lastPage(): string {
+  try { return safeNext(sessionStorage.getItem(LAST)); } catch { return "/"; }
+}
+/** Signed out: Home, loaded whole (nothing of the account stays in the page); people look around without an account too. */
+export const afterSignOut = () => window.location.assign("/");
 /** Sign in, then back here: the studio saves its Reel first and passes its own address. */
 export function signInThen(next: string) {
   keepNext(next);

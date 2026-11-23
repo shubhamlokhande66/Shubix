@@ -254,14 +254,33 @@ export function initFlow(root: HTMLElement): () => void {
   };
   // leaving the finished Reel (Back to the clips, the song…): its preview stops, the song does not play on under another screen
   let wasRevealed = revealed;
-  // the studio's code is still coming: its buttons wait with a spinner (a tap on them did nothing), the recent songs too
+  // the studio's code is still coming: Add your song and the clips' box open the picker at once, what was picked is kept in
+  // its box (a spinner there) and read the moment the studio is ready; the recent songs wait with a loader
   const starting = () => !inEngine && !live();
   if (starting()) {
     root.classList.add("starting");
     let n: string | null = null; try { n = localStorage.getItem("shubix-songs"); } catch { /* private mode */ }
     if (n !== "0") $("rwait").hidden = false;
   }
-  root.addEventListener("studio-ready", () => { root.classList.remove("starting"); apply(); }, sig);
+  const early = new Set<HTMLInputElement>(), boxOf = (id: string) => $(id === "mfile" ? "mpick" : "dropzone");
+  root.addEventListener("click", (e) => {
+    const b = starting() && (e.target as HTMLElement).closest("#mpick,#dropzone");
+    if (b) $(b.id === "mpick" ? "mfile" : "vfile").click();
+  }, sig);
+  // (window, before steps.ts's own capture on the root: that one would feed files to a studio that is not there yet)
+  window.addEventListener("change", (e) => {
+    const f = e.target;
+    if (!starting() || !(f instanceof HTMLInputElement) || (f.id !== "mfile" && f.id !== "vfile") || !root.contains(f) || !f.files?.length) return;
+    e.stopImmediatePropagation();
+    early.add(f);
+    boxOf(f.id).classList.add("busy");
+    if (f.id === "mfile") $("rwait").hidden = true;   // one loader at a time
+  }, { capture: true, ...sig });
+  root.addEventListener("studio-ready", () => {
+    root.classList.remove("starting"); apply();
+    for (const f of early) { boxOf(f.id).classList.remove("busy"); if (live()) f.dispatchEvent(new Event("change", { bubbles: true })); }
+    early.clear();
+  }, sig);
   const apply = () => {
     if (wasRevealed && !revealed) live()?.stopPreview?.();
     wasRevealed = revealed;
