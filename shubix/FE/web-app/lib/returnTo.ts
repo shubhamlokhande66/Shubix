@@ -32,7 +32,10 @@ export function lastPage(): string {
   try { return safeNext(sessionStorage.getItem(LAST)); } catch { return "/"; }
 }
 /** Signed out: Home, loaded whole (nothing of the account stays in the page); people look around without an account too. */
-export const afterSignOut = () => window.location.assign("/");
+export function afterSignOut() {
+  try { localStorage.removeItem("brs-plan"); } catch { /* private mode */ }   // the plan the studio remembers is that account's
+  window.location.assign("/");
+}
 /** Sign in, then back here: the studio saves its Reel first and passes its own address. */
 export function signInThen(next: string) {
   keepNext(next);

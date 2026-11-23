@@ -1,6 +1,8 @@
 /** Fast Studio's AI pictures (B-roll) on the website: /api/studio/broll in the shape the studio takes (`aiPicture` in
  * components/studio/engine.ts): its styles, and make → a JPEG file the studio puts on the Reel like any photo. */
 
+import { skipSignedOut } from "@/lib/boot";
+
 export type AiPicture = {
   styles: { id: string; name: string }[];
   hd: boolean;
@@ -11,6 +13,7 @@ export type AiPicture = {
 export async function loadAiPicture(): Promise<AiPicture | null> {
   let info: { available?: boolean; hd?: boolean; styles?: { id: string; name: string }[] } = {};
   try {
+    if (await skipSignedOut("/api/studio/broll")) return null;
     const r = await fetch("/api/studio/broll", { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return null;
     info = await r.json();

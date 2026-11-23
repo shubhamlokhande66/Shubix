@@ -42,7 +42,7 @@ import { parseDirectorVisualIntent } from './visualIntent';
 import { bootPart } from '../../lib/boot';
 
 export function initStudio(root, deps) {
-  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, subjectMask = null, loadRnnoise = null, cloud = null, tts = null, aiPicture = null } = deps;
+  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, subjectMask = null, loadRnnoise = null, cloud = null, loadVoices = null, loadPictures = null } = deps; let { tts = null, aiPicture = null } = deps;
 
 const $ = id => root.querySelector('#'+id);
 const tasks = createTasks(root);   // what is happening now, always in view (components/studio/tasks.ts)
@@ -3784,7 +3784,12 @@ async function aiCheck(){
 }
 aiCheck();
 // the person is known now (the phone app's sign-in reached the hidden studio): their plan, credits and Shubix AI
-async function account(){ planLoad(); await aiCheck(); }
+async function account(){ planLoad(); await aiCheck(); if(!IN_APP) void toolsAgain(); }
+// signed in over the page: the AI voices and pictures, asked for while nobody was signed in, were refused and stayed hidden
+async function toolsAgain(){
+  if(!tts && loadVoices){ tts = await loadVoices().catch(() => null); if(tts) voicesPaint(); }
+  if(!aiPicture && loadPictures){ aiPicture = await loadPictures().catch(() => null); picturesPaint(); }
+}
 /* ---- virtual camera: the crop follows the subject smoothly ----
    Like a camera operator: hold still while the subject stays near the middle (a locked-off shot looks professional),
    pan smoothly when it moves away, never twitch. Positions come from the tracked face, else from what moves on its own
@@ -5326,12 +5331,14 @@ $('lyadd').addEventListener('click', () => $('lyfile').click(), SIG);
 $('lyfile').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if(f.length) layerAdd(f); }, SIG);
 // AI pictures (B-roll, lib/broll/client.ts): a few words → a picture made at the Reel's shape, on the whole frame at the
 // playhead for 3 s, fading in and out
-if(aiPicture){
+function picturesPaint(){
+  if(!aiPicture) return;
   $('brbox').hidden = false;
   $('brstyle').innerHTML = aiPicture.styles.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
   if(aiPicture.styles.some(s => s.id === 'photo')) $('brstyle').value = 'photo';
   $('brhdwrap').hidden = !aiPicture.hd; $('brollrow').hidden = false;
 }
+picturesPaint();
 async function brollAdd(prompt, style, hd){
   if(!aiPicture) throw new Error('AI pictures are not available here.');
   if(!edit.length){ notify('Make the Reel first, then add AI pictures.'); return null; }
@@ -8667,9 +8674,11 @@ function ttsList(){
     d.querySelector('button').addEventListener('click', () => { ttsClips = ttsClips.filter(x => x !== c); ttsList(); applyVo(); clipMixKey = ''; });
     box.appendChild(d); }
 }
-if(tts){ $('ttsvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
+function voicesPaint(){
+  $('ttsbox').hidden = !tts; if(!tts) return;
+  $('ttsvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
   $('dubvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join(''); $('dubrow').hidden = false; }
-else $('ttsbox').hidden = true;
+voicesPaint();
 $('ttsadd').addEventListener('click', ttsAdd, SIG);
 $('dublang').addEventListener('change', e => { dubLang = e.target.value; makeDub(); }, SIG);
 $('dubvoice').addEventListener('change', e => { dubVoice = e.target.value; if(dubLang) makeDub(); }, SIG);

@@ -91,6 +91,8 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           loadRnnoise: () => import("@shiguredo/rnnoise-wasm"),
           tts,
           aiPicture,
+          loadVoices: () => import("@/lib/tts/client").then((m) => m.loadTts()),
+          loadPictures: () => import("@/lib/broll/client").then((m) => m.loadAiPicture()),
           // My Reels: "Export & save" keeps the finished Reel in the account (straight to storage, lib/cloudReels.ts)
           cloud: {
             usage: () => import("@/lib/cloudReels").then((m) => m.cloudUsage()),
