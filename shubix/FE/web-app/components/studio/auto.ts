@@ -182,8 +182,11 @@ export function initAuto(root: HTMLElement): () => void {
       else setProg(0, mode === "story" ? STORY_STAGES[1][1] : STAGES[0][1], 0);
       root.querySelector<HTMLButtonElement>('#kind [data-k="music"]')?.click();
       // photos become short moving clips first (the same as Photos to Reel)
-      if (clips.some(isPhoto)) { const { photoClip } = await import("./steps"); const out: File[] = [];
-        for (let i = 0; i < clips.length; i++) { setProg(0.02 + 0.08 * i / clips.length, "Preparing your photos", 0); out.push(isPhoto(clips[i]) ? await photoClip(clips[i]) : clips[i]); } clips = out; }
+      if (clips.some(isPhoto)) { const { photoClip, photosUnread } = await import("./steps"); const out: File[] = [], bad: File[] = [];
+        for (let i = 0; i < clips.length; i++) { setProg(0.02 + 0.08 * i / clips.length, "Preparing your photos", 0); try { out.push(isPhoto(clips[i]) ? await photoClip(clips[i]) : clips[i]); } catch { bad.push(clips[i]); } }
+        if (bad.length && !out.length) throw new Error(photosUnread(bad));
+        if (bad.length) window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "error", text: photosUnread(bad) } }));   // one bad photo does not stop the Reel
+        clips = out; }
       if (mode === "story") {
         const names: Record<string, string> = { voice: "Recording the narration", song: "Setting the sound", clips: "Reading your clips" };
         await st.storyRun($<HTMLTextAreaElement>("aotext").value, $<HTMLSelectElement>("aovoice").value, songFile, clips, (stage, p) => setProg(stage === "voice" ? 0.05 + 0.15 * p : stage === "song" ? 0.22 : 0.3, names[stage] || stage, stage === "clips" ? 1 : 0), per || undefined);

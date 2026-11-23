@@ -31,7 +31,7 @@ export function initSteps(root: HTMLElement): () => void {
   const setAccept = () => { const p = pickNow(); vfile.accept = !choosing() || p === "mix" ? BOTH : p === "photos" ? IMAGES : VIDEOS; };
   vfile.accept = VIDEOS;
   // a file the choice does not take is left out, and said (Mix takes both)
-  const toast = (text: string) => window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "info", text } }));
+  const toast = (text: string, kind: "info" | "error" = "info") => window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind, text } }));
   const keepTaken = (list: File[]) => {
     if (!choosing()) return list;
     const p = pickNow(), kept = list.filter((f) => pickTakes(p, mediaKindOf(f)));
@@ -117,6 +117,7 @@ export function initSteps(root: HTMLElement): () => void {
     // in the order they were chosen, videos and photos mixed ("In my order" plays them so)
     const out: File[] = [];
     const st = $("s2st");
+    const bad: File[] = [];
     let k = 0;
     for (const f of list) {
       if (!isImg(f)) { out.push(f); continue; }
@@ -124,10 +125,12 @@ export function initSteps(root: HTMLElement): () => void {
       try {
         out.push(await photoClip(f));
       } catch {
-        st.textContent = `${f.name} could not be read. Use JPG, PNG or WEBP.`;
+        bad.push(f);
       }
     }
-    if (!out.length) return;
+    // said once, after all of them (the next photo's line wrote over it), by name: the rest are added
+    if (bad.length) toast(photosUnread(bad), "error");
+    if (!out.length) { st.textContent = photosUnread(bad); return; }
     const dt = new DataTransfer();
     out.forEach((f) => dt.items.add(f));
     feeding = true;
@@ -204,6 +207,12 @@ export function initSteps(root: HTMLElement): () => void {
     ac.abort();
     mo.disconnect();
   };
+}
+
+/** what to say about photos the browser cannot open (Chrome and Firefox open no HEIC; Safari does) */
+export function photosUnread(bad: { name: string }[]): string {
+  const names = bad.slice(0, 3).map((f) => f.name).join(", ") + (bad.length > 3 ? ` +${bad.length - 3}` : "");
+  return `${names} could not be read. ${bad.some((f) => /\.hei[cf]$/i.test(f.name)) ? "This browser cannot open HEIC photos: save them as JPG, or use the Shubix app." : "Use JPG, PNG or WEBP."}`;
 }
 
 /** A photo as a short video: the whole picture with a slow push-in, encoded in the browser (WebCodecs, the same

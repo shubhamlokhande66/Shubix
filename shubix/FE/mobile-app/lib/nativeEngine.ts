@@ -1,7 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
-import { checkExportedReel, clipAdvice, reactionsOf, type ExportExpect } from "@mobile/video-engine";
+import { bestMoment, checkExportedReel, clipAdvice, reactionsOf, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -13,12 +13,15 @@ export type NativeIo = { base: string; key: string; fetch: Fetch; /** the pause 
   /** what Shubix is doing, in its words; an error when `err` */
   stat?: (text: string, err?: boolean) => void; spent?: () => void; tell?: (text: string) => void;
   /** one clip was read, or could not be */
-  clipDone?: (name: string, ok: boolean) => void;
+  clipDone?: (name: string, ok: boolean, best?: number | null) => void;
   /** a step of the work popup */
   readBytes?: (path: string, at: number, length: number) => Promise<Uint8Array>;
   task?: (state: "start" | "progress" | "done" | "fail" | "clear", id: string, title?: string, detail?: string, kind?: string, p?: number | null) => void };
 type Args = Record<string, unknown>;
 type Clip = { path: string; name: string };
+const PHOTO = /\.(jpe?g|png|webp|heic|heif|avif|gif|bmp)$/i;
+/** what is read in place of the file picked: a heavy clip's smooth copy, or a photo made a moving clip (`photo`: its seconds) */
+type Copy = { name: string; path: string; w: number; h: number; photo?: number };
 
 /** A template's kind of Reel (the website's TPL_STYLE, components/studio/engine.ts): its learned style and AI trend */
 const TPL_STYLE: Record<string, string> = { wedding: "wedding", travel: "travel", tripphotos: "travel", ganpati: "festival", diwali: "festival", navratri: "festival", holi: "festival", padwa: "festival", eid: "festival",
@@ -130,7 +133,7 @@ export function createNativeEngine(io: NativeIo) {
     } catch { /* signed out or offline: the template as it is */ }
   }
   const readBefore = new Map<string, unknown>();
-  let stops = 0, read: Clip[] = [], reading = 0, copies: { name: string; path: string; w: number; h: number }[] = [];
+  let stops = 0, read: Clip[] = [], reading = 0, copies: Copy[] = [];
   const url = (path: string, q = "") => `${io.base}/${path}?k=${io.key}${q}`;
   /** a file's sound, read by the phone (SoundReader.kt); it fails when the file has none */
   async function readSound(path: string) {
@@ -272,11 +275,20 @@ export function createNativeEngine(io: NativeIo) {
   }
 
   async function readClip(c: Clip) {
-    const p = `&p=${encodeURIComponent(c.path)}`, probe = await io.fetch(url("probe", p));
-    if (!probe.ok) throw new Error(`This clip cannot be read: ${c.name}`);
+    // a photo is first made a short moving clip, as on the website (PhotoClip.kt): the phone reads a size and frames only
+    // from a video. A file that is no video, with no photo's ending, is tried as a photo too.
+    const probeOf = (path: string) => io.fetch(url("probe", `&p=${encodeURIComponent(path)}`));
+    let from = c.path, photo = PHOTO.test(c.name) || PHOTO.test(c.path), probe = photo ? null : await probeOf(from);
+    if (!probe?.ok) {
+      const made = await io.fetch(url("photo", `&p=${encodeURIComponent(c.path)}`), { method: "POST" });
+      if (made.ok) { from = (await made.json() as { path: string }).path; photo = true; probe = await probeOf(from); }
+    }
+    if (!probe?.ok) throw new Error(photo ? `This photo cannot be read: ${c.name}. Use JPG, PNG or WEBP.` : `This clip cannot be read: ${c.name}`);
+    const p = `&p=${encodeURIComponent(from)}`;
     const facts = await probe.json() as ClipFacts, { dur, w, h } = facts, plan = editCopyOf(facts);
     // a heavy clip: its edit copy is what is read, previewed and exported (no copy made: the original goes on)
-    let path = c.path, W = w, H = h;
+    let path = from, W = w, H = h;
+    if (photo) copies.push({ name: c.name, path, w, h, photo: dur });
     if (plan) {
       const made = await io.fetch(url("copy", `${p}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}`), { method: "POST" });
       if (made.ok) { path = (await made.json() as { path: string }).path; W = plan.w; H = plan.h; copies.push({ name: c.name, path, w: plan.w, h: plan.h }); }
@@ -285,10 +297,11 @@ export function createNativeEngine(io: NativeIo) {
     const scan = lastLine(await (await io.fetch(url("scan", q), { method: "POST" })).text(), "{");
     let raw: { t: number; rects: unknown[] }[] = [];
     try { raw = lastLine(await (await io.fetch(url("faces", `${q}&w=${W}&h=${H}`), { method: "POST" })).text(), "["); } catch { /* no faces read: the Reel is still made */ }
-    const src = host.addClip({ name: c.name, path, soundPath: c.path, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface" });
+    const src = host.addClip({ name: c.name, path, soundPath: from, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface" });
     // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
-    try { const s = await readSound(c.path); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
+    try { const s = await readSound(from); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
     readBefore.set(c.name, src);
+    return src;
   }
   async function clips(a: Args) {
     const list = a.paths as Clip[], g = stops, names = list.map((c) => c.name);
@@ -304,7 +317,7 @@ export function createNativeEngine(io: NativeIo) {
         if (stops !== g) break;
         io.task?.("progress", "clips", undefined, `Clip ${i + 1} of ${fresh.length}`, undefined, i / fresh.length);
         // a clip that cannot be read is named on its own card: the others go on
-        try { await readClip(fresh[i]); io.clipDone?.(fresh[i].name, true); }
+        try { const src = await readClip(fresh[i]); io.clipDone?.(fresh[i].name, true, PHOTO.test(fresh[i].name) ? null : bestMoment(src?.samples, src?.dur, src?.faces)); }
         catch (e) { failed.push(fresh[i].name); lastError = e; io.clipDone?.(fresh[i].name, false); }
         io.onProgress?.("clips", (i + 1) / fresh.length);
       }
