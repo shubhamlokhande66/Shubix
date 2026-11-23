@@ -802,6 +802,23 @@ What it says beyond that, plainly:
 - **The teaser is off** (`STORY_ON.teaser`): it would open an In my order Reel on the moment that hook score likes
   best, and the score is not yet trusted for that.
 
+**Corrected on 2026-11-23.** The table above favoured long shots: every shot was ranked by its best moment, so a shot
+longer than the slot had dozens of tries and the human's own (as long as its slot) one or two. A blind scorer gets 35-39%
+that way (`BEST=1 BLIND=1`), not 50%. Each shot is now judged once, over its middle half second (a blind scorer: 50%):
+
+| part | shots | before | with the hook's movement (`STORY.hookMotion`) | Shubix AI, before | Shubix AI, now |
+|---|---|---|---|---|---|
+| opening | 17 | 45% | 56% | 46% | 52% |
+| setup | 41 | 40% | 40% | 46% | 46% |
+| middle | 159 | 55% | 55% | 56% | 56% |
+| drops | 11 | 54% | 54% | 53% | 53% |
+| last shot | 17 | 32% | 32% | 36% | 36% |
+| all | 245 | 50% | 51% | 52% | 53% |
+
+Openings are 17, so each figure is +-7 points; movement alone, weights learned on the other 16 Reels, gives 64%. The
+last shot cannot be learned here: 12 of the 17 end in a fade to black, which is the editing, not the footage. The setup
+gains only where movement outweighs blur and darkness, so it gets none.
+
 Run it: put the Reels outside the repository, then `HUMAN_REELS=<folder> CACHE=<folder> npx vitest run
 tests/human-rebuild.test.ts` in `FE/mobile-app` (ffmpeg on the PATH; `<reel>.faces.json` beside a Reel adds its faces;
 `ONLY=<file>` runs one Reel, for machines low on memory; with CACHE a second run takes seconds; `AI_DIR=<folder>` with
