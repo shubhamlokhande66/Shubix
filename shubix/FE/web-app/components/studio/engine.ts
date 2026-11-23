@@ -2121,11 +2121,15 @@ function velocitySpeed(len, bl){
   for(let k=0;k<pts.length-1;k++){ const a=pts[k], b=pts[k+1], T=b-a, m=a+0.6*T;
     segs.push([a,m,0.45,acc]); acc += 0.45*(m-a); segs.push([m,b,2.2,acc]); acc += 2.2*(b-m); }
   const find = l => segs.find(s=>l<=s[1]) || segs[segs.length-1];
-  return {label:'Velocity (beat)', at:l=>find(l)[2], pos:l=>{ const s=find(l); return s[3] + s[2]*(Math.min(l,s[1])-s[0]); }};
+  return {label:'Velocity (beat)', at:l=>find(l)[2], pos:l=>{ const s=find(l); return s[3] + s[2]*(l-s[0]); }};
 }
 // photo snap: freeze 0.32 s like a camera shot, then play
 const SNAP_T = 0.32;
 const snapSpeed = {label:'Freeze → 1×', at:l=> l<SNAP_T ? 0 : 1, pos:l=> l<SNAP_T ? 0 : l-SNAP_T};
+// the same speed on a shot that now starts L s earlier (landTransitions): the lead plays at the speed it opens with, then
+// the curve stays on its beats. Without it the curve ran out L s before the cut and the picture stood still there.
+function leadSpeed(sp, L){ if(!/^(Velocity|Ramp|Custom)/.test(sp.label)) return sp;
+  const r = sp.at(0); return { label: sp.label, at: l => l < L ? r : sp.at(l - L), pos: l => l < L ? r*l : r*L + sp.pos(l - L) }; }
 function rampSpeed(len){ const sp = 0.45*len;   // fast, then slow into the next beat
   return {label:'Ramp 1.8×→0.6×', at:l=> l<sp ? 1.8 : 0.6, pos:l=> l<sp ? 1.8*l : 1.8*sp + 0.6*(l-sp)}; }
 function styleEdit(){
@@ -3994,6 +3998,8 @@ function flowNear(i, res, gmax){
 // water), not a still picture (slowed, nothing changes) nor a frantic one. Not "every walk is slowed": the music decides
 // where the slow part is, this decides which footage plays in it (2026-11-19).
 const slowMo = (sp, len) => !!sp && len > 0 && sp.pos(len) < 0.8*len;
+// any part of the shot slower than its footage (a velocity's slow part, a shot stretched over the beat): its frames repeat
+const slowPart = e => { const len = e.end - e.start; for(let k = 0; k < 20; k++){ const r = rateAt(e, (k + 0.5)/20*len); if(r > 0 && r < 0.9) return true; } return false; };
 const slowFit = m => 1 - Math.abs(m - 0.4)*1.6 - (m < 0.1 ? 0.5 : 0);
 function scoreWindow(i, src, a, need, gmax, near){
   const s = plan[i], st = windowStats(src, a, a+need), m = st.m/gmax;
@@ -4270,7 +4276,7 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
-    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.trLead = L;
+    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
 }
@@ -4630,7 +4636,7 @@ function curveSpeed(len, cv){
   const v = ['a','b','c','d','e'].map(k => Math.min(4, Math.max(0.2, +(cv && cv[k]) || 1)));
   const at = l => { const x = Math.min(1, Math.max(0, l/Math.max(1e-6, len)))*4, i = Math.min(3, Math.floor(x)), f = x - i, s2 = f*f*(3 - 2*f); return v[i] + (v[i+1] - v[i])*s2; };
   const N = 96, cum = new Float64Array(N + 1); for(let k = 0; k < N; k++){ const a = k*len/N, b = (k + 1)*len/N; cum[k+1] = cum[k] + (at(a) + at(b))/2*(b - a); }
-  const pos = l => { const x = Math.min(N, Math.max(0, l/Math.max(1e-6, len)*N)), i = Math.min(N - 1, Math.floor(x)); return cum[i] + (cum[i+1] - cum[i])*(x - i); };
+  const pos = l => { const x = Math.min(N, Math.max(0, l/Math.max(1e-6, len)*N)), i = Math.min(N - 1, Math.floor(x)); return cum[i] + (cum[i+1] - cum[i])*(x - i) + Math.max(0, l - len)*v[4]; };   // (past its end, under the next transition: it plays on)
   return { label:'Custom curve', at, pos };
 }
 function speedFor(key, e){
@@ -8887,7 +8893,7 @@ function autoTools(){
     // half speed shows every picture twice and steps. Not for footage of 50 fps or more played from its own file (its real
     // pictures fill the slow part); a heavy clip played from its 30 fps edit copy is 30 fps.
     const fps = s.facts && s.facts.fps || 0;
-    if(!(fps >= 50 && !s.edFile) && slowMo(e.sp, e.end - e.start)) csAutoSet(e, { smooth: 1 });
+    if(!(fps >= 50 && !s.edFile) && slowPart(e)) csAutoSet(e, { smooth: 1 });
   });
   // the AI director's own look for a shot (mirror, black and white, a framed photo, a fade...), like a person's clip tools
   // fitted to the shot's picture first (lookFit.ts): a mask round the subject, a key only on a green screen, gentle curves

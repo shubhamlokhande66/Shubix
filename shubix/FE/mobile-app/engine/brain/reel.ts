@@ -2,7 +2,7 @@
 // the website's studio: its state is the object ES, and what is the app's own comes through EH.
 // The golden test (scripts/engine-golden.mjs) says it still makes the same Reel.
 // @ts-nocheck
-import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats, blackPart, goodSecs } from './pure';
+import { endWell, TAIL, crossesScene, suitFx, rampSpeed, leadSpeed, keyframesFor, windowStats, blackPart, goodSecs } from './pure';
 import { repace } from '../components/studio/soundmap';
 import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, SHORT_REEL } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
@@ -28,7 +28,7 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
-    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.trLead = L;
+    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = ES.beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
 }

@@ -95,8 +95,12 @@ export function velocitySpeed(len, bl){
   for(let k=0;k<pts.length-1;k++){ const a=pts[k], b=pts[k+1], T=b-a, m=a+0.6*T;
     segs.push([a,m,0.45,acc]); acc += 0.45*(m-a); segs.push([m,b,2.2,acc]); acc += 2.2*(b-m); }
   const find = l => segs.find(s=>l<=s[1]) || segs[segs.length-1];
-  return {label:'Velocity (beat)', at:l=>find(l)[2], pos:l=>{ const s=find(l); return s[3] + s[2]*(Math.min(l,s[1])-s[0]); }};
+  return {label:'Velocity (beat)', at:l=>find(l)[2], pos:l=>{ const s=find(l); return s[3] + s[2]*(l-s[0]); }};
 }
+// the same speed on a shot that now starts L s earlier (landTransitions): the lead plays at the speed it opens with, then
+// the curve stays on its beats. Without it the curve ran out L s before the cut and the picture stood still there.
+export function leadSpeed(sp, L){ if(!/^(Velocity|Ramp|Custom)/.test(sp.label)) return sp;
+  const r = sp.at(0); return { label: sp.label, at: l => l < L ? r : sp.at(l - L), pos: l => l < L ? r*l : r*L + sp.pos(l - L) }; }
 export function rampSpeed(len){ const sp = 0.45*len;   // fast, then slow into the next beat
   return {label:'Ramp 1.8×→0.6×', at:l=> l<sp ? 1.8 : 0.6, pos:l=> l<sp ? 1.8*l : 1.8*sp + 0.6*(l-sp)}; }
 export function panClamp(p, W, dw){ return dw <= W + 0.5 ? (W - dw)/2 : Math.min(0, Math.max(W - dw, p)); }
@@ -177,7 +181,7 @@ export function curveSpeed(len, cv){
   const v = ['a','b','c','d','e'].map(k => Math.min(4, Math.max(0.2, +(cv && cv[k]) || 1)));
   const at = l => { const x = Math.min(1, Math.max(0, l/Math.max(1e-6, len)))*4, i = Math.min(3, Math.floor(x)), f = x - i, s2 = f*f*(3 - 2*f); return v[i] + (v[i+1] - v[i])*s2; };
   const N = 96, cum = new Float64Array(N + 1); for(let k = 0; k < N; k++){ const a = k*len/N, b = (k + 1)*len/N; cum[k+1] = cum[k] + (at(a) + at(b))/2*(b - a); }
-  const pos = l => { const x = Math.min(N, Math.max(0, l/Math.max(1e-6, len)*N)), i = Math.min(N - 1, Math.floor(x)); return cum[i] + (cum[i+1] - cum[i])*(x - i); };
+  const pos = l => { const x = Math.min(N, Math.max(0, l/Math.max(1e-6, len)*N)), i = Math.min(N - 1, Math.floor(x)); return cum[i] + (cum[i+1] - cum[i])*(x - i) + Math.max(0, l - len)*v[4]; };   // (past its end, under the next transition: it plays on)
   return { label:'Custom curve', at, pos };
 }
 export const srcPos = (e, l) => e.cs && e.cs.rev ? e.in + (e.sp.pos(e.end - e.start) - e.sp.pos(l))*e.scaleR : srcPosF(e, l);

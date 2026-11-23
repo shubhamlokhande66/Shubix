@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { world } from "./edit-repairs.test";
+import { velocitySpeed, rampSpeed, curveSpeed, leadSpeed } from "../engine/brain/pure";
 
 // A song with parts: a hi-hat on every beat (0.75 s, 80 BPM), the bass in at 6 s, out at 12 s, back at 15 s (a Reel song's shape).
 const SR = 22050, P = 0.75;
@@ -46,4 +47,12 @@ describe("transitions as an editor sets them (QA 2026-11-19, checked against Cha
     }
     expect(landed).toBeGreaterThan(0);
   }, 300000);
+  it("a shot started earlier for its transition moves to its cut, its speed still on its beats (a Reel stood still before cuts: QA 2026-11-23)", () => {
+    const len = 2, L = 0.4;
+    for (const sp of [velocitySpeed(len, [0.7, 1.3]), rampSpeed(len), curveSpeed(len, { a: 1, b: 2, c: 0.5, d: 1, e: 1.5 })]) {
+      const led = leadSpeed(sp, L), r = sp.at(0);
+      for (let l = 1 / 30; l < len + L + 0.3; l += 1 / 30) expect(led.pos(l) - led.pos(l - 1 / 30)).toBeGreaterThan(0.004);
+      for (const l of [0, 0.5, 1.4, 2]) expect(led.pos(l + L)).toBeCloseTo(r * L + sp.pos(l), 6);   // the moment chosen, on its beat
+    }
+  });
 });
