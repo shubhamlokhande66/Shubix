@@ -7,7 +7,11 @@
  * works on every plan and on the phone, with no AI. It only nudges which moment a shot takes: a bonus far smaller than
  * the cost of a dark or blurry moment, so footage quality and the AI's own choices still win.
  *
- * Measured on 17 human-edited Reels (FE/mobile-app/tests/human-rebuild.test.ts, 245 shots): only the close is kept.
+ * Measured on 17 human-edited Reels (FE/mobile-app/tests/human-rebuild.test.ts, 245 shots): the close and the hook are kept.
+ * The hook (2026-11-23): editors open on movement (movement alone ranks their opening at 65%), but the scorer's own
+ * movement term is so small beside its faces and sharpness that it placed their openings at 45%; with the hook's bonus
+ * 56%. It is small enough that a blurred moment (0.9) is not made an opening by a little more movement.
+ * The figures below are from before 2026-11-23, when the test favoured long shots (a blind scorer got 36%, not 50%).
  * A calm last shot matched the editors (their last shot 35% -> 39% placed as they placed it); a wide, steady setup made
  * it worse (37% -> 35%: their opening shots move more) and close-ups at the peak changed nothing, so those two give no
  * bonus. The roles stay: the benchmark reports by them.
@@ -40,6 +44,8 @@ export const STORY = {
   peakFrom: 0.6, peakTo: 0.9,
   /** the most a story bonus moves a moment's score (a dark moment costs 1, a blurry one 0.9) */
   most: 0.6,
+  /** the hook's liking for movement (times the square root of it: 0.02 and 0.2 differ as much as an eye sees) */
+  hookMotion: 2,
   /** the teaser: how long (s), the shot it is cut from (s, at least), and how much stronger it must be than the opening */
   teaserMin: 0.9, teaserMax: 1.9, teaserAim: 1.3, teaserShot: 2.8, teaserRest: 1.4, teaserBetter: 0.6, teaserGap: 0.3,
 } as const;
@@ -66,9 +72,11 @@ export function storyRoles(slots: StorySlot[]): StoryRole[] {
   });
 }
 
-/** how much better (or worse) a moment suits its shot's part in the story (score units, within ±STORY.most) */
+/** how much better (or worse) a moment suits its shot's part in the story (score units, within ±STORY.most; the hook 0..STORY.hookMotion) */
 export function storyBonus(role: StoryRole | undefined, m: StoryMoment): number {
-  // setup and peak: measured, no help (see the top); the hook and the build are the scorer's own
+  // editors open on movement, and the scorer's own term is too small to say so (see the top)
+  if (role === "hook") return STORY.hookMotion * Math.sqrt(clamp(m.motion, 0, 1));
+  // setup and peak: measured, no help (see the top); the build is the scorer's own
   if (role !== "close") return 0;
   const face = clamp(m.face, 0, 1), motion = clamp(m.motion, 0, 1);
   // how close the people are: only a face seen for most of the moment counts (a face in one frame is not a close-up)

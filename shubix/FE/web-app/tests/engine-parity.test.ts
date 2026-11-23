@@ -26,7 +26,7 @@ describe("the website's engine and the Android app's brain pick the same moments
     ["each shot's part in the story", "function storyRole(i){", "edit.ts"],
     ["shot flow: a moment's look", "function flowLook(src, a, b, st, m){", "edit.ts"],
     ["shot flow: the looks of the shots beside it", "function flowNear(i, res, gmax){", "edit.ts"],
-    ["what Shubix AI's look adds to a moment", "function aiBonus(ai, slot, last, part){", "pure.ts"],
+    ["what Shubix AI's look adds to a moment", "function aiBonus(ai, slot, last, part, at){", "pure.ts"],
     ["the reading of a moment (movement, light, black, sharpness, faces)", "function windowStats(src, a, b){", "pure.ts"],
     ["the index those readings come from", "function statsIndex(src){", "pure.ts"],
     ["a clip's black part", "function blackPart(src){", "pure.ts"],

@@ -4,6 +4,7 @@
  */
 
 
+import { tracked } from "./activity";
 import { skipSignedOut } from "@/lib/boot";
 import type { CloudReel, CloudUsage } from "@shubix/types";
 export type { CloudReel, CloudUsage };
@@ -18,7 +19,9 @@ export class CloudError extends Error {
   }
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** an action (delete, share, rename): the button pressed shows its spinner meanwhile (lib/activity.ts) */
+const call = <T>(path: string, init: RequestInit = {}): Promise<T> => (init.method ? tracked(send<T>(path, init)) : send<T>(path, init));
+async function send<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (await skipSignedOut(path, init.method)) throw new CloudError("Please sign in.", "AUTH_REQUIRED");
   let res: Response;
   try {

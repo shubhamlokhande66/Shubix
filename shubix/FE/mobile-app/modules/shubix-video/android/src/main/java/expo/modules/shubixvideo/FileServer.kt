@@ -22,6 +22,7 @@ import kotlin.concurrent.thread
  * Everything else needs the key; only files inside the app's own folders are read or written.
  *   GET  /sound?k=KEY&p=PATH        a file's sound, decoded (SoundReader.kt)
  *   POST /copy?k=KEY&p=PATH&w=W&h=H&fps=F&b=BITRATE  a heavy clip's edit copy; answers its path (EditCopy.kt)
+ *   POST /photo?k=KEY&p=PATH       a photo as a short moving clip, kept beside it; answers its path (PhotoClip.kt)
  *   PUT  /out?k=KEY&name=NAME       the body is kept as <cache>/engine-out/NAME; answers its path
  *   POST /scan?k=KEY&p=PATH&dur=D   a clip's samples and scene changes (ClipScan.kt): lines of progress, then a line of JSON
  *   GET  /probe?k=KEY&p=PATH        a clip's length, its size as shown and what it is (VideoFacts.kt)
@@ -150,6 +151,18 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
           if (!to.isFile || to.length() == 0L) makeEditCopy(context, f, to, w, h, fps, rate)
           reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), "{\"path\":${org.json.JSONObject.quote(to.absolutePath)}}".toByteArray())
         } catch (e: Exception) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no copy").toByteArray()) }
+        finally { copies.release() }
+      }
+      url.path == "/photo" && method == "POST" -> {
+        val f = File(url.getQueryParameter("p") ?: "")
+        if (!f.isFile || !inside(f)) return@use reply(out, 404, "Not Found", emptyMap(), null)
+        // beside the photo, so a saved Reel keeps it (the cache may be emptied); the same photo is made once
+        val to = File(f.parentFile, "${f.name}-${(f.length() + f.lastModified()).hashCode().toUInt()}.mp4")
+        copies.acquire()
+        try {
+          if (!to.isFile || to.length() == 0L) makePhotoClip(context, f, to)
+          reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), "{\"path\":${org.json.JSONObject.quote(to.absolutePath)}}".toByteArray())
+        } catch (e: Throwable) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no photo").toByteArray()) }
         finally { copies.release() }
       }
       url.path == "/sound" && method == "GET" -> {

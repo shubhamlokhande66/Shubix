@@ -15,7 +15,7 @@ export function SpinnerIcon({ size = 18, className }: { size?: number; className
 export function Spinner({ label = "Loading…", size = "md", className }: { label?: string; size?: "sm" | "md" | "lg"; className?: string }) {
   const ring = size === "lg" ? 44 : size === "sm" ? 22 : 34;
   return (
-    <div role="status" aria-live="polite" className={cn("flex w-full flex-col items-center justify-center gap-3 text-center", size === "sm" ? "py-4" : "min-h-[30vh] py-10", className)}>
+    <div role="status" aria-live="polite" data-spinner="" className={cn("flex w-full flex-col items-center justify-center gap-3 text-center", size === "sm" ? "py-4" : "min-h-[30vh] py-10", className)}>
       <span className="relative inline-grid place-items-center" style={{ width: ring, height: ring }} aria-hidden>
         <span className="absolute inset-0 rounded-full border-[3px] border-accent/15" />
         <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-accent border-r-accent-hover" />

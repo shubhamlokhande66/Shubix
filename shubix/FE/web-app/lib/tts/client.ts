@@ -2,6 +2,8 @@
  * in the shape the studio takes (`tts` in components/studio/engine.ts: its voices, and speak → the sound as PCM). Each
  * piece of speech is kept in this browser (Cache Storage), so reopening a Reel or undoing does not ask the server again. */
 
+import { skipSignedOut } from "@/lib/boot";
+
 export type TtsVoice = { key: string; label: string };
 export type Tts = { voices: TtsVoice[]; speak: (text: string, voice: string, onProgress?: (p: { stage: "download" | "run"; p: number }) => void) => Promise<{ pcm: Float32Array; sr: number }> };
 
@@ -21,6 +23,7 @@ async function keep(key: string, wav: ArrayBuffer) {
 export async function loadTts(): Promise<Tts | null> {
   let info: { available?: boolean; voices?: TtsVoice[] } = {};
   try {
+    if (await skipSignedOut("/api/studio/speak")) return null;
     const r = await fetch("/api/studio/speak", { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return null;
     info = await r.json();

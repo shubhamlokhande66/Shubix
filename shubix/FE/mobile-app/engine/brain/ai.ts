@@ -3,6 +3,7 @@
 // The golden test (scripts/engine-golden.mjs) says it still makes the same Reel.
 // @ts-nocheck
 import { songSample, toSlots } from './pure';
+import { momentsFound, compareMoments, applyCompared, keepOneComparison } from '@mobile/video-engine';
 import { sectionsOf } from '../components/studio/soundmap';
 import { TEXT_TEMPLATES } from '@mobile/core/lib/text-templates';
 import { STICKERS } from '@mobile/core/lib/stickers';
@@ -38,10 +39,29 @@ function aiGate(again = false){
   })().finally(() => { ES.gateP = null; });
   return ES.gateP;
 }
+// the Reel's moments side by side (compare-shots): asked once the clips are seen, so Shubix knows which one opens best and
+// what belongs where. Only a help: when it fails or takes too long the Reel is made as before.
+const aiPics = new WeakMap();
+async function aiCompare(stop){
+  const list = ES.sources.filter(s=>!s.removed), want = compareMoments(list); if(want.length < 3) return;
+  const cut = new AbortController(), end = () => cut.abort(), timer = setTimeout(end, 30000); stop.addEventListener('abort', end);
+  try{
+    EH.aiStat('Shubix is comparing your best moments…');
+    for(const s of list) if(s.ai && !aiPics.has(s)){ if(cut.signal.aborted) return; aiPics.set(s, await EH.aiFrames(s)); }   // (seen in an earlier Reel)
+    const moments = want.map(([i, k]) => ({ id: i + '_' + k, image: (aiPics.get(list[i]).find(f => Math.abs(f.t - list[i].ai.frames[k].t) < 0.02) || {}).image })).filter(m => m.image);
+    if(cut.signal.aborted || moments.length < 3) return;
+    const r = await EH.apiFetch('/api/studio/compare-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: cut.signal, body: JSON.stringify({ moments }) });
+    if(!r.ok) return;
+    const res = await r.json(); if(cut.signal.aborted) return;
+    if(applyCompared(list, res.moments)) for(const s of list) if(s.ai){ const fp = EH.fpOf(s); EH.aiCache.set(fp, s.ai); try{ EH.keepAiPick(fp, s.ai); }catch(e){} }
+  }catch(e){ console.info('moments not compared:', e && e.message); }
+  finally{ clearTimeout(timer); stop.removeEventListener('abort', end); list.forEach(s => aiPics.delete(s)); keepOneComparison(list); }
+}
 async function aiRun(){
   if(!ES.aiOn || ES.aiBusy || !ES.sources.length || EH.aiHeldBack()) return;
   if(!EH.aiReelOk()){ ES.aiBusy = true; const go = await aiGate(); ES.aiBusy = false; if(!go) return; }
   ES.sources.forEach(s=>{ if(!s.ai) EH.aiRestore(s); });
+  keepOneComparison(ES.sources.filter(s=>!s.removed));
   const need = ES.sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
   if(!need.length){ EH.aiDone(); return; }
   ES.aiBusy = true; EH.aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
@@ -49,7 +69,7 @@ async function aiRun(){
   try{
     const jobs = [];
     for(const [i, s] of need.entries()){ EH.aiStat('Shubix is looking at clip ' + (i + 1) + ' of ' + need.length + '…'); if(ES.aiStopper.signal.aborted) return; let frames = framesMade.get(s); if(!frames){ frames = await EH.aiFrames(s); framesMade.set(s, frames); } if(frames.length) jobs.push({ id: 'c'+jobs.length, src: s, frames }); }
-    EH.aiStat('Shubix is choosing the best moments of your clips…');
+    EH.aiStat('Shubix is choosing the best moments of your clips…'); const found = [];
     for(let k=0; k<jobs.length; k+=12){
       const part = jobs.slice(k, k+12);
       const r = await EH.apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: ES.aiStopper.signal,
@@ -59,11 +79,16 @@ async function aiRun(){
       EH.aiSpent();
       charged += res.charged || 0; if(typeof res.balance === 'number' && ES.aiInfo){ ES.aiInfo.balance = res.balance; EH.creditsChanged(); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
-        framesMade.delete(j.src);   // answered: its pictures are not needed again, only the labels stay
+        aiPics.set(j.src, j.frames); framesMade.delete(j.src);   // answered: its pictures are not needed again, only the labels stay
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = EH.fpOf(j.src); EH.aiCache.set(fp, j.src.ai);
-        try{ EH.keepAiPick(fp, j.src.ai); }catch(e){} }
+        try{ EH.keepAiPick(fp, j.src.ai); }catch(e){}
+        found.push({ clip: ES.sources.indexOf(j.src) + 1, what: c.summary }); }
+      // what it found, while the person waits (only real moments, the newest first: the flow review with ChatGPT)
+      { const line = momentsFound(found); if(line) EH.aiStat(line + '…'); }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; framesMade.delete(j.src); failed++; } }
     }
+    if(!ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) await aiCompare(ES.aiStopper.signal);
+    if(ES.aiStopper.signal.aborted) return;
     ES.aiBusy = false;
     if(ES.sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !ES.pending) return aiRun();   // clips added meanwhile
     EH.aiDone(charged, failed);

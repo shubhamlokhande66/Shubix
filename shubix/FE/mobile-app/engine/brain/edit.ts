@@ -3,7 +3,7 @@
 // @ts-nocheck
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
 import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
-import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus } from '@mobile/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -415,16 +415,17 @@ function aiTags(src){
 function aiAt(src, a, b){
   if(!ES.aiOn || !src.ai || !src.ai.frames.length) return null;
   const F = src.ai.frames, sg = Math.max(0.6, 0.45*src.dur/F.length);
-  let w = 0, s = 0, bw = 0, best = null; const R = {};
+  let w = 0, s = 0, bw = 0, best = null, cw = 0, op = 0, ps = 0; const R = {};
   for(const f of F){
     const d = f.t < a ? a-f.t : f.t > b ? f.t-b : 0;
     if(d > 0 && crossesScene(src, Math.min(f.t,a), Math.max(f.t,b))) continue;   // another scene says nothing about this one
     const k = Math.exp(-0.5*(d/sg)**2); if(k < 0.02) continue;
     w += k; s += k*f.score; f.roles.forEach(r=>{ R[r] = (R[r]||0) + k; }); if(k > bw){ bw = k; best = f; }
+    if(f.open != null){ cw += k; op += k*f.open; ps += k*f.pos; }   // compared with the Reel's other moments (compare-shots)
   }
   if(w < 0.05) return null;
   const roles = {}; for(const r in R) roles[r] = R[r]/w;
-  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '' };
+  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '', ...(cw >= 0.05 ? { open: op/cw, pos: ps/cw } : {}) };
 }
 // how much the AI's opinion adds to a candidate moment for this slot
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
@@ -749,7 +750,7 @@ function scoreWindow(i, src, a, need, gmax, near){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1, storyRole(i));
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===ES.plan.length-1, storyRole(i), i/Math.max(1, ES.plan.length-1));
   // the shot's part in the story (shared/video-engine story.ts): wide and steady to set the scene, people close up at
   // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
   if(ES.mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
@@ -800,6 +801,60 @@ function seqSlots(n){
   // clip; never back to a clip already left (moving a shot to avoid a repeat sent the Reel back to the clip before)
   return cnt.flatMap((c, si) => Array(c).fill(si));   // shot i -> its clip
 }
+// "In my order" (agreed with ChatGPT, 2026-11-20): the clips keep the person's order and each clip's moments go forward
+// in time, but a clip with footage for them keeps the song's cuts inside its share, so a Beat Reel still cuts on the
+// beat (each clip one shot gave 6 shots of 3.7 s on a fast 22 s song whose cuts were 15). A cut inside a clip is let go
+// (the shots beside it become one) when a shot would be shorter than the song's pace allows (fast 0.8 s, normal 1 s,
+// slow 1.5 s) or the clip has not footage enough for its shots and a jump forward between them (SEQ_JUMP: a cut to the
+// very next frame of the same clip looks like a glitch); the cut least worth keeping goes first (a plain cut before a
+// hit, a break, a drop).
+const SEQ_JUMP = 0.6;
+function seqMinShot(){ const bpm = ES.period > 0 ? 60/ES.period : 110; return bpm >= 115 ? 0.8 : bpm >= 85 ? 1 : 1.5; }
+// one continuous action (an entry, a garland, a spin): a cut inside one clip is kept for a new moment, not for a beat
+// alone. Where the clip's shots will roughly land (In my order spreads them forward over the clip's footage), a frame
+// Shubix AI saw as action sits right on the cut, with no scene change around it: the cut would split that action, so
+// it is let go (a beat-drop cut stays). The AI looks at up to 8 frames a clip, so this asks for that frame on the cut.
+function oneAction(src, a, i, b, need, len){
+  const F = src && src.ai && src.ai.frames; if(!F || !F.length) return false;
+  const U = Math.max(0.05, src.dur - TAIL), s = Math.max(1, U/Math.max(0.05, need));
+  let t = 0; for(let k = a; k < i; k++) t += len(k) + SEQ_JUMP;
+  const end = Math.min(U, (t - SEQ_JUMP)*s), start = Math.min(U, t*s);
+  if(crossesScene(src, end - 0.3, start + 0.3)) return false;
+  return F.some(f => f.t >= end - 0.3 && f.t <= start + 0.3 && f.note && (f.roles || []).includes('action'));
+}
+function seqKeepCuts(seq){
+  const P = ES.plan, minL = seqMinShot(), rank = { cut: 0, hit: 1, break: 2, drop: 3 }, len = i => P[i].end - P[i].start;
+  for(let guard = 0; guard < 500; guard++){
+    let worst = -1, wc = -Infinity;
+    for(let i = 1; i < P.length; i++){
+      if(seq[i] !== seq[i-1]) continue;
+      const si = seq[i]; let a = i; while(a > 0 && seq[a-1] === si) a--; let b = i; while(b + 1 < P.length && seq[b+1] === si) b++;
+      let need = SEQ_JUMP*(b - a); for(let k = a; k <= b; k++) need += len(k);
+      const short = Math.min(len(i), len(i-1)) < minL, tight = need > Math.max(0.05, ES.sources[si].dur - TAIL);
+      const one = !short && !tight && P[i].type !== 'drop' && oneAction(ES.sources[si], a, i, b, need, len);
+      if(!short && !tight && !one) continue;
+      const c = (short ? 2 : one ? 1.5 : 1) - (rank[P[i].type] || 0)*0.5 - (len(i) + len(i-1))*0.05;
+      if(c > wc){ wc = c; worst = i; }
+    }
+    if(worst < 0) break;
+    P[worst-1] = { ...P[worst-1], end: P[worst].end, sp: ES.slowAll ? EH.SPEED.slow : EH.SPEED.normal }; P.splice(worst, 1); seq.splice(worst, 1);
+  }
+}
+// The shots the Reel really shows, in plain words (Shared/video-engine shotWords.ts, "one true shot plan"): Ask
+// Shubix's list is made from the finished edit, so "In my order" (which keeps the person's order, not the clips Shubix
+// AI asked for) and the repairs show as they are; what is in a shot is Shubix AI's note on that moment of the clip.
+function shotLines(){
+  const E = ES.edit || [];
+  return E.map((e, i) => {
+    const src = ES.sources[e.src], len = e.end - e.start;
+    const cand = ((ES.dirCands && ES.dirCands[i]) || []).find(x => x.si === e.src && Math.abs(x.a - e.in) < 0.6);
+    const ai = cand || !src ? null : aiAt(src, e.in, e.in + len);
+    return shotWords({ start: e.start, type: e.type, first: i === 0, clip: e.src + 1, at: e.in, what: (cand && cand.note) || (ai && ai.note) || '',
+      transition: i && e.tr && e.tr !== 'hard' && e.tr !== 'fadein' ? (EH.TR_NAME[e.tr] || e.tr) : '',
+      effect: e.efx && e.efx !== 'none' && e.efx !== 'hook' ? (EH.FX_NAME[e.efx] || e.efx) : '',
+      keys: (e.acc || []).map(k => k.do), move: !!(e.ak && e.ak.length), speed: e.sp && e.sp.label && e.sp.label !== '1×' ? e.sp.label : '' });
+  });
+}
 function seqPick(seq, res, gmax){
   const n = ES.plan.length, lenOf = i => ES.plan[i].end - ES.plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= EH.SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
@@ -845,7 +900,9 @@ function seqPick(seq, res, gmax){
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
-      for(let a = cur; a <= hi + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
+      // (a later shot of the same clip jumps forward a little, SEQ_JUMP, where the clip has room: a cut to the very next frame looks like a glitch)
+      const a0 = k > 0 && !fast[i] ? Math.min(Math.max(cur, hi), cur + SEQ_JUMP) : cur;
+      for(let a = a0; a <= Math.max(a0, hi) + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
         const w = scoreWindow(i, src, a, nd, gmax), sc = w.sc - (crossesScene(src, a, a + nd) ? 1 : 0) + rng()*0.15;
         if(sc > bs){ const st = w.st; bs = sc; best = { src: si, in: a, scaleR: scale[k], cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false }; }
       }
@@ -916,7 +973,7 @@ function repick(i, avoidCurrent, onlySrc){
       if(e.type!=='drop' && slowMo(e.sp, len)) sc = slowFit(m);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1, storyRole(i));
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===ES.edit.length-1, storyRole(i), i/Math.max(1, ES.edit.length-1));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });
@@ -1301,5 +1358,5 @@ function remakeOk(){ if(!ES.restoring) ES.keepSaved = false; }
 function editOf(){
   return ES.kind === 'talk' ? [] : ES.edit.map(e => ({ start: e.start, end: e.end, type: e.type, fx: e.fx, tr: e.tr, efx: e.efx, sp: EH.speedKey(e.sp), src: e.src, in: e.in, scaleR: e.scaleR, cx: e.cx, cy: e.cy, face: e.face, fs: e.fs, uk: e.uk && e.uk.length ? e.uk : undefined, acc: e.acc && e.acc.length ? e.acc : undefined, ak: e.ak && e.ak.length ? e.ak : undefined, cs: e.cs ? JSON.parse(JSON.stringify(e.cs)) : undefined, flick: e.flick || undefined, trd: e.trd ?? undefined, trRev: e.trRev || undefined, black: e.black || undefined }));
 }
-  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, flowNear, storyRole, teaserOpen, ukKeep, ukRestore, seqSlots, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
+  return { frameStats, flickPick, withMarks, drumness, snap, adaptPlan, beatEdit, paceWell, noFlashCuts, adaptPlan0, buildPlan, partBeats, bestPart, snapToBeat, songParts, applyParts, partAt, gridOf, withPartCuts, partsOfSong, colorHist, saliency, subjectMotion, trackFaces, previewBatchClose, speechParts, rng, kf, uAt, accentAt, reelIdNow, aiTags, aiAt, aiTimes, planLine, recipeNow, tastePlan, finishTransitions, directorCandidates, mixStore, cutMusic, refitDirector, getSoundMap, cleanMoments, refContext, wholeSections, paceFromSong, camPath, camAt, clipFlaw, scoreWindow, flowNear, storyRole, teaserOpen, ukKeep, ukRestore, seqSlots, seqKeepCuts, shotLines, seqPick, kfSummary, speedFor, assignPlayers, repick, kxSet, histSnap, histBase, segAt, strongHit, beatPulse, drawWord, speakingVoice, markKeyWords, emphAt, ovTiming, kxAt, csMat, csFwd, csCam, stabPath, stabAt, upSharp, captionOf, noSongTip, exportDims, cutKind, describeRef, copyPlanTimed, copyPlan, copyStyle, copyShots, copyMatch, fingerprintOf, voPcm, sfxSynth, sfxEvents, pitchShift, voiceFx, csAutoSet, csAutoClear, speechShare, storyVoice, remakeOk, editOf };
 }

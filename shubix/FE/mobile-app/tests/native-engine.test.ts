@@ -194,6 +194,20 @@ describe("what the old page did, on the phone's own engine", () => {
     expect((x.e.host() as unknown as { ES: { sources: { path: string; soundPath: string }[] } }).ES.sources[0]).toMatchObject({ path: "/copy/a.mp4", soundPath: "/a.mp4" });
     expect(await x.e.call("copies")).toEqual([{ name: "a.mp4", path: "/copy/a.mp4", w: 1080, h: 1920 }]);
   });
+  it("a photo is made a moving clip first, and everything reads that clip", async () => {
+    const x = withAnswers(10, (path, _init, u) => {
+      const p = u.searchParams.get("p") ?? "";
+      if (path === "/photo") return ok({ path: `${p}-1.mp4` });
+      if (path === "/probe") return p.endsWith(".mp4") ? ok({ dur: 3, w: 1440, h: 1920, fps: 30 }) : refused(422);
+      return undefined;
+    });
+    await x.e.call("song", { path: "/s.mp3", name: "s.mp3" });
+    const r = await x.e.call("clips", { paths: [{ path: "/1-a.HEIC", name: "1-a.HEIC" }, { path: "/b.jpg", name: "b.jpg" }, { path: "/noname", name: "noname" }, { path: "/v.mp4", name: "v.mp4" }] }) as { clips: number; failed: string[] };
+    expect(r).toMatchObject({ clips: 4, failed: [] });
+    expect(x.calls.filter((c) => c.url.includes("/photo?"))).toHaveLength(3);
+    expect((x.e.host() as unknown as { ES: { sources: { path: string }[] } }).ES.sources.map((s) => s.path)).toEqual(["/1-a.HEIC-1.mp4", "/b.jpg-1.mp4", "/noname-1.mp4", "/v.mp4"]);
+    expect(await x.e.call("copies")).toHaveLength(3);
+  });
   it("decides which clips are heavy", () => {
     const base = { dur: 10, w: 1080, h: 1920, size: 20_000_000 };
     expect(editCopyOf(base)).toBeNull();

@@ -105,7 +105,10 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
       )}
       <FlowCard>
         <Button full size="lg" icon="music" loading={busy} title={words("Add your song")} onPress={onPick} />
-        <Text className="text-[12.5px] leading-[18px] text-muted">{words(kind === "copy" ? "Different song? Choose it here" : "MP3, M4A, WAV or any video's sound (iPhone: from Files or Photos)")}</Text>
+        <Text className="text-[12.5px] leading-[18px] text-muted">{words(kind === "copy" ? "Different song? Choose it here" : "An MP3, M4A or WAV song file")}</Text>
+        {/* most people have the song only in a video (a Reel they saved, a WhatsApp video): its sound is the song (the review with ChatGPT, 2026-11-20) */}
+        {kind !== "copy" && <Button full variant="secondary" icon="video" disabled={busy} title={words("Use the song from a video")} onPress={onPickReel} />}
+        {kind !== "copy" && <Text className="text-[12.5px] leading-[18px] text-muted">{words("A Reel you saved, a WhatsApp video, any video on your phone: Shubix uses its sound. Only its sound is used, not the video.")}</Text>}
         {recent.length > 0 && (
           <View className="gap-2.5">
             <Label>{words("Recent songs")}</Label>
@@ -119,6 +122,7 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
                       <Text numberOfLines={2} className="text-[14px] font-semibold text-foreground">{r.name}</Text>
                       <Text className="text-[12px] font-medium text-muted">{r.duration ? clock(r.duration) : "—"}</Text>
                     </Pressable>
+                    <View className="absolute left-1.5 top-1.5"><SongPlay uri={r.uri} /></View>
                     <Pressable onPress={() => { void forgetSong(r.uri); onForget(r.uri); }} accessibilityLabel={words("Remove")} hitSlop={6} className="absolute right-1.5 top-1.5 h-[26px] w-[26px] items-center justify-center rounded-full bg-black/35"><Icon name="close" size={13} color="#fff" /></Pressable>
                     {on && <View className="absolute bottom-2.5 right-2.5 h-6 w-6 items-center justify-center rounded-full bg-accent"><Icon name="check" size={14} stroke={3} color="#fff" /></View>}
                   </View>
@@ -129,6 +133,39 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
         )}
       </FlowCard>
     </View>
+  );
+}
+
+/** A recent song's play button: hear it before choosing it (a tap on the card chooses it, never plays it). Its player is
+ * made only while it plays (a player for each recent song held memory on small phones). */
+function SongPlay({ uri }: { uri: string }) {
+  const words = useStudioText(), [on, setOn] = useState(false);
+  return (
+    <Pressable onPress={() => setOn(!on)} accessibilityRole="button" accessibilityLabel={words(on ? "Stop" : "Play")} hitSlop={6} className="h-[26px] w-[26px] items-center justify-center rounded-full bg-black/35">
+      <Icon name={on ? "pause" : "play"} size={12} color="#fff" />
+      {on && <SongPlaying uri={uri} onEnd={() => setOn(false)} />}
+    </Pressable>
+  );
+}
+function SongPlaying({ uri, onEnd }: { uri: string; onEnd: () => void }) {
+  const player = useAudioPlayer(uri), status = useAudioPlayerStatus(player);
+  useEffect(() => { player.play(); return () => { try { player.pause(); } catch { /* already gone */ } }; }, [player]);
+  useEffect(() => { if (status.didJustFinish) onEnd(); }, [status.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
+/** "Preview selected part" on the clips step's song card: plays the part the Reel uses (from `from`, `len` seconds, or
+ * to the song's end), a tap again stops it (the flow review with ChatGPT, 2026-11-20) */
+export function PartPlay({ uri, from, len }: { uri: string; from: number; len: number }) {
+  const words = useStudioText(), player = useAudioPlayer(uri), status = useAudioPlayerStatus(player);
+  useEffect(() => () => { try { player.pause(); } catch { /* already gone */ } }, [player]);
+  useEffect(() => { if (len > 0 && status.playing && status.currentTime >= from + len) player.pause(); }, [len, from, status.currentTime, status.playing, player]);
+  const toggle = () => { if (status.playing) return player.pause(); void player.seekTo(from); player.play(); };
+  return (
+    <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel={words(status.playing ? "Stop" : "Preview selected part")} className="flex-row items-center gap-1.5 self-start rounded-full border border-accent/40 px-3 py-1.5 active:opacity-80">
+      <Icon name={status.playing ? "pause" : "play"} size={13} color="accent" />
+      <Text className="text-[12px] font-semibold text-accent">{words(status.playing ? "Stop" : "Preview selected part")}</Text>
+    </Pressable>
   );
 }
 
@@ -189,7 +226,7 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
       <View className="gap-2.5">
         <Label>{words("Reel length")}</Label>
         {/* "Make the Reel as long as my clips": the clips decide, these are off */}
-        {locked && <Text className="-mt-1 text-[12px] text-muted">{words("Set by your clips (Make the Reel as long as my clips)")}</Text>}
+        {locked && <Text className="-mt-1 text-[12px] text-muted">{words("Set by your clips (Match the Reel to my clips, under More options)")}</Text>}
         <View className={`flex-row flex-wrap gap-2 ${locked ? "opacity-40" : ""}`} pointerEvents={locked ? "none" : "auto"}>
           {[...LENGTHS, -1].map((n) => {
             const on = n === -1 ? custom : !custom && length === n; // -1: Custom
@@ -224,7 +261,7 @@ export const SMALL_BUFFER = { preferredForwardBufferDuration: 4, minBufferForPla
 /** A clip's card: it plays itself, muted and looping (a very big clip keeps its picture, for the same reason), and goes where it is
  * dragged after holding it a moment, so a quick swipe still scrolls the page. */
 export type ClipState = "wait" | "ok" | "bad";
-function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { asset: ImagePickerAsset; n: number; of: number; size: number; playing: boolean; state?: ClipState; onMove: (from: number, to: number) => void; onRemove: (i: number) => void }) {
+function ClipTile({ asset, n, of, size, playing, state, best, onMove, onRemove }: { asset: ImagePickerAsset; n: number; of: number; size: number; playing: boolean; state?: ClipState; best?: number; onMove: (from: number, to: number) => void; onRemove: (i: number) => void }) {
   const words = useStudioText(), shift = useRef(new Animated.ValueXY()).current, [held, setHeld] = useState(false);
   // a clip whose size the picker did not say is taken as big: three 4K HEVC clips played here closed the app (2026-11-20)
   const w = asset.width ?? 0, h = asset.height ?? 0, light = asset.type !== "image" && w > 0 && h > 0 && w * h <= 2_400_000, on = playing && light;
@@ -241,17 +278,18 @@ function ClipTile({ asset, n, of, size, playing, state, onMove, onRemove }: { as
         <Thumb uri={asset.uri} kind={asset.type === "image" ? "image" : "video"} />
         {on && <View pointerEvents="none" className="absolute inset-0"><VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="cover" nativeControls={false} /></View>}
         <View className="absolute left-1.5 top-1.5 h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5"><Text className="text-[11px] font-bold text-background">{n + 1}</Text></View>
-        <View className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5"><Text className="text-[11px] font-semibold text-white">{asset.type === "image" ? "5s" : clock((asset.duration ?? 0) / 1000)}</Text></View>
-        {state === "wait" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/35"><ActivityIndicator color="#ffffff" /></View>}
-        {state === "bad" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/75 px-2"><Text className="text-center text-[11px] font-semibold text-white">{words("This clip could not be read")}</Text></View>}
+        <View className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-2 py-0.5"><Text className="text-[11px] font-semibold text-white">{asset.type === "image" ? "3s" : clock((asset.duration ?? 0) / 1000)}</Text></View>
+        {state === "wait" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center gap-1 bg-black/45 px-1.5"><ActivityIndicator color="#ffffff" /><Text className="text-center text-[10.5px] font-semibold text-white">{words("Finding the best moments…")}</Text></View>}
+        {state === "ok" && <View pointerEvents="none" className="absolute bottom-1.5 left-1.5 flex-row items-center gap-0.5 rounded-full bg-black/65 px-1.5 py-0.5"><Icon name="check" size={11} stroke={2.6} color="#fff" /><Text className="text-[10.5px] font-semibold text-white">{best != null ? words("Best moment {t}", { t: clock(best) }) : words("Ready")}</Text></View>}
+        {state === "bad" && <View pointerEvents="none" className="absolute inset-0 items-center justify-center bg-black/75 px-2"><Text className="text-center text-[11px] font-semibold text-white">{words(asset.type === "image" ? "Couldn't read this photo. Use JPG, PNG or WEBP." : "Couldn't read this video. Remove it or add another.")}</Text></View>}
         <Pressable onPress={() => onRemove(n)} accessibilityLabel={words("Remove")} hitSlop={6} className="absolute right-1.5 top-1.5 h-6 w-6 items-center justify-center rounded-full bg-black/70"><Icon name="close" size={13} color="#fff" /></Pressable>
       </Animated.View>
     </GestureDetector>
   );
 }
 
-export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
-  const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3;
+export function FlowClips({ kind, pick, onTab, media, states, bests, onAdd, onRemove, onMove, play, settings, onSettings }: { kind: FlowKind; pick: MediaPick; states?: (ClipState | undefined)[]; bests?: (number | undefined)[]; onTab: (pick: MediaPick) => void; media: ImagePickerAsset[]; onAdd: () => void; onRemove: (i: number) => void; onMove: (from: number, to: number) => void; play: boolean; settings: ClipSettings; onSettings: (s: Partial<ClipSettings>) => void }) {
+  const words = useStudioText(), look = useColors(), { width } = useWindowDimensions(), tile = (Math.min(width, 520) - 32 - 36 - 16) / 3, [more, setMore] = useState(false);
   return (
     <FlowCard>
       {kind !== "talking" && kind !== "copy" && (
@@ -268,15 +306,15 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
         <Pressable onPress={onAdd} accessibilityRole="button" className="items-center gap-1 rounded-[18px] border-[1.5px] border-dashed border-accent/45 bg-surface-2 px-[18px] py-7 active:opacity-80">
           <View className="mb-1.5"><Icon name="upload" size={34} /></View>
           <Text className="text-[15px] font-semibold text-foreground">{words(pick === "photos" ? "Tap to Add Photos" : pick === "mix" ? "Tap to Add Videos and Photos" : "Tap to Add Videos")}</Text>
-          <Text className="text-[13px] text-muted">{words("or choose from gallery")}</Text>
-          <Text className="mt-2 text-[12px] text-muted">{words("Supports MP4, MOV, 3GP, JPG, PNG")}</Text>
+          <Text className="text-[13px] text-muted">{words("Choose up to 30 from your gallery")}</Text>
+          <Text className="mt-2 text-[12px] text-muted">{words(pick === "photos" ? "JPG, PNG" : pick === "mix" ? "Videos: MP4, MOV, 3GP · Photos: JPG, PNG" : "MP4, MOV, 3GP")}</Text>
         </Pressable>
       ) : (
         <View className="gap-2.5">
           <Label>{words("Selected Clips")}</Label>
           {media.length > 1 && <Text className="-mt-1 text-[12px] text-muted">{words("Hold a clip and drag it to move it. The numbers are the order.")}</Text>}
           <View className="flex-row flex-wrap gap-2">
-            {media.map((m, i) => <ClipTile key={`${m.uri}-${i}`} asset={m} n={i} of={media.length} size={tile} playing={play && i < CARD_PLAYERS} state={states?.[i]} onMove={onMove} onRemove={onRemove} />)}
+            {media.map((m, i) => <ClipTile key={`${m.uri}-${i}`} asset={m} n={i} of={media.length} size={tile} playing={play && i < CARD_PLAYERS} state={states?.[i]} best={bests?.[i]} onMove={onMove} onRemove={onRemove} />)}
             <Pressable onPress={onAdd} accessibilityLabel={words("Add more clips")} className="items-center justify-center rounded-[14px] border-[1.5px] border-dashed border-border bg-surface-2 active:opacity-80" style={{ width: tile, height: tile }}><Icon name="plus" size={28} /></Pressable>
           </View>
         </View>
@@ -287,7 +325,7 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
           <Row label={words("Music under voice")}><Segmented small value={settings.under} onChange={(under) => onSettings({ under })} options={[["0", "Off"], ["0.05", "Soft"], ["0.09", "Medium"], ["0.16", "Loud"]].map(([v, l]) => ({ value: v, label: words(l) }))} /></Row>
         </>
       ) : (
-        <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks the best moments from all your clips" : "Your clips play one after another, as you added them")}>
+        <Row label={words("Clip order")} note={words(settings.order === "mix" ? "Shubix picks and arranges the best moments from all your clips" : "Your clips stay in your order. Shubix cuts them on the beat")}>
           <Segmented small value={settings.order} onChange={(order) => onSettings({ order })} options={[{ value: "mix" as ClipOrder, label: words("Mix all clips") }, { value: "order" as ClipOrder, label: words("In my order") }]} />
         </Row>
       )}
@@ -296,13 +334,24 @@ export function FlowClips({ kind, pick, onTab, media, states, onAdd, onRemove, o
           <Segmented small value={settings.text ?? "auto"} onChange={(text) => onSettings({ text })} options={[{ value: "auto" as const, label: words("Auto") }, { value: "none" as const, label: words("None") }]} />
         </Row>
       )}
+      <Row label={words("Format")}><Segmented small value={settings.aspect} onChange={(aspect) => onSettings({ aspect })} options={(["9:16", "4:5", "1:1", "16:9", "3:4", "4:3", "2:1", "2.35:1"] as Aspect[]).map((a) => ({ value: a, label: a === "9:16" ? words("9:16 Reel") : a }))} /></Row>
       {kind !== "talking" && (
-        <View className="flex-row items-center gap-3">
-          <Text className="flex-1 text-[13px] text-foreground">{words("Make the Reel as long as my clips (the rest of the song is left out)")}</Text>
-          <Switch value={settings.fit !== false} onValueChange={(fit) => onSettings({ fit })} trackColor={{ true: look.accent }} />
+        <View className="gap-2.5 border-t border-border pt-3">
+          <Pressable onPress={() => setMore(!more)} accessibilityRole="button" accessibilityState={{ expanded: more }} className="flex-row items-center justify-between">
+            <Text className="text-[13px] font-semibold text-foreground">{words("More options")}</Text>
+            <View style={{ transform: [{ rotate: more ? "180deg" : "0deg" }] }}><Icon name="down" size={18} color="muted" /></View>
+          </Pressable>
+          {more && (
+            <View className="flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-[13px] font-semibold text-foreground">{words("Match the Reel to my clips")}</Text>
+                <Text className="text-[12px] text-muted">{words(settings.fit !== false ? "On: the Reel is as long as your good video, the rest of the song is left out" : "Off: choose the Reel's length in Change song part")}</Text>
+              </View>
+              <Switch value={settings.fit !== false} onValueChange={(fit) => onSettings({ fit })} trackColor={{ true: look.accent }} />
+            </View>
+          )}
         </View>
       )}
-      <Row label={words("Format")}><Segmented small value={settings.aspect} onChange={(aspect) => onSettings({ aspect })} options={(["9:16", "4:5", "1:1", "16:9", "3:4", "4:3", "2:1", "2.35:1"] as Aspect[]).map((a) => ({ value: a, label: a === "9:16" ? words("9:16 Reel") : a }))} /></Row>
     </FlowCard>
   );
 }

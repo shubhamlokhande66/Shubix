@@ -538,7 +538,8 @@
 /* a song being read (engine.ts songBusy): a spinner in Choose song, the recent songs wait */
 .brs #mpick.busy{opacity:1;cursor:progress}
 .brs #mpick.busy svg{display:none}
-.brs #mpick.busy::before{content:"";width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+.brs #mpick.busy::before{content:"";margin:0;width:16px;height:16px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+.brs #dropzone.busy > svg{display:none}
 .brs .rlist.busy{opacity:.5;pointer-events:none}
 .brs.fopen #mpick{min-height:48px;border-radius:14px;padding:0 18px}
 .brs.fopen .recent{gap:10px}
@@ -1441,6 +1442,9 @@
 .brs .clipboxes{display:grid;gap:6px}
 .brs .clipboxes[hidden]{display:none}
 .brs .cboxes{display:flex;flex-wrap:wrap;gap:6px}
+.brs .cwbar{height:6px;border-radius:99px;background:var(--surface-2,rgba(127,127,127,.18));overflow:hidden}
+.brs .cwbar i{display:block;height:100%;width:0;border-radius:99px;background:var(--accent);transition:width .3s}
+.brs .clipboxes summary{cursor:pointer;font:600 12.5px var(--body);color:var(--accent);margin-bottom:6px}
 .brs .cbox{display:grid;place-items:center;min-width:56px;padding:6px 8px;border:1.5px dashed var(--line);border-radius:10px;font:600 12.5px var(--body);color:var(--muted);background:var(--surface-2)}
 .brs .cbox b{font-size:11px;font-weight:600;opacity:.75}
 .brs .cbox.ok{border-style:solid;border-color:var(--accent);color:var(--foreground)}
@@ -1546,6 +1550,11 @@
 .brs .chatlog .rep ol{margin:6px 0 0;padding-left:20px;display:grid;gap:6px}
 .brs .chatlog .rep li{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35}
 .brs .chatlog .rep .repgo{justify-self:start;margin-top:4px}
+.brs .chatlog .repkeep{display:flex;gap:8px;align-self:flex-start}
+.brs .chatvers{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:0 16px 8px}
+.brs .chatvers .verst{font:600 12px var(--body);color:var(--accent);background:none;border:0;padding:2px 0;cursor:pointer}
+.brs .chatvers .versb{font:500 12.5px var(--body);color:var(--ink);background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:6px 10px;cursor:pointer;text-align:left}
+.brs .chatvers .versb:hover{border-color:var(--accent)}
 @media (min-width:600px){ .brs.fopen .chatfab{bottom:calc(max(16px,env(safe-area-inset-bottom)) + 84px)} }
 
 /* ===================== the phones' editor, like VN: one screen, no page scroll =====================
@@ -3674,3 +3683,56 @@ html:has(.brs .clip.dragging),html:has(.brs .clip.dragging) body{overscroll-beha
 .brs.fopen #clips{overscroll-behavior-x:contain}
 /* "Done editing" keeps its words in the timeline's small head (its round 26 px buttons are for − + only) */
 .brs.made.editing .timelineActions button.feditdone{width:auto !important;height:auto !important;min-height:28px;padding:4px 10px;border-radius:999px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.brs .lockbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:8px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));background:color-mix(in srgb,var(--accent) 8%,var(--background));font:500 12.5px var(--body);color:var(--ink)}
+.brs .lockbar[hidden]{display:none}
+.brs .lockbar span{flex:1;min-width:0}
+.brs .lockbar a{flex-shrink:0;font-weight:600;color:var(--accent);text-decoration:none}
+.brs .chatlog .rep li.hasth{display:flex;gap:8px;align-items:flex-start}
+.brs .chatlog .rep .repth{width:32px;height:44px;flex-shrink:0;object-fit:cover;border-radius:6px;background:#000}
+
+/* ===== phones (QA 2026-11-23) ===== */
+/* the studio's code is still coming (flow.ts): Add your song and the clips' box already open the picker; what was picked waits with a spinner */
+.brs.starting #frefpick{pointer-events:none;cursor:progress}
+.brs .rprog,.brs .flenbox{display:none}
+.brs [hidden].rprog{display:none !important}
+@media (max-width:1023px){
+  .brs #dropzone.busy::before{content:"";width:22px;height:22px;border-radius:50%;border:2.5px solid var(--accent);border-right-color:transparent;animation:aospin .8s linear infinite;flex:none}
+  /* Add your song: the screen's one big box, like the box for the clips */
+  .brs.fopen #mpick{display:grid;justify-items:center;justify-content:center;gap:8px;width:100%;min-height:148px;padding:22px 16px;border:2px dashed color-mix(in srgb,var(--accent) 65%,transparent);border-radius:20px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));color:var(--ink);box-shadow:none;white-space:normal;text-align:center}
+  .brs.fopen #mpick > svg{width:54px;height:54px;padding:14px;border-radius:16px;background:var(--gold-gradient);color:var(--on-accent,#fff)}
+  .brs.fopen #mpick > span{font:700 17px var(--body)}
+  .brs.fopen #mpick > small{font:500 12.5px var(--body);color:var(--muted)}
+  .brs.fopen #mpick.busy::before{width:30px;height:30px;color:var(--accent)}
+  /* a song chosen: the box steps back, the song and Next are what matters */
+  .brs.fopen #s1.done #mpick{min-height:64px;padding:10px 14px;grid-template-columns:auto 1fr;justify-items:start;align-items:center;column-gap:12px;row-gap:0;text-align:left}
+  .brs.fopen #s1.done #mpick > svg{width:40px;height:40px;padding:10px;border-radius:12px;grid-row:1/3}
+  .brs.fopen #s1.done #mpick > span{font-size:15px}
+  /* how far a recent song has played: a line under its row (tap it to go there) */
+  .brs.fopen .rsong{position:relative;flex-wrap:wrap}
+  .brs.fopen .rprog{display:block;flex:0 0 calc(100% - 16px);height:14px;margin:4px 8px 0;padding:5px 0;touch-action:none;cursor:pointer;position:relative}
+  .brs.fopen .rprog::before{content:"";position:absolute;inset:5px 0;border-radius:2px;background:color-mix(in srgb,var(--accent) 20%,transparent)}
+  .brs.fopen .rprog i{position:relative;display:block;width:0;height:4px;border-radius:2px;background:var(--accent)}
+  /* the Reel's length, with the clips */
+  .brs.fopen .flenbox:not([hidden]){display:grid;gap:12px;padding:14px;border:1.5px solid color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:16px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+  .brs.fopen .flenbox #slen{width:100%;display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+  .brs.fopen .flenbox #slen button{padding-inline:2px;white-space:nowrap}
+  .brs.fopen .flenbox :is(#fitw,#fitnote){margin:0}
+  .brs.fopen .flenbox [hidden]{display:none !important}
+}
+/* the player's row on phones: the time, play and the sound on one line; Mix Video and full screen on the next */
+@media (max-width:1023px){
+  .brs.brs.brs.made.v-one .previewPanel .transport{flex-wrap:wrap !important;row-gap:8px !important;height:auto !important;overflow:visible !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport > *{order:10 !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #tcur{order:1 !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport .timeDivider{order:2 !important;display:inline !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #ttot{order:3 !important;margin:0 !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #pshot{order:4 !important;margin:0 0 0 auto !important;position:static !important;transform:none !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #play{order:5 !important;position:static !important;transform:none !important;width:40px !important;height:40px !important;min-height:40px !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #nshot{order:6 !important;margin:0 auto 0 0 !important;position:static !important;transform:none !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #soundstate{order:7 !important;display:inline-flex !important;font-size:10px !important;gap:5px !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport .transportSpacer{order:8 !important;flex:0 0 100% !important;width:100%;height:0;display:block !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #remix{order:11 !important;display:inline-flex !important;flex:1 1 auto !important;margin:0 !important;height:40px !important;justify-content:center;gap:8px !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #remix span{display:inline !important}
+  .brs.brs.brs.made.v-one .previewPanel .transport #pvfull{order:12 !important;width:44px !important;height:40px !important;border:1px solid var(--line) !important;border-radius:12px;display:inline-grid !important}
+}
+@media (max-width:1023px){ .brs.brs.brs.brs.made.v-one.editing .previewPanel .transport #play{margin:0 auto !important} }

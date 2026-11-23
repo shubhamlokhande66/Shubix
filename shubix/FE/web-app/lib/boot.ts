@@ -37,7 +37,7 @@ export function noteMe(me: unknown) {
 }
 /** sign in / sign up / verify answered: ask again normally */
 export const noteSignedIn = () => { signedOut = false; };
-const USER_ONLY = ["/api/credits", "/api/notifications", "/api/studio/reels", "/api/ads", "/api/marketing", "/api/templates"];
+const USER_ONLY = ["/api/credits", "/api/notifications", "/api/studio/reels", "/api/studio/speak", "/api/studio/broll", "/api/ads", "/api/marketing", "/api/templates"];
 /** a user-only read while nobody is signed in (waits for the page's boot answer first, so the first reads are skipped too) */
 export async function skipSignedOut(path: string, method = "GET"): Promise<boolean> {
   if (typeof window === "undefined" || method.toUpperCase() !== "GET" || !USER_ONLY.includes(path.split("?")[0])) return false;

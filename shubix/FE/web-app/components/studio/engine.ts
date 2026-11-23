@@ -13,9 +13,13 @@ import { createTasks } from './tasks';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
+import { budgetEffects, budgetLiftFrom, describeBudget, shotWords, momentsFound, bestMoment, bestMomentWords } from '@shubix/video-engine';
+import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-engine';
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
 import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { showablePhoto } from '@/lib/heic';
+import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
@@ -29,7 +33,7 @@ import { revealShape, motionBetween, shotMove, shapeInside, SHAPE_REACH } from '
 import { onsetCurve, alignInSong, refineAlign } from './songAlign';
 import { Button, Chip } from "./ui";
 import { createPreviewProxy, previewProxyPlan, probeVideo, editCopyPlan, convertOnServer, SERVER_CONVERT_MAX_BYTES, hasPicture } from '../../lib/previewProxy';
-import { isHidden, whenVisible, isReclaimed, titleProgress, titleDone, askToNotify, notifyDone, holdAwake } from '../../lib/background';
+import { isHidden, whenVisible, isReclaimed, titleProgress, titleDone, askToNotify, notifyDone, holdAwake, breathe, stayAlive } from '../../lib/background';
 // was the page in the background at any time since `mark` (work that failed then is tried again when the page is back)
 let readyToldGen = '', bgSeq = 0; if(typeof document !== 'undefined') document.addEventListener('visibilitychange', () => { if(isHidden()) bgSeq++; });
 // the file the decoders read: an iPhone 4K HDR 60 fps clip's edit copy (H.264, 1080p, 30 fps) when it has one
@@ -38,7 +42,7 @@ import { parseDirectorVisualIntent } from './visualIntent';
 import { bootPart } from '../../lib/boot';
 
 export function initStudio(root, deps) {
-  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, subjectMask = null, loadRnnoise = null, cloud = null, tts = null, aiPicture = null } = deps;
+  const { loadMediabunny, loadAacEncoder = null, beatThis: aiBeats = null, speechProbs = null, personMask = null, findFaces = null, subjectMask = null, loadRnnoise = null, cloud = null, loadVoices = null, loadPictures = null } = deps; let { tts = null, aiPicture = null } = deps;
 
 const $ = id => root.querySelector('#'+id);
 const tasks = createTasks(root);   // what is happening now, always in view (components/studio/tasks.ts)
@@ -400,9 +404,14 @@ function clipWantPaint(){
   const key = !talking && song && buf && plan.length && planSong === song.key ? [mode, pick, secStart.toFixed(2), buf.duration.toFixed(2)].join('|') : '';
   if(!key) wantMemo = { key: '', song: '', a: null };
   else if(key !== wantMemo.key && (!have || !wantMemo.a || wantMemo.song !== song.key || wantMemo.key.split('|')[1] !== pick)) wantMemo = { key, song: song.key, a: clipAdvice(plan, pick) };
-  const line = adviceLine(wantMemo.a, have);
+  // "Your Reel has about N shots" and how far the clips are, a bar; the seconds a clip behind a link (the flow review with
+  // ChatGPT, 2026-11-20: 15 boxes before any clip read as 15 clips required)
+  const a = wantMemo.a, want = a ? a.clips + a.photos + (a.either || 0) : 0;
+  const line = a ? 'Your Reel has about ' + a.shots + ' shots · ' + (have ? adviceLine(a, have) : 'about ' + want + ' clips is ideal. Fewer or longer clips are fine: Shubix finds several moments in a long clip.') : '';
   if(el.textContent !== line) el.textContent = line;
   el.hidden = !line;
+  const bar = $('cwbar'), fill = $('cwfill');
+  if(bar && fill){ bar.hidden = !line; fill.style.width = Math.min(100, Math.round(have / Math.max(1, want) * 100)) + '%'; }
   // one box a clip, with its seconds; the clips in the order added fill them (video-engine clipAdvice.ts adviceBoxes)
   const wrap = $('clipboxes'), list = $('cboxes'), boxes = (line && wantMemo.a && wantMemo.a.boxes) || [];
   if(!wrap || !list) return;
@@ -885,10 +894,10 @@ async function clipReader(src, maxSide){
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
     // the clip lasts as long as its picture: a phone clip's sound often runs on after the last frame, and a shot there freezes
     const vEnd = await track.computeDuration().catch(() => 0) - first; if(vEnd > 0.3 && vEnd < src.dur - 0.04) src.dur = vEnd;
-    const sink = new mb.CanvasSink(track, { width: Math.max(2, Math.round(src.w*sc/2)*2), height: Math.max(2, Math.round(src.h*sc/2)*2), fit: 'fill', poolSize: 2 });
+    const sink = smallFrames(mb, track, Math.max(2, Math.round(src.w*sc/2)*2), Math.max(2, Math.round(src.h*sc/2)*2), 2);
     return { fast: true,
-      async *frames(ts){ for await (const wc of sink.canvasesAtTimestamps(ts.map(t=>first + t))) yield wc ? wc.canvas : null; },
-      async at(t){ const wc = await sink.getCanvas(first + t); return wc ? wc.canvas : null; },
+      frames: ts => sink.at(ts.map(t=>first + t)),
+      at: t => sink.one(first + t),
       close(){ try{ input.dispose(); }catch(e){} } };
   }catch(err){
     const v = makeVideo(src.url); await videoData(v);
@@ -939,7 +948,7 @@ async function scanMotion(src, onProgress, faces){
   try{
     let k = 0;
     let fi = 0; const half = step/2;
-    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img) grab(img, t); if(k % 8 === 0){ onProgress(t/src.dur); await new Promise(r=>setTimeout(r,0)); }
+    for await (const img of rd.frames(ts)){ const t = ts[k++]; if(img) grab(img, t); if(k % 8 === 0){ onProgress(t/src.dur); await breathe(); }
       // the faces' times this frame stands for (within half a step: at most 0.1 s off)
       if(faces && img) while(fi < faces.ts.length && faces.ts[fi] <= t + half){ if(faces.ts[fi] >= t - half && !(await faces.each(img, faces.ts[fi]))){ faces = null; break; } fi++; }
     }
@@ -1038,9 +1047,18 @@ async function findScenes(rd, src, S, H, LM){
     if(histD(H[pre], H[post]) < 0.5*c[i]) continue;
     isCut[i] = 1;
   }
-  const grabH = async (t) => { let v; try{ v = await rd.at(t); }catch(e){ return null; } if(!v) return null;
-    const cv = grabH.cv || (grabH.cv = Object.assign(document.createElement('canvas'), {width:SW, height:SH})), g = cv.getContext('2d', {willReadFrequently:true});
+  const histOf = v => { const cv = histOf.cv || (histOf.cv = Object.assign(document.createElement('canvas'), {width:SW, height:SH})), g = cv.getContext('2d', {willReadFrequently:true});
     g.drawImage(v,0,0,SW,SH); return colorHist(g.getImageData(0,0,SW,SH).data); };
+  // every moment the bisections below may ask for, decoded in one pass (asked one by one, each is decoded from the key
+  // frame before it: 57 cuts took 20 s)
+  const ahead = new Map();
+  if(rd.fast){
+    const ts = [], halve = (lo, hi, it) => { if(it >= 4 || hi - lo <= 1/60) return; const mid = (lo+hi)/2; ts.push(mid); halve(lo, mid, it+1); halve(mid, hi, it+1); };
+    for(let i=1;i<n;i++) if(isCut[i]) halve(S[i-1].t, S[i].t, 0);
+    ts.sort((x, y) => x - y);
+    try{ let k = 0; for await (const v of rd.frames(ts)){ const t = ts[k++]; if(v) ahead.set(t, histOf(v)); if(k % 8 === 0) await breathe(); } }catch(e){ /* asked one by one */ }
+  }
+  const grabH = async (t) => { if(ahead.has(t)) return ahead.get(t); let v; try{ v = await rd.at(t); }catch(e){ return null; } return v ? histOf(v) : null; };
   for(let i=1;i<n;i++) if(isCut[i]){
     // bisection between the last sample of the old scene and the first of the new one, to about one frame
     let lo = S[i-1].t, hi = S[i].t; const hA = H[i-1], hB = H[i];
@@ -1141,7 +1159,7 @@ async function scanFaces(src, onProgress){
   try{ for await (const v of rd.frames(ts)){ const tt = ts[k++]; if(!v) continue;
     if(!(await fs.each(v, tt))) break;
     onProgress(tt/src.dur);
-    await new Promise(r=>setTimeout(r,0));
+    await breathe();
   } }catch(err){ console.warn('reading frames for faces failed', err); } finally { rd.close(); }
   fs.done();
 }
@@ -1606,32 +1624,39 @@ async function readVideo(src){
   // still reading after 2 minutes: reported too (a phone where it hangs instead of failing)
   const slow = setTimeout(() => { try{ window.__shubixReport && window.__shubixReport('clip', 'Clip still reading after 2 min at "' + stage + '" · ' + ((src.file && src.file.type) || 'no type') + ' · ' + dd.textContent, JSON.stringify({ size: src.file && src.file.size, dur: src.dur, w: src.w, h: src.h, webcodecs: typeof VideoDecoder !== 'undefined' })); }catch(x){} }, 120000);
   try{
-    dd.textContent = 'Reading video…'; dd.dataset.st = 'read'; dd.dataset.p = '0'; setClipStatus(src,'reading');
+    dd.textContent = 'Finding the best moments…'; dd.dataset.st = 'read'; dd.dataset.p = '0'; setClipStatus(src,'reading');
     // a format the browser's player cannot open: an edit copy (this device or Shubix), then the clip is read from it
     const reopen = async () => { stage = 'converting the format'; if(!(await rescueClip(src, dd))) return false; if(v){ v.removeAttribute('src'); v.load(); } v = makeVideo(src.url); stage = 'metadata'; await waitEv(v,'loadedmetadata', 15000); if(src.edFile && v.videoWidth){ src.edW = v.videoWidth; src.edH = v.videoHeight; } return true; };
-    v = makeVideo(src.url);
-    try{ await waitEv(v,'loadedmetadata', 15000); if(!isFinite(v.duration) || v.duration<=0 || !v.videoWidth) throw new Error('bad'); }
-    catch(err){ if(src.removed) return; if(!(await reopen())) throw err; }
-    src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight;
+    // the page is hidden: its <video> may not open before the person is back, so the clip is read by the decoder alone
+    let facts = null; const unseen = async () => { if(!isHidden() || !src.file) return false; facts = await probeVideo(decFile(src)).catch(() => null); if(facts && !(facts.decodes && facts.duration > 0 && facts.width)) facts = null; return !!facts; };
+    if(!(await unseen())){
+      v = makeVideo(src.url);
+      try{ await waitEv(v,'loadedmetadata', 15000); if(!isFinite(v.duration) || v.duration<=0 || !v.videoWidth) throw new Error('bad'); }
+      catch(err){ if(src.removed) return; if(!(await unseen()) && !(await reopen())) throw err; }
+    }
+    if(facts){ src.dur = facts.duration; src.w = facts.width; src.h = facts.height; } else { src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight; }
     if(!isFinite(src.dur) || src.dur<=0 || !src.w) throw new Error('bad');
     src.proxyStatus='Checking preview…'; updateClipHoverInfo(src);
     stage = 'preview compression'; await compressHighResolutionPreview(src, dd);
     if(src.removed) return;
-    if(src.previewProxy){ v.removeAttribute('src'); v.load(); v=makeVideo(src.url); await waitEv(v,'loadedmetadata',15000); }
+    if(!facts && src.previewProxy){ v.removeAttribute('src'); v.load(); v=makeVideo(src.url); await waitEv(v,'loadedmetadata',15000); }
     stage = 'first picture';
-    try{ await videoData(v); }
-    catch(err){ if(src.removed) return; if(!(await reopen())) throw err; src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight; stage = 'first picture'; await videoData(v); }
+    if(!facts) try{ await videoData(v); }
+    catch(err){ if(src.removed) return; if(await unseen()){ src.dur = facts.duration; src.w = facts.width; src.h = facts.height; }
+      else { if(!(await reopen())) throw err; src.dur = v.duration; src.w = v.videoWidth; src.h = v.videoHeight; stage = 'first picture'; await videoData(v); } }
     // The first decoded frame is enough for the clip's small queue thumbnail. Avoid a second iPhone seek here;
     // thumbnail choice has no effect on the Reel analysis or export. Keep the existing Android thumbnail unchanged.
-    if(!IOS){ stage = 'seek'; v.currentTime = Math.min(src.dur*0.3, 2); await waitEv(v,'seeked'); }
+    if(!facts && !IOS){ stage = 'seek'; v.currentTime = Math.min(src.dur*0.3, 2); await waitEv(v,'seeked'); }
     stage = 'thumbnail';
     const th = card.querySelector('.th'); th.width=320; th.height=180; const tg=th.getContext('2d');
-    const r = Math.max(320/src.w, 180/src.h); tg.drawImage(v,(320-src.w*r)/2,(180-src.h*r)/2,src.w*r,src.h*r);
-    v.removeAttribute('src'); v.load();
+    const r = Math.max(320/src.w, 180/src.h); let pic = v;
+    if(facts){ const rd = await clipReader(src, 640); try{ pic = await rd.at(Math.min(src.dur*0.3, 2)); } finally { rd.close(); } }
+    if(pic) tg.drawImage(pic,(320-src.w*r)/2,(180-src.h*r)/2,src.w*r,src.h*r);
+    if(v){ v.removeAttribute('src'); v.load(); }
     if(src.removed) return;
     // action + scene changes and faces are read at the same time (two decoders): about 40% faster per clip
     const tq = performance.now(); let pm = 0, pf = 0;
-    const show = () => { const f = pm*0.6 + pf*0.4; dd.textContent = 'reading ' + Math.round(f*100) + '%'; dd.dataset.p = String(Math.round(f*100)); if(previewBatchUi) previewBatchShow(src, 'Analysing selected videos… '+Math.round((batchDone+f)/Math.max(1,batchN)*100)+'%', (batchDone+f)/Math.max(1,batchN));
+    const show = () => { const f = pm*0.6 + pf*0.4; dd.textContent = 'Finding the best moments ' + Math.round(f*100) + '%'; dd.dataset.p = String(Math.round(f*100)); if(previewBatchUi) previewBatchShow(src, 'Analysing selected videos… '+Math.round((batchDone+f)/Math.max(1,batchN)*100)+'%', (batchDone+f)/Math.max(1,batchN));
       tasks.update('clips', (batchDone + f) / Math.max(1, batchN), 'Clip ' + Math.min(batchN, batchDone + 1) + ' of ' + batchN + ' · ' + src.name); };
     src.readMs = {};
     const kept = await scanGet(src);   // read before (a saved Reel opened again, or the same clip added again): used as it is
@@ -1667,7 +1692,8 @@ async function readVideo(src){
     if(src.removed) return;
     const nf = src.faces.filter(f=>f.n>0).length, shs = src.samples.map(s=>s.sh).sort((a,b)=>a-b);
     src.shMed = shs[Math.floor(shs.length/2)] || 1;
-    dd.textContent = fmt(src.dur).replace(/\.\d+$/, '') + ' · ' + (src.w >= src.h ? 'Landscape' : 'Portrait') + ' · Ready';
+    src.bestAt = bestMoment(src.samples, src.dur, src.faces);   // its card: "Best moment 0:04" (Shared/video-engine bestMoment.ts)
+    dd.textContent = fmt(src.dur).replace(/\.\d+$/, '') + ' · ' + (src.w >= src.h ? 'Landscape' : 'Portrait') + ' · ' + (bestMomentWords(src.bestAt) || 'Ready');
     dd.dataset.st = 'ok'; dd.dataset.len = fmt(src.dur).replace(/\.\d+$/, ''); setClipStatus(src,'ready','Video analysed · '+src.w+' × '+src.h+' · '+fmt(src.dur));
     src.els = [lazyPlayer(src.url), lazyPlayer(src.url), lazyPlayer(src.url)];
     commitSource(src);
@@ -1756,7 +1782,7 @@ async function denoise(pcm, sr){
       for(let k=0;k<F;k++) fr[k] = (x[i+k] || 0)*32768;
       st.processFrame(fr);
       for(let k=0;k<F;k++){ const o = i + k - D; if(o >= 0 && o < y.length) y[o] = fr[k]/32768; }
-      if((i/F) % 500 === 499) await new Promise(r => setTimeout(r, 0));
+      if((i/F) % 500 === 499) await breathe();
     }
   } finally { st.destroy(); }
   return resampleTo(y, 48000, sr);
@@ -2479,30 +2505,34 @@ function aiTags(src){
 function aiAt(src, a, b){
   if(!aiOn || !src.ai || !src.ai.frames.length) return null;
   const F = src.ai.frames, sg = Math.max(0.6, 0.45*src.dur/F.length);
-  let w = 0, s = 0, bw = 0, best = null; const R = {};
+  let w = 0, s = 0, bw = 0, best = null, cw = 0, op = 0, ps = 0; const R = {};
   for(const f of F){
     const d = f.t < a ? a-f.t : f.t > b ? f.t-b : 0;
     if(d > 0 && crossesScene(src, Math.min(f.t,a), Math.max(f.t,b))) continue;   // another scene says nothing about this one
     const k = Math.exp(-0.5*(d/sg)**2); if(k < 0.02) continue;
     w += k; s += k*f.score; f.roles.forEach(r=>{ R[r] = (R[r]||0) + k; }); if(k > bw){ bw = k; best = f; }
+    if(f.open != null){ cw += k; op += k*f.open; ps += k*f.pos; }   // compared with the Reel's other moments (compare-shots)
   }
   if(w < 0.05) return null;
   const roles = {}; for(const r in R) roles[r] = R[r]/w;
-  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '' };
+  return { score: s/w, conf: Math.min(1, w), roles, note: best ? best.note : '', ...(cw >= 0.05 ? { open: op/cw, pos: ps/cw } : {}) };
 }
 // how much the AI's opinion adds to a candidate moment for this slot. Measured on 17 human-edited Reels (the rebuild
 // test, FE/mobile-app/tests/human-rebuild.test.ts, with GPT-5.6 Luna's answers): editors open on a reveal (the subject
 // coming into view) far more than on action, ease in with reveals and details, and end on a shot the AI scores low (a
 // logo, a fade, a quiet look). So the hook goes by reveal, the setup by reveal and detail, and the last shot by the AI's
 // "ending" alone, without its quality score (with it, editors' last shots ranked 26%; without, 41%).
-function aiBonus(ai, slot, last, part){
+function aiBonus(ai, slot, last, part, at){
   const role = slot==='hook' ? 'hook' : (slot==='drop' || slot==='hit') ? 'action' : slot==='break' ? 'calm' : null;
   let fit = 0;
   if(slot==='hook') fit = 0.6*(ai.roles.reveal || 0) + 0.3*(ai.roles.hook || 0);
   else if(last) fit = 0.6*(ai.roles.ending || 0);
   else if(part==='setup') fit = 0.4*((ai.roles.reveal || 0) + (ai.roles.detail || 0));
   else if(role) fit = 0.6*(ai.roles[role] || 0);
-  return ai.conf * ((last ? 0 : 2.2*(ai.score - 0.5)) + fit);
+  // the Reel's moments seen side by side (compare-shots): what opens best among them, and where each belongs
+  if(ai.open != null && slot==='hook') fit = 1.6*(ai.open - 0.5);
+  else if(ai.pos != null && !last && part !== 'setup' && at != null) fit += 1.2*(0.35 - Math.abs(ai.pos - at));
+  return ai.conf * ((last || (slot==='hook' && ai.open != null) ? 0 : 2.2*(ai.score - 0.5)) + fit);
 }
 // which moments to show: evenly over the clip, the sharpest well-lit moment of each part, never on a scene change
 function aiTimes(src){
@@ -2539,15 +2569,34 @@ function aiRestore(src){
 let aiHeld = location.pathname.startsWith('/create');
 // …and the API (asleep after a quiet while: 20-30 s to wake) is woken now, so Generate does not wait for it
 if(aiHeld) fetch('/api/health').catch(() => {});
+// the Reel's moments side by side (compare-shots): asked once the clips are seen, so Shubix knows which one opens best and
+// what belongs where. Only a help: when it fails or takes too long the Reel is made as before.
+const aiPics = new WeakMap();
+async function aiCompare(stop){
+  const list = sources.filter(s=>!s.removed), want = compareMoments(list); if(want.length < 3) return;
+  const cut = new AbortController(), end = () => cut.abort(), timer = setTimeout(end, 30000); stop.addEventListener('abort', end);
+  try{
+    aiStat('Shubix is comparing your best moments…');
+    for(const s of list) if(s.ai && !aiPics.has(s)){ if(cut.signal.aborted) return; aiPics.set(s, await aiFrames(s)); }   // (seen in an earlier Reel)
+    const moments = want.map(([i, k]) => ({ id: i + '_' + k, image: (aiPics.get(list[i]).find(f => Math.abs(f.t - list[i].ai.frames[k].t) < 0.02) || {}).image })).filter(m => m.image);
+    if(cut.signal.aborted || moments.length < 3) return;
+    const r = await apiFetch('/api/studio/compare-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: cut.signal, body: JSON.stringify({ moments }) });
+    if(!r.ok) return;
+    const res = await r.json(); if(cut.signal.aborted) return;
+    if(applyCompared(list, res.moments)) for(const s of list) if(s.ai){ const fp = fpOf(s); aiCache.set(fp, s.ai); try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(s.ai)); }catch(e){} }
+  }catch(e){ console.info('moments not compared:', e && e.message); }
+  finally{ clearTimeout(timer); stop.removeEventListener('abort', end); list.forEach(s => aiPics.delete(s)); keepOneComparison(list); }
+}
 async function aiRun(){
   // keepSaved: a Reel opened with its own edit is not looked at again by itself (a change, Make new Reel or the chat does)
   if(!aiOn || aiBusy || !sources.length || aiHeldBack() || keepSaved) return;
   if(!aiReelOk()){ aiBusy = true; const go = await aiGate(); aiBusy = false; if(!go) return; }
   sources.forEach(s=>{ if(!s.ai) aiRestore(s); });
+  keepOneComparison(sources.filter(s=>!s.removed));
   const need = sources.filter(s=>!s.ai && !s.aiFailed && !s.removed);
   if(!need.length){ aiDone(); return; }
   aiBusy = true; aiStat('Shubix is looking at ' + need.length + (need.length>1 ? ' clips…' : ' clip…'));
-  let charged = 0, failed = 0;
+  let charged = 0, failed = 0; const found = [];   // (the moments found, said while the person waits)
   const stop = aiStopper.signal;   // this run's Stop (Cancel puts a new aiStopper in place: a run reading it again went on)
   try{
     if(!(await serverUp())) throw new Error(TEAM_MSG);   // a down server: said at once (aiDown), never waited for
@@ -2579,15 +2628,20 @@ async function aiRun(){
       tasks.lock();
       charged += res.charged || 0; if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
-        delete j.src.aiFramesMade;   // answered: its pictures are not needed again, only the labels stay
+        aiPics.set(j.src, j.frames); delete j.src.aiFramesMade;   // answered: its pictures are not needed again, only the labels stay
         j.src.ai = { frames: c.frames, about: c.about, summary: c.summary, mood: c.mood }; const fp = fpOf(j.src); aiCache.set(fp, j.src.ai);
-        try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){} }
+        try{ localStorage.setItem('brs-ai:'+fp, JSON.stringify(j.src.ai)); }catch(e){}
+        found.push({ clip: sources.indexOf(j.src) + 1, what: c.summary }); }
+      // what it found, while the person waits (only real moments, the newest first: the flow review with ChatGPT)
+      { const line = momentsFound(found); if(line) aiStat(line + '…'); }
       for(const f of res.failed || []){ const j = part.find(x=>x.id===f.id); if(j){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; } }
       // a clip the answer left out: skipped too, never asked again and again (each ask is a new call)
       for(const j of part) if(!j.src.ai && !j.src.aiFailed){ j.src.aiFailed = true; delete j.src.aiFramesMade; failed++; }
     } };
     try{ await Promise.all([framing, ...Array.from({ length: 3 }, askPart)]); }
     catch(e){ broke = true; nudge(); throw e; }   // the pictures still being made stop too
+    if(stop.aborted) return;
+    if(!sources.some(s=>!s.ai && !s.aiFailed && !s.removed)) await aiCompare(stop);
     if(stop.aborted) return;
     aiBusy = false;
     if(sources.some(s=>!s.ai && !s.aiFailed && !s.removed) && !pending) return aiRun();   // clips added meanwhile
@@ -2636,6 +2690,7 @@ function chatAnswer(text){ chatClearWait(); chatSay('ai', text); chatMsgs.push({
 let chatPending = null, chatReported = '', chatLocalDone = false;
 // the AI's plan arrived: asked for in the chat, it is shown as a report and waits for Generate; otherwise it is used
 function dirArrived(key, d){
+  if(chatWaiting && chatSame){ chatSame = false; chatAnswer(CHAT_SAME); return false; }
   if(chatWaiting){ const ask = chatMsgs.filter(m => m.who === 'me').slice(-1)[0]?.text || ''; chatPending = { key, slots: d.slots, story: d.story || '', texts: d.texts, actions: d.actions, cost: chatCost, intent: parseDirectorVisualIntent(ask) }; chatProposal(chatPending); return false; }
   aiDoneSig = inputSig(); regenOk = false;
   director = { key, slots: d.slots, story: d.story || '', texts: d.texts, actions: d.actions }; dirCache.set(key, director); if(d.texts || d.actions) queueMicrotask(() => void aiApply(d)); return true;   // (after the shots are made: makeEdit)
@@ -2649,16 +2704,27 @@ function reportBox(r, at){
   if(r.story){ const p = document.createElement('span'); p.className = 'repstory'; p.textContent = r.story; box.appendChild(p); }
   const det = document.createElement('details'), sum = document.createElement('summary'), ol = document.createElement('ol');
   sum.textContent = r.chg ? 'See the change' : 'See every shot'; det.appendChild(sum); if(r.chg) det.open = true;
-  for(const it of r.items || []){ const li = document.createElement('li'); li.textContent = it.t; if(it.c) li.className = 'chg'; ol.appendChild(li); }
+  for(const it of r.items || []){ const li = document.createElement('li'); li.textContent = it.t; if(it.c) li.className = 'chg';
+    // the shot's clip, as its card shows it (a picture beside the line in plain words)
+    const pic = Number.isInteger(it.s) ? clipPic(it.s) : ''; if(pic){ const im = document.createElement('img'); im.src = pic; im.alt = ''; im.className = 'repth'; li.prepend(im); li.classList.add('hasth'); }
+    ol.appendChild(li); }
   det.appendChild(ol); box.appendChild(det);
   return box;
 }
-function planData(slots, story, changed){
+const clipPics = new Map();
+function clipPic(si){
+  const c = sources[si] && sources[si].card && sources[si].card.querySelector('canvas.th'); if(!c || !c.width) return '';
+  let u = clipPics.get(c); if(!u){ try{ u = c.toDataURL('image/jpeg', 0.6); }catch(e){ u = ''; } if(u) clipPics.set(c, u); }
+  return u || '';
+}
+function planData(slots, story, changed, real){
   const n = plan.length, tr = slots.filter((d,i) => i && d && d.tr && d.tr !== 'hard').length, fx = slots.filter((d,i) => d && d.fx && d.fx !== 'none' && !(i === 0 && d.fx === 'hook')).length,
     keys = slots.reduce((a,d) => a + (d && d.keys ? d.keys.length : 0) + (d && d.move && d.move.length ? 1 : 0), 0);
   const chg = !!(changed && changed.size), items = [];
   const head = chg ? 'Shubix changes ' + (changed.size === 1 ? 'shot ' : 'shots ') + [...changed].sort((a, b) => a - b).map(i => i + 1).join(', ') + ' (the rest stays as it is)'
     : 'Shubix\'s plan: ' + n + ' shots · ' + tr + ' transitions · ' + fx + ' effects · ' + keys + ' keyframes';
+  // the Reel as made (real): the shots it really shows, in plain words (shotLines); a proposal: the plan asked for
+  if(real && !chg && edit.length === plan.length){ shotLines().forEach((t, i) => items.push({ c: 0, t, s: edit[i].src })); return { head, story: story || '', chg, items }; }
   plan.forEach((s, i) => {
     if(chg && !changed.has(i)) return;
     const d = slots[i] || {}, c = d.cand, src = c ? sources[c.src] : null;
@@ -2802,26 +2868,32 @@ async function chatGenerate(btn){
   remakeOk();
   const pd = chatPending; btn.disabled = true;
   if(!pd || pd.key !== dirKey()){ chatAnswer('The Reel changed since this plan. Tell me again what you want and I\'ll plan it anew.'); return; }
+  // phones: the chat covers the whole screen; it closes, so the Reel being made and then playing is seen (an error opens it again)
+  const small = !!(window.matchMedia && matchMedia('(max-width: 1023px)').matches) && location.pathname !== '/engine', wasOpen = !$('chatbox').hidden;
+  if(small){ if(document.activeElement) document.activeElement.blur(); if(wasOpen) chatOpen(false); else askBar(false); }
   chatPending = null; chatReported = pd.key; director = { key: pd.key, slots: pd.slots, story: pd.story }; dirCache.set(pd.key, director);
   let applied = '';
+  const before = edit.length || overlays.length ? histSnap() : null, ask = chatMsgs.filter(m => m.who === 'me').slice(-1)[0]?.text || '';
   try {
     makeEdit(); await aiApply(pd);
     applied = applyChatVisualIntent(pd.intent, pd.slots);
     if(!edit.length) throw new Error('The Reel timeline could not be verified after applying the plan.');
   } catch(error) {
-    btn.textContent = 'Not applied';
+    btn.textContent = 'Not applied'; if(small && wasOpen) chatOpen(true);
     chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error) + ' The Reel was not marked as generated; please try the instruction again.');
     return;
   }
   if(!playing && !recording && buf && edit.length) startPlayback(0);
   btn.textContent = 'Generated ✓';
+  if(before){ keepVer('Before “' + ask.slice(0, 40) + '”', before); reviewOffer(before); }
+  saveNow();
   const bal = aiBal();
   chatAnswer('Your new Reel is ready ✓' + (applied ? ' Applied: ' + applied + '.' : '') + (!pd.cost && aiFreeChats() ? ' Free change · ' + (Math.max(0, aiFreeChats() - chatUsed) ? Math.max(0, aiFreeChats() - chatUsed) + ' free left for this Reel.' : 'next changes use credits.') : '') + (pd.cost ? ' ' + creditWord(pd.cost) + ' used' + (bal != null ? ' · ' + creditWord(bal) + ' left' : '') + '.' : '') + ' Not quite right? Tell me what to change and I\'ll check it again.');
 }
 // a plan the AI made by itself (no chat): its report goes into the chat too, and the button shows there is one
 function chatReportAuto(){
   if(chatWaiting || chatPending || !aiOn || !director || director.key !== dirKey() || chatReported === director.key) return;
-  chatReported = director.key; const rep = planData(director.slots, director.story); aiLog(rep.head + (rep.story ? ' — ' + rep.story : ''), rep);
+  chatReported = director.key; const rep = planData(director.slots, director.story, null, true); aiLog(rep.head + (rep.story ? ' — ' + rep.story : ''), rep);
 }
 // the phone app's Ask Shubix: the website's own chat (the same AI, its credit questions asked on the phone); the plan it
 // makes is applied at once (the phone has no Generate button of the studio's), and the answer goes back to the phone
@@ -2849,6 +2921,54 @@ function chatRestore(list){
   $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep, m.at)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text, false, m.at); });
   wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800);
 }
+/* Earlier versions (as on Android): the Reel as it was before an Ask Shubix change or another mix, the last 5, kept with
+ * the Reel (settings.vers) so they are there when it is opened again. Only a version made with these clips and this song
+ * is offered (base). Going back is a step Undo takes back. Keep / Undo under a change stay until one is chosen. */
+const VERS_MAX = 5;
+let chatVers = [], versOpen = false, chatReview = null;
+function keepVer(label, snap){
+  snap = snap || (edit.length || overlays.length ? histSnap() : null); if(!snap) return;
+  chatVers.push({ at: Date.now(), label: String(label).slice(0, 60), base: histBase(), snap: { ed: snap.ed, ov: snap.ov, ly: snap.ly } }); chatVers = chatVers.slice(-VERS_MAX); versUI();
+}
+function versUI(){
+  const box = $('chatvers'); if(!box) return;
+  const base = histBase(), list = chatVers.map((v, i) => ({ v, i })).filter(x => x.v.base === base);
+  box.hidden = !list.length; box.innerHTML = ''; if(!list.length) return;
+  const t = document.createElement('button'); t.type = 'button'; t.className = 'verst'; t.setAttribute('aria-expanded', String(versOpen));
+  t.textContent = (versOpen ? 'Hide earlier versions' : 'Earlier versions') + ' (' + list.length + ')';
+  t.addEventListener('click', () => { versOpen = !versOpen; versUI(); }, SIG); box.appendChild(t);
+  if(!versOpen) return;
+  [...list].reverse().forEach(({ v, i }) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'versb';
+    const tm = new Date(v.at); b.textContent = v.label + ' · ' + tm.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    b.addEventListener('click', () => versGo(i), SIG); box.appendChild(b);
+  });
+}
+function versGo(i){
+  const v = chatVers[i]; if(!v || chatWaiting || exporting || recording) return;
+  if(v.base !== histBase()){ notify('This version was made with other clips or another song.', 'info'); return; }
+  reviewDone(); if(playing) stopAll();
+  const before = histSnap();
+  if(!snapRestore(v.snap)) return;
+  keepVer('Before going back', before); saveNow();
+  notify('Your Reel is back to this version. Undo brings the last one back.');
+}
+// the change just made by Ask Shubix: [Keep] [Undo] under it, kept until one is chosen (or another change starts)
+function reviewOffer(before){
+  reviewDone();
+  const row = document.createElement('div'); row.className = 'ai repkeep';
+  const keep = document.createElement('button'); keep.type = 'button'; keep.className = `${Button.primary}`; keep.textContent = 'Keep';
+  const undo = document.createElement('button'); undo.type = 'button'; undo.className = `${Button.secondary}`; undo.textContent = 'Undo';
+  keep.addEventListener('click', () => reviewDone(), SIG);
+  undo.addEventListener('click', () => {
+    if(chatWaiting || exporting || recording) return;
+    reviewDone(); if(playing) stopAll();
+    if(before && snapRestore(before)){ saveNow(); aiLog('Undone: your Reel is back as it was before this change.'); }
+  }, SIG);
+  row.append(keep, undo); $('chatlog').appendChild(row); $('chatlog').scrollTop = $('chatlog').scrollHeight;
+  chatReview = row;
+}
+function reviewDone(){ if(chatReview){ chatReview.remove(); chatReview = null; } }
 // "slow it down", "slow motion", "clip slow kar", "हळू कर": slow motion asked for (true), "normal speed", "slow nako": taken
 // back (false); anything else: null. It is done here at once, for everyone, with no Shubix AI and no credits (before,
 // "slow" only switched to the Smooth style: longer shots, no slow motion, and the answer still said Done).
@@ -2871,18 +2991,24 @@ function chatLocal(t){
 function setModeQuiet(m){ mode = m; [...$('mode').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m)); modeWords(m); if(buf) plan = adaptPlan(); }
 let chatCost = 0;
 // a small change: only the shots it is about come back from the AI; every other shot stays exactly as it is
+// the Reel as it is now, cut by cut, sent with a chat change: the server gives the credits back when its answer changes
+// nothing (chat.unchanged), and the chat says so instead of offering a plan that is the Reel as it is
+const chatCurrent = () => edit.slice(0, 150).map((e, i) => ({ i, clip: 'c' + (e.src + 1), at: +e.in.toFixed(2), transition: e.tr || 'hard', effect: e.efx || 'none', speed: speedKey(e.sp) }));
+const CHAT_SAME = 'That is how your Reel already is, so nothing changed and no credits were used. Tell me what to do differently.';
+let chatSame = false;
 async function chatPatch(text, n, id){
   chatWaiting = true; chatPending = null; $('chatsend').disabled = true; chatSay('ai', 'Changing just that part', true);
   const tm = timeoutSignal(45000);
   try{
     const cands = directorCandidates(); dirCands = cands;
     const { req } = dirRequest(cands), key = dirKey(), len = i => edit[i].end - edit[i].start;
-    req.patch = { ask: text, current: edit.map((e, i) => ({ i, clip: 'c' + (e.src + 1), at: +e.in.toFixed(2), transition: e.tr || 'hard', effect: e.efx || 'none', speed: speedKey(e.sp) })) };
+    req.patch = { ask: text, current: chatCurrent() };
     req.chat = { n, id, text };
     const r = await apiFetch('/api/studio/direct', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not change it (' + r.status + ').'));
     chatSync(res); if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
+    if(res.chat && res.chat.unchanged){ chatAnswer(CHAT_SAME); return; }
     const base = director && director.key === key ? director.slots.slice() : edit.map((e, i) => ({ cand: { src: e.src, in: e.in }, tr: e.tr, fx: e.efx, sp: speedKey(e.sp),
       keys: (e.acc || []).map(q => ({ at: q.at, do: q.do })), move: (e.ak || []).map(q => ({ at: q.t / Math.max(0.05, len(i)), s: q.s, x: q.x, y: q.y, r: q.r, ez: q.ez })), cs: e.cs || null, why: '' }));
     const got = toSlots(res.slots, cands), changed = new Set();
@@ -2898,6 +3024,7 @@ async function chatPatch(text, n, id){
 async function chatSend(text){
   remakeOk();
   text = String(text || '').trim().slice(0, 300); if(!text || chatWaiting) return;
+  reviewDone();
   if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
   chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
   $('chatin').value = ''; chatFit();
@@ -2918,7 +3045,7 @@ async function chatSend(text){
     const now2 = reelLen(), n = edit.filter(e => e.sp === SPEED.slow).length;
     if(slow && !n){ slowAll = false; chatAnswer('I could not put this Reel in slow motion.'); return; }
     saveNow(); chatLocalDone = true;
-    chatAnswer(slow ? 'Done ✓ ' + (n === edit.length ? 'Every shot' : n + ' of ' + edit.length + ' shots') + ' now plays in slow motion (half speed). ' + (now2 > was + 0.5 ? 'Your Reel is now ' + fmtS(now2) + ' (it was ' + fmtS(was) + ').' : 'Your Reel stays ' + fmtS(now2) + ' long: ' + (fitOn() ? 'your song part is not longer.' : 'that is the length you chose. Tick "Make the Reel as long as my clips" for a longer Reel.')) + ' No Shubix AI credits used. Say "normal speed" to take it back.'
+    chatAnswer(slow ? 'Done ✓ ' + (n === edit.length ? 'Every shot' : n + ' of ' + edit.length + ' shots') + ' now plays in slow motion (half speed). ' + (now2 > was + 0.5 ? 'Your Reel is now ' + fmtS(now2) + ' (it was ' + fmtS(was) + ').' : 'Your Reel stays ' + fmtS(now2) + ' long: ' + (fitOn() ? 'your song part is not longer.' : 'that is the length you chose. Tick "Match the Reel to my clips" for a longer Reel.')) + ' No Shubix AI credits used. Say "normal speed" to take it back.'
       : 'Done ✓ Your Reel plays at normal speed again' + (now2 < was - 0.5 ? ' and is ' + fmtS(now2) + ' long.' : '.') + ' No Shubix AI credits used.');
     return;
   }
@@ -2964,14 +3091,14 @@ async function chatSend(text){
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
   } else if(cost && bal !== null){
     if(bal < cost){ chatAnswer('This change needs ' + creditWord(cost) + ' and you have ' + creditWord(bal) + ". Add credits and I'll do it right away."); if(!IN_APP){ $('chatlog').appendChild(pricingLink('Top up')); void aiSell(true, cost, bal); } return; }
-    const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
+    const ok = await askCredits({ title: size === 'small' ? 'A small change' : 'Change the whole Reel', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + (freeN ? 'The ' + freeN + ' free changes for this Reel are used, so this' : 'It') + ' uses ' + creditWord(cost) + '. If it fails, no credits are used; Undo is free but does not give them back.', bal, after: bal - cost, ok: 'Use ' + creditWord(cost), no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed and no credits used.'); return; }
   }
   chatCost = cost; const n = ++chatN, id = newId();
   if(size === 'small') return chatPatch(text, n, id);
   chatLocal(text);
   wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800);
-  chatAsk = { n, id, text };
+  chatAsk = { n, id, text, current: ready ? chatCurrent() : null };
   chatWaiting = true; chatPending = null; $('chatsend').disabled = true; chatSay('ai', 'Planning your Reel: checking every clip', true);
   dirFailedKey = ''; paceFailedKey = '';
   const asked = chatMsgs.length;
@@ -3069,8 +3196,30 @@ function applyDirectorStyle(){
     if(d.keys && d.keys.length){ asked += d.keys.length;
       for(const k of d.keys){ if(ACCENTS.includes(k.do)){ s.acc.push({at: Math.min(Math.max(0.04, k.at), Math.max(0.04, len-0.05)), do:k.do}); used++; } else fixed++; } }
   });
+  aiBudget();
   finishTransitions();
   return {used, fixed, asked};
+}
+// The effect budget (Shared/video-engine budget.ts, agreed with ChatGPT 2026-11-20): Shubix AI's plan kept within it, as
+// the rules' own edit is (tastePlan). It put a flash, a shake or an RGB split on 5 shots of 6 of a Reel it called
+// devotional: a normal shot now gets a transition or one thing inside it, a hero shot three, 30% of the shots stay plain,
+// and a calm Reel has no loud tools on its quiet parts. What the creator asked for in their own words is kept.
+// The AI's flags stay on (trByDir / fxByDir): nothing of the rules' own is added back where the budget took one away.
+let lastBudget = null, budgetTold = '';
+function aiBudget(){
+  lastBudget = null;
+  if(!plan.length || (copyExact() && !wish && !chatN)) return;
+  let music = []; try{ music = cutMusic(); }catch(e){ music = []; }
+  const words = [wish, ...chatMsgs.filter(m => m.who === 'me').map(m => m.text)].join(' ');
+  const shots = plan.map((s, i) => ({ start: s.start, end: s.end, type: s.type, tr: s.tr, fx: s.efx, keys: (s.acc || []).map(k => ({ at: k.at, do: k.do })),
+    move: !!(s.ak && s.ak.length), loud: music[i] && typeof music[i].loud === 'number' ? music[i].loud : null }));
+  const r = budgetEffects(shots, { mood: [director && director.story, tplKind].filter(Boolean).join(' '), lift: budgetLiftFrom(words) });
+  r.shots.forEach((b, i) => { const s = plan[i];
+    if(b.tr !== s.tr) s.tr = b.tr;
+    if(b.fx !== s.efx) s.efx = b.fx;
+    if((b.keys || []).length !== (s.acc || []).length) s.acc = (b.keys || []).map(k => ({ at: k.at, do: k.do }));
+    if(!b.move && s.ak && s.ak.length) s.ak = []; });
+  if(r.changes.length) lastBudget = r;
 }
 // One last pass over every cut: the AI's transitions all stay (shortened to fit a short shot); the rules' own special
 // transitions stay within their ration, finish well inside both shots, and the same one never runs twice in a row.
@@ -3275,7 +3424,7 @@ function rememberTools(){ if(!edit.length) return; const used = new Set();
   try{ const L = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); L.push([...used].slice(0, 30)); localStorage.setItem(RECENT_KEY, JSON.stringify(L.slice(-6))); }catch(e){} }
 function dirRequest(cands){
   const per = Math.max(1, buf.duration/30), music = cutMusic(), pc = paceNow();
-  const req = { mode, reelId: reelIdNow(), ...(tplKind ? { reelKind: tplKind } : {}), ...(chatAsk ? { chat: { n: chatAsk.n, id: chatAsk.id, text: chatAsk.text } } : {}), wish: wish.slice(-800), duration: +buf.duration.toFixed(2), bpm: +(60/period).toFixed(1), hook: hookText.slice(0,60), story: (pc && pc.story || '').slice(0,160), reference: refContext(),
+  const req = { mode, reelId: reelIdNow(), ...(tplKind ? { reelKind: tplKind } : {}), ...(chatAsk ? { chat: { n: chatAsk.n, id: chatAsk.id, text: chatAsk.text }, ...(chatAsk.current && chatAsk.current.length ? { current: chatAsk.current } : {}) } : {}), wish: wish.slice(-800), duration: +buf.duration.toFixed(2), bpm: +(60/period).toFixed(1), hook: hookText.slice(0,60), story: (pc && pc.story || '').slice(0,160), reference: refContext(),
     clips: sources.map((s,k)=>({ alias:'c'+(k+1), about: (s.ai && s.ai.about) || '', summary: (s.ai && s.ai.summary) || '', mood: (s.ai && s.ai.mood) || '' })), ...(songFeel ? { song: songFeel } : {}),
     recent: recentTools(),
     allowed: { fx: Object.keys(FX_NAME).filter(k => !isLocked('fx', k)), tr: Object.keys(TR_DUR).filter(k => !isLocked('tr', k)) },
@@ -3583,7 +3732,7 @@ async function directorRun(key){
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
     chatSync(res); if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
-    if(chatAsk && req.chat) chatAsk = null;   // that chat message is answered (and charged once)
+    if(chatAsk && req.chat){ chatAsk = null; chatSame = !!(res.chat && res.chat.unchanged); }   // that chat message is answered (and charged once)
     if(!st.plans[mix]) st.plans[mix] = { slots, ctx, sig, story: res.story || '' };   // kept for the song's other parts
     if(late){
       // it came after the phone's edit was shown: offered, never swapped in under the person (or during an export)
@@ -3635,7 +3784,12 @@ async function aiCheck(){
 }
 aiCheck();
 // the person is known now (the phone app's sign-in reached the hidden studio): their plan, credits and Shubix AI
-async function account(){ planLoad(); await aiCheck(); }
+async function account(){ planLoad(); await aiCheck(); if(!IN_APP) void toolsAgain(); }
+// signed in over the page: the AI voices and pictures, asked for while nobody was signed in, were refused and stayed hidden
+async function toolsAgain(){
+  if(!tts && loadVoices){ tts = await loadVoices().catch(() => null); if(tts) voicesPaint(); }
+  if(!aiPicture && loadPictures){ aiPicture = await loadPictures().catch(() => null); picturesPaint(); }
+}
 /* ---- virtual camera: the crop follows the subject smoothly ----
    Like a camera operator: hold still while the subject stays near the middle (a locked-off shot looks professional),
    pan smoothly when it moves away, never twitch. Positions come from the tracked face, else from what moves on its own
@@ -3745,7 +3899,7 @@ const shortNote = sr => 'Your Reel: ' + fmtS(sr.len) + (sr.speed < 0.9 ? ', your
 function lenLock(){
   const on = fitOn() && kind !== 'talk';
   [...$('slen').children].forEach(b => { b.disabled = on; }); $('slenc').disabled = on;
-  $('slen').title = on ? 'Set by your clips (Make the Reel as long as my clips)' : '';
+  $('slen').title = on ? 'Set by your clips (Match the Reel to my clips)' : '';
 }
 function footCheck(){
   if(ordering || pending || !buf || !sources.length || !$('cconf').hidden) { if(ordering || pending) footCheckSoon(); return; }
@@ -3760,7 +3914,7 @@ function footCheck(){
       : slowAll && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clips in slow motion, as you asked.'
       : oneTake() && have <= full * 1.1 ? 'Your Reel: ' + fmtS(Math.min(reach(have), full)) + ', your clip as filmed, then in slow motion with the song.'
       : have < full * 0.95 ? 'Your Reel: ' + fmtS(have) + ', as long as your good video (the best part of the song).'
-      : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '). Make Reel asks what to do.'
+      : have > full * 1.1 ? 'Your clips have ' + fmtS(have) + ' of good video, longer than your song (' + fmtS(full) + '): Shubix picks the best moments for it.'
       : 'Your Reel: the whole song (' + fmtS(full) + ').';
     return;
   }
@@ -3790,15 +3944,10 @@ async function askShort(){
     return 'go';
   }
   if(fitOn() && full && have >= 5){
-    // much more good video than song: what to do is the person's (a longer song, fewer clips, or Shubix picks the best)
+    // much more good video than song is the usual Beat Reel (the flow review with ChatGPT, 2026-11-20): no question,
+    // Shubix picks the best moments for the song, and says so
     const key = have + ':' + Math.round(full);
-    if(have > full * 1.1 && longOk !== key){
-      const v = await askCredits({ title: 'Your clips are longer than your song', text: 'Your song is ' + fmtS(full) + ' and your clips have ' + fmtS(have) + ' of good video. No credits were used.',
-        bal: null, ok: 'Shubix picks the best ' + fmtS(full), no: 'Add a longer song', extra: 'I’ll remove some clips' });
-      if(v === false){ root.dispatchEvent(new CustomEvent('studio-goto', { detail: 'music' })); return 'stop'; }
-      if(v !== true) return 'stop';
-      longOk = key;
-    }
+    if(have > full * 1.1 && longOk !== key){ aiStat('Your song is ' + fmtS(full) + ' and your clips have ' + fmtS(have) + ' of good video: Shubix picks the best moments for it.'); longOk = key; }
     const target = reach(have) < full * 0.95 ? reach(have) : 0;
     // as long as the clips: no question. Make Reel goes on once the shorter Reel is made (it went on at once, found the old
     // length still there and asked again)
@@ -3861,7 +4010,7 @@ function scoreWindow(i, src, a, need, gmax, near){
   const sharp = st.sh / (src.shMed||1);
   if(sharp < 0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5, sharp); sc -= clipFlaw(src);   // blurry / shaky footage is avoided
   sc += st.face * ((s.type==='drop'||s.type==='hit'||i===0) ? 0.8 : 0.45);   // people make shots stronger
-  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1, storyRole(i));
+  const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : s.type, i===plan.length-1, storyRole(i), i/Math.max(1, plan.length-1));
   // the shot's part in the story (Shared/video-engine story.ts): wide and steady to set the scene, people close up at
   // the peak, a calm or strong last shot (a copied Reel follows its reference instead)
   if(mode !== 'copy') sc += storyBonus(storyRole(i), { motion: m, face: st.face, faceSize: st.fs, kind: s.type });
@@ -3933,6 +4082,60 @@ function seqSlots(n){
 // with no such moment (after 1.5 s, with 2 s left): the walk below, as before.
 const SEQ_FAST = 0.5, SEQ_MAX = 40;
 let seqFloor = 0.4;   // the slowest a clip plays "In my order" (lower only when the clips are far shorter than the song)
+// "In my order" (agreed with ChatGPT, 2026-11-20): the clips keep the person's order and each clip's moments go forward
+// in time, but a clip with footage for them keeps the song's cuts inside its share, so a Beat Reel still cuts on the
+// beat (each clip one shot gave 6 shots of 3.7 s on a fast 22 s song whose cuts were 15). A cut inside a clip is let go
+// (the shots beside it become one) when a shot would be shorter than the song's pace allows (fast 0.8 s, normal 1 s,
+// slow 1.5 s) or the clip has not footage enough for its shots and a jump forward between them (SEQ_JUMP: a cut to the
+// very next frame of the same clip looks like a glitch); the cut least worth keeping goes first (a plain cut before a
+// hit, a break, a drop).
+const SEQ_JUMP = 0.6;
+function seqMinShot(){ const bpm = period > 0 ? 60/period : 110; return bpm >= 115 ? 0.8 : bpm >= 85 ? 1 : 1.5; }
+// one continuous action (an entry, a garland, a spin): a cut inside one clip is kept for a new moment, not for a beat
+// alone. Where the clip's shots will roughly land (In my order spreads them forward over the clip's footage), a frame
+// Shubix AI saw as action sits right on the cut, with no scene change around it: the cut would split that action, so
+// it is let go (a beat-drop cut stays). The AI looks at up to 8 frames a clip, so this asks for that frame on the cut.
+function oneAction(src, a, i, b, need, len){
+  const F = src && src.ai && src.ai.frames; if(!F || !F.length) return false;
+  const U = Math.max(0.05, src.dur - TAIL), s = Math.max(1, U/Math.max(0.05, need));
+  let t = 0; for(let k = a; k < i; k++) t += len(k) + SEQ_JUMP;
+  const end = Math.min(U, (t - SEQ_JUMP)*s), start = Math.min(U, t*s);
+  if(crossesScene(src, end - 0.3, start + 0.3)) return false;
+  return F.some(f => f.t >= end - 0.3 && f.t <= start + 0.3 && f.note && (f.roles || []).includes('action'));
+}
+function seqKeepCuts(seq){
+  const P = plan, minL = seqMinShot(), rank = { cut: 0, hit: 1, break: 2, drop: 3 }, len = i => P[i].end - P[i].start;
+  for(let guard = 0; guard < 500; guard++){
+    let worst = -1, wc = -Infinity;
+    for(let i = 1; i < P.length; i++){
+      if(seq[i] !== seq[i-1]) continue;
+      const si = seq[i]; let a = i; while(a > 0 && seq[a-1] === si) a--; let b = i; while(b + 1 < P.length && seq[b+1] === si) b++;
+      let need = SEQ_JUMP*(b - a); for(let k = a; k <= b; k++) need += len(k);
+      const short = Math.min(len(i), len(i-1)) < minL, tight = need > Math.max(0.05, sources[si].dur - TAIL);
+      const one = !short && !tight && P[i].type !== 'drop' && oneAction(sources[si], a, i, b, need, len);
+      if(!short && !tight && !one) continue;
+      const c = (short ? 2 : one ? 1.5 : 1) - (rank[P[i].type] || 0)*0.5 - (len(i) + len(i-1))*0.05;
+      if(c > wc){ wc = c; worst = i; }
+    }
+    if(worst < 0) break;
+    P[worst-1] = { ...P[worst-1], end: P[worst].end, sp: slowAll ? SPEED.slow : SPEED.normal }; P.splice(worst, 1); seq.splice(worst, 1);
+  }
+}
+// The shots the Reel really shows, in plain words (Shared/video-engine shotWords.ts, "one true shot plan"): Ask
+// Shubix's list is made from the finished edit, so "In my order" (which keeps the person's order, not the clips Shubix
+// AI asked for) and the repairs show as they are; what is in a shot is Shubix AI's note on that moment of the clip.
+function shotLines(){
+  const E = edit || [];
+  return E.map((e, i) => {
+    const src = sources[e.src], len = e.end - e.start;
+    const cand = ((dirCands && dirCands[i]) || []).find(x => x.si === e.src && Math.abs(x.a - e.in) < 0.6);
+    const ai = cand || !src ? null : aiAt(src, e.in, e.in + len);
+    return shotWords({ start: e.start, type: e.type, first: i === 0, clip: e.src + 1, at: e.in, what: (cand && cand.note) || (ai && ai.note) || '',
+      transition: i && e.tr && e.tr !== 'hard' && e.tr !== 'fadein' ? (TR_NAME[e.tr] || e.tr) : '',
+      effect: e.efx && e.efx !== 'none' && e.efx !== 'hook' ? (FX_NAME[e.efx] || e.efx) : '',
+      keys: (e.acc || []).map(k => k.do), move: !!(e.ak && e.ak.length), speed: e.sp && e.sp.label && e.sp.label !== '1×' ? e.sp.label : '' });
+  });
+}
 function seqPick(seq, res, gmax){
   const n = plan.length, lenOf = i => plan[i].end - plan[i].start, fast = new Array(n).fill(false);
   for(let i = 0; i < n;){ let j = i; while(j < n && lenOf(j) <= SEQ_FAST) j++; if(j - i >= 4) for(let k = i; k < j; k++) fast[k] = true; i = Math.max(j, i + 1); }
@@ -3978,7 +4181,9 @@ function seqPick(seq, res, gmax){
       // its share of the room left (so the clip's later shots still have theirs)
       const hi = Math.min(maxA, cur + (maxA - cur)*2/(ids.length - k)), stepT = Math.max(0.05, Math.min(0.5, src.dur/120));
       let best = null, bs = -Infinity;
-      for(let a = cur; a <= hi + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
+      // (a later shot of the same clip jumps forward a little, SEQ_JUMP, where the clip has room: a cut to the very next frame looks like a glitch)
+      const a0 = k > 0 && !fast[i] ? Math.min(Math.max(cur, hi), cur + SEQ_JUMP) : cur;
+      for(let a = a0; a <= Math.max(a0, hi) + 1e-6; a += fast[i] ? Infinity : stepT){   // a fast shot runs straight on from the last
         const w = scoreWindow(i, src, a, nd, gmax), sc = w.sc - (crossesScene(src, a, a + nd) ? 1 : 0) + rng()*0.15;
         if(sc > bs){ const st = w.st; bs = sc; best = { src: si, in: a, scaleR: scale[k], cx: st.face>0.3 ? st.fx : st.cx, cy: st.face>0.3 ? st.fy : 0.45, face: st.face, fs: st.fs, mot: w.m, ov: 0, aiNote: w.ai ? w.ai.note : '', byDir: false }; }
       }
@@ -4138,9 +4343,11 @@ function makeEditNow(){
   // shot runs on to the next clip's cut (a cut from a clip to itself looked like the same clip shown twice)
   // Copy a Reel keeps every one of the reference's cuts where it is (a cut inside one clip is a jump forward in it)
   if(seq && (seqOn || thin) && sources.length > 1 && !copyExact()){
-    for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
+    // (very little video in all: each clip one shot, as before; otherwise the cuts a clip has footage for stay: seqKeepCuts)
+    if(thin){ for(let i = plan.length - 1; i > 0; i--) if(seq[i] === seq[i-1]){
       plan[i-1] = { ...plan[i-1], end: plan[i].end, sp: slowAll ? SPEED.slow : SPEED.normal }; plan.splice(i, 1); seq.splice(i, 1);
-    }
+    } }
+    else seqKeepCuts(seq);
     // a shot no slower than 0.4x can fill (a 2.5 s clip under a 9 s shot stood still for 3 s, its camera move still
     // drifting over the stopped picture): its cut moves, its time goes to the clips beside it that have footage to
     // spare, on a beat where one is near
@@ -4282,7 +4489,10 @@ function makeEditNow(){
     //  - a clip of the creator's that no shot shows takes a shot from a clip shown more than once: the shot that loses
     //    least by it, and only when that is less than the scorer takes off for footage it calls bad (the opening stays).
     // No repair shows footage twice or puts two parts of one clip in a row, and the random numbers go on as before it.
-    if(mode !== 'copy' && !aiTrusted()){
+    // On Shubix AI's plan too (2026-11-20, agreed with ChatGPT: every clip of the creator's once before any is shown
+    // twice): the AI's own moment may give way for a clip left out, never on the opening or a drop (the hero shots),
+    // keeping its place, timing and transition; its camera move goes (it was framed for the other footage)
+    if(mode !== 'copy'){
       const seedR = seed, len = i => plan[i].sp.pos(plan[i].end - plan[i].start), span = i => len(i)*res[i].scaleR;
       const stat = i => { const s = sources[res[i].src]; return s && s.samples && s.samples.length ? windowStats(s, res[i].in, res[i].in + Math.max(span(i), 0.05)) : null; };
       const put = (i, alt) => { const u = used[res[i].src], k = u.findIndex(r => r[0] === res[i].in); if(k >= 0) u.splice(k, 1);
@@ -4298,13 +4508,13 @@ function makeEditNow(){
         if(res.some(r => r.src === si) || !(src.samples && src.samples.length)) return;
         const count = sources.map((_, k) => res.filter(r => r.src === k).length);
         // the shots it may take: of the clips shown most, eight at most (each one tried is a search of the clip)
-        const tryAt = res.map((_, i) => i).filter(i => i > 0 && !res[i].byDir && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
+        const tryAt = res.map((_, i) => i).filter(i => i > 0 && (!res[i].byDir || (aiTrusted() && plan[i].type !== 'drop')) && count[res[i].src] >= 2).sort((x, y) => count[res[y].src] - count[res[x].src] || x - y).slice(0, 8);
         let bi = -1, balt = null, least = 1;
         for(const i of tryAt){
           const alt = other(i, si); if(!alt) continue;
           const loss = scoreWindow(i, sources[res[i].src], res[i].in, span(i), gmax).sc - scoreWindow(i, src, alt.in, len(i)*alt.scaleR, gmax).sc;
           if(loss < least){ least = loss; bi = i; balt = alt; } }
-        if(bi >= 0){ put(bi, balt); addedClips++; } });
+        if(bi >= 0){ const was = res[bi]; put(bi, balt); addedClips++; if(was.byDir){ res[bi].swapIn = true; plan[bi].ak = []; } } });
       editTakes.fixedDark = fixedDark; editTakes.addedClips = addedClips; seed = seedR;
     }
   }
@@ -4316,7 +4526,7 @@ function makeEditNow(){
   const taste = { n: edit.length, moves: 0, prevZoom: false, lastZoom: -99, shape: false, drops: edit.filter(x => x.type === 'drop').map(x => x.start) };
   edit.forEach((e,i)=>{
     const d = dirSlotOf(i), shared = sharedDirector.shots.find(x => x.sourceIndex === e.src);
-    e.dirWhy = d ? d.why : '';
+    e.dirWhy = e.swapIn ? 'Shubix brought in a clip of yours that no shot showed' : d ? d.why : '';
     e.cx = 0.5 + (e.cx-0.5)*(e.face>0.3 ? 1 : 0.8);
     if(mode!=='smooth' && !e.fxByDir) suitFx(e);
     tasteFx(e, i, taste);
@@ -4365,6 +4575,9 @@ function makeEditNow(){
   if(dupCount) showMsg(dupCount + ' shot' + (dupCount>1?'s repeat':' repeats') + ': your clips are short for this song · add more clips to avoid it', false, 'addclips');
   else $('xmsg').hidden = true;
   ['play','remix','export','cover'].forEach(id=>$(id).disabled=false);
+  if(dirInfo && !director.interim && lastBudget){ const said = describeBudget(lastBudget.changes), key = reelIdNow() + '|' + said;
+    if(said && budgetTold !== key){ budgetTold = key; aiLog('Shubix checked its plan against the limits a pro editor keeps: ' + said + ' (' + lastBudget.changes.length + ' change' + (lastBudget.changes.length > 1 ? 's' : '') + ').');
+      rlog('budget', 'Effect budget · ' + lastBudget.changes.length + ' changes · ' + said, { changes: lastBudget.changes.slice(0, 40), heroes: lastBudget.heroes }); } }
   if(dirInfo && !director.interim){ const shots = edit.filter((e,i)=>dirShot(i)).length, kept = edit.filter(e=>e.byDir).length;
     const keys = edit.reduce((n,e)=>n+((e.acc&&e.acc.length)||0), 0);
     // what the AI really decided: the cuts it answered; the rest are the phone's (said, never hidden)
@@ -4444,7 +4657,7 @@ function repick(i, avoidCurrent, onlySrc){
       if(e.type!=='drop' && slowMo(e.sp, len)) sc = slowFit(m);
       if(st.b < 0.08) sc -= 1; const sharp = st.sh/(src.shMed||1); if(sharp<0.45) sc -= 0.9; else sc += 0.25*Math.min(1.5,sharp); sc -= clipFlaw(src);
       sc += st.face*0.6 + rng()*0.3;
-      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i));
+      const ai = aiAt(src, a, a+need); if(ai) sc += aiBonus(ai, i===0 ? 'hook' : e.type, i===edit.length-1, storyRole(i), i/Math.max(1, edit.length-1));
       if(sc>bs){ bs=sc; best={src:si, in:a, scaleR, cx: st.face>0.3 ? st.fx : 0.5+(st.cx-0.5)*0.8, cy: st.face>0.3 ? st.fy : 0.45, face:st.face, fs: st.fs, mot: m, aiNote: ai ? ai.note : ''}; }
     }
   });
@@ -4642,7 +4855,7 @@ function histBase(){ return kind + '|' + sources.map(s => s.name + s.dur).join()
 function histTick(){
   if(restoring || exporting || recording || pending || playing) return;
   const base = histBase();
-  if(base !== hist.base){ hist.base = base; hist.u = []; hist.r = []; hist.cur = edit.length || overlays.length ? histSnap() : null; hist.cand = ''; histUI(); return; }
+  if(base !== hist.base){ hist.base = base; hist.u = []; hist.r = []; hist.cur = edit.length || overlays.length ? histSnap() : null; hist.cand = ''; histUI(); versUI(); return; }
   if(!edit.length && !overlays.length && !layers.length) return;
   const now = histSnap(); if(!hist.cur){ hist.cur = now; return; }
   if(now.sig === hist.cur.sig){ hist.cand = ''; return; }
@@ -4735,7 +4948,7 @@ $('tl').addEventListener('click', ev=>{ if(!edit.length) return; const r=$('tl')
   const i = segAt(tt); if(playing) startPlayback(tt); else { const rows=$('edl').children; rows[i] && rows[i].scrollIntoView({block:'nearest'}); showShot(i); } });
 function remixNow(){
   if(!buf || !sources.length || !edit.length || exporting || recording) return false;
-  remakeOk(); seed = (seed*7919 + 13) % 2147483647 || 7; mixNo++; makeEdit();
+  remakeOk(); keepVer('Before another mix'); seed = (seed*7919 + 13) % 2147483647 || 7; mixNo++; makeEdit();
   return true;
 }
 $('remix').onclick = remixNow;
@@ -4930,7 +5143,8 @@ let lmedia = [], layers = [], lySeq = 0, lySel = -1;
 const LY0 = { x:0.5, y:0.5, s:0.5, r:0, op:1, fh:false, fv:false, crop:{l:0,t:0,r:0,b:0}, mask:'none', mk:{w:0.8,h:0.8,a:0,f:0.12,th:0.5,inv:false,points:[[0.5,0.02],[0.92,0.25],[0.92,0.75],[0.5,0.98],[0.08,0.75],[0.08,0.25]]}, fin:0, fout:0, vol:0, rad:0 };
 let lyBuf = null, lyG = null;
 async function addLayerMedia(file){
-  const url = URL.createObjectURL(file), photo = /^image\//.test(file.type) || /\.(jpe?g|png|webp|heic|gif)$/i.test(file.name);
+  file = await showablePhoto(file).catch(() => { throw new Error('This photo cannot be read here.'); });
+  const url = URL.createObjectURL(file), photo = /^image\//.test(file.type) || /\.(jpe?g|png|webp|hei[cf]|gif)$/i.test(file.name);
   if(photo && (file.type === 'image/gif' || /\.gif$/i.test(file.name)) && typeof ImageDecoder !== 'undefined'){   // an animated GIF: its frames, played in a loop
     try{ const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: 'image/gif' }); await dec.tracks.ready; const n = Math.min(240, dec.tracks.selectedTrack.frameCount || 1), frames = [], times = []; let t = 0;
       for(let k = 0; k < n; k++){ const r = await dec.decode({ frameIndex: k }); frames.push(await createImageBitmap(r.image)); times.push(t); t += Math.max(0.02, (r.image.duration || 100000)/1e6); r.image.close(); }
@@ -5117,12 +5331,14 @@ $('lyadd').addEventListener('click', () => $('lyfile').click(), SIG);
 $('lyfile').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if(f.length) layerAdd(f); }, SIG);
 // AI pictures (B-roll, lib/broll/client.ts): a few words → a picture made at the Reel's shape, on the whole frame at the
 // playhead for 3 s, fading in and out
-if(aiPicture){
+function picturesPaint(){
+  if(!aiPicture) return;
   $('brbox').hidden = false;
   $('brstyle').innerHTML = aiPicture.styles.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
   if(aiPicture.styles.some(s => s.id === 'photo')) $('brstyle').value = 'photo';
   $('brhdwrap').hidden = !aiPicture.hd; $('brollrow').hidden = false;
 }
+picturesPaint();
 async function brollAdd(prompt, style, hd){
   if(!aiPicture) throw new Error('AI pictures are not available here.');
   if(!edit.length){ notify('Make the Reel first, then add AI pictures.'); return null; }
@@ -5320,9 +5536,9 @@ async function brollAuto(){
     tasks.done('brollauto', done + ' picture' + (done > 1 ? 's' : '') + ' added over what you say · each one in Layers');
   }catch(err){ if(err && err.name === 'AbortError') return; tasks.fail('brollauto', (err && err.message) || 'The pictures could not be made. Please try again.'); }
 }
-$('popout').addEventListener('click', async () => { const b = $('popout'); b.disabled = true; try{ await subjectPop(false); } finally{ b.disabled = false; } }, SIG);
-$('brollauto').addEventListener('click', async () => { const b = $('brollauto'); b.disabled = true; try{ await brollAuto(); } finally{ b.disabled = false; } }, SIG);
-$('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; } }, SIG);
+$('popout').addEventListener('click', async () => { const b = $('popout'); b.disabled = true; b.setAttribute('aria-busy', 'true'); try{ await subjectPop(false); } finally{ b.disabled = false; b.removeAttribute('aria-busy'); } }, SIG);
+$('brollauto').addEventListener('click', async () => { const b = $('brollauto'); b.disabled = true; b.setAttribute('aria-busy', 'true'); try{ await brollAuto(); } finally{ b.disabled = false; b.removeAttribute('aria-busy'); } }, SIG);
+$('bradd').addEventListener('click', async () => { const b = $('bradd'); b.disabled = true; b.setAttribute('aria-busy', 'true'); try{ if(await brollAdd($('brtext').value, $('brstyle').value, $('brhd').checked)) $('brtext').value = ''; } finally{ b.disabled = false; b.removeAttribute('aria-busy'); } }, SIG);
 $('lyedit').addEventListener('input', e => { const el = e.target, k = el.dataset && el.dataset.ly; if(!k) return; const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' ? el.value : +el.value; lySet(k, v); const o = el.parentElement.querySelector('output'); if(o && el.type !== 'checkbox') o.textContent = lyFmt(k, v); }, SIG);
 $('lyedit').addEventListener('click', e => { const t = e.target.closest('button'); if(!t) return; const L = layers[lySel]; if(!L) return;
   if(t.dataset.m){ L.mask = t.dataset.m; lyUI(); redrawFrame(); }
@@ -6046,7 +6262,7 @@ $('bgmode').addEventListener('click', e => { const b = e.target.closest('button'
   b.addEventListener('click', () => { bgColor = c; [...$('bgcolors').children].forEach(x => x.classList.toggle('on', x === b)); redrawFrame(); }); $('bgcolors').appendChild(b); });
 $('bgpick').addEventListener('click', () => $('bgfile').click(), SIG);
 $('bgfile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if(!f) return;
-  bgFile = f; const im = new Image(); im.onload = () => { bgImg = im; bgStat(); redrawFrame(); }; im.onerror = () => { $('bgstat').textContent = 'This photo cannot be read here.'; }; im.src = URL.createObjectURL(f); }, SIG);
+  void showablePhoto(f).catch(() => f).then(f => { bgFile = f; const im = new Image(); im.onload = () => { bgImg = im; bgStat(); redrawFrame(); }; im.onerror = () => { $('bgstat').textContent = 'This photo cannot be read here.'; }; im.src = URL.createObjectURL(f); }); }, SIG);
 // the song as speech recognition wants it: 16 kHz mono, the vocal band (drums and bass mostly out), normalised, as WAV
 async function songWav(src = mono, sr = buf.sampleRate, from = 0){
   const a = Math.round(from*sr), len = Math.min(src.length - a, Math.round(180*sr)), n16 = Math.max(1, Math.ceil(len*16000/sr));
@@ -7257,7 +7473,7 @@ async function fastExport(){
     if(quality.warnings.length) console.warn('Shubix export quality warnings:', quality.warnings);
     await output.finalize();
     const blob = new Blob([output.target.buffer], {type: mp4 ? 'video/mp4' : 'video/webm'});
-    const name = fileTitle() + '.' + (mp4 ? 'mp4' : 'webm');   // the Reel's own name (Untitled 1, or what it was renamed to)
+    const name = fileTitle() + '.' + (mp4 ? 'mp4' : 'webm');   // the Reel's own name (Shubix 1, or what it was renamed to)
     const sh = saveFile(blob, name);
     tasks.done('export', 'Your Reel is ready · ' + (blob.size/1e6).toFixed(1) + ' MB');
     if(noSong){ notify('Your Reel is ready', 'ok'); $('xmsg').hidden = true; return true; }
@@ -7356,7 +7572,7 @@ function planPaint(){
   if(edit.length){ renderEDL(true); renderOvList(); }
 }
 // what in this Reel needs a higher plan, each with how to take it out
-function lockedUsed(){
+function lockedUsed(inReel){
   const out = [], add = (cat, key, name, fix) => { if(isLocked(cat, key)) out.push({ need: lockNeed(cat, key), name, fix }); };
   for(const e of edit){
     if(e.tr && e.tr !== 'hard') add('tr', e.tr, TR_NAME[e.tr] || e.tr, () => { e.tr = 'dissolve'; });
@@ -7370,11 +7586,24 @@ function lockedUsed(){
   for(const o of overlays){ if(o.font) add('font', o.font, 'Font ' + ((OV_FONTS[o.font] || [])[0] || o.font), () => { o.font = undefined; });
     if(!o.emoji) add('text', o.style, 'Text style ' + (OV_STYLES[o.style] || o.style), () => { o.style = 'bold'; });
     if(o.track) add('tool', 'track', 'Text follows the person', () => { o.track = false; }); }
+  if(inReel){ const seen = new Set(); return out.filter(x => !seen.has(x.name) && seen.add(x.name)); }   // the Reel's own (not the export's quality)
   const R = exRule(), rk = { '720': 0, '1080': 1, '4k': 2 };
   if(rk[xq.res] > rk[R.maxRes]) out.push({ need: xq.res === '4k' ? 'pro' : 'creator', name: XQ[xq.res].label + ' quality', fix: () => { xq.res = R.maxRes; } });
   if(xq.fps === 60 && !R.fps60) out.push({ need: 'creator', name: '60 fps', fix: () => { xq.fps = 30; } });
   const seen = new Set(); return out.filter(x => !seen.has(x.name) && seen.add(x.name));
 }
+// above the timeline, only when it is real (as on Android): what in the Reel is not in the person's plan, and that the
+// export leaves it out (or upgrade: See plans). Checked every second; the page changes only when the list does.
+let lockSig = '';
+function lockBar(){
+  const bar = $('lockbar'); if(!bar) return;
+  let L = []; try{ L = edit.length && !exporting && !recording ? lockedUsed(true) : []; }catch(e){ L = []; }
+  const sig = L.map(x => x.name).join('|'); if(sig === lockSig) return; lockSig = sig;
+  bar.hidden = !L.length; if(!L.length) return;
+  $('lockbart').textContent = (L.length > 1 ? L.length + " effects aren't included in your plan. They'll be left out of the exported video: " : "1 effect isn't included in your plan. It'll be left out of the exported video: ") + L.map(x => x.name).join(', ') + '.';
+}
+setInterval(lockBar, 1000);
+$('lockbarp').addEventListener('click', e => { e.preventDefault(); void toPricing(''); }, SIG);
 // the export's question when the Reel uses crowned items: upgrade, or take them out and export
 function planGate(list){
   return new Promise(res => {
@@ -7502,13 +7731,13 @@ $('mode').addEventListener('click', e=>{ const b=e.target.closest('button'); if(
   if(b.dataset.m === 'copy' && (!refProfile || silentStyle())){ $('reffile').click(); return; }
   if(silentStyle() && mode === 'copy' && b.dataset.m === (refProfile.shown || 'auto')) return;   // already what they see
   setMode(b.dataset.m); });
-$('cover').onclick = async () => {
+$('cover').onclick = () => busyBtn($('cover'), async () => {
   // cover: the best drop shot (or the hook) with the hook text, full frame
   const d = edit.find(x=>x.type==='drop') || edit[0], tt = d.start + Math.min(0.6, (d.end-d.start)*0.6);
   setCanvas(true); coverMode = true; const i = segAt(tt); await prepare(i, tt); drawFrame(tt);
   const blob = await new Promise(r=>out.toBlob(r,'image/jpeg',0.92)); coverMode = false; setCanvas(false); captureLoop();
   const sh = saveFile(blob, fileTitle() + ' cover.jpg'); showMsg(savedMsg(sh, 'Cover') + '. Pick it under "Edit cover" when you post.');
-};
+});
 
 
 /* =============== COPY A REEL ===============
@@ -7551,25 +7780,32 @@ async function frameLook(v, t, w, h){
 }
 // Frames of a video at exact times. WebCodecs (through mediabunny) decodes them in one pass, in order; without it the
 // video element seeks to each one (slower, works everywhere).
-async function frameSource(file, v, w, h){
+async function frameSource(file, player, w, h, dur){
   const SH2 = Math.max(8, Math.round(64*h/w));
   try{
     const mb = await loadMediabunny();
     const input = new mb.Input({ source: new mb.BlobSource(file), formats: mb.ALL_FORMATS });
     const track = await input.getPrimaryVideoTrack(); if(!track || !(await track.canDecode())) throw new Error('no decoder');
     const first = await track.getFirstTimestamp();
-    const small = new mb.CanvasSink(track, { width: 64, height: SH2, fit: 'fill' }), full = new mb.CanvasSink(track, {});
-    const at = async (sink, ts) => { const order = ts.map((t,i)=>[t,i]).sort((x,y)=>x[0]-y[0]), out = new Array(ts.length); let k = 0;
-      for await (const wc of sink.canvasesAtTimestamps(order.map(o=>first + Math.max(0, o[0])))){ out[order[k][1]] = wc ? wc.canvas : null; k++; }
+    const small = smallFrames(mb, track, 64, SH2), whole = new mb.CanvasSink(track, { poolSize: 1 }), full = { async *at(ts){ for await (const wc of whole.canvasesAtTimestamps(ts)) yield wc ? wc.canvas : null; } };
+    const at = async (sink, ts, of = c => c) => { const order = ts.map((t,i)=>[t,i]).sort((x,y)=>x[0]-y[0]), out = new Array(ts.length); let k = 0;
+      for await (const c of sink.at(order.map(o=>first + Math.max(0, o[0])))) out[order[k++][1]] = c ? of(c) : null;
       return out; };
-    return { small: ts => at(small, ts), full: ts => at(full, ts), close: () => { try{ input.dispose && input.dispose(); }catch(e){} }, fast: true };
+    // (looks: one big frame at a time; 24 kept at once filled the graphics memory, some came back black and the same Reel
+    // was read differently each time)
+    // a Reel of 30 frames a second or fewer, up to 90 s: every frame is kept small (some 25 MB), so the cuts, the transitions
+    // and the zooms are read from one decoding; a longer or faster one is decoded for each, as it was
+    const few = dur <= 90 && await track.computePacketStats(100).then(s => s.averagePacketRate <= 31, () => false); let kept = null;
+    const smallAt = async ts => { if(!few) return at(small, ts); kept = kept || small.all().catch(e => { kept = null; throw e; }); const list = await kept;
+      return ts.map(t => { const f = frameAt(list, first + Math.max(0, t)); return f ? f.c : null; }); };
+    return { small: smallAt, looks: ts => at(full, ts, c => lookOfImage(c, c.width, c.height)), close: () => { try{ input.dispose && input.dispose(); }catch(e){} }, fast: true };
   }catch(e){
-    try{ await videoData(v); }catch(err){}
+    const v = await player(); try{ await videoData(v); }catch(err){}
     const grab = async (ts, cw, ch) => { const out = [];
       for(const t of ts){ v.currentTime = Math.min(Math.max(0.01, t), v.duration-0.02); try{ await waitEv(v,'seeked',3000); }catch(err){ out.push(null); continue; }
         const c = document.createElement('canvas'); c.width = cw || v.videoWidth; c.height = ch || v.videoHeight; c.getContext('2d').drawImage(v,0,0,c.width,c.height); out.push(c); }
       return out; };
-    return { small: ts => grab(ts, 64, SH2), full: ts => grab(ts), close: () => {}, fast: false };
+    return { small: ts => grab(ts, 64, SH2), looks: async ts => (await grab(ts)).map(c => c && lookOfImage(c, c.width, c.height)), close: () => {}, fast: false };
   }
 }
 const CUT_K = 7;   // frames each side of a cut that are looked at (a fade's dark middle and its clean ends both fit)
@@ -7721,7 +7957,11 @@ function refSpeedOf(smp, a, b, mMax, freeze){
 async function analyzeReference(file, onP){
   const url = URL.createObjectURL(file);
   try{
-    const v = makeVideo(url); await waitEv(v,'loadedmetadata', 15000); const dur = v.duration, w = v.videoWidth, h = v.videoHeight;
+    // its length and size from the file itself: a hidden page's <video> may not open for as long as it is hidden (the Reel
+    // counted as bad). The player is used only where the decoder cannot read the file.
+    const facts = await probeVideo(file); let dur = facts && facts.decodes ? facts.duration : 0, w = facts ? facts.width : 0, h = facts ? facts.height : 0, v = null;
+    const player = async () => { if(!v){ v = makeVideo(url); await waitEv(v,'loadedmetadata', 15000); } return v; };
+    if(!(dur > 0) || !w || !h){ await player(); dur = v.duration; w = v.videoWidth; h = v.videoHeight; }
     if(!isFinite(dur) || dur <= 1 || !w) throw new Error('This video cannot be read here.');
     onP(0.02, 'listening to its music');
     // its music: the beats (shot lengths are measured in beats, so the pace carries over to another tempo)
@@ -7736,7 +7976,7 @@ async function analyzeReference(file, onP){
     const ps = { url, dur, w, h, file }; let refCutsOut = []; const fxOdd = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
     await scanMotion(ps, p => onP(0.05 + 0.35*p, 'finding its cuts'));
     const shots = [], looks = [];
-    const fs = await frameSource(file, v, w, h);
+    const fs = await frameSource(file, player, w, h, dur);
     try{
       // black bars (letterbox): the rows that stay dark in every one of 12 frames
       refBars = null;
@@ -7818,12 +8058,12 @@ async function analyzeReference(file, onP){
       const lookEvery = Math.max(1, Math.ceil(sh.length/24));   // the colour look: 24 shots are plenty
       sh.forEach((x,i)=>{ const L = x.b - x.a, m = Math.min(0.25, Math.max(0.18, 0.15*L)), n = !x.flick && L - 2*m >= 0.24 ? Math.max(3, Math.min(9, Math.round((L-2*m)/0.12)+1)) : 0;
         for(let k=0;k<n;k++){ const t = x.a + m + (L-2*m)*k/(n-1); zt.push(t); zi.push([i, (t - x.a)/L]); } lt.push(!x.flick && i % lookEvery === 0 ? x.a + 0.5*L : null); });
-      const zf = await fs.small(zt), lq = lt.filter(t => t !== null), lr = lq.length ? await fs.full(lq) : [], lf = []; { let q = 0; lt.forEach((t,i)=>{ lf[i] = t === null ? null : lr[q++]; }); }
+      const zf = await fs.small(zt), lq = lt.filter(t => t !== null), lr = lq.length ? await fs.looks(lq) : [], lf = []; { let q = 0; lt.forEach((t,i)=>{ lf[i] = t === null ? null : lr[q++]; }); }
       sh.forEach((x,i)=>{ const L = x.b - x.a, mine = zi.map((z,k)=>[z,k]).filter(([z])=>z[0]===i), gr = mine.map(([,k])=>zf[k] ? greyOf(zf[k]) : null);
         let move = null;
         if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g.Y), mine.map(([z])=>z[1]), gr[0].FW, gr[0].FH);
         shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick });
-        const lk = lf[i] ? lookOfImage(lf[i], lf[i].width, lf[i].height) : null; if(lk) looks.push(lk);
+        const lk = lf[i]; if(lk) looks.push(lk);
         // the learning log: an effect in the shot the styles do not learn yet (the studio has each of these)
         if(!x.flick){ const cv = mine.map(([,k]) => zf[k]).filter(Boolean), found = [];
           if(cv.filter(c => rgbShiftOf(c) >= 2).length >= 2) found.push(['RGB split in the shot', 'rgbpulse']);
@@ -7835,7 +8075,7 @@ async function analyzeReference(file, onP){
       refCutsOut = cuts;
     } finally { fs.close(); refBars = null; }
     const cuts = refCutsOut;
-    v.removeAttribute('src'); v.load();
+    if(v){ v.removeAttribute('src'); v.load(); }
     // pace
     const P = rb ? (()=>{ const ib = rb.slice(1).map((t,i)=>t-rb[i]).sort((x,y)=>x-y); return ib[ib.length>>1]; })() : 0;
     const shotSec = shots.map(s=>s.b-s.a), toBeats = x => P ? Math.max(0.5, Math.round(x/P*2)/2) : 0;
@@ -8192,13 +8432,15 @@ function suggestRef(name){
   api('/api/studio/styles/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: (name || 'Reel').replace(/\.[^.]+$/, '').slice(0, 120) || 'Reel', fp: fingerprintOf(refProfile) }) })
     .catch(err => console.info('copied Reel not offered for the styles:', err && err.message));
 }
-$('stsave').addEventListener('click', async () => {
+// a button that works for a moment: a spinner in it, no second press (app/globals.css)
+async function busyBtn(b, run){ if(b.getAttribute('aria-busy') === 'true') return; b.setAttribute('aria-busy', 'true'); try{ return await run(); } finally{ b.removeAttribute('aria-busy'); } }
+$('stsave').addEventListener('click', () => busyBtn($('stsave'), async () => {
   if(!refProfile || refProfile.learned) return;
   $('ststat').textContent = 'Saving…';
   try{ const r = await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: (refProfile.name || 'Reel').slice(0, 120), category: $('stcat').value, shared: $('stshare').checked, fp: fingerprintOf(refProfile) }) });
     $('ststat').textContent = 'Saved to your ' + STYLE_KINDS[r.category] + ' styles ✓'; loadKinds(); }
   catch(err){ console.warn('style not saved:', err); $('ststat').textContent = 'Could not save your style. Please try again.'; notify('Could not save your style. Please try again.', 'err'); }
-}, SIG);
+}), SIG);
 async function loadKinds(){
   try{ const r = await api('/api/studio/styles'); const sel = $('lcat'), keep = sel.value; sel.innerHTML = '';
     for(const [k, name] of Object.entries(STYLE_KINDS)){ const c = r.categories[k] || { mine: 0, shared: 0 }; const o = new Option(name + ' (' + c.mine + ' mine' + (c.shared ? ', ' + c.shared + ' shared' : '') + ')', k); o.disabled = !c.mine && !c.shared; sel.add(o); }
@@ -8206,10 +8448,10 @@ async function loadKinds(){
     const tc = $('tcat'); if(!tc.options.length) for(const [k, name] of Object.entries(STYLE_KINDS)) tc.add(new Option(name, k));
     autoUse();
     $('stlist').innerHTML = ''; for(const s of r.mine.slice(0, 40)){ const li = document.createElement('li'); li.textContent = STYLE_KINDS[s.category] + ': ' + s.name + ' · ' + s.pace + (s.trans ? ' · ' + s.trans : '') + (s.shared ? ' · shared' : '') + ' ';
-      const del = document.createElement('button'); del.className = Button.small; del.textContent = 'Delete'; del.addEventListener('click', async () => { try{ await api('/api/studio/styles/' + s.id, { method: 'DELETE' }); loadKinds(); }catch(e){} }); li.appendChild(del); $('stlist').appendChild(li); }
+      const del = document.createElement('button'); del.className = Button.small; del.textContent = 'Delete'; del.addEventListener('click', () => busyBtn(del, async () => { try{ await api('/api/studio/styles/' + s.id, { method: 'DELETE' }); await loadKinds(); }catch(e){} })); li.appendChild(del); $('stlist').appendChild(li); }
   }catch(err){ $('learnrow').hidden = true; }
 }
-$('luse').addEventListener('click', async () => {
+$('luse').addEventListener('click', () => busyBtn($('luse'), async () => {
   const k = $('lcat').value; if(!k) return; $('linfo').textContent = 'Learning…';
   try{ const scope = $('lscope').querySelector('[aria-pressed="true"]').dataset.s, r = await api('/api/studio/styles/learned?category=' + encodeURIComponent(k) + '&scope=' + scope);
     if(!r.fp){ $('linfo').textContent = 'No Reels of this kind yet.'; return; }
@@ -8220,7 +8462,7 @@ $('luse').addEventListener('click', async () => {
     $('linfo').textContent = 'Learned from ' + r.n + ' Reel' + (r.n > 1 ? 's' : '') + (r.accuracy ? ' · predicts a new ' + STYLE_KINDS[k].toLowerCase() + ' Reel ' + Math.round(r.accuracy.learned*100) + '% (default style ' + Math.round(r.accuracy.baseline*100) + '%)' : '') + (r.corrections ? ' · ' + r.corrections + ' of your changes' : '');
     setMode('copy'); $('refinfo').textContent = refProfile.name + ': ' + describeRef(refProfile); $('stsaverow').hidden = true;
   }catch(err){ console.warn('learned style:', err); $('linfo').textContent = 'Your learned style is not ready yet.'; }
-}, SIG);
+}), SIG);
 $('lscope').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; [...$('lscope').children].forEach(x => x.setAttribute('aria-pressed', String(x === b))); if($('lauto').checked) autoSave(); }, SIG);
 // "Use for my next Reels": the kind and scope are remembered on this device, and the learned style is put on when the studio opens
 const AUTO_KEY = 'brs-auto-style';
@@ -8253,13 +8495,16 @@ async function teachMany(files, cat, shared, say){
   if(admin){ try{ done = new Set((await api('/api/admin/learning?names=' + encodeURIComponent(cat))).names || []); }catch(err){ /* no log: all are read */ } }
   const log = d => admin ? api('/api/admin/learning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: cat, ...d }) }).catch(() => {}) : null;
   teaching = true; teachStop = false;
+  const rest = stayAlive();   // it goes on in another tab and minimized
   try{
     for(const [i, f] of files.entries()){
       if(teachStop) break;
       const head = 'Reel ' + (i+1) + ' of ' + files.length + ': ', name = nameOf(f);
       if(done.has(name)){ skip++; continue; }
       try{
-        const R = await analyzeReference(f, (p, what) => say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length));
+        const read = () => analyzeReference(f, (p, what) => { say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length); titleProgress('learn', 'Learning Reels', (i + p)/files.length); });
+        // the browser took the video decoder back while the page was hidden: the Reel is read again, not counted as bad
+        const R = await read().catch(err => { if(!isReclaimed(err)) throw err; return read(); });
         if(!R.cuts || R.cuts.length < 2) throw new Error('too few cuts to learn from');
         say(head + 'saving', (i + 1)/files.length);
         await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, category: cat, shared, fp: fingerprintOf(R) }) });
@@ -8268,7 +8513,8 @@ async function teachMany(files, cat, shared, say){
         ok++; done.add(name); cutsN += R.cuts.length; oddN += R.unread.cuts.length; fxN += R.unread.fx.length;
       }catch(err){ console.warn('not learned from', f.name, err); bad++; await log({ name, ok: false, reason: String(err && err.message || err).slice(0, 200) }); }
     }
-  } finally { teaching = false; }
+  } finally { teaching = false; rest(); titleDone('learn'); }
+  void notifyDone('Shubix has learned your Reels', ok + ' of ' + files.length + ' learned', 'shubix-learn');
   return { ok, bad, skip, cuts: cutsN, newCuts: oddN, effects: fxN, stopped: teachStop };
 }
 window.shubixTeach = { run: teachMany, stop: () => { teachStop = true; }, busy: () => teaching, kinds: STYLE_KINDS };
@@ -8428,9 +8674,11 @@ function ttsList(){
     d.querySelector('button').addEventListener('click', () => { ttsClips = ttsClips.filter(x => x !== c); ttsList(); applyVo(); clipMixKey = ''; });
     box.appendChild(d); }
 }
-if(tts){ $('ttsvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
+function voicesPaint(){
+  $('ttsbox').hidden = !tts; if(!tts) return;
+  $('ttsvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
   $('dubvoice').innerHTML = tts.voices.map(v => `<option value="${v.key}">${v.label}</option>`).join(''); $('dubrow').hidden = false; }
-else $('ttsbox').hidden = true;
+voicesPaint();
 $('ttsadd').addEventListener('click', ttsAdd, SIG);
 $('dublang').addEventListener('change', e => { dubLang = e.target.value; makeDub(); }, SIG);
 $('dubvoice').addEventListener('change', e => { dubVoice = e.target.value; if(dubLang) makeDub(); }, SIG);
@@ -8859,14 +9107,14 @@ $('postcopy').addEventListener('click', () => copyCaption($('postcapt').value.tr
  * texts, the part of the song and the captions already transcribed. It is saved a few seconds after anything changes;
  * "Your Reels" opens one again exactly as it was (the page reloads into it). */
 const PDB = 'brs-projects';
-// the Reel's name: "Untitled 1", "Untitled 2"… for a new one (the next number among this phone's drafts), changed by
+// the Reel's name: "Shubix 1", "Shubix 2"… for a new one (the next number among this phone's drafts), changed by
 // tapping it in the editor's head; it names the draft, the Reel in My Reels and the exported video file
 let reelTitle = '';
 const fileTitle = () => (reelTitle || 'Reel').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Reel';
 async function nextUntitled(){
   let n = 0;
-  try{ const all = await idb('meta', 'readonly', st => st.getAll()); for(const m of all || []){ const x = /^Untitled (\d+)$/.exec(m && m.name || ''); if(x) n = Math.max(n, +x[1]); } }catch(e){}
-  return 'Untitled ' + (n + 1);
+  try{ const all = await idb('meta', 'readonly', st => st.getAll()); for(const m of all || []){ const x = /^Shubix (\d+)$/.exec(m && m.name || ''); if(x) n = Math.max(n, +x[1]); } }catch(e){}
+  return 'Shubix ' + (n + 1);
 }
 function setReelTitle(t){
   const v = String(t || '').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -8897,7 +9145,7 @@ function editOf(){
 function stateOf(){
   return { kind, song: song && song.file ? { fp: fileFp(song.file), name: song.name } : null, sec: { len: sec.len, auto: sec.auto, start: sec.start },
     clips: sources.map(s => ({ fp: fileFp(s.file), name: s.name })),
-    settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), dub: dubLang ? { lang: dubLang, voice: dubVoice } : null, trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-CHAT_KEEP), reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
+    settings: { au, tts: ttsClips.map(c => ({ id: c.id, text: c.text, voice: c.voice, at: c.at })), dub: dubLang ? { lang: dubLang, voice: dubVoice } : null, trTo, trOnly, tr: trTo ? [...trCache].filter(([k]) => k.startsWith(trTo + '|')).slice(0, 200) : [], denoise: denoiseOn, mode: mode === 'copy' ? 'auto' : mode, look: look === 'copy' ? 'vivid' : look, aspect, textStyle, hookText, capsOn, caplang: $('caplang').value, talkPace, talkMusic, bgMode, bgColor, marks: userMarks.slice(0, 200), sfx: sfxList.map(x => ({ at: x.at, kind: x.kind })), capColor: ACCENT, seed, bg: bgFile ? fileFp(bgFile) : '', seq: seqOn, title: reelTitle, chat: chatMsgs.slice(-CHAT_KEEP), vers: chatVers, reelId, aiOk: !!reelId && aiReel === reelId, chatUsed },
     overlays: overlays.map(o => { const c = { ...o }; delete c.box; return c; }),
     lmedia: lmedia.map(M => FILLS.includes(M.kind) ? { fill: M.kind, name: M.name } : ({ fp: fileFp(M.file), name: M.name })), layers: lyOf(),
     edit: editOf(),
@@ -9007,7 +9255,7 @@ async function openProject(id){
     if(S.au) au = { ...AU0, ...S.au }; auUI();
     if(S.tts && S.tts.length){ ttsClips = S.tts.map(c => ({ ...c })); ttsSeq = ttsClips.reduce((q, c) => Math.max(q, c.id), 0); ttsList(); }
     if(S.dub && S.dub.lang && tts){ dubLang = S.dub.lang; dubVoice = S.dub.voice || ''; $('dublang').value = dubLang; if(dubVoice) $('dubvoice').value = dubVoice; }   // made again once the talk is built (buildTalk)
-    hookText = S.hookText || ''; $('hook').value = hookText; seed = S.seed || 1; chatRestore(S.chat); if(typeof S.reelId === 'string' && S.reelId){ reelId = S.reelId; if(S.aiOk) aiReel = reelId; chatUsed = Number(S.chatUsed) || 0; } if(S.denoise === false){ denoiseOn = false; $('dn1').checked = false; $('dn2').checked = false; }
+    hookText = S.hookText || ''; $('hook').value = hookText; seed = S.seed || 1; chatRestore(S.chat); chatVers = Array.isArray(S.vers) ? S.vers.filter(v => v && v.snap && Array.isArray(v.snap.ed)).slice(-VERS_MAX) : []; versOpen = false; reviewDone(); if(typeof S.reelId === 'string' && S.reelId){ reelId = S.reelId; if(S.aiOk) aiReel = reelId; chatUsed = Number(S.chatUsed) || 0; } if(S.denoise === false){ denoiseOn = false; $('dn1').checked = false; $('dn2').checked = false; }
     if(S.caplang !== undefined) $('caplang').value = S.caplang;
     if(S.trTo){ for(const [k, v] of S.tr || []) trCache.set(k, v); trTo = S.trTo; trOnly = !!S.trOnly; $('captr').value = trTo; $('tronly').checked = trOnly; $('trwrap').hidden = false; }
     if(st.caps && st.caps.key) capCache.set(st.caps.key, st.caps.all);
@@ -9089,9 +9337,10 @@ async function forgetSong(fp, quiet){
 }
 // a recent song heard before it is chosen: its play button (one at a time; choosing a song, leaving or the list
 // drawn again stops it)
-let preview = null, previewFp = '', previewUrl = '';
+let preview = null, previewFp = '', previewUrl = '', previewRaf = 0;
 function stopPreview(){
   if(preview){ preview.pause(); preview.removeAttribute('src'); }
+  cancelAnimationFrame(previewRaf); document.querySelectorAll('#rlist .rprog').forEach(x => { x.hidden = true; });
   if(previewUrl) URL.revokeObjectURL(previewUrl);
   preview = null; previewFp = ''; previewUrl = '';
   document.querySelectorAll('#rlist .rplay.on').forEach(b => { b.classList.remove('on'); b.innerHTML = PLAY_SVG; b.setAttribute('aria-label', 'Play ' + (b.dataset.name || 'song')); });
@@ -9103,16 +9352,21 @@ async function togglePreview(fp, btn){
   previewUrl = URL.createObjectURL(b); preview = new Audio(previewUrl); previewFp = fp;
   preview.onended = stopPreview;
   btn.classList.add('on'); btn.innerHTML = PAUSE_SVG; btn.setAttribute('aria-label', 'Pause ' + (btn.dataset.name || 'song'));
+  // how far it is: a line under its row, which can be tapped or dragged along
+  const line = btn.parentElement.querySelector('.rprog'), a = preview;
+  const step = () => { if(preview !== a) return; line.firstElementChild.style.width = (a.duration > 0 ? Math.min(100, a.currentTime / a.duration * 100) : 0).toFixed(2) + '%'; previewRaf = requestAnimationFrame(step); };
+  line.hidden = false; step();
+  line.onpointerdown = line.onpointermove = e => { if(e.type === 'pointermove' && !e.buttons || preview !== a || !(a.duration > 0)) return; const r = line.getBoundingClientRect(); a.currentTime = Math.max(0, Math.min(0.999, (e.clientX - r.left) / r.width)) * a.duration; };
   try{ await preview.play(); }catch(e){ stopPreview(); }
 }
 ac.signal.addEventListener('abort', stopPreview);
 async function listRecent(){
-  let all = []; try{ all = (await idb('songs', 'readonly', s => s.getAll()) || []).sort((a, b) => b.usedAt - a.usedAt); }catch(e){ return; }
+  let all = []; try{ all = (await idb('songs', 'readonly', s => s.getAll()) || []).sort((a, b) => b.usedAt - a.usedAt); }catch(e){ $('rwait').hidden = true; return; }
   stopPreview();
   const box = $('rlist'); box.innerHTML = '';
   for(const sg of all){
     const d = document.createElement('div'); d.className = 'rsong' + (song && song.file && fileFp(song.file) === sg.fp ? ' cur' : '');
-    d.innerHTML = '<button class="rplay" type="button">' + PLAY_SVG + '</button><button class="rpick" type="button"><span class="rn"></span><span class="rd"></span></button><button class="rdel" type="button" aria-label="Remove from recent songs" title="Remove"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+    d.innerHTML = '<button class="rplay" type="button">' + PLAY_SVG + '</button><button class="rpick" type="button"><span class="rn"></span><span class="rd"></span></button><button class="rdel" type="button" aria-label="Remove from recent songs" title="Remove"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span class="rprog" hidden aria-hidden="true"><i></i></span>';
     d.querySelector('.rn').textContent = sg.name.replace(/\.[^.]+$/, ''); // the note is the card's picture (::before)
     d.querySelector('.rd').textContent = fmt(sg.dur || 0).replace(/\.\d+$/, '');
     const name = sg.name.replace(/\.[^.]+$/, ''), play = d.querySelector('.rplay');
@@ -9122,7 +9376,8 @@ async function listRecent(){
     d.querySelector('.rdel').addEventListener('click', () => forgetSong(sg.fp));
     box.appendChild(d);
   }
-  $('recent').hidden = !all.length;
+  $('recent').hidden = !all.length; $('rwait').hidden = true;
+  try{ localStorage.setItem('shubix-songs', String(all.length)); }catch(e){}   // (flow.ts: whether to say they are coming, next time)
 }
 async function pickRecent(fp){
   if(recording) return;

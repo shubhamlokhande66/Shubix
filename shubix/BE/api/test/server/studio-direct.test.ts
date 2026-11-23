@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { ManagedProvider } from "../../src/server/ai";
-import { calmFloor, CHUNK, chunks, cleanActions, cleanMove, cleanTexts, direct, DirectIn, directPatch, directVariants, LIMITS, MAX_VARIANTS, pace, PaceIn, pacePrompt, parsePace, parsePlan, prompt, variantsPrompt } from "../../src/server/studio/direct";
+import { calmFloor, CHUNK, chunks, cleanActions, cleanMove, cleanTexts, direct, DirectIn, directPatch, directVariants, LIMITS, MAX_VARIANTS, pace, planChanged, PaceIn, pacePrompt, parsePace, parsePlan, prompt, variantsPrompt } from "../../src/server/studio/direct";
 import { templateTexts } from "@shubix/core/lib/text-templates";
 import { shotCacheKey } from "../../src/server/studio/rankShots";
 
@@ -54,7 +54,7 @@ describe("request limits", () => {
     expect(text).toContain("Style: auto");
     expect(text).toContain("hook");
     expect(text).not.toContain('{"whip":2}');   // no budget: the AI uses any tool as often as it likes
-    expect(text).toContain("boxgrow"); expect(text).toContain("no limit on style");
+    expect(text).toContain("boxgrow"); expect(text).toContain("EFFECT BUDGET"); expect(text).toContain("COVERAGE"); expect(text).not.toContain("no limit on style");
     const fresh = prompt(DirectIn.parse({ ...req(3), recent: ["boxgrow", "flash", "speed 0.5×"] }));
     expect(fresh).toContain("Used in this creator's last Reels (make this one feel fresh where the feel allows: other tools, other combinations): boxgrow, flash, speed 0.5×.");
   });
@@ -388,5 +388,26 @@ describe("Shubix AI as the editor: texts and other tools", () => {
     expect(out[0]).toMatchObject({ stk: "arrow", emoji: true, text: "Arrow", color: "#FF0000", loop: "pulse" });
     expect(out[1]).not.toHaveProperty("stk");
     expect(prompt(req(2))).toContain('"stk"');
+  });
+});
+
+describe("a chat change that changes nothing (its credits come back)", () => {
+  const now = [0, 1, 2].map((i) => ({ i, clip: "c1", at: 1.5, transition: "hard", effect: "none", speed: "normal" }));
+  const slot = (i: number, x = {}) => ({ i, shot: `${i}a`, transition: "hard", effect: "none", speed: "normal", keys: [], move: [], why: "", ...x });
+  it("the same clips, moments and tools: no change", () => {
+    const d = { ...req(3), current: now };
+    expect(planChanged(d, { slots: [slot(0), slot(1), slot(2)], texts: [], actions: [] })).toBe(false);
+    expect(planChanged({ ...req(3), patch: { ask: "x", current: now } }, { slots: [] })).toBe(false);
+  });
+  it("another moment, transition, effect, speed, keyframes or text: a change", () => {
+    const d = { ...req(3), current: now };
+    expect(planChanged(d, { slots: [slot(0, { shot: "0b" })] })).toBe(true);
+    expect(planChanged(d, { slots: [slot(1, { effect: "zoom" })] })).toBe(true);
+    expect(planChanged(d, { slots: [slot(1, { speed: "slow" })] })).toBe(true);
+    expect(planChanged(d, { slots: [slot(2, { keys: [{ at: 0.5, do: "zoom" }] })] } as never)).toBe(true);
+    expect(planChanged(d, { slots: [], texts: [{ text: "Hi" }] })).toBe(true);
+  });
+  it("an older app that does not send the Reel as it is: always a change", () => {
+    expect(planChanged(req(3), { slots: [] })).toBe(true);
   });
 });

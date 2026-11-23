@@ -124,6 +124,9 @@ export const DirectIn = z.object({
   /** a small change: the plan now, and what to change in it; only the cuts that change come back */
   patch: z.object({ ask: z.string().min(1).max(300), current: z.array(z.object({ i: z.number().int().min(0).max(LIMITS.slots - 1), clip: z.string().max(8), at: z.number().min(0).max(36_000),
     transition: z.string().max(24), effect: z.string().max(24), speed: z.string().max(24) })).max(LIMITS.slots) }).optional(),
+  /** a whole-Reel chat change: the Reel as it is now (as patch.current), so a plan that changes nothing is not charged */
+  current: z.array(z.object({ i: z.number().int().min(0).max(LIMITS.slots - 1), clip: z.string().max(8), at: z.number().min(0).max(36_000),
+    transition: z.string().max(24), effect: z.string().max(24), speed: z.string().max(24) })).max(LIMITS.slots).optional(),
   /** 0 = the plan; 1-4 = that many different alternative plans for the same cuts (New mix) */
   variants: z.number().int().min(0).max(MAX_VARIANTS).default(0),
   slots: z.array(z.object({
@@ -223,7 +226,7 @@ Decide like this:
 - Variety: never two moments of the same clip, or two that look alike, next to each other; alternate wide and close, still and moving.
 - If the creator explicitly asks for a transition on all/every/each clip (in any language), every cut must receive a non-hard transition; the first shot may use fadein. If they name one transition, use that exact transition on every clip. Never apply it to only a sample of the shots.\n- Transitions follow the music. Hard cuts give the special ones their punch; use the special ones freely wherever the music invites them: flash or zoom on a drop or a big hit after a gap, whip when the camera already moves or on a fast snare roll, glitch on electronic hits, dissolve or dip when the music gets calm or the voice holds a long note, iris/wipe/bars on a section change. There is no limit and no style filter: every transition, effect, speed, move and key you choose is used exactly as you choose it (the budget only says how many a typical Reel of this length has).
 - Effects follow the sound: zoomburst or punch on a drop or a p=3 hit, shake on heavy bass and kicks, tilt on snares, pan/pan-soft on long calm shots, drift on breaks, bounce when the drums are steady, none when the moment is strong by itself. If the creator asks for a nice/good/beautiful effect on all/every/each clip or video (in any language), choose a suitable non-"none" effect for EVERY cut, not just a sample; vary effects by the shot's role, motion and music, avoid repetitive or excessive effects, and prefer subtle motion/grade on calm shots and punchier effects on drops/hits.
-- Keyframes ("keys"): place up to ${LIMITS.accents} moments INSIDE a shot, exactly on its hits ("at" copied from hits): "punch" (quick zoom) on a strong dhol/snare/tabla hit, "shake" on a heavy kick or bass, "flash" (light burst) on the biggest hit, "pulse" (small bump) on lighter repeated hits. Trending edits put a key on most strong hits: use them freely, as many as the music asks for.
+- Keyframes ("keys"): place up to ${LIMITS.accents} moments INSIDE a shot, exactly on its hits ("at" copied from hits): "punch" (quick zoom) on a strong dhol/snare/tabla hit, "shake" on a heavy kick or bass, "flash" (light burst) on the biggest hit, "pulse" (small bump) on lighter repeated hits. Keys count against the effect budget: one key on a normal shot (on its strongest hit), more only on a hero shot.
 - Camera moves ("move"): keyframes of the camera inside the shot, like an editor's keyframes: at = fraction of the shot (0 = its start, 1 = its end), s = zoom (1 = as filmed, 1.2 = 20% closer), x / y = slide (fraction of the frame, -0.15..0.15), r = turn in degrees (-15..15), ez = how it moves into that keyframe (lin, inOut, outCubic, outExpo = fast then settles, outBack = overshoots). E.g. a push-in on a build-up: [{"at":0,"s":1},{"at":1,"s":1.18,"ez":"inOut"}]; a snap zoom on the drop: [{"at":0,"s":1.3},{"at":0.25,"s":1,"ez":"outExpo"}]; a slow tilt: [{"at":0,"r":-4},{"at":1,"r":3}]. Use moves for long shots and for anything the reference does; leave "effect" "none" on a shot with a move.
 - Shapes: iris (circle), diamond, heart, star, wipe and bars open the next shot through that shape: use them for a section change, a calm reveal, or when the reference does.
 - More transitions: slideleft / slideright / slideup / slidedown (push), swipeup (a feed scroll), zoomout, blur (blur through), flip (card flip), luma (light fade by brightness), pixelate, clock (clock wipe), doors (doors open), ripple, burn (film burn), dropin (drops in and bounces).
@@ -234,7 +237,8 @@ Decide like this:
 - Fit masks, green screens and colour to each candidate's picture ("light", "subject", "backdrop"): a mask that shows a shape goes round the subject box (its centre on the subject, big enough to hold it); ck only on a candidate with a "backdrop", in that colour; on a "dark" shot lift the tones, never darken them, on a "bright" one never brighten; keep people's skin its own colour (no hue shift on red and orange). Without those fields, leave mk, ck, cv and hsl out unless the creator asks.
 - Camera moves are as free as the creator's own keyframes: zoom 0.1-4, slide -1..1 of the frame, turn -360..360 degrees, up to ${LIMITS.moveKeys} keyframes; keys on hits up to ${LIMITS.keys} a shot.
 - Use what is trending in Reels right now where it suits this Reel's feel (velocity edits, beat-synced zoom punches, speed ramps, 3D zooms, shake on the bass, whips on snare rolls, flash on drops...): the app applies your choices as they are, nothing is cut back.
-- There is no limit on style or budget, and no quota either: a tool earns its place only when it serves the feel. Combine tools (a grid on the drop with an RGB split key, a box that grows while the camera turns) and invent when the song asks for it; a simple edit that fits beats a busy one that does not.`;
+- EFFECT BUDGET (a pro editor's restraint; the studio enforces it after your plan, so plan within it): a normal shot gets a transition OR one thing inside it (an effect, a key or a camera move), not both. A hero shot (the song's first drop, or the bass back after a real break; one in any 10 s) may combine up to 3, of different kinds (a flash, a zoom punch and a light shake; never flash + RGB + glitch + shake). The first shot opens on a hard cut with one thing inside it at most. In any 10 s: at most 2 flashy transitions (2.5 s apart), 2 strong effects or keys inside shots (shake, flash, RGB, glitch, strobe), 3 in all. 30-40% of the shots are plain: no transition, no effect, no key. A calm, sad or devotional Reel uses none of shake, flash, RGB or glitch where its song is quiet. Only what the creator asks for in their own words goes beyond this.
+- COVERAGE: every clip the creator gave appears at least once (when it has a usable moment) before any clip is shown twice; a clip shown again shows a different moment.`;
 
 /** a long Reel is planned in parts of CHUNK cuts, each with the whole song's context */
 export function chunks(d: DirectIn): DirectIn[] {
@@ -537,4 +541,23 @@ export function parsePace(d: PaceIn, a: z.infer<typeof PaceAnswer>) {
 export async function pace(d: PaceIn, provider: ManagedProvider = getProvider(TASK), taste = "", trends = "") {
   const ans = await provider.structured(SYSTEM, pacePrompt(d, taste, trends), PaceAnswer, { task: TASK, temperature: 0.3, maxOutputTokens: 300 + d.sections.length * 60 });
   return { ...parsePace(d, ans), model: provider.model, provider: provider.name };
+}
+
+/** Did a chat answer change the Reel? A cut changes when its clip or moment (more than 0.15 s), transition, effect or speed
+ * is not what the Reel has now, or it gets keyframes or a camera move; new texts or other tools' steps are a change too.
+ * Without the Reel as it is now (an older app) every answer counts as a change. A paid chat change that changes nothing
+ * gives its credits back (agreed in the Beat Reel review, 2026-11-20). */
+export function planChanged(d: DirectIn, res: { slots: DirectedSlot[]; texts?: unknown[]; actions?: unknown[] }, current = d.patch?.current ?? d.current): boolean {
+  if (!current) return true;
+  if ((res.texts?.length ?? 0) > 0 || (res.actions?.length ?? 0) > 0) return true;
+  const now = new Map(current.map((c) => [c.i, c]));
+  const norm = (v: unknown, none: string) => String(v ?? none).trim().toLowerCase() || none;
+  for (const s of res.slots) {
+    const c = now.get(s.i); if (!c) return true;
+    const cand = d.slots.find((x) => x.i === s.i)?.candidates.find((x) => x.id === s.shot);
+    if (cand && (cand.clip !== c.clip || Math.abs(cand.at - c.at) > 0.15)) return true;
+    if (norm(s.transition, "hard") !== norm(c.transition, "hard") || norm(s.effect, "none") !== norm(c.effect, "none") || norm(s.speed, "normal") !== norm(c.speed, "normal")) return true;
+    if (s.keys.length || s.move.length || s.clip) return true;
+  }
+  return false;
 }

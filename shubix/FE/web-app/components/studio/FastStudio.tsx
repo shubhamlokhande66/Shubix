@@ -67,12 +67,15 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
     const stopFlow = initFlow(el);   // Music / Talking / Photo Reel: the Create flow (steps, preview, Generate)
     (async () => {
       try {
-        for (const src of SCRIPTS) await loadScript(src);
-        const { initStudio } = await import("@/components/studio/engine");
-        // AI voices (text to speech) from the server, when it has them (OpenAI / Gemini); without them the tool is hidden
-        const tts = await import("@/lib/tts/client").then((m) => m.loadTts()).catch(() => null);
-        // AI pictures (B-roll) from the server, when it makes them (Cloudflare FLUX / OpenAI / Gemini)
-        const aiPicture = await import("@/lib/broll/client").then((m) => m.loadAiPicture()).catch(() => null);
+        // all at once: one after another they kept the studio's buttons waiting (a server asleep: 5 s each)
+        const [{ initStudio }, tts, aiPicture] = await Promise.all([
+          import("@/components/studio/engine"),
+          // AI voices (text to speech) from the server, when it has them (OpenAI / Gemini); without them the tool is hidden
+          import("@/lib/tts/client").then((m) => m.loadTts()).catch(() => null),
+          // AI pictures (B-roll) from the server, when it makes them (Cloudflare FLUX / OpenAI / Gemini)
+          import("@/lib/broll/client").then((m) => m.loadAiPicture()).catch(() => null),
+          (async () => { for (const src of SCRIPTS) await loadScript(src); })(),
+        ]);
         if (cancelled || !root.current) return;
         cleanup = initStudio(root.current, {
           loadMediabunny: () => import("mediabunny"),
@@ -88,6 +91,8 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           loadRnnoise: () => import("@shiguredo/rnnoise-wasm"),
           tts,
           aiPicture,
+          loadVoices: () => import("@/lib/tts/client").then((m) => m.loadTts()),
+          loadPictures: () => import("@/lib/broll/client").then((m) => m.loadAiPicture()),
           // My Reels: "Export & save" keeps the finished Reel in the account (straight to storage, lib/cloudReels.ts)
           cloud: {
             usage: () => import("@/lib/cloudReels").then((m) => m.cloudUsage()),
@@ -98,6 +103,7 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
           findFaces: (squares: Uint8ClampedArray[]) => import("@/lib/vision/client").then((m) => m.findFaces(squares)),
           subjectMask: (rgba: Uint8ClampedArray) => import("@/lib/vision/client").then((m) => m.subjectMask(rgba)),
         });
+        root.current.dispatchEvent(new Event("studio-ready"));   // (flow.ts: the buttons stop waiting)
         // the clips sent from Vlog / Talking video (/create/talking?from=clips): a moment cut out of a long video, or the
         // creator's own talking clips; they wait in this browser and are put in as the clips
         if (!engine && new URLSearchParams(location.search).get("from") === "clips") {
@@ -113,6 +119,7 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
         }
         if (engine && root.current) { const { initBridge } = await import("@/components/studio/bridge"); const stop = initBridge(root.current), stopStudio = cleanup; cleanup = () => { stop(); stopStudio?.(); }; }
       } catch (e) {
+        root.current?.dispatchEvent(new Event("studio-ready"));
         setFailed(e instanceof Error ? e.message : String(e));
         reportError("studio", "Fast Studio could not start: " + (e instanceof Error ? e.message : String(e)), e instanceof Error ? e.stack ?? "" : "");
       }

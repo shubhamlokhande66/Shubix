@@ -82,7 +82,7 @@ export function initAuto(root: HTMLElement): () => void {
       <button type="button" class="aobig" data-ao="song"><span class="aoic aoic2">${ICON.song}</span><span class="aotx"><b>A song <em>optional</em></b><span id="aosong">Without one, your clips' own sound is used</span></span><span class="aochev">${ICON.chev}</span></button>
       <p class="aonote">${ICON.spark}<span id="aonotetx">Your original videos stay on your phone. Selected preview frames may be sent securely for AI analysis.</span></p>
       <button type="button" class="${Button.primaryLarge} aogo" id="aogo" disabled>Make my Reel</button>
-      <input type="file" id="aovfile" accept="video/*,image/*,.mov,.mp4,.m4v,.jpg,.jpeg,.png,.webp,.heic" multiple hidden><input type="file" id="aomfile" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav" hidden>
+      <input type="file" id="aovfile" accept="video/*,image/*,.mov,.mp4,.m4v,.jpg,.jpeg,.png,.webp,.heic,.heif" multiple hidden><input type="file" id="aomfile" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav" hidden>
     </div>
     <div class="aorun" id="aorun" hidden>
       <div class="aoposter" aria-hidden="true">
@@ -119,7 +119,7 @@ export function initAuto(root: HTMLElement): () => void {
     </div>`;
   root.appendChild(ov);
   let clips: File[] = [], songFile: File | null = null, running = false, url = "", mode: "auto" | "story" = "auto", style = "classical", styles: StoryStyle[] = [], off = 0, base = 0, credits: string[] = [];
-  const isPhoto = (f: File) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+  const isPhoto = (f: File) => /^image\//.test(f.type) || /\.(jpe?g|png|webp|hei[cf])$/i.test(f.name);
   const ready = () => {
     if (mode !== "story") { $<HTMLButtonElement>("aogo").disabled = !clips.length; return; }
     // a story needs only its words: clips or photos of your own are optional
@@ -182,8 +182,11 @@ export function initAuto(root: HTMLElement): () => void {
       else setProg(0, mode === "story" ? STORY_STAGES[1][1] : STAGES[0][1], 0);
       root.querySelector<HTMLButtonElement>('#kind [data-k="music"]')?.click();
       // photos become short moving clips first (the same as Photos to Reel)
-      if (clips.some(isPhoto)) { const { photoClip } = await import("./steps"); const out: File[] = [];
-        for (let i = 0; i < clips.length; i++) { setProg(0.02 + 0.08 * i / clips.length, "Preparing your photos", 0); out.push(isPhoto(clips[i]) ? await photoClip(clips[i]) : clips[i]); } clips = out; }
+      if (clips.some(isPhoto)) { const { photoClip, photosUnread } = await import("./steps"); const out: File[] = [], bad: File[] = [];
+        for (let i = 0; i < clips.length; i++) { setProg(0.02 + 0.08 * i / clips.length, "Preparing your photos", 0); try { out.push(isPhoto(clips[i]) ? await photoClip(clips[i]) : clips[i]); } catch { bad.push(clips[i]); } }
+        if (bad.length && !out.length) throw new Error(photosUnread(bad));
+        if (bad.length) window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "error", text: photosUnread(bad) } }));   // one bad photo does not stop the Reel
+        clips = out; }
       if (mode === "story") {
         const names: Record<string, string> = { voice: "Recording the narration", song: "Setting the sound", clips: "Reading your clips" };
         await st.storyRun($<HTMLTextAreaElement>("aotext").value, $<HTMLSelectElement>("aovoice").value, songFile, clips, (stage, p) => setProg(stage === "voice" ? 0.05 + 0.15 * p : stage === "song" ? 0.22 : 0.3, names[stage] || stage, stage === "clips" ? 1 : 0), per || undefined);

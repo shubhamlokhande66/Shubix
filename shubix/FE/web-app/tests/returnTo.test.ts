@@ -66,3 +66,37 @@ describe("signing in tries 3 times when the server cannot be reached", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("signing in over the Reel", () => {
+  it("opens the popup, and goes on only when it says so", async () => {
+    const { signInHere, SIGN_IN } = await import("@/lib/returnTo");
+    const done = vi.fn();
+    let got: (() => void) | null = null;
+    const on = (e: Event) => { e.preventDefault(); got = (e as CustomEvent<{ onDone: () => void }>).detail.onDone; };
+    window.addEventListener(SIGN_IN, on);
+    signInHere(done);
+    window.removeEventListener(SIGN_IN, on);
+    expect(done).not.toHaveBeenCalled();
+    got!();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("signing in with no page asked for", () => {
+  it("goes back to the page last seen, and an older wait does not win over it", async () => {
+    const { noteLast } = await import("@/lib/returnTo");
+    keepNext("/pricing");
+    noteLast("/templates?q=beat");
+    expect(takeNext()).toBe("/templates?q=beat");
+    noteLast("//evil.com");
+    expect(takeNext()).toBe("/");
+  });
+});
+
+describe("a busy button", () => {
+  it("has its spinner from one place only (two rules drew two)", async () => {
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync("tailwind.config.ts", "utf8")).not.toContain("aria-busy");
+    expect(readFileSync("app/globals.css", "utf8").match(/busyspin \.8s/g)).toHaveLength(1);
+  });
+});
