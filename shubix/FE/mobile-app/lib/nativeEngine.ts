@@ -387,7 +387,7 @@ export function createNativeEngine(io: NativeIo) {
     aiState: async () => { if (!signedIn) { signedIn = true; await host.account().catch(() => false); } return { on: !!host.ES.aiOn }; },
     /** the good footage in the clips read, in whole seconds, and the Reel's length: enough clips? */
     footage: () => { const exact = host.ES.sources.reduce((t: number, c: Parameters<typeof goodSecs>[0]) => t + goodSecs(c), 0) as number;
-      return { have: Math.floor(exact), exact, clips: host.ES.sources.length as number, period: Number(host.ES.song?.r?.period) || 0, need: (host.ES.buf?.duration as number | undefined) ?? 0 }; },
+      return { have: Math.floor(host.ES.sources.length > 1 && !host.ES.seqOn && exact >= 10 ? exact * 0.85 : exact), exact, clips: host.ES.sources.length as number, period: Number(host.ES.song?.r?.period) || 0, need: (host.ES.buf?.duration as number | undefined) ?? 0 }; },
     /** Shubix AI's price for this Reel and the person's balance, read again each time: shown before Make Reel */
     aiPrice: async () => { signedIn = true; await host.account().catch(() => false); return { on: !!host.ES.aiOn, cost: host.brain.aiCostOf("reel") as number, balance: host.brain.aiBal() as number | null, paid: host.ES.planNow !== "free" }; },
     /** Make Reel was pressed with the price on the screen: that is the person's answer, so nothing is asked again */

@@ -1,6 +1,7 @@
 // The engine's helpers that need no browser and no engine state: moved out of components/studio/engine.ts as the first
 // step of running the phone's brain without the hidden page. They must stay free of the DOM (tests/brain.test.ts).
 // @ts-nocheck
+import { clipUse } from '@mobile/video-engine';
 export const srcPosF = (e, l) => e.in + e.sp.pos(l)*e.scaleR;
 export const fmt = t => { t = Math.max(0,t); const m = Math.floor(t/60), s = t - m*60; return m + ':' + (s<10?'0':'') + s.toFixed(2); };
 export function endWell(p){ while(p.length > 1 && p[p.length-1].end - p[p.length-1].start < 1){ const l = p.pop(); p[p.length-1].end = l.end; } return p; }
@@ -62,6 +63,10 @@ export function statsIndex(src){
 }
 export const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 export const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
+// the part of a clip that is footage (video-engine clipUse.ts), read again when its readings change
+export function useOf(src){ const k = src._use;
+  if(k && k.s === src.samples && k.r === src.reacts && k.a === src.ai && k.d === src.dur) return k.u;
+  const u = clipUse(src); src._use = { s: src.samples, r: src.reacts, a: src.ai, d: src.dur, u }; return u; }
 export const TAIL = 0.15;   // seconds of clip kept free after a shot's window
 // A clip's black part that is a fault in it: some of it black (brightness under 0.08), but under four fifths, so it is
 // not a dark clip (night, a stage: that is the clip as filmed).
@@ -166,7 +171,8 @@ export function suitFx(e){
 export function goodSecs(src){
   const S = src.samples || [], med = src.shMed || 1, usable = Math.max(0, (src.dur || 0) - TAIL);
   if(!S.length) return usable;
-  return usable * S.filter(x => (x.sh || 0) / med >= 0.45 && (x.b ?? 1) >= 0.08).length / S.length;
+  const u = useOf(src);   // (the part of it that is footage: clipUse.ts)
+  return usable * S.filter(x => x.t >= u.from && x.t <= u.to && (x.sh || 0) / med >= 0.45 && (x.b ?? 1) >= 0.08).length / S.length;
 }
 export function moveWords(K){
   const a = K[0], b = K[K.length-1], w = [];
