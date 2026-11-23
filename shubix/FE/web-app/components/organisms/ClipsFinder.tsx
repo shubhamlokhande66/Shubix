@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, Icon } from "@/components/atoms";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Badge, Button, Card, Icon, IconButton, Spinner } from "@/components/atoms";
 import { Dropzone } from "@/components/molecules/Dropzone";
 import { ProgressBar } from "@/components/molecules/ProgressBar";
 import { EmptyState, ErrorBanner, PageHeader, Segmented } from "@/components/molecules";
 import { toast } from "@/lib/toast";
+import { signInHere } from "@/lib/returnTo";
 import { cutClip, fmt, keepForStudio, PART_SECONDS, probe, voiceParts } from "@/lib/clips/media";
 
 /**
@@ -44,9 +47,13 @@ async function api<T>(url: string, init: RequestInit, signal: AbortSignal): Prom
   }
 }
 
+// phones: the main button at the bottom of the screen, as on every Create screen
+const BOTTOM = "max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-20 max-lg:border-t max-lg:border-border max-lg:bg-background max-lg:px-4 max-lg:pt-2.5 max-lg:pb-[max(10px,env(safe-area-inset-bottom))] max-lg:[&>button]:h-[52px] max-lg:[&>button]:rounded-2xl";
+const isVideo = (f: File) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name);
 const scoreTone = (s: number) => (s >= 80 ? "text-emerald-600" : s >= 60 ? "text-accent" : "text-muted");
 
 export function ClipsFinder() {
+  const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const file = files[0] ?? null;
   const [meta, setMeta] = useState<{ duration: number; audio: boolean } | null>(null);
@@ -128,7 +135,8 @@ export function ClipsFinder() {
       setStage(null);
       if ((e as Error).name === "AbortError") return;
       const st = (e as { status?: number }).status;
-      setError(st === 401 ? "Sign in to find clips." : st === 402 || st === 403 ? (e as Error).message || "Clips from a Video is part of the Editor and Pro plans." : (e as Error).message);
+      if (st === 401) return signInHere(() => void find());   // signed in, it goes on by itself
+      setError(st === 402 || st === 403 ? (e as Error).message || "Clips from a Video is part of the Editor and Pro plans." : (e as Error).message);
     }
   }
 
@@ -172,20 +180,54 @@ export function ClipsFinder() {
     setBusy(null);
   }
 
+  const another = () => { ac.current?.abort(); setFiles([]); setClips(null); setError(null); setStage(null); };
   const working = !!stage;
   return (
     <div className="mx-auto grid w-full max-w-3xl gap-4 px-4 pb-24 md:px-0">
-      <PageHeader title="Vlog / Talking video" subtitle="Your talking video in, Reels out: pauses cut, captions and music. A long one is cut into its best moments." />
+      <div className="max-lg:hidden">
+        <PageHeader title="Vlog / Talking video" subtitle="Your talking video in, Reels out: pauses cut, captions and music. A long one is cut into its best moments." />
+      </div>
+      {/* phones: as the other kinds of Reel (the Create flow): where you are, Back and the title */}
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[13px] text-muted lg:hidden"><Link href="/">Home</Link><span aria-hidden>›</span><span aria-current="page" className="font-semibold text-foreground">Vlog / Talking video</span></nav>
+      <div className="flex items-center gap-3 lg:hidden">
+        <IconButton icon="back" label="Back" onClick={() => (file ? another() : window.history.length > 1 ? router.back() : router.push("/"))} className="rounded-full" />
+        <b className="font-display text-[18px] font-semibold">{file ? "Make your Reel" : "Add your talking video"}</b>
+      </div>
 
       {!file ? (
+        <>
+        <div className="max-lg:hidden">
         <Dropzone label="Choose your talking video" hint={`A vlog, tutorial, review or podcast · one long video (up to ${MAX_MINUTES} minutes) or a few clips · it stays on your phone`} accept="video/*" multiple
-          validate={(f) => f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv)$/i.test(f.name)} onFiles={(f) => f.length && void pick(f)} onReject={() => setError("That is not a video. Pick an MP4, MOV or WebM.")} />
+          validate={isVideo} onFiles={(f) => f.length && void pick(f)} onReject={() => setError("That is not a video. Pick an MP4, MOV or WebM.")} />
+        </div>
+        <div className="grid justify-items-center gap-3 pt-1 text-center lg:hidden">
+          <span className="grid size-[76px] place-items-center rounded-[22px] bg-gold text-on-accent shadow-[0_0_0_10px_color-mix(in_srgb,var(--accent)_12%,transparent),0_18px_40px_-16px_var(--brand-glow)]"><Icon name="mic" size={40} /></span>
+          <h2 className="m-0 mt-2 font-display text-[25px] font-semibold tracking-[-.02em]">Create a Talking Reel</h2>
+          <p className="m-0 max-w-[32ch] text-[14.5px] text-muted">Your talking video in, Reels out: pauses cut, captions and music.</p>
+        </div>
+        <label className="grid min-h-[148px] cursor-pointer place-items-center content-center gap-2 rounded-[20px] border-2 border-dashed border-accent/65 bg-accent/10 p-5 text-center focus-within:outline-2 focus-within:outline-accent lg:hidden">
+          <span className="grid size-[54px] place-items-center rounded-2xl bg-gold text-on-accent"><Icon name="upload" size={26} /></span>
+          <b className="text-[17px]">Add your talking video</b>
+          <small className="text-[12.5px] text-muted">One long video (up to {MAX_MINUTES} minutes) or a few clips</small>
+          <input type="file" accept="video/*" multiple className="sr-only" onChange={(e) => {
+            const all = [...(e.target.files ?? [])], fs = all.filter(isVideo);
+            e.target.value = "";
+            if (fs.length) void pick(fs); else if (all.length) setError("That is not a video. Pick an MP4, MOV or WebM.");
+          }} />
+        </label>
+        <ul className="m-0 grid list-none gap-3 p-0 px-1.5 lg:hidden">
+          {["Up to 3 minutes: one Reel at once", "Longer: its best moments, each a Reel", "Pauses cut, captions added", "Preview, make changes and export"].map((t) => (
+            <li key={t} className="flex items-center gap-3 text-[15px] font-semibold"><span className="grid size-6 flex-none place-items-center rounded-full bg-accent text-white"><Icon name="check" size={14} stroke={3} /></span>{t}</li>
+          ))}
+        </ul>
+        </>
       ) : (
         <Card className="grid gap-3">
           <video ref={video} src={url} controls playsInline preload="metadata" className="max-h-[52vh] w-full rounded-xl bg-black" />
+          {!meta && !error && <Spinner size="sm" label="Reading your video…" />}
           <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-muted">
             <span className="min-w-0 truncate font-medium text-foreground">{files.length > 1 ? `${files.length} clips` : file.name}{meta && ` · ${fmt(meta.duration)}`}</span>
-            <Button variant="secondary" size="sm" icon="refresh" disabled={working || busy !== null} onClick={() => { ac.current?.abort(); setFiles([]); setClips(null); setError(null); setStage(null); }}>Another video</Button>
+            <Button variant="secondary" size="sm" icon="refresh" disabled={working || busy !== null} onClick={another}>Another video</Button>
           </div>
         </Card>
       )}
@@ -197,7 +239,7 @@ export function ClipsFinder() {
       {file && meta?.audio && canOne && way === "one" && (
         <Card className="grid gap-2">
           <p className="m-0 text-[13px] text-muted">The whole talk becomes one Reel: the pauses cut, captions of what is said, quiet music, your face kept in the frame.</p>
-          <Button icon="sparkle" full loading={busy === -1} disabled={busy !== null} onClick={() => void oneReel()}>Make the Reel</Button>
+          <div className={BOTTOM}><Button icon="sparkle" full loading={busy === -1} disabled={busy !== null} onClick={() => void oneReel()}>Make the Reel</Button></div>
         </Card>
       )}
 
@@ -225,9 +267,9 @@ export function ClipsFinder() {
               <Button variant="secondary" size="sm" onClick={() => { ac.current?.abort(); setStage(null); }}>Stop</Button>
             </div>
           ) : (
-            <Button icon="sparkle" full onClick={() => void find()} disabled={!meta || busy !== null || meta.duration > MAX_MINUTES * 60}>
+            <div className={BOTTOM}><Button icon="sparkle" full onClick={() => void find()} disabled={!meta || busy !== null || meta.duration > MAX_MINUTES * 60}>
               {clips ? "Find again" : "Find the best clips"}
-            </Button>
+            </Button></div>
           )}
         </Card>
       )}
@@ -268,7 +310,7 @@ export function ClipsFinder() {
       )}
 
       {!file && (
-        <EmptyState icon="mic" title="How it works" hint="Up to 3 minutes of talking: one Reel at once (pauses cut, captions, music). A longer video: Shubix listens, finds the moments that work on their own, gives each a score, a title and a hook; play it, make it a Reel or download it." />
+        <div className="max-lg:hidden"><EmptyState icon="mic" title="How it works" hint="Up to 3 minutes of talking: one Reel at once (pauses cut, captions, music). A longer video: Shubix listens, finds the moments that work on their own, gives each a score, a title and a hook; play it, make it a Reel or download it." /></div>
       )}
       <p className="flex items-center gap-1.5 text-[12px] text-muted"><Icon name="lock" size={14} /> Your video stays on this device. Only its sound is sent, to find the words.</p>
     </div>

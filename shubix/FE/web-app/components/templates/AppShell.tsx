@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { AdminCode } from "@/components/organisms/admin/AdminGate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,8 @@ import { applyTheme } from "@/lib/theme";
 import { useTheme } from "@/lib/useTheme";
 import { ThemeToggle } from "@/components/molecules/ThemeToggle";
 import { ConfirmHost } from "@/components/molecules/ConfirmDialog";
+import { afterSignOut, noteLast } from "@/lib/returnTo";
+import { SignInDialog } from "@/components/organisms/SignInDialog";
 import { ReviewPrompt } from "@/components/organisms/ReviewPrompt";
 import { Icon } from "@/components/atoms/Icon";
 import { Logo } from "@/components/atoms/Logo";
@@ -281,11 +283,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const authPage = AUTH_PAGES.includes(pathname); // sign in, forgot / reset password: shown on their own
   const partnerPage = pathname === PARTNER_PAGE;
   const enginePage = pathname === "/engine"; // the phone app's hidden engine (app/engine): the studio alone, the phone signs its requests
-  const publicPage = partnerPage || enginePage || isOpen(pathname, access); // open to everyone, also before signing in
+  const missing = (useSelectedLayoutSegment() ?? "").includes("_not-found");   // an address with no page: said, not a sign-in page
+  const publicPage = partnerPage || enginePage || missing || isOpen(pathname, access); // open to everyone, also before signing in
   const signedOut = !!me.data?.authEnabled && !me.data.user;
   useEffect(() => {
     if (signedOut && !authPage && !publicPage) router.replace(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); // accounts on and nobody signed in: the sign-in page, then back here
   }, [signedOut, authPage, publicPage, router]);
+  // the page last seen: signing in goes back to it (lib/returnTo.ts)
+  useEffect(() => {
+    if (authPage || partnerPage || enginePage || missing) return;
+    const note = () => noteLast(window.location.pathname + window.location.search);
+    note();
+    window.addEventListener("pagehide", note);   // (the studio changes its own address as it goes)
+    return () => window.removeEventListener("pagehide", note);
+  }, [pathname, authPage, partnerPage, enginePage, missing]);
   // the email's code not entered yet: nothing opens but the code screen (the server refuses the rest too)
   const needsCode = me.data?.user?.emailVerified === false && !authPage && !publicPage;
   useEffect(() => { if (needsCode) router.replace("/verify"); }, [needsCode, router]);
@@ -350,8 +361,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const signOut = me.data?.user
     ? async () => {
         await api.logout();
-        await qc.invalidateQueries();
-        router.replace("/login");
+        afterSignOut();
       }
     : undefined;
   const meta = pageMeta(pathname);
@@ -366,6 +376,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="rm min-h-screen md:flex">
       <GlobalActivity />
       <ConfirmHost />
+      <SignInDialog />
       <ReviewPrompt />
       <HelpChat raised={tabs} />
 

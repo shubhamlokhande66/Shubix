@@ -26,7 +26,7 @@ export type ExportChoice = { res?: "720" | "1080" | "4k"; fps?: 30 | 60; noWater
 export type ExportOptions = { res: Record<"720" | "1080" | "4k", { locked: boolean; off: boolean }>; fps60Locked: boolean; watermarkOff: boolean;
   size: string; fileName: string; myReels: boolean; myReelsNote: string; locked: { name: string; need: string }[] };
 
-let held = "", clipRead: ((name: string, ok: boolean) => void) | null = null;
+let held = "", clipRead: ((name: string, ok: boolean, best?: number | null) => void) | null = null;
 /** told as each clip is read: its card shows it */
 export const onClipRead = (fn: typeof clipRead) => { clipRead = fn; };
 /** The person's work goes on while they are away (the screen off, another app): a notification says so, the screen stays on
@@ -44,12 +44,18 @@ const files = ShubixVideo ? ShubixVideo.fileServer(API_URL) : null;
 /** whether this phone can make Reels with the studio (the app's own build, not Expo Go or the web) */
 export const engineOn = Platform.OS !== "web" && !!files;
 
+/** Ask Shubix's change in the editor: its progress line goes to the chat panel (onChatStat) while it works */
+let chatting = false;
+const chatSays = new Set<(text: string) => void>();
+export function onChatStat(f: (text: string) => void) { chatSays.add(f); return () => { chatSays.delete(f); }; }
+
 const native = files ? createNativeEngine({
   base: `http://127.0.0.1:${files.port}`, key: files.key, fetch: nativeFetch as never, token: () => tokenStore.get(),
   ask: async (q) => { const v = await askAction({ title: q.title, body: [q.text, q.bal == null ? "" : `You have ${q.bal} credits`].filter(Boolean).join(" · "), list: q.list, ok: q.ok, ...(q.no ? { cancel: q.no } : {}) }); return v === 0 ? true : v === 1 && q.no ? false : null; },
-  stat: (text, err) => { if (!text) return tasks.clear("ai"); if (text.endsWith("…")) { tasks.start("ai", "ai", "Shubix at work", text.slice(0, -1)); return; } if (err) tasks.fail("ai", text); else tasks.done("ai", text); },
+  // (during an Ask Shubix change the editor stays usable: its line goes to the chat panel, not a full-screen popup)
+  stat: (text, err) => { if (chatting) { chatSays.forEach((f) => f(text && !err ? text.replace(/…$/, "") : "")); return; } if (!text) return tasks.clear("ai"); if (text.endsWith("…")) { tasks.start("ai", "ai", "Shubix at work", text.slice(0, -1)); return; } if (err) tasks.fail("ai", text); else tasks.done("ai", text); },
   spent: () => tasks.lock(),
-  clipDone: (name, ok) => clipRead?.(name, ok),
+  clipDone: (name, ok, best) => clipRead?.(name, ok, best),
   readBytes: async (path, at, length) => { const h = new File(`file://${path}`).open(); try { h.offset = at; return h.readBytes(length); } finally { h.close(); } },
   tell: (text) => tell(text, "danger"),
   task: (state, id, title, detail, kind, p) => onTask({ event: "task", id, state, p: p ?? null, title, detail, kind: kind as TaskKind | undefined }),
@@ -70,7 +76,10 @@ if (native) void brandGet().then((b) => (b ? native.call("brandSet", b as unknow
 
 async function call<T>(op: string, args: Record<string, unknown> = {}): Promise<T> {
   if (!native) throw new Error("Making Reels needs the Shubix app (not Expo Go).");
-  return native.call(op, args) as Promise<T>;
+  // whatever takes more than a moment (Ask Shubix, captions, Remix, a tool) goes on in another app and with the screen off
+  let held = false;
+  const t = setTimeout(() => { held = true; keepAwake(true); }, 400);
+  try { return await (native.call(op, args) as Promise<T>); } finally { clearTimeout(t); if (held) keepAwake(false); }
 }
 /** the studio's texts as the phone keeps them (its own: a number id, t0 / t1, size as a multiple of 36); every setting kept */
 export function textsOf(list: unknown): ReelProject["overlays"] | undefined {
@@ -204,7 +213,7 @@ export const engine = {
   stop: () => restart(),
   /** the clips' smooth copies the studio made (4K / HDR / 60 fps / a changing frame rate), saved on the phone: the
    * phone's preview and export play these, so heavy footage never stutters or stalls (`name`: the clip as sent) */
-  copies: () => call<{ name: string; path: string; w: number; h: number }[]>("copies").catch(() => []),
+  copies: () => call<{ name: string; path: string; w: number; h: number; photo?: number }[]>("copies").catch(() => []),
   /** Ask Shubix from the editor: the website's own AI chat on the Reel the studio holds; its plan is applied there and
    * the Reel's clips come back (null: the studio does not hold this Reel) */
   chat: async (p: ReelProject, text: string) => {
@@ -212,7 +221,8 @@ export const engine = {
     // the studio's copy could not be brought to this Reel (a change it cannot hold): its answer would put older shots
     // back over the ones on the phone, so the phone's own changes answer instead
     if (!(await engine.edit(p).catch(() => false))) return null;
-    const r = await call<{ answer: string; applied: boolean; state?: { edit?: EngineShot[]; overlays?: ReelProject["overlays"] } }>("chat", { text });
+    chatting = true;
+    const r = await call<{ answer: string; applied: boolean; state?: { edit?: EngineShot[]; overlays?: ReelProject["overlays"] } }>("chat", { text }).finally(() => { chatting = false; chatSays.forEach((f) => f("")); });
     return { answer: r.answer, clips: r.applied && Array.isArray(r.state?.edit) ? shotsOf(r.state!.edit!, sources) : null, overlays: textsOf(r.state?.overlays) };
   },
 };

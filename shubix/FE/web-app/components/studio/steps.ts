@@ -8,6 +8,7 @@
  * Photos to Reel: each photo becomes a short moving shot (a slow push-in, encoded in the browser with WebCodecs),
  * then goes into the engine exactly like a video clip. Nothing is uploaded. */
 
+import { openPhoto } from "@/lib/heic";
 import { mediaKindOf, pickTakes, type MediaPick } from "@shubix/video-engine";
 
 const SHOT_SECONDS = 3;
@@ -23,7 +24,7 @@ export function initSteps(root: HTMLElement): () => void {
   const vfile = $("vfile") as HTMLInputElement;
   // the clips step's three choices take only what they say: Videos videos, Photos photos (a Photo Reel), Mix both (a photo
   // becomes a short moving shot, photoClip, beside the videos). A talking Reel and Copy a Reel have no choice: both.
-  const IMAGES = "image/*,.jpg,.jpeg,.png,.webp,.heic";
+  const IMAGES = "image/*,.jpg,.jpeg,.png,.webp,.heic,.heif";
   const VIDEOS = "video/*,.mov,.mp4,.m4v,.3gp";
   const BOTH = `${VIDEOS},${IMAGES}`;   // (not read from the input: the studio can start twice on a page)
   const choosing = () => !root.classList.contains("talkmode") && kindNow !== "copy";
@@ -31,7 +32,7 @@ export function initSteps(root: HTMLElement): () => void {
   const setAccept = () => { const p = pickNow(); vfile.accept = !choosing() || p === "mix" ? BOTH : p === "photos" ? IMAGES : VIDEOS; };
   vfile.accept = VIDEOS;
   // a file the choice does not take is left out, and said (Mix takes both)
-  const toast = (text: string) => window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind: "info", text } }));
+  const toast = (text: string, kind: "info" | "error" = "info") => window.dispatchEvent(new CustomEvent("shubix-toast", { detail: { kind, text } }));
   const keepTaken = (list: File[]) => {
     if (!choosing()) return list;
     const p = pickNow(), kept = list.filter((f) => pickTakes(p, mediaKindOf(f)));
@@ -110,32 +111,44 @@ export function initSteps(root: HTMLElement): () => void {
   );
 
   // photos: turn them into short moving shots, then hand them to the engine as clips
-  let feeding = false;
+  let feeding = false, photoJobs = 0, photoRun = 0;
   const feed = async (list: File[]) => {
-    const isImg = (f: File) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+    const isImg = (f: File) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|hei[cf])$/i.test(f.name);
     const imgs = list.filter(isImg);
     // in the order they were chosen, videos and photos mixed ("In my order" plays them so)
     const out: File[] = [];
     const st = $("s2st");
+    const bad: File[] = [];
     let k = 0;
+    // seen by the creator (the status line is hidden in the flow, and a phone needs a while): the photo it is at, and the
+    // flow waits for them as for clips being read (flow.ts WAIT)
+    const wait = $("photowait"), run = ++photoRun;
+    const told = (state: "start" | "done") => root.dispatchEvent(new CustomEvent("studio-task", { detail: { id: "photos", state, p: null } }));
+    if (imgs.length) { photoJobs++; wait.hidden = false; told("start"); }
     for (const f of list) {
       if (!isImg(f)) { out.push(f); continue; }
-      st.textContent = `Turning photo ${++k} of ${imgs.length} into a moving shot…`;
+      const words = `Turning photo ${++k} of ${imgs.length} into a moving shot…`;
+      st.textContent = words;
+      if (run === photoRun) $("photowaitt").textContent = words;
       try {
         out.push(await photoClip(f));
       } catch {
-        st.textContent = `${f.name} could not be read. Use JPG, PNG or WEBP.`;
+        bad.push(f);
       }
     }
-    if (!out.length) return;
+    try {
+    // said once, after all of them (the next photo's line wrote over it), by name: the rest are added
+    if (bad.length) toast(photosUnread(bad), "error");
+    if (!out.length) { st.textContent = photosUnread(bad); return; }
     const dt = new DataTransfer();
     out.forEach((f) => dt.items.add(f));
     feeding = true;
     vfile.files = dt.files;
     vfile.dispatchEvent(new Event("change", { bubbles: true }));
     feeding = false;
+    } finally { if (imgs.length && --photoJobs === 0) { wait.hidden = true; told("done"); } }
   };
-  const hasImages = (fl: FileList | File[] | null | undefined) => !!fl && [...fl].some((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
+  const hasImages = (fl: FileList | File[] | null | undefined) => !!fl && [...fl].some((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|hei[cf])$/i.test(f.name));
   root.addEventListener(
     "change",
     (e) => {
@@ -206,17 +219,30 @@ export function initSteps(root: HTMLElement): () => void {
   };
 }
 
+/** what to say about photos the browser cannot open (a HEIC needs the device's HEVC decoder: lib/heic.ts) */
+export function photosUnread(bad: { name: string }[]): string {
+  const names = bad.slice(0, 3).map((f) => f.name).join(", ") + (bad.length > 3 ? ` +${bad.length - 3}` : "");
+  return `${names} could not be read. ${bad.some((f) => /\.hei[cf]$/i.test(f.name)) ? "This device cannot open HEIC photos: save them as JPG." : "Use JPG, PNG or WEBP."}`;
+}
+
 /** A photo as a short video: the whole picture with a slow push-in, encoded in the browser (WebCodecs, the same
  * encoder as the studio's export) so the clip has a real length. Nothing is uploaded. */
 export async function photoClip(file: File): Promise<File> {
   const mb = await import("mediabunny");
-  const bmp = await createImageBitmap(file);
+  const bmp = await openPhoto(file);
   const scale = Math.min(1, 1080 / Math.max(bmp.width, bmp.height));
   const w = Math.max(16, Math.round((bmp.width * scale) / 2) * 2), h = Math.max(16, Math.round((bmp.height * scale) / 2) * 2);
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   const g = c.getContext("2d")!;
+  // the photo once at the size it is drawn (a camera's 12-50 MP scaled again for each of the 90 frames took seconds)
+  const small = document.createElement("canvas");
+  small.width = Math.min(bmp.width, Math.round(w * 1.08)); small.height = Math.min(bmp.height, Math.round(h * 1.08));
+  const sg = small.getContext("2d")!;
+  sg.imageSmoothingQuality = "high";
+  sg.drawImage(bmp, 0, 0, small.width, small.height);
+  bmp.close();
   const codec = await mb.getFirstEncodableVideoCodec(["avc", "vp9", "vp8"], { width: w, height: h });
   if (!codec) throw new Error("This browser cannot make video from photos.");
   const mp4 = codec === "avc";
@@ -229,11 +255,10 @@ export async function photoClip(file: File): Promise<File> {
     const z = 1 + 0.08 * (k / (frames - 1)); // a slow push-in
     g.fillStyle = "#000";
     g.fillRect(0, 0, w, h);
-    g.drawImage(bmp, (w - w * z) / 2, (h - h * z) / 2, w * z, h * z);
+    g.drawImage(small, (w - w * z) / 2, (h - h * z) / 2, w * z, h * z);
     await vs.add(k / FPS, 1 / FPS);
   }
   await output.finalize();
-  bmp.close();
   const buf = (output.target as InstanceType<typeof mb.BufferTarget>).buffer!;
   return new File([buf], `${file.name.replace(/\.[^.]+$/, "")}.${mp4 ? "mp4" : "webm"}`, { type: mp4 ? "video/mp4" : "video/webm" });
 }

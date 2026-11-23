@@ -71,7 +71,9 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
         if (!first?.retake || !live) return made;
         tell(words("Fixing a glitch in the video…"), "info"); setPct(0);
         const again = await once(), second = await checked(again, 2);
-        if (second && !second.ok) tell(words("Your Reel is ready. Watch it once: a part of it may not look right."), "info");
+        // (said where, not "a part may not look right": the review with ChatGPT, 2026-11-20)
+        if (second && !second.ok) { const at = second.problems.find((x) => typeof x.at === "number")?.at, what = second.problems[0]?.code;
+          tell(typeof at === "number" ? words(what === "frozen" ? "Your Reel is ready. Check it at {t}: the picture may stop there." : "Your Reel is ready. Check it at {t}: it may go dark there.", { t: `${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, "0")}` }) : words("Your Reel is ready. Watch it once before you share it: its length came out a little different."), "info"); }
         return again;
       }
       if (canUseSharedAndroidRenderer(reel)) return exportReelWithSharedRenderer(reel, (p) => live && setPct(p));
@@ -127,7 +129,7 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
               {!!allowed?.fileName && <Text className="px-1 text-[12.5px] text-muted">{words("File name")}: <Text className="font-semibold text-foreground">{allowed.fileName}</Text></Text>}
               {toggle(words("Remove Watermark"), allowed && !allowed.watermarkOff ? words("Paid plans can remove the watermark") : "", choice.noWatermark, (v) => set({ noWatermark: v }), !!allowed && !allowed.watermarkOff)}
               {allowed?.myReels && toggle(words("Save to My Reels"), allowed.myReelsNote, choice.myReels, (v) => set({ myReels: v }))}
-              {toggle(words("Without the song"), words("Add it in Instagram as its own sound"), choice.noSong, (v) => set({ noSong: v }))}
+              {toggle(words("Without the song"), words("Instagram may mute a song it has not cleared for your account. To use Instagram's own music, export without the song and add it there."), choice.noSong, (v) => set({ noSong: v }))}
               {locked.length > 0 && (
                 <View className="gap-1 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3">
                   <Text className="text-[14px] font-semibold text-foreground">{words("Your Reel uses features your plan does not include")}</Text>

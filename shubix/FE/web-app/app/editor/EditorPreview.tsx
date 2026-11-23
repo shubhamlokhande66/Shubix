@@ -107,7 +107,7 @@ export function EditorPreview({ projectId }: { projectId?: string } = {}) {
         <div className={cn("flex min-h-[42px] items-center gap-2 text-muted max-[680px]:min-h-10 max-[680px]:gap-1.5", MONO["11"])}>
           <span className="font-bold text-foreground">00:04.8</span><span className="text-[color:color-mix(in_srgb,var(--muted)_50%,transparent)]">/</span><span className="text-muted">00:29.6</span>
           <button className="ml-2.5 cursor-pointer border-0 bg-transparent p-1 text-[12px] text-muted max-[680px]:ml-1">|◂</button>
-          <button onClick={() => setPlaying(!playing)} className={cn(GOLD, "grid size-[30px] cursor-pointer place-items-center rounded-full border-0 shadow-[0_6px_16px_-10px_var(--brand-glow)]")}><Glyph name={playing ? "Freeze" : "play"} size={16} /></button>
+          <button aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying(!playing)} className={cn(GOLD, "grid size-[30px] cursor-pointer place-items-center rounded-full border-0 shadow-[0_6px_16px_-10px_var(--brand-glow)]")}><Glyph name={playing ? "Freeze" : "play"} size={16} /></button>
           <button className="ml-2.5 cursor-pointer border-0 bg-transparent p-1 text-[12px] text-muted max-[680px]:ml-1">▸|</button>
           <span className="flex-1" />
           <span className="inline-flex items-center gap-[5px] [font:700_8px_var(--font-body),sans-serif] tracking-[.1em] text-muted [&_svg]:text-accent"><Glyph name="Music" size={14} /> SOUND ON</span>

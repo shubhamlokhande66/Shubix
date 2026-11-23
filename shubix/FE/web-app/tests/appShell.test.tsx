@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const at = vi.hoisted(() => ({ path: "/projects", me: { authEnabled: true, user: { id: "u", email: "me@example.com" } } as unknown }));
-vi.mock("next/navigation", () => ({ usePathname: () => at.path, useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useSelectedLayoutSegment: () => null, usePathname: () => at.path, useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
 
 const admin = vi.hoisted(() => ({ value: false }));
 const features = vi.hoisted(() => ({ value: { fastStudio: true, studioAI: true, brands: true } as Record<string, boolean> }));

@@ -18,7 +18,7 @@ import { ExportScreen } from "../components/organisms/ExportScreen";
 import { pickInOrder } from "../components/organisms/Gallery";
 import { isNativeEffectSupported, isNativeTransitionSupported, previewSpec, videoEngine } from "../lib/video";
 import { ShubixPreviewView, type PreviewRef } from "../modules/shubix-video";
-import { type AiPlan, type MyBrand, brandGet, brandSave, engine, textsOf } from "../lib/engine";
+import { type AiPlan, type MyBrand, brandGet, brandSave, engine, onChatStat, textsOf } from "../lib/engine";
 import { TEXT_TEMPLATES } from "@mobile/core/lib/text-templates";
 import { STICKERS as SHAPES } from "@mobile/core/lib/stickers";
 import { SFX_REC } from "@mobile/core/lib/sfx-recorded";
@@ -174,7 +174,7 @@ export default function EditorScreen() {
   const [mixing, setMixing] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const [aiPlan, setAiPlan] = useState<AiPlan | null | undefined>(undefined);
-  const [exporting, setExporting] = useState<ReelProject | null>(null), [sound, setSound] = useState(true), [saved, setSaved] = useState(true), [tool, setTool] = useState<{ key: string; name: string } | null>(null), [draft, setDraft] = useState("");
+  const [exporting, setExporting] = useState<ReelProject | null>(null), [sound, setSound] = useState(true), [saved, setSaved] = useState(true), [tool, setTool] = useState<{ key: string; name: string } | null>(null), [allTools, setAllTools] = useState(false), [chatBusy, setChatBusy] = useState(false), [chatStatus, setChatStatus] = useState(""), [review, setReview] = useState(false), [planLocked, setPlanLocked] = useState<string[]>([]), [draft, setDraft] = useState("");
   const [studioLayers, setStudioLayers] = useState<Array<{ index: number; id: number; t0: number; t1: number; x: number; y: number; scale: number; opacity: number; rotation: number; mask: string; blend: string; follow: string; followOffsetX: number; followOffsetY: number; maskWidth: number; maskHeight: number; maskThreshold: number; maskFeather: number; maskAngle: number; maskInverted: boolean; chromaKey: boolean; chromaColor: string; chromaTolerance: number; native?: unknown }>>([]), [studioLayerIndex, setStudioLayerIndex] = useState(0);
   const [canvasCol, setCanvasCol] = useState("#4F7CFF");
   const [ttsVoices, setTtsVoices] = useState<Array<{ key: string; label: string }>>([]), [ttsVoice, setTtsVoice] = useState(""), [voiceDraft, setVoiceDraft] = useState("");
@@ -245,6 +245,14 @@ export default function EditorScreen() {
   // Ask Shubix and Shubix AI's history, kept with the Reel (not an edit: undo leaves it); what Shubix AI did is added from the studio
   const addChat = (add: (l: ChatLine[]) => ChatLine[]) => setP((old) => old ? { ...old, chat: add(old.chat ?? []).slice(-40) } : old);
   // the plan shown, and kept with the Reel: opened again (from My Reels, after the app was closed) Ask Shubix still shows it
+  // Ask Shubix's progress line, in its panel (the editor stays usable while it changes the Reel)
+  useEffect(() => onChatStat(setChatStatus), []);
+  // what this plan does not export, said in the editor as soon as the Reel has it (not first at Export): the review with ChatGPT
+  useEffect(() => {
+    if (!p?.studio || !engine.holds(p.id)) { setPlanLocked([]); return; }
+    let live = true; const t = setTimeout(() => void engine.exportOptions({}).then((o) => { if (live) setPlanLocked((o.locked || []).map((x) => x.name)); }).catch(() => undefined), 600);
+    return () => { live = false; clearTimeout(t); };
+  }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
   const keepPlan = (plan: AiPlan | null) => { setAiPlan(plan ?? undefined); if (plan && plan.lines.length) setP((old) => old ? { ...old, aiPlan: plan } : old); };
   const aiHistory = () => void engine.history().then((h) => addChat((l) => { const seen = new Set(l.map((m) => m.at + m.text)); return [...l, ...h.filter((m) => !seen.has(m.at + m.text))].sort((a, b) => a.at - b.at); })).catch(() => {});
   const setClips = (next: ProjectClip[]) => { change({ clips: next }); setSelected((i) => Math.min(i, Math.max(0, next.length - 1))); };
@@ -473,8 +481,13 @@ export default function EditorScreen() {
       setClips(replace && clip ? clips.map((c, i) => (i === selected ? { ...got[0], id: c.id } : c)) : [...clips, ...got]);
     } catch (e) { tell(errorMessage(e), "danger"); }
   }
+  // the Reel as it was before an Ask Shubix change or another mix: Earlier versions in Ask Shubix (the last 5, kept with
+  // the Reel, so they are there when it is opened again)
+  const versions = p?.versions ?? [];
+  const keepVersion = (label: string) => setP((old) => old ? { ...old, versions: [...(old.versions ?? []), { at: Date.now(), label: label.slice(0, 80), clips: old.clips, overlays: old.overlays, ...(old.studio ? { studio: true } : {}) }].slice(-5) } : old);
   async function mixVideo() {
     if (!p || clips.length < 2 || mixing) return;
+    keepVersion(words("Before another mix"));
     if (p.studio && !engine.holds(p.id)) {
       return tell(words("Reopen this Reel from Fast Studio to create another mix without losing its advanced effects."));
     }
@@ -543,6 +556,7 @@ export default function EditorScreen() {
   const touch = p?.settings?.touch ?? true;
 
   function use(key: string, name: string) {
+    if (chatBusy) return tell(words("Shubix is changing your Reel. You can edit again when it's done."), "info");
     const lock = locked?.(key);
     if (lock) return tell(words("This isn't in your current plan."), "info");
     if (LATER.has(key)) return tell(words("{tool} comes with the phone's video engine, in the Play Store app.", { tool: words(name) }), "info");
@@ -947,25 +961,58 @@ export default function EditorScreen() {
 
   if (!p) return <View className="flex-1 bg-background" />;
   const aspect = ASPECT[p.settings?.aspect ?? "9:16"];
+  // Undo (the button, and Undo under an Ask Shubix change): the studio's own history for a Reel it holds, else the phone's
+  const undoNow = async () => {
+            if (p.studio && engine.holds(p.id)) {
+              try {
+                const studioStep = await engine.undo();
+                if (studioStep.ok) {
+                  setP((old) => old ? { ...old, clips: studioStep.clips, ...(studioStep.overlays ? { overlays: studioStep.overlays } : {}) } : old);
+                  setSelected((i) => Math.min(i, Math.max(0, studioStep.clips.length - 1)));
+                  // Layers live in the hidden Studio document, not ReelProject. Refresh their
+                  // native controls after history navigation so masks/transforms don't look stale.
+                  try {
+                    const layers = await engine.tool("layerList");
+                    if (Array.isArray(layers)) {
+                      setStudioLayers(layers as typeof studioLayers);
+                      setStudioLayerIndex((index) => Math.max(0, Math.min(index, layers.length - 1)));
+                    }
+                  } catch (error) { console.warn("Studio layers could not be refreshed after undo:", error); }
+                  return;
+                }
+              } catch (error) { console.warn("Studio undo unavailable; using phone history:", error); }
+            }
+            const step = stepEditHistory(undo.current, redo.current, p, "undo", 30);
+            if (step) { undo.current = step.undo; redo.current = step.redo; setP(step.current); }
+          };
   return (
     <View className="flex-1 bg-background">
-      <StudioBar title={p.title} onBack={back} onExport={() => { if (!videoEngine.ready) return tell(words("Export needs the Shubix app (Expo Go has no video engine). Your Reel is saved on this phone."), "info"); setPlaying(false); setExporting(p);
+      {planLocked.length > 0 && (
+        <Pressable onPress={() => router.push("/credits")} accessibilityRole="button" className="flex-row items-center gap-2 border-b border-accent/25 bg-accent/10 px-4 py-2">
+          <Text className="flex-1 text-[12px] text-foreground">{words(planLocked.length > 1 ? "{n} effects aren't included in your plan. They'll be left out of the exported video: {list}" : "1 effect isn't included in your plan. It'll be left out of the exported video: {list}", { n: String(planLocked.length), list: planLocked.join(", ") })}</Text>
+          <Text className="text-[12px] font-semibold text-accent">{words("See plans")}</Text>
+        </Pressable>
+      )}
+      <StudioBar title={p.title} onBack={back} onExport={() => { if (chatBusy) return tell(words("Shubix is changing your Reel. You can export when it's done."), "info"); if (!videoEngine.ready) return tell(words("Export needs the Shubix app (Expo Go has no video engine). Your Reel is saved on this phone."), "info"); setPlaying(false); setExporting(p);
         // the creator's changes after Shubix made it (this editor's Undo steps): Admin's "Kept as Shubix made it"
         void mobileApi.reelLog(p.id, { step: "export", msg: `Export started · ${p.clips.length} shots`, data: { changes: undo.current.length, opened: made !== "1", platform: "android", shots: p.clips.length } }).catch(() => undefined); }} />
       <ScrollView className="flex-1" contentContainerClassName="pb-3" showsVerticalScrollIndicator={false}>
         <Preview n={selected} of={clips.length} playing={playing} aspect={aspect} error={playError} onToggle={() => setPlaying(!playing)}><ReelPlayer p={p} layers={studioLayers} now={now} playing={playing} sound={sound} onTime={seek} onEnd={() => { setPlaying(false); seek(0); }} onError={setPlayError} /></Preview>
-        <View className="mx-4 mt-2">
-          <Button full icon="shuffle" variant="secondary" title={words(mixing ? "Mixing video…" : "Mix Video")} disabled={mixing || clips.length < 2} onPress={() => void mixVideo()} />
+        <View className="mx-4 mt-2 gap-1">
+          <Button full icon="shuffle" variant="secondary" title={words(mixing ? "Making another mix…" : "Try another mix")} disabled={mixing || clips.length < 2} onPress={() => void mixVideo()} />
+          <Text className="text-center text-[11.5px] text-muted">{words("Same song and clips, arranged again · free · Undo brings this one back")}</Text>
         </View>
         <Transport now={now} total={total} playing={playing} sound={sound} onPrev={() => go(selected - 1)} onToggle={() => setPlaying(!playing)} onNext={() => go(selected + 1)} onSound={() => setSound(!sound)} />
-        <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} log={p.chat ?? []} onLog={addChat} onAsk={async (t) => {
+        <View className="mx-4 mt-3"><AskShubix plan={aiPlan} planned={aiPlan === undefined ? undefined : !!aiPlan} log={p.chat ?? []} onLog={addChat} status={chatStatus} review={review} versions={versions} shotPics={aiPlan && aiPlan.lines.length === clips.length ? clips.map((c) => ({ uri: c.uri, kind: c.kind, at: Math.max(0.1, c.start) })) : undefined} onVersion={(i) => { const v = versions[i]; if (!v) return; setReview(false); keepVersion(words("Before going back")); change({ clips: v.clips, overlays: v.overlays, studio: v.studio }); setSelected(0); tell(words("Your Reel is back to this version. Undo brings the last one back."), "info"); }}
+          onKeep={() => setReview(false)} onUndo={() => { setReview(false); void undoNow().then(() => addChat((l) => [...l, { at: Date.now(), me: false, text: words("Undone: your Reel is back as it was before this change.") }])); }} onAsk={async (t) => {
           // a Reel the studio made and still holds: Shubix AI itself (the website's chat: its credit question asked here,
           // its plan applied there, the clips back here); otherwise the phone's own changes below
           if (p.studio && engine.holds(p.id)) {
             try {
-              setPlaying(false);
-              const r = await engine.chat(p, t);
+              setReview(false); setChatBusy(true); keepVersion(words("Before “{ask}”", { ask: t.slice(0, 40) }));
+              const r = await engine.chat(p, t).finally(() => setChatBusy(false));
               if (r) {
+                if (r.clips) setReview(true);
                 void engine.aiPlan().then(keepPlan).catch(() => {}); aiHistory();
                 if (r.clips) { const next = r.clips; setP((old) => old ? { ...old, clips: next, ...(r.overlays ? { overlays: r.overlays } : {}), studio: true } : old); setSelected(0); }
                 return r.answer;
@@ -999,29 +1046,7 @@ export default function EditorScreen() {
         <Timeline clips={clips} selected={selected} overlays={p.overlays} studioLayers={studioLayers} onLayer={(index) => { setStudioLayerIndex(index); setTool({ key: "layers", name: "Layers" }); }} song={p.audioName} now={now} playing={playing} onSelect={go} onSeek={seek} onTrim={trimTimelineClip} onMove={moveTimelineClip} onAddClip={() => void addClips()} onText={() => setTool({ key: "text", name: "Text" })} onVoice={() => use("voice", "Voice")} onMusic={() => setTool({ key: "music", name: "Music" })} />
         <View className="mt-3 flex-row items-center justify-between px-4">
           <Text className="text-[13px] font-semibold text-foreground">{words("Shot")} {String(selected + 1).padStart(2, "0")} · {clip ? clipDuration(clip).toFixed(1) : "0.0"} s</Text>
-          <View className="flex-row items-center gap-1"><IconButton icon="undo" size={36} label={words("Undo")} disabled={!undo.current.length && !(p.studio && engine.holds(p.id))} onPress={() => { void (async () => {
-            if (p.studio && engine.holds(p.id)) {
-              try {
-                const studioStep = await engine.undo();
-                if (studioStep.ok) {
-                  setP((old) => old ? { ...old, clips: studioStep.clips, ...(studioStep.overlays ? { overlays: studioStep.overlays } : {}) } : old);
-                  setSelected((i) => Math.min(i, Math.max(0, studioStep.clips.length - 1)));
-                  // Layers live in the hidden Studio document, not ReelProject. Refresh their
-                  // native controls after history navigation so masks/transforms don't look stale.
-                  try {
-                    const layers = await engine.tool("layerList");
-                    if (Array.isArray(layers)) {
-                      setStudioLayers(layers as typeof studioLayers);
-                      setStudioLayerIndex((index) => Math.max(0, Math.min(index, layers.length - 1)));
-                    }
-                  } catch (error) { console.warn("Studio layers could not be refreshed after undo:", error); }
-                  return;
-                }
-              } catch (error) { console.warn("Studio undo unavailable; using phone history:", error); }
-            }
-            const step = stepEditHistory(undo.current, redo.current, p, "undo", 30);
-            if (step) { undo.current = step.undo; redo.current = step.redo; setP(step.current); }
-          })(); }} /><IconButton icon="redo" size={36} label={words("Redo")} disabled={!redo.current.length && !(p.studio && engine.holds(p.id))} onPress={() => { void (async () => {
+          <View className="flex-row items-center gap-1"><IconButton icon="undo" size={36} label={words("Undo")} disabled={!undo.current.length && !(p.studio && engine.holds(p.id))} onPress={() => void undoNow()} /><IconButton icon="redo" size={36} label={words("Redo")} disabled={!redo.current.length && !(p.studio && engine.holds(p.id))} onPress={() => { void (async () => {
             if (p.studio && engine.holds(p.id)) {
               try {
                 const studioStep = await engine.redo();
@@ -1046,7 +1071,11 @@ export default function EditorScreen() {
         </View>
       </ScrollView>
       <View className="border-t border-border bg-bar pb-2 pt-2">
-        <ToolRow items={[...DOCK.map((t) => ({ ...t, tag: locked?.(t.key) ? locked(t.key).toUpperCase() : undefined })), ...SHOT_TOOLS]} on={tool?.key} onPress={(k) => { const t = [...DOCK, ...SHOT_TOOLS].find((x) => x.key === k)!; use(k, t.name); }} />
+        {/* one editor screen (the flow review with ChatGPT, 2026-11-20): the few things most people change, and All tools
+            opens the whole row of a pro editor in the same place */}
+        {allTools
+          ? <ToolRow items={[{ key: "less", name: "Fewer tools" }, ...DOCK.map((t) => ({ ...t, tag: locked?.(t.key) ? locked(t.key).toUpperCase() : undefined })), ...SHOT_TOOLS]} on={tool?.key} onPress={(k) => { if (k === "less") return setAllTools(false); const t = [...DOCK, ...SHOT_TOOLS].find((x) => x.key === k)!; use(k, t.name); }} />
+          : <ToolRow items={[{ key: "music", name: "Music" }, { key: "other", name: "Other moment" }, { key: "text", name: "Text" }, { key: "all", name: "All tools" }]} on={tool?.key} onPress={(k) => { if (k === "all") return setAllTools(true); use(k, k === "music" ? "Music" : k === "text" ? "Text" : "Other moment"); }} />}
       </View>
       <ExportScreen reel={exporting} onClose={() => setExporting(null)} />
       <ToolSheet tool={tool} onClose={() => setTool(null)}>{sheet()}</ToolSheet>

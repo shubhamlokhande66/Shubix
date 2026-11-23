@@ -36,10 +36,10 @@ describe("what suits each part", () => {
     // a face in a frame or two is not a close-up
     expect(storyBonus("close", { motion: 0.5, face: 0.2, faceSize: 0.4, kind: "hit" })).toBeCloseTo(0.1);
   });
-  it("never more than a nudge, and nothing for the hook or the build", () => {
+  it("never more than a nudge, and nothing for the build; the hook goes by movement", () => {
     for (const role of ["setup", "peak", "close"] as const) for (const m of [wide, closeUp, { motion: 9, face: 9, faceSize: 9 }, { motion: NaN, face: -1, faceSize: NaN }])
       expect(Math.abs(storyBonus(role, m))).toBeLessThanOrEqual(STORY.most);
-    expect(storyBonus("hook", closeUp)).toBe(0);
+    expect(storyBonus("hook", { motion: 0.3, face: 0, faceSize: 0 })).toBeGreaterThan(storyBonus("hook", { motion: 0.05, face: 1, faceSize: 0.5 }));   // editors open on movement
     expect(storyBonus("build", closeUp)).toBe(0);
     expect(storyBonus(undefined, closeUp)).toBe(0);
   });

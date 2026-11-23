@@ -128,10 +128,13 @@ describe("In my order: a clip that opens on black", () => {
     h.ES.seqOn = true; h.brain.makeEditNow();
     return { edit: h.ES.edit, blackUntil, nClips };
   }
-  it("shows every clip once, in the creator's order", async () => {
+  // (2026-11-20: a clip with footage for them keeps the song's cuts inside it, so a clip may be several shots, one after
+  // another and forward in time; the clips stay in the creator's order and are never gone back to)
+  it("shows every clip, in the creator's order, each clip's shots going forward in it", async () => {
     for (const [n, seed] of [[8, 5], [12, 19], [5, 3]] as const) {
-      const r = await inOrder(n, seed);
-      expect(r.edit.map((e) => e.src)).toEqual(Array.from({ length: n }, (_, i) => i));
+      const r = await inOrder(n, seed), src = r.edit.map((e) => e.src);
+      expect(src.filter((s, i) => !i || s !== src[i - 1])).toEqual(Array.from({ length: n }, (_, i) => i));
+      r.edit.forEach((e, i) => { if (i && e.src === r.edit[i - 1].src) expect(e.in).toBeGreaterThan(r.edit[i - 1].in + 0.3); });
     }
   });
   it("starts that clip at its first picture, and plays it slower rather than show the black", async () => {

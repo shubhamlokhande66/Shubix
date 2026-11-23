@@ -209,13 +209,14 @@ export const STUDIO_HTML = `
     <div class="grid min-w-0 gap-3.5">
     <div class="fchoose">
     <div class="row fpickrow">
-      <button class="${Button.primary}" id="mpick">${IC.music}<span>Add your song</span></button>
+      <button class="${Button.primary}" id="mpick">${IC.music}<span>Add your song</span><small class="lg:hidden">MP3, M4A, WAV, or the sound of a video</small></button>
       <button class="${Button.secondary}" id="mauto" type="button" hidden>${IC.spark}<span>Choose a song for me</span></button>
       <input id="mfile" type="file" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav,.mov,.mp4" hidden>
       <span class="fname" id="mname">MP3, M4A, WAV or any video's sound (iPhone: from Files or Photos)</span>
-      <button class="${Button.ghost}" id="skipmusic" type="button" hidden>Continue without music</button>
+      <button class="${Button.ghost} max-lg:hidden!" id="skipmusic" type="button" hidden>Continue without music</button>
     </div>
     <div class="recent" id="recent" hidden><span class="label">Recent songs</span><div class="rlist" id="rlist"></div></div>
+    <div class="flex items-center justify-center gap-2.5 py-4 text-[13px] font-semibold text-muted" id="rwait" role="status" hidden><span class="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>Loading your recent songs…</div>
     <button type="button" class="${phoneBottomButton} fnext hidden max-lg:in-[.fopen]:inline-flex" data-fnext="1" id="fchnext" disabled><span id="fchnt">Next</span> ${IC.arrow}</button>
     </div>
     <div class="fadjust">
@@ -231,7 +232,7 @@ export const STUDIO_HTML = `
       <span class="sinfo" id="sinfo"></span>
     </div>
     <p class="hint" id="lenhint" hidden>Drag on the waveform to choose the part yourself.</p>
-    <label class="tog" id="fitw"><input type="checkbox" id="fitclips" checked> Make the Reel as long as my clips (the rest of the song is left out)</label>
+    <label class="tog" id="fitw"><input type="checkbox" id="fitclips" checked> Match the Reel to my clips (the rest of the song is left out)</label>
     <p class="hint" id="fitnote" hidden></p>
     <div class="stats">
       <span>Length <b id="mdur">—</b></span>
@@ -256,9 +257,14 @@ export const STUDIO_HTML = `
     <button type="button" class="sh ${stepHead} max-lg:hidden" aria-expanded="true"><span class="${stepNumber}">2</span><span class="${stepText}"><h2 class="${stepTitle}">Clips</h2><small class="fsh ${stepNote}">Add multiple videos or photos. The more clips, the better!</small></span><span class="hidden" id="s2st">Several clips or one long video</span></button>
     <div class="grid min-w-0 gap-3.5">
     <button type="button" class="${Button.secondary} lg:hidden" id="fadjust" hidden>Adjust music</button>
+    <!-- phones: the Reel's length, asked here with the clips (the same controls as Adjust music, moved in: flow.ts) -->
+    <div class="flenbox lg:hidden" id="flenbox" hidden><div class="flex items-center gap-2 text-[14px] font-semibold text-foreground" id="flenwait" role="status"><span class="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>Reading your song…</div><div class="grid gap-3" id="flenslot"></div><p class="m-0 hidden text-[12.5px] text-muted in-[.flenbox:has(#flenslot_#fitclips:checked)]:block">Untick it to choose 15 s, 30 s, 1 min or your own length.</p></div>
     <div class="ftabs" id="ftabs" role="group" aria-label="Videos, photos or both"><button type="button" data-ft="videos" aria-pressed="true">Videos</button><button type="button" data-ft="photos" aria-pressed="false">Photos</button><button type="button" data-ft="mix" aria-pressed="false">Mix</button></div>
+    <!-- photos being made into moving shots (steps.ts): said here, it takes a second or two for each -->
+    <div class="flex items-center gap-2.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2.5 text-[13px] font-semibold text-foreground" id="photowait" role="status" hidden><span class="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span><span id="photowaitt"></span></div>
     <p class="hint clipwant" id="clipwant" role="status" hidden></p>
-    <div class="clipboxes" id="clipboxes" hidden><div class="cboxes" id="cboxes" role="list" aria-label="The clips this song asks for, and how long each should be"></div><small class="hint">A longer clip is fine: Shubix keeps its best part and leaves the rest out.</small></div>
+    <div class="cwbar" id="cwbar" hidden><i id="cwfill"></i></div>
+    <details class="clipboxes" id="clipboxes" hidden><summary>See how long each clip should be</summary><div class="cboxes" id="cboxes" role="list" aria-label="The clips this song asks for, and how long each should be"></div><small class="hint">A longer clip is fine: Shubix keeps its best part and leaves the rest out.</small></details>
     <div class="drop" id="dropzone" role="button" tabindex="0">${IC.upload}<b class="vonly fdesk">Drag &amp; drop videos here</b><b class="ponly fdesk">Drag &amp; drop photos here</b><b class="monly fdesk">Drag &amp; drop videos and photos here</b><b class="vonly fmob">Tap to Add Videos</b><b class="ponly fmob">Tap to Add Photos</b><b class="monly fmob">Tap to Add Videos and Photos</b><span class="vonly fdesk">or tap to choose · you can add more at any time</span><span class="ponly fdesk">or tap to choose · each photo becomes a short moving shot</span><span class="monly fdesk">or tap to choose · Shubix mixes them</span><span class="fmob">or choose from gallery</span><small>Supports MP4, MOV, 3GP, JPG, PNG</small></div>
     <input id="vfile" type="file" accept="video/*,.mov,.mp4,.m4v" multiple hidden>
     <div class="row">
@@ -403,6 +409,7 @@ export const STUDIO_HTML = `
         </aside>
       </div>
 
+      <div class="lockbar" id="lockbar" role="status" hidden><span id="lockbart"></span><a href="/pricing" id="lockbarp">See plans</a></div>
       <section class="timelineCard" id="timelinecard">
         <header class="timelineHeader">
           <div class="timelineTitle">
@@ -688,6 +695,7 @@ export const STUDIO_HTML = `
     <button type="button" class="${Button.close} shrink-0" id="chatclose" aria-label="Close"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
   <div class="chatlog" id="chatlog" aria-live="polite"></div>
+  <div class="chatvers" id="chatvers" hidden></div>
   <span class="chatideas">Quick ideas</span>
   <div class="chatchips" id="chatchips">
     <button type="button" data-say="Make it faster and more energetic">Faster</button>

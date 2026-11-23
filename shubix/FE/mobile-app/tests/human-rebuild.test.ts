@@ -98,6 +98,11 @@ function rankAll(reel: ReturnType<typeof readReel>, story: boolean, ai = false, 
   const best = (i: number, src: Src) => {
     const need = Math.max(0.1, Math.min(reel.slots[i].end - reel.slots[i].start, src.dur - TAIL)); let sc = -Infinity;
     const near = flow === "on" && i > 0 ? [look(reel.shots[i - 1])] : undefined;
+    // every shot is judged over the same time, once: its middle `same` seconds. Taking each shot's best moment (BEST=1, how
+    // this was first measured) gave a long shot dozens of tries and the human's own, as long as its slot, only one or two:
+    // a blind scorer then puts the human's shot well under 50% (BLIND=1 shows it).
+    if (process.env.BLIND) { const n = process.env.BEST ? Math.max(1, Math.floor((src.dur - need) / 0.1) + 1) : 1; for (let k = 0; k < n; k++) sc = Math.max(sc, Math.random()); return sc; }
+    if (!process.env.BEST) { const same = Math.min(0.5, need); return b.scoreWindow(i, src, Math.max(0, (src.dur - same) / 2), same, gmax, near).sc; }
     for (let a = 0; a <= src.dur - need + 1e-6; a += 0.1) sc = Math.max(sc, b.scoreWindow(i, src, a, need, gmax, near).sc);
     return sc;
   };

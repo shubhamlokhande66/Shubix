@@ -38,7 +38,7 @@ function WakeMark() {
 export function AppFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname(), { me, refresh } = useApi(), insets = useSafeAreaInsets(), text = useText();
   const words = useStudioText();
-  const feedback = <><TaskHost cancel={words("Stop")} cancelReel={words("Discard Reel")} cantCancel={words("Shubix AI has started working on this Reel. You can't cancel now.")} hide={words("Hide")} words={words} /><FeedbackHost ok={text("common.ok")} cancel={text("common.cancel")} /></>;
+  const feedback = <><TaskHost cancel={words("Stop")} cancelReel={words("Discard Reel")} cantCancel={words("Shubix AI is making your Reel now and finishes it. If it fails, no credits are used.")} hide={words("Hide")} words={words} /><FeedbackHost ok={text("common.ok")} cancel={text("common.cancel")} /></>;
   const [menu, setMenu] = useState(false), [noToken, setNoToken] = useState(false), [slow, setSlow] = useState(false);
   const access = useQuery({ queryKey: ["native-access"], queryFn: mobileApi.access, staleTime: 60_000, retry: 1 }).data ?? DEFAULT_ACCESS;
   const authPage = AUTH_PAGES.includes(pathname), open = authPage || PUBLIC_PAGES.includes(pathname) || isOpen(pathname, access);
