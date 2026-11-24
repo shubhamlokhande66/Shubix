@@ -10,7 +10,7 @@ import { sendReceipt } from "./receipts";
 import { affiliateCommission, couponUsed, getMarketing, quote, rewardFor, startOfDay, userByUsername } from "./marketing";
 
 /** Credits and payments (were services/credits.py and api/billing.py). A wallet (`wallets`, _id = user id) has
- * `monthly` (the plan's credits for this month, replaced when it renews) and `extra` (starter credits and top-ups, never
+ * `monthly` (the plan's credits for this month, replaced when it renews) and `extra` (welcome credits and top-ups, never
  * expiring); credits come from monthly first, every change is a `credit_ledger` line. Only active with billing AND
  * accounts on: a local single-person studio never counts credits. Payments: Cashfree Payment Gateway, applied once. */
 
@@ -31,14 +31,28 @@ const balanceOf = (w: Doc) => Number(w.monthly ?? 0) + Number(w.extra ?? 0);
 async function log(userId: string, delta: number, reason: string, ref: string, w: Doc, extra: Doc = {}) {
   await (await col("credit_ledger")).insertOne({ userId, delta, reason, ref, balance: balanceOf(w), at: new Date(), ...extra });
 }
-/** The user's wallet, created with the free starter credits, renewed / expired as the dates say. */
+/** A new account's free credits (Admin → Marketing → New user credits): once per email address, so an account deleted
+ * and made again (or a+1@gmail.com of the same inbox) gets none. Only a hash of the address is kept. */
+async function welcomeCredits(userId: string): Promise<number> {
+  const m = (await getMarketing()).welcome;
+  if (!m.on || m.credits <= 0) return 0;
+  const u = ObjectId.isValid(userId) ? await (await col("users")).findOne({ _id: new ObjectId(userId) }, { projection: { email: 1 } }) : null;
+  if (!u?.email) return 0;
+  const [name, host = ""] = String(u.email).trim().toLowerCase().split("@"), gmail = host === "gmail.com" || host === "googlemail.com", box = name.split("+")[0];
+  const id = crypto.createHmac("sha256", settings.secretKey || "shubix").update(`welcome:${gmail ? box.replace(/\./g, "") : box}@${gmail ? "gmail.com" : host}`).digest("hex");
+  const given = await col("welcome_credits");
+  // (the same account asked twice at once is the same gift: the wallet below is made only once)
+  try { await given.insertOne({ _id: id, userId, credits: m.credits, at: new Date() }); return m.credits; }
+  catch (e) { if ((e as { code?: number }).code !== 11000) throw e; const g = await given.findOne({ _id: id }); return g?.userId === userId ? Number(g.credits) : 0; }
+}
+/** The user's wallet, created with a new account's free credits, renewed / expired as the dates say. */
 export async function wallet(userId: string): Promise<Doc> {
   const wallets = await col("wallets"), now = new Date();
   let w = await wallets.findOne({ _id: userId });
   if (!w) {
-    const free = Number((await plansById()).get("free")?.credits ?? 0);
-    w = { _id: userId, plan: "free", period: null, monthly: 0, extra: free, planEnds: null, cycleEnds: null, createdAt: now, updatedAt: now };
-    try { await wallets.insertOne(w); await log(userId, free, "Free starter credits", "signup", w); } catch { w = await wallets.findOne({ _id: userId }); }
+    const free = await welcomeCredits(userId);
+    w = { _id: userId, plan: "free", period: null, monthly: 0, extra: free, welcome: free, planEnds: null, cycleEnds: null, createdAt: now, updatedAt: now };
+    try { await wallets.insertOne(w); if (free) await log(userId, free, "Welcome: free credits", "signup", w); } catch { w = await wallets.findOne({ _id: userId }); }
   }
   const planEnds = w.planEnds ? new Date(w.planEnds) : null, cycleEnds = w.cycleEnds ? new Date(w.cycleEnds) : null;
   if (w.plan !== "free" && planEnds && now >= planEnds) { // the paid period is over: back to free (top-ups stay)
@@ -65,9 +79,9 @@ export async function charge(action: string, ref: string, reason: string, times 
   for (let i = 0; i < 5; i++) { // optimistic: retry if another request changed the wallet in between
     const w = await wallet(uid), monthly = Number(w.monthly ?? 0), extra = Number(w.extra ?? 0);
     if (monthly + extra < cost) throw new NotEnoughCredits(`This needs ${cost} credit${cost > 1 ? "s" : ""}, you have ${monthly + extra}. Top up or choose a plan to continue.`, { needed: cost, balance: monthly + extra });
-    const fromMonthly = Math.min(monthly, cost);
-    const res = await wallets.findOneAndUpdate({ _id: uid, monthly, extra }, { $set: { monthly: monthly - fromMonthly, extra: extra - (cost - fromMonthly), updatedAt: new Date() } }, { returnDocument: "after" });
-    if (res) { await log(uid, -cost, reason, ref, res, { fromMonthly }); return cost; }
+    const fromMonthly = Math.min(monthly, cost), gift = Math.min(Number(w.welcome ?? 0), extra); // the welcome credits are used first
+    const res = await wallets.findOneAndUpdate({ _id: uid, monthly, extra }, { $set: { monthly: monthly - fromMonthly, extra: extra - (cost - fromMonthly), welcome: Math.max(0, gift - (cost - fromMonthly)), updatedAt: new Date() } }, { returnDocument: "after" });
+    if (res) { await log(uid, -cost, reason, ref, res, { fromMonthly, fromWelcome: Math.min(gift, cost - fromMonthly) }); return cost; }
   }
   throw new AppError("Your credits are being updated by another request. Try again.", { code: "CREDITS_BUSY" });
 }
@@ -176,7 +190,7 @@ export async function refund(ref: string): Promise<number> {
   const entry = await (await col("credit_ledger")).findOneAndUpdate({ ref, delta: { $lt: 0 }, refunded: { $ne: true } }, { $set: { refunded: true } });
   if (!entry) return 0;
   const amount = -Number(entry.delta), back = Math.min(Number(entry.fromMonthly ?? 0), amount);
-  const res = await (await col("wallets")).findOneAndUpdate({ _id: entry.userId }, { $inc: { monthly: back, extra: amount - back }, $set: { updatedAt: new Date() } }, { returnDocument: "after" });
+  const res = await (await col("wallets")).findOneAndUpdate({ _id: entry.userId }, { $inc: { monthly: back, extra: amount - back, welcome: Math.min(Number(entry.fromWelcome ?? 0), amount - back) }, $set: { updatedAt: new Date() } }, { returnDocument: "after" });
   if (res) await log(String(entry.userId), amount, "Refund: the Reel could not be made", ref, res);
   return amount;
 }
@@ -213,10 +227,11 @@ export async function sendCredits(toName: string, amount: number, note = "") {
   if ((today[0]?.n ?? 0) + amount > m.dailyMax) throw new ValidationFailed(`You can send up to ${m.dailyMax} credits a day (${Math.max(0, m.dailyMax - (today[0]?.n ?? 0))} left today).`, { code: "SHARE_DAILY" });
   const wallets = await col("wallets");
   for (let i = 0; i < 5; i++) { // optimistic, as charge(): retry if the wallet changed in between
-    const w = await wallet(uid), monthly = Number(w.monthly ?? 0), extra = Number(w.extra ?? 0), can = m.source === "extra" ? extra : monthly + extra;
-    if (can < amount) throw new ValidationFailed(m.source === "extra" ? `You have ${extra} top-up or gift credits to send (a plan's monthly credits stay with the plan).` : `You have ${can} credits.`, { code: "SHARE_NOT_ENOUGH" });
+    // the welcome credits are for trying Shubix: they cannot be sent (accounts made only to collect them)
+    const w = await wallet(uid), monthly = Number(w.monthly ?? 0), all = Number(w.extra ?? 0), extra = all - Math.min(Number(w.welcome ?? 0), all), can = m.source === "extra" ? extra : monthly + extra;
+    if (can < amount) throw new ValidationFailed(m.source === "extra" ? `You have ${extra} top-up or gift credits to send (a plan's monthly credits and the welcome credits stay with you).` : `You have ${can} credits.`, { code: "SHARE_NOT_ENOUGH" });
     const fromExtra = Math.min(extra, amount);
-    const res = await wallets.findOneAndUpdate({ _id: uid, monthly, extra }, { $set: { extra: extra - fromExtra, monthly: monthly - (amount - fromExtra), updatedAt: new Date() } }, { returnDocument: "after" });
+    const res = await wallets.findOneAndUpdate({ _id: uid, monthly, extra: all }, { $set: { extra: all - fromExtra, monthly: monthly - (amount - fromExtra), updatedAt: new Date() } }, { returnDocument: "after" });
     if (!res) continue;
     const id = crypto.randomBytes(8).toString("hex"), me = await (await col("users")).findOne({ _id: new ObjectId(uid) }, { projection: { username: 1 } });
     await log(uid, -amount, `Sent to @${to.username}`, `send:${id}`, res);

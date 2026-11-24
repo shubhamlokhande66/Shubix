@@ -1,7 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
-import { bestMoment, checkExportedReel, clipAdvice, reactionsOf, type ExportExpect } from "@mobile/video-engine";
+import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, reactionsOf, stillEnd, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -37,7 +37,7 @@ export function variesFrameRate(times: number[]) {
   const med = [...d].sort((a, b) => a - b)[d.length >> 1], off = d.filter((g) => g > med * 1.6 || g < med * 0.6).length / d.length;
   return off > 0.12 || Math.max(...d) > Math.max(0.25, med * 6);
 }
-export type ClipFacts = { dur: number; w: number; h: number; size?: number; fps?: number; hdr?: boolean; tenBit?: boolean; chroma422?: boolean; times?: number[] };
+export type ClipFacts = { dur: number; w: number; h: number; size?: number; fps?: number; hdr?: boolean; tenBit?: boolean; chroma422?: boolean; times?: number[]; end?: number };
 /** The edit copy a heavy clip needs (HDR, 10-bit, more than 30 fps, a varying frame rate, very large), H.264 at 30 fps; null: none. */
 export function editCopyOf(f: ClipFacts) {
   const long = Math.max(f.w, f.h), size = f.size ?? 0, rate = f.dur > 0 ? (size * 8) / f.dur : 0;
@@ -215,7 +215,10 @@ export function createNativeEngine(io: NativeIo) {
     try {
       const res = await io.fetch(url("sound", `&p=${encodeURIComponent(path)}`));
       if (!res.ok) throw new Error("This file has no sound we can read. Try an MP3, M4A or WAV.");
-      const { sampleRate, channels, mono } = pcmOf(await res.arrayBuffer());
+      let { sampleRate, channels, mono } = pcmOf(await res.arrayBuffer());
+      // a Reel saved from Instagram: its song without the card Instagram adds at its end (instaCard.ts)
+      const end = instaCardStart(mono, sampleRate);
+      if (end !== null) { const n = Math.max(1, Math.floor(end * sampleRate)); mono = mono.slice(0, n); channels = channels.map((c) => c.slice(0, n)); }
       if (stops !== g) throw new Error("Stopped");
       io.task?.("progress", "song", undefined, "Finding the beats, drops and breaks");
       const r = await analyse(mono, sampleRate);
@@ -285,7 +288,9 @@ export function createNativeEngine(io: NativeIo) {
     }
     if (!probe?.ok) throw new Error(photo ? `This photo cannot be read: ${c.name}. Use JPG, PNG or WEBP.` : `This clip cannot be read: ${c.name}`);
     const p = `&p=${encodeURIComponent(from)}`;
-    const facts = await probe.json() as ClipFacts, { dur, w, h } = facts, plan = editCopyOf(facts);
+    const facts = await probe.json() as ClipFacts, { w, h } = facts, plan = editCopyOf(facts);
+    // its footage ends with its last picture (the sound often runs on, and a shot there stood still before its cut)
+    let dur = facts.end && facts.end > 0.3 && facts.end < facts.dur - 0.04 ? facts.end : facts.dur;
     // a heavy clip: its edit copy is what is read, previewed and exported (no copy made: the original goes on)
     let path = from, W = w, H = h;
     if (photo) copies.push({ name: c.name, path, w, h, photo: dur });
@@ -297,6 +302,9 @@ export function createNativeEngine(io: NativeIo) {
     const scan = lastLine(await (await io.fetch(url("scan", q), { method: "POST" })).text(), "{");
     let raw: { t: number; rects: unknown[] }[] = [];
     try { raw = lastLine(await (await io.fetch(url("faces", `${q}&w=${W}&h=${H}`), { method: "POST" })).text(), "["); } catch { /* no faces read: the Reel is still made */ }
+    // a last picture repeated to the end: its footage ends where it stops moving (video-engine clipUse.ts)
+    const still = photo ? dur : stillEnd(scan.samples, dur);
+    if (still < dur) { dur = still; scan.samples = scan.samples.filter((s: { t: number }) => s.t < still - 1e-6); }
     const src = host.addClip({ name: c.name, path, soundPath: from, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface" });
     // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
     try { const s = await readSound(from); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
@@ -387,7 +395,7 @@ export function createNativeEngine(io: NativeIo) {
     aiState: async () => { if (!signedIn) { signedIn = true; await host.account().catch(() => false); } return { on: !!host.ES.aiOn }; },
     /** the good footage in the clips read, in whole seconds, and the Reel's length: enough clips? */
     footage: () => { const exact = host.ES.sources.reduce((t: number, c: Parameters<typeof goodSecs>[0]) => t + goodSecs(c), 0) as number;
-      return { have: Math.floor(exact), exact, clips: host.ES.sources.length as number, period: Number(host.ES.song?.r?.period) || 0, need: (host.ES.buf?.duration as number | undefined) ?? 0 }; },
+      return { have: Math.floor(host.ES.sources.length > 1 && !host.ES.seqOn && exact >= 10 ? exact * 0.85 : exact), exact, clips: host.ES.sources.length as number, period: Number(host.ES.song?.r?.period) || 0, need: (host.ES.buf?.duration as number | undefined) ?? 0 }; },
     /** Shubix AI's price for this Reel and the person's balance, read again each time: shown before Make Reel */
     aiPrice: async () => { signedIn = true; await host.account().catch(() => false); return { on: !!host.ES.aiOn, cost: host.brain.aiCostOf("reel") as number, balance: host.brain.aiBal() as number | null, paid: host.ES.planNow !== "free" }; },
     /** Make Reel was pressed with the price on the screen: that is the person's answer, so nothing is asked again */

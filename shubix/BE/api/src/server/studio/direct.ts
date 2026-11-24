@@ -67,6 +67,9 @@ export const RefMoment = z.object({
   move: z.array(RefKey).max(5).optional(), ease: z.enum(EASES).optional(), shake: z.boolean().optional(), freeze: z.number().min(0).max(1).optional(),
   /** where the shot starts in the Reel (s), a flicker montage, the Reel's black end card */
   at: z.number().min(0).max(600).optional(), flick: z.boolean().optional(), black: z.boolean().optional(),
+  /** its speed over the shot (five speeds) or where its picture freezes; a transition and an effect the studio has by that name */
+  spd: z.array(z.number().min(0.2).max(4)).length(5).optional(), frz: z.number().min(0).max(1).optional(),
+  trx: z.enum(["slideleft", "slideright", "zoomout", "burn"]).optional(), fx: z.enum(["rgbpulse", "mirror", "strobe"]).optional(),
 });
 export const Reference = z.object({
   name: word(80), medianBeats: z.number().min(0).max(64), hookBeats: z.number().min(0).max(64), onBeat: lvl,

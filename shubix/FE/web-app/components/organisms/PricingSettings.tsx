@@ -108,7 +108,7 @@ export function PricingSettings() {
               <Field label="₹ a month">
                 {p.id === "free" ? <Input value="Free" disabled /> : <Input type="number" min={1} inputMode="numeric" aria-label={`${p.name} price`} value={num(p.monthly)} onChange={(e) => setPlan(i, "monthly", e.target.valueAsNumber)} />}
               </Field>
-              <Field label="Credits a month"><Input type="number" min={0} inputMode="numeric" aria-label={`${p.name} credits`} value={num(p.credits)} onChange={(e) => setPlan(i, "credits", e.target.valueAsNumber)} /></Field>
+              {p.id === "free" ? <Field label="Credits"><Input value="Marketing → New user credits" disabled /></Field> : <Field label="Credits a month"><Input type="number" min={0} inputMode="numeric" aria-label={`${p.name} credits`} value={num(p.credits)} onChange={(e) => setPlan(i, "credits", e.target.valueAsNumber)} /></Field>}
               <Field label="Free chats / Reel"><Input type="number" min={0} max={50} inputMode="numeric" aria-label={`${p.name} free chat changes per Reel`} value={num(p.freeChats)} onChange={(e) => setPlan(i, "freeChats", e.target.valueAsNumber)} /></Field>
             </div>
 

@@ -2,11 +2,11 @@
 // the website's studio: its state is the object ES, and what is the app's own comes through EH.
 // The golden test (scripts/engine-golden.mjs) says it still makes the same Reel.
 // @ts-nocheck
-import { endWell, TAIL, crossesScene, suitFx, rampSpeed, keyframesFor, windowStats, blackPart, goodSecs } from './pure';
+import { endWell, TAIL, crossesScene, suitFx, rampSpeed, leadSpeed, keyframesFor, windowStats, blackPart, goodSecs, useOf } from './pure';
 import { repace } from '../components/studio/soundmap';
 import { inferAutonomousMood, createAutonomousReelPlan, validateAutonomousReelPlan, createDirectorPlan, evaluateKeyframes, reviewAutonomousEdit, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, SHORT_REEL } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
-import { toneOf, matchTones, describeBudget } from '@mobile/video-engine';
+import { toneOf, matchTones, describeBudget, absorbRepeats } from '@mobile/video-engine';
 
 export function createReelBrain(ES, EH){
 // The edit's own review (shared/video-engine review.ts), as the website's studio gives it (engine.ts reviewOf): the same
@@ -28,7 +28,7 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
-    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.trLead = L;
+    L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = ES.beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
 }
@@ -287,6 +287,10 @@ function makeEditNow(){
         if(bi >= 0){ const was = res[bi]; put(bi, balt); addedClips++; if(was.byDir){ res[bi].swapIn = true; ES.plan[bi].ak = []; } } });
       ES.editTakes.fixedDark = fixedDark; ES.editTakes.addedClips = addedClips; ES.seed = seedR;
     }
+    // never the same moment twice while a clip beside it can run on over its time (video-engine clipUse.ts)
+    if(ES.mode !== 'copy' && ES.dupCount && !(ES.director || EH.aiTrusted())){
+      const n = absorbRepeats(ES.plan, res, EH.SPEED.normal, { end: si => Math.min(useOf(ES.sources[si]).to, ES.sources[si].dur - TAIL), from: si => useOf(ES.sources[si]).from, crosses: (si, a, b) => crossesScene(ES.sources[si], a, b) });
+      if(n) ES.dupCount = res.filter(r => r.ov > 0.001).length; }
   }
   const useCount = ES.sources.map(()=>0);   // (players re-assigned by assignPlayers on manual edits)
   ES.edit = ES.plan.map((s,i)=>({...s, ...res[i], el: ES.sources[res[i].src].els[(useCount[res[i].src]++)%3]}));

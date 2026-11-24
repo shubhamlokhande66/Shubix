@@ -18,6 +18,7 @@ const SETTINGS_ID = "marketing";
 
 // ------------------------------------------------------------------ the administrator's settings
 export const MarketingIn = z.object({
+  welcome: z.object({ on: z.boolean(), credits: z.number().int().min(0).max(10000) }).optional(), // (not sent by an admin page opened before this: kept as it is)
   referral: z.object({
     on: z.boolean(), inviterCredits: z.number().int().min(0).max(10000), inviteeCredits: z.number().int().min(0).max(10000),
     inviteeOn: z.enum(["signup", "verified", "purchase"]), inviterOn: z.enum(["signup", "verified", "purchase"]), monthlyCap: z.number().int().min(0).max(10000),
@@ -27,8 +28,10 @@ export const MarketingIn = z.object({
   ai: z.object({ freeWithCredits: z.boolean() }).default({ freeWithCredits: true }),
   emails: z.object({ notes: z.boolean(), cartReminder: z.boolean().default(true), cartHours: z.number().int().min(1).max(72).default(3) }).default({ notes: true, cartReminder: true, cartHours: 3 }),
 });
-export type Marketing = z.infer<typeof MarketingIn>;
+export type Marketing = z.infer<typeof MarketingIn> & { welcome: { on: boolean; credits: number } };
 export const MARKETING_DEFAULTS: Marketing = {
+  // a new account's free credits, given once when it is first opened: 10 is one AI Reel; then people top up or choose a plan
+  welcome: { on: true, credits: 10 },
   // both sides get credits once the friend has verified their email (a fake email gets nothing); 20 friends a month at most
   // the friend's welcome gift once they verify their email; the inviter's reward once the friend makes a first purchase
   // (real revenue pays for it, so fake accounts earn the inviter nothing); 20 rewarded invites a month at most
@@ -48,10 +51,10 @@ export async function getMarketing(): Promise<Marketing> {
   const d = (await (await col("app_settings")).findOne({ _id: SETTINGS_ID })) as (Partial<Marketing> & { referral?: { rewardOn?: Marketing["referral"]["inviteeOn"] } }) | null;
   const old = d?.referral?.rewardOn;
   if (d?.referral && old) d.referral = Object.assign({ inviteeOn: old, inviterOn: old }, d.referral);
-  return { referral: { ...MARKETING_DEFAULTS.referral, ...(d?.referral ?? {}) }, share: { ...MARKETING_DEFAULTS.share, ...(d?.share ?? {}) }, affiliate: { ...MARKETING_DEFAULTS.affiliate, ...(d?.affiliate ?? {}) },
+  return { welcome: { ...MARKETING_DEFAULTS.welcome, ...(d?.welcome ?? {}) }, referral: { ...MARKETING_DEFAULTS.referral, ...(d?.referral ?? {}) }, share: { ...MARKETING_DEFAULTS.share, ...(d?.share ?? {}) }, affiliate: { ...MARKETING_DEFAULTS.affiliate, ...(d?.affiliate ?? {}) },
     ai: { ...MARKETING_DEFAULTS.ai, ...(d?.ai ?? {}) }, emails: { ...MARKETING_DEFAULTS.emails, ...(d?.emails ?? {}) } };
 }
-export async function setMarketing(m: Marketing) {
+export async function setMarketing(m: z.infer<typeof MarketingIn>) {
   if (m.share.min > m.share.max) throw new ValidationFailed("The smallest amount to send is more than the largest.", { code: "INVALID_MARKETING" });
   await (await col("app_settings")).updateOne({ _id: SETTINGS_ID }, { $set: { ...m, updatedAt: new Date() } }, { upsert: true });
   return getMarketing();

@@ -10,14 +10,14 @@ const match = (d: Doc, q: Doc) => Object.entries(q).every(([k, v]) => {
   if (v && typeof v === "object" && !(v instanceof Date)) { const o = v as Record<string, unknown>;
     if ("$lt" in o) return typeof x === "number" && x < (o.$lt as number);
     if ("$ne" in o) return x !== o.$ne; }
-  return x === v;
+  return v instanceof String ? x === String(v) : x === v;
 });
 const coll = (name: string) => {
   if (!st.cols.has(name)) st.cols.set(name, []);
   const L = st.cols.get(name)!;
   return {
     findOne: async (q: Doc) => L.find((d) => match(d, q)) ?? null,
-    insertOne: async (d: Doc) => { L.push({ ...d }); },
+    insertOne: async (d: Doc) => { if (d._id !== undefined && L.some((x) => x._id === d._id)) throw Object.assign(new Error("dup"), { code: 11000 }); L.push({ ...d }); },
     updateOne: async (q: Doc, u: { $set?: Doc; $pull?: Record<string, unknown> }, o?: { upsert?: boolean }) => { const d = L.find((x) => match(x, q));
       for (const [k, v] of Object.entries(u.$pull ?? {})) if (d) d[k] = (d[k] as unknown[]).filter((x) => x !== v);
       if (d) Object.assign(d, u.$set ?? {}); else if (o?.upsert) L.push({ ...q, ...u.$set }); },
@@ -29,7 +29,7 @@ const coll = (name: string) => {
     find: (q: Doc) => ({ sort: () => ({ limit: () => ({ toArray: async () => L.filter((d) => match(d, q)) }) }) }),
   };
 };
-vi.mock("@/server/core/db", () => ({ mainDb: async () => ({ collection: coll }), db: async () => ({ collection: coll }), ObjectId: String }));
+vi.mock("@/server/core/db", () => ({ mainDb: async () => ({ collection: coll }), db: async () => ({ collection: coll }), ObjectId: class { constructor(id: string) { return Object(id); } static isValid() { return true; } } }));
 vi.mock("@/server/core/auth", () => ({ currentUser: () => st.user, AuthRequired: Error }));
 vi.mock("@/server/ai", () => ({ getProvider: () => ({}) }));
 vi.mock("@/server/ai/config", () => ({ effective: () => ({}) }));
@@ -149,6 +149,29 @@ describe("Cashfree payments", () => {
     await expect(webhook(new Request("http://x/", { method: "POST", body, headers: { "x-webhook-timestamp": ts, "x-webhook-signature": forged } }))).rejects.toThrow();
     await expect(webhook(new Request("http://x/", { method: "POST", body }))).rejects.toThrow();
     expect(order.status).toBe("created");
+  });
+  it("a new account gets its welcome credits once, for one AI Reel, and the same inbox never twice", async () => {
+    const { wallet, charge, refund } = await import("../../src/server/credits");
+    st.cols.set("users", [{ _id: "n1", email: "New.User@gmail.com" }, { _id: "n2", email: "newuser+again@gmail.com" }, { _id: "n3", email: "other@x.in" }]);
+    expect(Number((await wallet("n1")).extra)).toBe(10);
+    expect(Number((await wallet("n1")).extra)).toBe(10);
+    expect(Number((await wallet("n2")).extra)).toBe(0);
+    expect(Number((await wallet("n3")).extra)).toBe(10);
+    st.user = "n1";
+    expect(await charge("studio_ai", "r1", "AI Reel")).toBe(10);
+    expect(await wallet("n1")).toMatchObject({ extra: 0, welcome: 0 });
+    await expect(charge("studio_ai", "r2", "AI Reel")).rejects.toThrow();
+    await refund("r1");
+    expect(await wallet("n1")).toMatchObject({ extra: 10, welcome: 10 });
+  });
+  it("the administrator sets the welcome credits, or turns them off", async () => {
+    const { wallet } = await import("../../src/server/credits"), { setMarketing, MARKETING_DEFAULTS, getMarketing } = await import("../../src/server/marketing");
+    st.cols.set("users", [{ _id: "a1", email: "a1@x.in" }, { _id: "a2", email: "a2@x.in" }]);
+    await setMarketing({ ...MARKETING_DEFAULTS, welcome: { on: true, credits: 25 } });
+    expect(Number((await wallet("a1")).extra)).toBe(25);
+    await setMarketing({ ...MARKETING_DEFAULTS, welcome: { on: false, credits: 25 } });
+    expect((await getMarketing()).welcome.on).toBe(false);
+    expect(Number((await wallet("a2")).extra)).toBe(0);
   });
   it("takes an Indian mobile number in the ways people write it", async () => {
     const { cleanPhone } = await import("../../src/server/credits");

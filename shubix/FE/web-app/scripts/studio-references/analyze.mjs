@@ -11,6 +11,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { songAnalysis } from '../../../../Shared/core/src/engine/studio/song.ts';
+import { instaCardStart } from '../../../../Shared/video-engine/src/instaCard.ts';
 
 const SR = 22050, SCENE = Number(process.env.SCENE || 0.32), LEAD = 1 / 30;
 function audio(file) {
@@ -25,8 +26,8 @@ function cuts(file) {
   return ts.filter((t, i) => !i || t - ts[i - 1] > 0.12);
 }
 /** light and colour, one reading every 0.5 s: mean luma (0-255) and saturation */
-function look(file) {
-  const r = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-an', '-vf', 'fps=2,scale=96:-2,signalstats,metadata=print:file=-', '-f', 'null', '-'], { maxBuffer: 1 << 28 });
+function look(file, dur) {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-t', String(dur), '-i', file, '-an', '-vf', 'fps=2,scale=96:-2,signalstats,metadata=print:file=-', '-f', 'null', '-'], { maxBuffer: 1 << 28 });
   const s = String(r.stdout), y = [...s.matchAll(/signalstats\.YAVG=([\d.]+)/g)].map((m) => +m[1]), sat = [...s.matchAll(/signalstats\.SATAVG=([\d.]+)/g)].map((m) => +m[1]);
   const mean = (a) => (a.length ? a.reduce((p, q) => p + q, 0) / a.length : null);
   return { luma: mean(y), sat: mean(sat), dark: y.length ? y.filter((v) => v < 25).length / y.length : null };
@@ -35,8 +36,11 @@ const med = (a) => { if (!a.length) return null; const s = [...a].sort((p, q) =>
 const r3 = (v) => (v == null ? null : +v.toFixed(3));
 
 export function measure(file) {
-  const dur = Number(String(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).stdout).trim());
-  const x = audio(file), song = x ? songAnalysis(x, SR) : null;
+  const whole = Number(String(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).stdout).trim());
+  // a Reel saved from Instagram ends on Instagram's own card: not the editor's, so not measured
+  let x = audio(file); const card = x ? instaCardStart(x, SR) : null, dur = card ?? whole;
+  if (card !== null) x = x.slice(0, Math.floor(card * SR));
+  const song = x ? songAnalysis(x, SR) : null;
   const beats = song ? song.beats.filter((b) => b < dur) : [], period = song && song.period > 0 ? song.period : null;
   const drops = song ? song.cuts.filter((c, k) => song.cutType[k] === 'drop' && c < dur) : [];
   const c = cuts(file).filter((t) => t > 0.2 && t < dur - 0.2), edges = [0, ...c, dur], shots = edges.slice(1).map((e, i) => e - edges[i]);
@@ -51,14 +55,14 @@ export function measure(file) {
   const onDrop = drops.map((d) => c.some((t) => Math.abs(t - d) < 0.12));
   const third = dur / 3, rate = (a, b) => c.filter((t) => t >= a && t < b).length / Math.max(0.5, b - a);
   return {
-    file: path.basename(file), dur: r3(dur), bpm: period ? +(60 / period).toFixed(1) : null, beats: beats.length, drops: drops.map(r3),
+    file: path.basename(file), dur: r3(dur), card: card !== null, bpm: period ? +(60 / period).toFixed(1) : null, beats: beats.length, drops: drops.map(r3),
     cuts: c.map(r3), beatTimes: beats.map(r3), period: r3(period), shots: shots.length, shot: { median: r3(med(shots)), shortest: r3(Math.min(...shots)), longest: r3(Math.max(...shots)) },
     shotBeats: period ? r3(med(shots) / period) : null, hook: r3(shots[0]), hookBeats: period ? r3(shots[0] / period) : null,
     onHalfBeat: share(halves), onHit: share(hits),
     onBeat: offs.length ? r3(offs.filter((v) => v <= 0.07).length / offs.length) : null, meanOffMs: offs.length ? Math.round(offs.reduce((p, q) => p + q, 0) / offs.length * 1000) : null,
     dropsCut: drops.length ? r3(onDrop.filter(Boolean).length / drops.length) : null,
     cutRate: { start: r3(rate(0, third)), middle: r3(rate(third, 2 * third)), end: r3(rate(2 * third, dur)) },
-    under05s: r3(shots.filter((s) => s < 0.5).length / shots.length), ...look(file),
+    under05s: r3(shots.filter((s) => s < 0.5).length / shots.length), ...look(file, dur),
   };
 }
 

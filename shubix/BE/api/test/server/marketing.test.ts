@@ -111,7 +111,7 @@ describe("sending credits", () => {
     await expect(as(a, () => C.sendCredits(nb, 20))).rejects.toThrow(/a day/);
     await (await mainDb()).collection("wallets").updateOne({ _id: a as never }, { $set: { monthly: 250, extra: 0 } });
     await M.setMarketing({ ...s, share: { ...s.share, dailyMax: 1000 } });
-    await expect(as(a, () => C.sendCredits(nb, 5))).rejects.toThrow(/monthly credits stay/);
+    await expect(as(a, () => C.sendCredits(nb, 5))).rejects.toThrow(/monthly credits .*stay/);
   });
 });
 

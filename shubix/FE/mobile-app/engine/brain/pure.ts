@@ -1,6 +1,7 @@
 // The engine's helpers that need no browser and no engine state: moved out of components/studio/engine.ts as the first
 // step of running the phone's brain without the hidden page. They must stay free of the DOM (tests/brain.test.ts).
 // @ts-nocheck
+import { clipUse } from '@mobile/video-engine';
 export const srcPosF = (e, l) => e.in + e.sp.pos(l)*e.scaleR;
 export const fmt = t => { t = Math.max(0,t); const m = Math.floor(t/60), s = t - m*60; return m + ':' + (s<10?'0':'') + s.toFixed(2); };
 export function endWell(p){ while(p.length > 1 && p[p.length-1].end - p[p.length-1].start < 1){ const l = p.pop(); p[p.length-1].end = l.end; } return p; }
@@ -62,6 +63,10 @@ export function statsIndex(src){
 }
 export const lowerB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<x) lo=m+1; else hi=m; } return lo; };
 export const upperB = (A, x) => { let lo=0, hi=A.length; while(lo<hi){ const m=(lo+hi)>>1; if(A[m]<=x) lo=m+1; else hi=m; } return lo; };
+// the part of a clip that is footage (video-engine clipUse.ts), read again when its readings change
+export function useOf(src){ const k = src._use;
+  if(k && k.s === src.samples && k.r === src.reacts && k.a === src.ai && k.d === src.dur) return k.u;
+  const u = clipUse(src); src._use = { s: src.samples, r: src.reacts, a: src.ai, d: src.dur, u }; return u; }
 export const TAIL = 0.15;   // seconds of clip kept free after a shot's window
 // A clip's black part that is a fault in it: some of it black (brightness under 0.08), but under four fifths, so it is
 // not a dark clip (night, a stage: that is the clip as filmed).
@@ -95,8 +100,12 @@ export function velocitySpeed(len, bl){
   for(let k=0;k<pts.length-1;k++){ const a=pts[k], b=pts[k+1], T=b-a, m=a+0.6*T;
     segs.push([a,m,0.45,acc]); acc += 0.45*(m-a); segs.push([m,b,2.2,acc]); acc += 2.2*(b-m); }
   const find = l => segs.find(s=>l<=s[1]) || segs[segs.length-1];
-  return {label:'Velocity (beat)', at:l=>find(l)[2], pos:l=>{ const s=find(l); return s[3] + s[2]*(Math.min(l,s[1])-s[0]); }};
+  return {label:'Velocity (beat)', at:l=>find(l)[2], pos:l=>{ const s=find(l); return s[3] + s[2]*(l-s[0]); }};
 }
+// the same speed on a shot that now starts L s earlier (landTransitions): the lead plays at the speed it opens with, then
+// the curve stays on its beats. Without it the curve ran out L s before the cut and the picture stood still there.
+export function leadSpeed(sp, L){ if(!/^(Velocity|Ramp|Custom)/.test(sp.label)) return sp;
+  const r = sp.at(0); return { label: sp.label, at: l => l < L ? r : sp.at(l - L), pos: l => l < L ? r*l : r*L + sp.pos(l - L) }; }
 export function rampSpeed(len){ const sp = 0.45*len;   // fast, then slow into the next beat
   return {label:'Ramp 1.8×→0.6×', at:l=> l<sp ? 1.8 : 0.6, pos:l=> l<sp ? 1.8*l : 1.8*sp + 0.6*(l-sp)}; }
 export function panClamp(p, W, dw){ return dw <= W + 0.5 ? (W - dw)/2 : Math.min(0, Math.max(W - dw, p)); }
@@ -162,7 +171,8 @@ export function suitFx(e){
 export function goodSecs(src){
   const S = src.samples || [], med = src.shMed || 1, usable = Math.max(0, (src.dur || 0) - TAIL);
   if(!S.length) return usable;
-  return usable * S.filter(x => (x.sh || 0) / med >= 0.45 && (x.b ?? 1) >= 0.08).length / S.length;
+  const u = useOf(src);   // (the part of it that is footage: clipUse.ts)
+  return usable * S.filter(x => x.t >= u.from && x.t <= u.to && (x.sh || 0) / med >= 0.45 && (x.b ?? 1) >= 0.08).length / S.length;
 }
 export function moveWords(K){
   const a = K[0], b = K[K.length-1], w = [];
@@ -177,7 +187,7 @@ export function curveSpeed(len, cv){
   const v = ['a','b','c','d','e'].map(k => Math.min(4, Math.max(0.2, +(cv && cv[k]) || 1)));
   const at = l => { const x = Math.min(1, Math.max(0, l/Math.max(1e-6, len)))*4, i = Math.min(3, Math.floor(x)), f = x - i, s2 = f*f*(3 - 2*f); return v[i] + (v[i+1] - v[i])*s2; };
   const N = 96, cum = new Float64Array(N + 1); for(let k = 0; k < N; k++){ const a = k*len/N, b = (k + 1)*len/N; cum[k+1] = cum[k] + (at(a) + at(b))/2*(b - a); }
-  const pos = l => { const x = Math.min(N, Math.max(0, l/Math.max(1e-6, len)*N)), i = Math.min(N - 1, Math.floor(x)); return cum[i] + (cum[i+1] - cum[i])*(x - i); };
+  const pos = l => { const x = Math.min(N, Math.max(0, l/Math.max(1e-6, len)*N)), i = Math.min(N - 1, Math.floor(x)); return cum[i] + (cum[i+1] - cum[i])*(x - i) + Math.max(0, l - len)*v[4]; };   // (past its end, under the next transition: it plays on)
   return { label:'Custom curve', at, pos };
 }
 export const srcPos = (e, l) => e.cs && e.cs.rev ? e.in + (e.sp.pos(e.end - e.start) - e.sp.pos(l))*e.scaleR : srcPosF(e, l);
