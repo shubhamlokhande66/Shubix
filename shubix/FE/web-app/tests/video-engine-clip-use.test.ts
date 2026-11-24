@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { absorbRepeats, clipUse, wasteShare } from "@shubix/video-engine";
+import { absorbRepeats, clipUse, stillEnd, wasteShare } from "@shubix/video-engine";
 
 const clip = (dur: number, m: (t: number) => number, sh: (t: number) => number = () => 100) =>
   ({ dur, samples: Array.from({ length: dur * 10 }, (_, i) => ({ t: i / 10, m: m(i / 10) * (1 + 0.3 * Math.sin(i * 1.7)), sh: sh(i / 10) })) });
@@ -30,6 +30,12 @@ describe("which part of a clip is footage", () => {
     expect(clipUse(clip(10, (t) => (t < 6 ? 0.006 : 0.001))).to).toBe(10);
     expect(clipUse(clip(4, (t) => (t < 2 ? 0.06 : 0.001))).to).toBe(4);
     expect(clipUse(clip(15, () => 0.05))).toEqual({ from: 0, to: 15, why: [] });
+  });
+  it("ends a clip where its last picture is only repeated", () => {
+    expect(stillEnd(clip(8, (t) => (t < 7.2 ? 0.05 : 0)).samples, 8)).toBeCloseTo(7.2);
+    expect(stillEnd(clip(8, () => 0.05).samples, 8)).toBe(8);
+    expect(stillEnd(clip(8, () => 0.0001).samples, 8)).toBe(8);   // (still all through: that is the clip)
+    expect(stillEnd(clip(8, (t) => (t < 4 ? 0.05 : 0)).samples, 8)).toBe(8);
   });
   it("says how much of a moment is not footage", () => {
     expect(wasteShare({ from: 2, to: 10, why: [] }, 9, 11)).toBeCloseTo(0.5);

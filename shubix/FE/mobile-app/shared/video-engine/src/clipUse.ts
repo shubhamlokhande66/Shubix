@@ -77,6 +77,21 @@ export function clipUse(c: UseClip): ClipUse {
   return { from, to, why: [from > 0 ? "start: " + w0 : "", to < dur ? "end: " + w1 : ""].filter(Boolean) };
 }
 
+/**
+ * Where a clip stops moving for good: a last picture repeated to the end (a trimmed phone clip, or its smooth copy up to
+ * the end of the sound) is no footage. 0.1 to 1.5 s of it, after a clip that moves; otherwise the clip's own end.
+ */
+export function stillEnd(samples: readonly UseSample[] | null | undefined, dur: number): number {
+  const S = samples || [], n = S.length;
+  if (n < 8) return dur;
+  let k = n;
+  while (k > 1 && S[k - 1].m < 0.0007) k--;
+  if (k === n) return dur;
+  // (the samples' movement is smoothed over three: the first still one is one sample late)
+  const step = (S[n - 1].t - S[0].t) / (n - 1), end = S[k - 1].t + step, before = med(S.slice(Math.max(0, k - 10), k).map((s) => s.m));
+  return end > 0.5 && dur - end >= 0.1 && dur - end <= 1.5 && before > 0.0028 ? end : dur;
+}
+
 /** how much of the moment [a, b] is not footage (0 to 1) */
 export function wasteShare(u: ClipUse, a: number, b: number): number {
   if (!(b > a)) return 0;
