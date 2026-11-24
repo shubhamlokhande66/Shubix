@@ -18,7 +18,7 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { instaCardStart, blurCuts, coverMove, joinFlashes, sharpOfY, warmOf, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
@@ -7959,13 +7959,15 @@ function cutKind(fr, hint){
 // through it (a 29 s car Reel with 61 cuts and a 3 s flicker read as 21 cuts, none in its first 10 s).
 async function frameCuts(fs, dur, onP){
   const FPS = 30, ts = []; for(let t=0.5/FPS; t<dur-0.02; t+=1/FPS) ts.push(+t.toFixed(4));
-  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n); let pY = null, pH = null;
+  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), last = []; let pY = null, pH = null;
   for(let k=0;k<n;k+=150){
     const cv = await fs.small(ts.slice(k, k+150));
-    cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; return; }
+    cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; last.length = 0; return; }
       const g = greyOf(c), H = new Float32Array(16); for(let q=0;q<g.Y.length;q++) H[Math.min(15, (g.Y[q]*16)|0)] += 1/g.Y.length;
       if(pY && pY.length === g.Y.length){ let s2=0; for(let q=0;q<g.Y.length;q++) s2 += Math.abs(g.Y[q]-pY[q]); d[i] = s2/g.Y.length; let h2=0; for(let q=0;q<16;q++) h2 += Math.abs(H[q]-pH[q]); hd[i] = h2/2; }
-      pY = g.Y; pH = H; });
+      pY = g.Y; pH = H; sh[i] = sharpOfY(g.Y, g.FW);
+      last.push(g.Y); if(last.length > 17) last.shift();
+      if(last.length === 17 && i >= 8){ let s3=0; for(let q=0;q<g.Y.length;q++) s3 += Math.abs(g.Y[q]-last[0][q]); far[i-8] = s3/g.Y.length; } });
     if(onP) onP(Math.min(1, (k+150)/n));
   }
   // a flicker: 9 of 15 frames (half a second) jump to another picture; it runs from its first to its last double jump
@@ -7981,7 +7983,7 @@ async function frameCuts(fs, dur, onP){
     const nb = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nb.push(d[j]); nb.sort((x,y)=>x-y);
     const loc = nb.length ? (nb[(nb.length-1)>>1] + nb[nb.length>>1])/2 : 0;
     if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)) cuts.push(t); }
-  return { cuts, flicker };
+  return { cuts, flicker, blurs: blurCuts(sh, far, FPS) };
 }
 const refKeyOf = f => f ? f.name + '|' + f.size + '|' + (f.lastModified || 0) : '';
 // A reference shot's speed, read from how much its picture moves over time (a speed ramp is the same footage moving 3x
@@ -8049,6 +8051,8 @@ async function analyzeReference(file, onP){
         if(t <= 0.15 || t >= dur - 0.15 || inFl(t)) continue;
         const near = found.findIndex(c => Math.abs(c.t - t) < (sc.kind === 'cut' ? 0.1 : 0.2));
         if(near < 0) found.push({ t, hint: sc.kind }); else if(sc.kind !== 'cut') found[near] = { t, hint: sc.kind, exact: found[near].exact }; }
+      // a shot that goes soft into another shot (a blur-through): no frame of it jumps
+      for(const t of fc.blurs) if(t > 0.15 && t < dur - 0.15 && !inFl(t) && !found.some(c => Math.abs(c.t - t) < 0.3)) found.push({ t, hint: 'cut' });
       // a flicker is one shot of its own (from its first to its last jump): cuts at both of its ends
       fc.flicker.forEach(f => { if(f.t0 > 0.08) found.push({ t: f.t0, hint: 'cut', flick: true }); if(f.t1 < dur - 0.1) found.push({ t: f.t1, hint: 'cut', flickEnd: true }); });
       found.sort((a,b)=>a.t-b.t);
@@ -8086,14 +8090,19 @@ async function analyzeReference(file, onP){
         c.blurDip = ends > 0.004 && shM.length ? Math.min(...shM)/ends : 1;
         // a cut only the scene reading found (no jump on one frame): kept when it goes soft (a moving transition), dropped
         // when it stays sharp (something moved inside the shot); fades and dissolves keep their own reading
-        if(!c.exact && !c.flick && !c.flickEnd && c.hint === 'cut'){ if(c.blurDip >= 0.65) c.drop = true; else if(!['whip','zoom','spin','flash','glitch'].includes(c.kind)) c.kind = 'blur'; }
+        if(!c.exact && !c.flick && !c.flickEnd && c.hint === 'cut'){ if(c.blurDip >= 0.65) c.drop = true; else if(!['whip','zoom','spin','flash','glitch','fade'].includes(c.kind)) c.kind = 'blur';
+          if(c.kind === 'spin' && fr.some(f => Math.abs(f.k) <= 4 && f.mean > 0.9)) c.kind = 'flash'; }   // into plain white: nothing turns
         if(['hard','dissolve'].includes(c.kind) && !c.one){ const A = at(-CUT_K), B = at(CUT_K);
           if(A && B) for(const k of [0,-1,1,-2,2,-3,3]){ const F = at(k); if(!F) continue; const sh = revealShape(A.Y, B.Y, F.Y, A.FW, A.FH); if(sh){ c.kind = sh; break; } } }
-        c.odd = oddCut(fr, c, at); });
+        c.odd = oddCut(fr, c, at);
+        // a coloured flash (orange, red, yellow light over the picture) is a light leak / film burn
+        if(c.kind === 'flash'){ const w = cv.map(x => x ? warmOf(x.getContext('2d', {willReadFrequently:true}).getImageData(0, 0, x.width, x.height).data) : null), side = [...w.slice(0, 2), ...w.slice(-2)].filter(x => x !== null), mid = w.slice(CUT_K-5, CUT_K+6).filter(x => x !== null);
+          if(side.length && mid.length && Math.max(...mid) - Math.max(...side) > 0.16) c.odd = { guess: 'light leak / film burn', ours: 'burn', sig: 'a warm flash' }; } });
       for(let i=cuts.length-1;i>=0;i--) if(cuts[i].drop) cuts.splice(i, 1);
       // a flash moves its cut onto its brightest frame: in time order again, never two on the same frame
       cuts.sort((x, y) => x.t - y.t);
       for(let i=cuts.length-1;i>0;i--) if(cuts[i].t - cuts[i-1].t < 1.5/30){ if(cuts[i].kind !== 'hard' && cuts[i-1].kind === 'hard') cuts[i-1].kind = cuts[i].kind; cuts.splice(i, 1); }
+      joinFlashes(cuts);
       // a cut to a plain white (or black) screen and the next picture fading in from it within 0.8 s: one transition (a
       // fade through white / black), not two cuts around a white shot
       for(let i=cuts.length-1;i>0;i--){ const a = cuts[i-1], b = cuts[i], white = a.after > 0.88, black = a.after < 0.05;

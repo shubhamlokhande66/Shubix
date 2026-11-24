@@ -24,3 +24,37 @@ export function coverMove<K extends { s: number; x: number; y: number; r: number
     if (f <= 1.6 || m <= 0.1) return v.map((k) => ({ ...k, s: +Math.min(2.5, k.s * f).toFixed(4), x: +k.x.toFixed(4), y: +k.y.toFixed(4), r: +k.r.toFixed(3) }));
   }
 }
+
+/** one flash reads as two jumps (into white, out of it): two flashes within 0.25 s are one cut, at the first; a run of them
+ * joins for at most 0.4 s. In time order; changes the list. */
+export function joinFlashes<C extends { t: number; kind?: string; odd?: unknown }>(cuts: C[]): C[] {
+  for (let i = 0; i < cuts.length; i++) {
+    if (cuts[i].kind !== "flash") continue;
+    let last = cuts[i].t;
+    while (i + 1 < cuts.length && cuts[i + 1].kind === "flash" && cuts[i + 1].t - last < 0.25 && cuts[i + 1].t - cuts[i].t <= 0.4) { last = cuts[i + 1].t; if (cuts[i + 1].odd) cuts[i].odd = cuts[i + 1].odd; cuts.splice(i + 1, 1); }
+  }
+  return cuts;
+}
+/** how sharp a small grey frame is */
+export function sharpOfY(Y: ArrayLike<number>, W: number): number {
+  let s = 0, n = 0;
+  for (let q = 0; q + W + 1 < Y.length; q += 2) { s += Math.abs(Y[q + 1] - Y[q]) + Math.abs(Y[q + W] - Y[q]); n++; }
+  return n ? s / n : 0;
+}
+/** where a Reel goes soft from one shot into another (every frame's sharpness; how different the pictures 8 frames before and after are) */
+export function blurCuts(sharp: ArrayLike<number>, far: ArrayLike<number>, fps: number): number[] {
+  const out: number[] = [];
+  for (let i = 8; i + 8 < sharp.length; i++) {
+    const side = Math.min(sharp[i - 8], sharp[i + 8]);
+    if (side < 0.015 || sharp[i] >= 0.5 * side || far[i] < 0.1) continue;
+    let low = true; for (let j = i - 6; j <= i + 6; j++) if (sharp[j] < sharp[i] || (j < i && sharp[j] === sharp[i])) low = false;
+    if (low && (!out.length || i / fps - out[out.length - 1] > 0.4)) out.push(i / fps);
+  }
+  return out;
+}
+/** how warm a picture's light is (RGBA): red over blue, 0-1 */
+export function warmOf(d: ArrayLike<number>): number {
+  let s = 0, n = 0;
+  for (let i = 0; i + 3 < d.length; i += 12) { s += d[i] - d[i + 2]; n++; }
+  return n ? s / n / 255 : 0;
+}

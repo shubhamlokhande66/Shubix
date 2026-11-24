@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { coverMove, REF_FX, REF_TRX, refTrOf } from "../../../Shared/video-engine/src/refCopy";
+import { blurCuts, coverMove, joinFlashes, REF_FX, REF_TRX, refTrOf, warmOf } from "../../../Shared/video-engine/src/refCopy";
 import { TR_DUR } from "@shubix/core/lib/shaders";
 
 const read = (f: string) => fs.readFileSync(path.resolve(__dirname, f), "utf8").replace(/\r\n/g, "\n");
@@ -47,4 +47,15 @@ describe("Copy a Reel: what is known only by its look", () => {
     expect(coverMove([{ s: 1, x: 0, y: 0, r: 0 }, { s: 1.2, x: 0, y: 0, r: 0 }])).toEqual([{ s: 1, x: 0, y: 0, r: 0 }, { s: 1.2, x: 0, y: 0, r: 0 }]);
     for (const s of [web, app]) expect(s).toContain("s.ak = coverMove(m.move.map(");
   });
+  it("one flash is one cut, not two; a burn's colour is kept; flashes further apart stay", () => {
+    const f = (t: number, kind = "flash", odd: unknown = null) => ({ t, kind, odd });
+    expect(joinFlashes([f(1.4), f(1.47), f(2.6), f(2.67, "flash", "x")]).map((c) => [c.t, c.odd])).toEqual([[1.4, null], [2.6, "x"]]);
+    expect(joinFlashes([f(1), f(1.3), f(2, "hard"), f(2.1)])).toHaveLength(4);
+    expect(joinFlashes([f(1), f(1.2), f(1.4), f(1.6)])).toHaveLength(2);
+  });
+  it("finds a blur-through: soft between two different pictures, not inside one shot", () => {
+    const sharp = new Array(60).fill(0.06), far = new Array(60).fill(0.3); for (const i of [29, 30, 31]) sharp[i] = 0.01 + Math.abs(i - 30) * 0.01;
+    expect(blurCuts(sharp, far, 30)).toEqual([1]); expect(blurCuts(sharp, new Array(60).fill(0.02), 30)).toEqual([]);
+  });
+  it("reads warm light", () => { expect(warmOf([255, 150, 40, 255])).toBeGreaterThan(0.5); expect(warmOf([255, 255, 255, 255])).toBe(0); });
 });
