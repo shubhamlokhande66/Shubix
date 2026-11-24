@@ -28,4 +28,14 @@ describe("Copy a Reel: what is known only by its look", () => {
       expect(s).toMatch(/if\(REF_FX\.includes\(m\.fx\) && !(EH\.)?isLocked\('fx', m\.fx\)\) s\.efx = m\.fx;/);
     }
   });
+  it("never copies the other Reel's words: places wait for the creator's own, and stay out of the video", () => {
+    const apply = web.slice(web.indexOf("function refLookApply(R){"), web.indexOf("function refLookApply(R){") + 1800);
+    expect(apply).not.toContain("text: x.text"); expect(apply).toContain("ov.ph = true");
+    expect(web).toContain("if(ov.ph && (recording || exporting || coverMode)) return;");
+    expect(web).toContain("ov.text = ti.value; delete ov.ph;");
+  });
+  it("two Reels picked in a row: the last one wins", () => {
+    expect(web).toContain("await before; if(run !== refRun) return;");
+    expect(web).toContain("refProfile = read;");
+  });
 });

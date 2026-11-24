@@ -245,7 +245,7 @@ function snap(t, w){
 
 /* =============== STEP 1: MUSIC =============== */
 let plan = [], basePlan = [], normGain = 1, mode = 'auto', musicToken = 0, editGen = 0;
-let refReading = false, refWaiters = [];   // a Reel to copy is being read: the AI waits for it (its pace and plan are for the copy)
+let refReading = false, refRun = 0, refJob = Promise.resolve(), refWaiters = [];   // a Reel to copy is being read: the AI waits for it (its pace and plan are for the copy)
 // Copy a Reel: clips added while the Reel to copy is read wait for it (one heavy job at a time on a phone), and no Reel is
 // made meanwhile (it would be an ordinary Reel, replaced moments later by the copy)
 const refDone = () => refReading ? new Promise(r => refWaiters.push(r)) : Promise.resolve();
@@ -5933,6 +5933,7 @@ function ovTiming(ov){ const L = reelLen(); return ov.all ? [0, L] : [Math.max(0
 let cutBuf = null;   // the cutout text's frame (the colour with the letters cut out)
 function drawOverlay(g, ov, t){
   const [a, b] = ovTiming(ov); if(!(t >= a && t < b)) return;
+  if(ov.ph && (recording || exporting || coverMode)) return;   // a copied Reel's text place not filled in yet: never in the video
   const W = out.width, H = out.height;
   if(ov.kind === 'squareFrame'){
     const side = Math.min(W, H), inset = side * 0.035;
@@ -6065,8 +6066,8 @@ function renderOvList(){
       <div class="ovctl ovflags"><label class="tog switch"><input type="checkbox" class="ovtrk"> Follow the person</label><label class="tog switch"><input type="checkbox" class="ovbeh"> Behind the person</label><label class="tog switch"><input type="checkbox" class="ovall"> Whole Reel</label></div>
       <div class="ovctl ovtime"><span class="ovtl">Start</span><button class="${Button.small} ovfrom" title="Start where the playhead is">Here</button><span class="fname ovtm"></span><span class="ovtl">End</span><button class="${Button.small} ovto" title="End where the playhead is">Here</button><button class="${Button.small} ovdel2" type="button">Delete</button></div>`;
     const tk = row.querySelector('.ovtrk'); tk.checked = !!ov.track; if(isLocked('tool', 'track')) tk.parentElement.lastChild.textContent = ' 👑 Follow the person'; tk.addEventListener('change', () => { ov.track = tk.checked; if(tk.checked){ ov.x = 0.5; ov.y = ov.emoji ? 0.38 : 0.32; } redraw(); });
-    const ti = row.querySelector('.ovt'); ti.value = ov.text; if(ov.emoji){ ti.readOnly = true; ti.classList.add('emoji'); }
-    ti.addEventListener('input', () => { ov.text = ti.value; redraw(); });
+    const ti = row.querySelector('.ovt'); if(ov.ph){ ti.value = ''; ti.placeholder = 'Write your text'; } else ti.value = ov.text; if(ov.emoji){ ti.readOnly = true; ti.classList.add('emoji'); }
+    ti.addEventListener('input', () => { ov.text = ti.value; delete ov.ph; redraw(); });
     const ss = row.querySelector('.ovs'), sa = row.querySelector('.ova');
     if(ov.emoji) ss.hidden = true;
     Object.entries(OV_STYLES).forEach(([k, v]) => ss.add(new Option(crown('text', k, v), k, false, k === ov.style)));
@@ -8383,11 +8384,16 @@ async function copyLook(){
 $('reffile').addEventListener('change', async e=>{
   const f = e.target.files && e.target.files[0]; e.target.value = ''; if(!f) return;
   $('refbox').hidden = false; $('refinfo').textContent = 'Reading the Reel…';
+  const run = ++refRun;   // another Reel picked while this one is read: that one counts, read after it (one heavy job at a time)
+  const before = refJob; let jobDone = () => {}; refJob = new Promise(r => { jobDone = r; });
   refReading = true; root.classList.add('refread');   // the AI and the Reel wait for it: they are the copy's, not an ordinary Reel's
   const mirror = new MutationObserver(() => { $('refwaitp').textContent = $('refinfo').textContent.replace(/^Reading the Reel:?\s*/, ''); });
   mirror.observe($('refinfo'), { childList: true, characterData: true, subtree: true });
   try{
-    refProfile = await analyzeReference(f, (p, what)=>{ $('refinfo').textContent = 'Reading the Reel: ' + what + ' ' + Math.round(p*100) + '%'; });
+    await before; if(run !== refRun) return;
+    const read = await analyzeReference(f, (p, what)=>{ if(run === refRun) $('refinfo').textContent = 'Reading the Reel: ' + what + ' ' + Math.round(p*100) + '%'; });
+    if(run !== refRun) return;
+    refProfile = read;
     $('refinfo').textContent = '“' + f.name + '”: ' + describeRef(refProfile); $('stsaverow').hidden = false; $('ststat').textContent = ''; learnedKind = '';
     suggestRef(f.name);
     // the copied look is on while it is matched (makeEdit then matches it on the new edit)
@@ -8395,8 +8401,8 @@ $('reffile').addEventListener('change', async e=>{
     const lb = $('look').querySelector('[data-l="copy"]'); lb.hidden = false; look = 'copy'; [...$('look').children].forEach(x=>x.setAttribute('aria-pressed', x===lb));
     setMode('copy');
     refLookRun(f, refProfile);   // its texts, stickers, captions, background: the AI reads them (when it is on)
-  }catch(err){ console.warn('reference not read:', err); $('refinfo').textContent = 'We could not read that Reel. Please try another video.'; notify('We could not read that Reel. Please try another video.', 'err'); }
-  finally{ refReading = false; root.classList.remove('refread'); mirror.disconnect(); refWaiters.splice(0).forEach(r => r());
+  }catch(err){ console.warn('reference not read:', err); if(run !== refRun) return; $('refinfo').textContent = 'We could not read that Reel. Please try another video.'; notify('We could not read that Reel. Please try another video.', 'err'); }
+  finally{ jobDone(); mirror.disconnect(); if(run !== refRun) return; refReading = false; root.classList.remove('refread'); refWaiters.splice(0).forEach(r => r());
     // the same song as the Reel's, given as its own file: its part is cut again at the Reel's place (useSection makes the edit)
     if(song && song.r && sec.auto && refAlign()) void useSection(); else if(buf && sources.length && !recording) makeEdit(); }   // now the AI may plan (the copy, or the Reel as it is)
 });
@@ -8404,9 +8410,9 @@ $('refchange').addEventListener('click', ()=>$('reffile').click());
 /* ---- Copy a Reel, what is written and stuck on it ----
  * The phone measures the reference's cuts, moves and colours itself; what is WRITTEN on it (a hook, a price, "follow for
  * more"), its stickers, its captions' style and a replaced background need eyes. When the administrator turned the
- * studio's AI on, 10 small frames go to /api/studio/ref-look and the answer is put on the new Reel: the same texts in
+ * studio's AI on, 10 small frames go to /api/studio/ref-look and the answer is put on the new Reel: the texts' places (the words are the creator's own) in
  * the same places, styles, colours and timing (stretched to the new Reel's length), the stickers as emoji, the caption
- * style and highlight colour, and the background. They are ordinary texts afterwards: tap one to change its words. */
+ * style and highlight colour, and the background. They are ordinary texts once their words are written. */
 let refLookBusy = false;
 async function refLookRun(file, R){
   if(!aiOn || !R || refLookBusy) return;
@@ -8449,10 +8455,12 @@ function refLookApply(R){
   const sizeOf = (hf, emoji) => clip(emoji ? hf*R.h/(base*0.16) : hf*R.h/0.75/(base*0.075), 0.4, 2.6);
   const timing = (ov, x) => { const whole = x.t0 <= 0.05 && x.t1 >= R.dur - 0.05; ov.all = whole; ov.t0 = whole ? 0 : Math.max(0, Math.min(L - 0.5, x.t0*k)); ov.t1 = whole ? L : Math.min(L, Math.max(ov.t0 + 0.5, x.t1*k)); ov.ref = true; };
   overlays = overlays.filter(o => !o.ref);   // an earlier reference's texts go
-  for(const x of D.texts || []){ const ov = addOverlay({ text: x.text, style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false) }); timing(ov, x); }
+  // only the format is copied, never the other Reel's words: each text's place, style, colour, entrance and time wait for
+  // the creator's own words (ph: shown while editing, left out of the video until something is written)
+  for(const x of D.texts || []){ const ov = addOverlay({ text: 'YOUR TEXT', style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false) }); ov.ph = true; timing(ov, x); }
   for(const x of D.stickers || []){ const ov = addOverlay({ text: x.emoji, emoji: true, x: x.x, y: x.y, size: sizeOf(x.h, true) }); timing(ov, x); }
   const said = [];
-  if(D.texts && D.texts.length) said.push(D.texts.length + ' text' + (D.texts.length > 1 ? 's' : ''));
+  if(D.texts && D.texts.length) said.push(D.texts.length + ' text place' + (D.texts.length > 1 ? 's' : ''));
   if(D.stickers && D.stickers.length) said.push(D.stickers.length + ' sticker' + (D.stickers.length > 1 ? 's' : ''));
   if(D.captions){ press('tstyle', 't', D.captions.style); ACCENT = D.captions.color || ACCENT;
     if(!capsOn && !$('capwrap').hidden){ $('caps').checked = true; capsOn = true; $('caprow').hidden = false; loadCaptions(); }
@@ -8461,7 +8469,7 @@ function refLookApply(R){
     if(D.background.mode === 'color' && D.background.color) bgColor = D.background.color;
     press('bgmode', 'b', D.background.mode); said.push(D.background.mode === 'blur' ? 'blurred background' : 'colour background'); }
   ovSel = -1; renderOvList(); redraw();
-  const msg = said.length ? 'Copied ' + said.join(', ') + (D.texts && D.texts.length ? '. Tap a text to change its words.' : '.') : 'Nothing written on it to copy.';
+  const msg = said.length ? 'Copied ' + said.join(', ') + (D.texts && D.texts.length ? '. Tap a text and write your own words (empty ones are left out of the Reel).' : '.') : 'Nothing written on it to copy.';
   $('refinfo').textContent = '“' + R.name + '”: ' + describeRef(R) + ' · ' + msg;
   if(said.length) notify(msg, 'ok');
 }
