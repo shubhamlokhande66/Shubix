@@ -69,7 +69,7 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
           val a = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0; val b = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
           val dur = (r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull() ?: 0.0) / 1000
           if (a <= 0 || b <= 0 || dur <= 0) return@use reply(out, 422, "Unreadable", emptyMap(), null)
-          reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), videoFacts(f).let { v -> org.json.JSONObject().put("dur", dur).put("w", if (turn % 180 == 0) a else b).put("h", if (turn % 180 == 0) b else a).put("size", f.length()).put("fps", v.fps).put("hdr", v.hdr).put("tenBit", v.tenBit).put("chroma422", v.chroma422).put("times", org.json.JSONArray(v.times)).toString() }.toByteArray())
+          reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), videoFacts(f).let { v -> org.json.JSONObject().put("dur", dur).put("w", if (turn % 180 == 0) a else b).put("h", if (turn % 180 == 0) b else a).put("size", f.length()).put("fps", v.fps).put("hdr", v.hdr).put("tenBit", v.tenBit).put("chroma422", v.chroma422).put("times", org.json.JSONArray(v.times)).put("end", v.end).toString() }.toByteArray())
         } catch (e: Exception) { reply(out, 422, "Unreadable", emptyMap(), null) } finally { r.release() }
       }
       url.path == "/aiframes" && method == "POST" -> {

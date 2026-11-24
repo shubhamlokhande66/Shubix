@@ -6,8 +6,9 @@ import android.media.MediaFormat
 import java.io.File
 
 /** What a clip is, read from its container (nothing decoded): what decides whether it needs an edit copy. `times`: when its
- * first frames play, in seconds, in the file's order (they say whether its frame rate varies). */
-internal class VideoFacts(val fps: Double, val hdr: Boolean, val tenBit: Boolean, val chroma422: Boolean, val times: List<Double>)
+ * first frames play, in seconds, in the file's order (they say whether its frame rate varies). `end`: where its last picture
+ * is over (0: not known): the sound often runs on, or the last picture is a long one, and a shot there stood still. */
+internal class VideoFacts(val fps: Double, val hdr: Boolean, val tenBit: Boolean, val chroma422: Boolean, val times: List<Double>, val end: Double = 0.0)
 
 internal fun videoFacts(file: File): VideoFacts {
   val x = MediaExtractor()
@@ -31,7 +32,14 @@ internal fun videoFacts(file: File): VideoFacts {
     val times = ArrayList<Double>(240)
     while (times.size < 240) { val t = x.sampleTime; if (t < 0) break; times.add(t / 1_000_000.0); if (!x.advance()) break }
     val rate = int(MediaFormat.KEY_FRAME_RATE).toDouble()
-    return VideoFacts(if (rate > 0) rate else fpsOf(times), hdr, tenBit, chroma422, times)
+    val fps = if (rate > 0) rate else fpsOf(times)
+    // the last picture: from the last key frame to the end (a clip with few key frames: at most 3000 frames are looked at)
+    var last = -1L; var n = 0
+    x.seekTo(Long.MAX_VALUE / 2, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+    while (n++ < 3000) { val t = x.sampleTime; if (t < 0) break; if (t > last) last = t; if (!x.advance()) break }
+    val first = times.minOrNull() ?: 0.0
+    val end = if (last > 0 && n < 3000 && fpsOf(times) > 0) last / 1_000_000.0 - first + 1 / fpsOf(times) else 0.0
+    return VideoFacts(fps, hdr, tenBit, chroma422, times, end)
   } catch (_: Exception) { return VideoFacts(0.0, false, false, false, emptyList()) } finally { x.release() }
 }
 

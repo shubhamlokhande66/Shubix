@@ -186,7 +186,7 @@ async function playerToEncoder(file: File, plan: PreviewProxyPlan, onProgress?: 
     const fps = plan.fps || EDIT_FPS, step = 1 / fps;
     output.addVideoTrack(vs, { frameRate: fps });
     await output.start();
-    let slot = 0, chain: Promise<unknown> = Promise.resolve(), failed: unknown = null, lastFrame = performance.now();
+    let slot = 0, chain: Promise<unknown> = Promise.resolve(), failed: unknown = null, lastFrame = performance.now(), shown = 0, lastMedia = 0;
     const draw = () => {
       const s = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight), w = video.videoWidth * s, h = video.videoHeight * s;
       g.fillStyle = "#000"; g.fillRect(0, 0, canvas.width, canvas.height);
@@ -208,6 +208,10 @@ async function playerToEncoder(file: File, plan: PreviewProxyPlan, onProgress?: 
       const onFrame = (_now: number, meta: VideoFrameCallbackMetadata) => {
         lastFrame = performance.now();
         if (video.videoWidth) { draw(); emit(meta.mediaTime); }
+        lastMedia = meta.mediaTime;
+        // pictures missed (a busy phone or computer): they would stay in the copy as a stutter, so it is played slower
+        if (shown && meta.presentedFrames - shown > 1 && video.playbackRate > 0.13) video.playbackRate = Math.max(0.125, video.playbackRate * 0.7);
+        shown = meta.presentedFrames;
         onProgress?.(Math.min(0.99, meta.mediaTime / dur));
         if (!video.ended) video.requestVideoFrameCallback(onFrame);
       };
@@ -217,7 +221,8 @@ async function playerToEncoder(file: File, plan: PreviewProxyPlan, onProgress?: 
       video.playbackRate = dur <= 120 ? 0.5 : 1;
       void whenVisible().then(() => video.play()).catch(e => { clearInterval(watch); document.removeEventListener("visibilitychange", onVis); reject(e); });
     });
-    if (video.videoWidth) { draw(); emit(dur); }
+    // to its last picture only: the sound often runs on, and the last picture repeated stood still before a cut
+    if (video.videoWidth) { draw(); emit(dur - lastMedia < 0.1 ? dur : lastMedia + step); }
     await chain;
     if (failed) throw failed;
     if (!slot) return null;

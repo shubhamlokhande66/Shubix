@@ -119,7 +119,7 @@ SHUBIX AI: picks the best moments, transitions and captions for you. Before it s
 PLANS (prices include GST, nothing renews by itself, all purchases are final and non-refundable):
 ${plans}
 TOP-UPS: ${tops || "none"}. Top-up and gift credits never expire; a plan's monthly credits renew each month and do not carry over. If a Reel fails, its credits come back automatically.
-${m.ai.freeWithCredits ? "On Free, credits (from invites, gifts, top-ups) can pay for Shubix AI." : "Shubix AI is for paid plans only."}
+${m.welcome.on && m.welcome.credits ? `A new account gets ${m.welcome.credits} free credits once (they cannot be sent to a friend). ` : ""}${m.ai.freeWithCredits ? "On Free, credits (from the welcome gift, invites, gifts, top-ups) can pay for Shubix AI." : "Shubix AI is for paid plans only."}
 CREDIT COSTS:
 ${costs}
 COUPONS & OFFERS: a coupon code is entered at checkout ("Your order" panel on Pricing); a running sale shows on Pricing and in a bar on top.

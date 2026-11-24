@@ -53,6 +53,12 @@ describe("answers are bounded", () => {
     expect(L.captions).toEqual({ style: "karaoke", color: "#00FF00", y: 0.72 });
     expect(L.background).toEqual({ mode: "color", color: "#00FF00" });
   });
+  it("never copies Instagram's name or someone's @username, keeps real words", () => {
+    const t = (text: string) => ({ text, first: "f1", last: "f10", style: "bold", color: "", anim: "" });
+    const L = parseLook(fr, 15, { texts: ["@some.creator_1", "Instagram", "Instagram @creator", "@ creator", "A day in Goa", "Follow @me for more"].map(t), stickers: [], summary: "" } as never);
+    expect(L.texts.map((x) => x.text)).toEqual(["A day in Goa", "Follow @me for more"]);
+    expect(prompt("x", fr, 15)).toContain("Instagram logo");
+  });
   it("no captions, an unknown background and nothing written", () => {
     const L = parseLook(fr, 15, { texts: [], stickers: [], captions: { on: false, style: "", color: "" }, background: { mode: "beach", color: "" }, summary: "" } as never);
     expect(L).toMatchObject({ texts: [], stickers: [], captions: null, background: { mode: "none", color: "" } });

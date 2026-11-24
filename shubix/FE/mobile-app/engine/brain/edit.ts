@@ -1,9 +1,10 @@
 // The engine's edit core: how a Reel's shots are chosen and placed. Moved from components/studio/engine.ts, with its state in
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
-import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds } from './pure';
+import { coverMove, REF_FX, REF_TRX, refTrOf } from '@mobile/video-engine';
+import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds, useOf } from './pure';
 import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
-import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords } from '@mobile/video-engine';
+import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords, wasteShare } from '@mobile/video-engine';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { sfxRecorded } from '@mobile/core/lib/sfx-recorded';
 import { describeCut, soundMap, sectionsOf } from '../components/studio/soundmap';
@@ -610,6 +611,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     for(const k of ['loud','drums','bass','voice']) if(m[k] !== undefined) o[k] = c(m[k], 0, 1);
     if(['rising','falling','steady'].includes(m.trend)) o.trend = m.trend;
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
+    if(REF_TRX.includes(m.trx)) o.trx = m.trx; if(REF_FX.includes(m.fx)) o.fx = m.fx;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
     if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
@@ -757,7 +759,9 @@ function scoreWindow(i, src, a, need, gmax, near){
   // drawn to the look of the shots already beside it (a copied Reel follows its reference instead)
   if(near && ES.mode !== 'copy') sc += flowBonus(flowLook(src, a, a+need, st, m), near);
   // a moment people reacted to in the clip's own sound: a cheer, a laugh (video-engine reactions.ts)
-  if(src.reacts && ES.mode !== 'copy') sc += reactionBonus(src.reacts, a, a+need);
+  // (what is not footage, before and after the clip's own moment, is taken last: clipUse.ts)
+  const waste = ES.mode === 'copy' ? 0 : wasteShare(useOf(src), a, a+need); sc -= 2.5*waste;
+  if(src.reacts && ES.mode !== 'copy') sc += (1 - waste)*reactionBonus(src.reacts, a, a+need);
   return {sc, st, m, ai};
 }
 // the creator's keyframes stay on their shots when the edit is made again (the AI's scores or the director arriving,
@@ -869,7 +873,7 @@ function seqPick(seq, res, gmax){
   for(const si of [...new Set(seq)]){
     // a clip that opens or ends on black (a fade in, the lens covered) is walked from its first picture to its last: the
     // black is not footage, so as for a shorter clip its shots play a little slower rather than show it
-    const src = ES.sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), [from, trail] = blackEnds(src), foot = Math.max(0.05, src.dur - TAIL - trail - from), end = from + foot;
+    const src = ES.sources[si], ids = seq.map((x, i) => x === si ? i : -1).filter(i => i >= 0), [lead, black] = blackEnds(src), part = useOf(src), from = Math.max(lead, part.from), trail = Math.max(black, src.dur - part.to), foot = Math.max(0.05, src.dur - TAIL - trail - from), end = from + foot;
     const need = ids.map(i => ES.plan[i].sp.pos(lenOf(i))), sum = a => a.reduce((x, y) => x + y, 0);
     const fastNeed = sum(need.filter((x, k) => fast[ids[k]])), spare = foot - sum(need);
     // a clip too short for its shots plays a little slower over them (down to 0.4x), instead of standing still on its
@@ -1212,14 +1216,16 @@ function copyShots(){
   ES.plan.forEach((s,i)=>{
     const m = M[s.ref ?? i]; if(!m) return;
     const len = s.end - s.start;
-    if(i > 0 && !ES.refProfile.learned){ const tr = m.tr === 'start' ? 'hard' : EH.REF_TR[m.tr] || 'hard'; s.tr = tr; s.trByRef = tr !== 'hard'; }
+    if(i > 0 && !ES.refProfile.learned){ const tr = refTrOf(m, EH.REF_TR, k => !EH.isLocked('tr', k)); s.tr = tr; s.trByRef = tr !== 'hard'; }
     s.efx = 'none'; s.ak = []; s.flick = !!m.flick; s.black = !!m.black && EH.copyTimed();   // the black end only where the Reel had it
     if(s.flick || s.black) return;   // a flicker: a new still of the clips on every frame (flickPick), no move of its own
     if(Array.isArray(m.move) && m.move.length >= 2 && len >= 0.3){
       const ez = m.move.length === 2 ? (m.ease || 'inOut') : 'lin';   // more keys: the path's own shape is in them
-      s.ak = m.move.map(k=>({ t: +(clip(k.f, 0, 1)*len).toFixed(3), s: clip(k.s, 0.4, 2.5), x: clip(k.x, -0.6, 0.6), y: clip(k.y, -0.6, 0.6), r: clip(k.r, -60, 60), o: 1, ez }));
+      s.ak = coverMove(m.move.map(k=>({ t: +(clip(k.f, 0, 1)*len).toFixed(3), s: clip(k.s, 0.4, 2.5), x: clip(k.x, -0.6, 0.6), y: clip(k.y, -0.6, 0.6), r: clip(k.r, -60, 60), o: 1, ez })));
     } else if(m.zoom === 'in' || m.zoom === 'out') s.efx = len > 1.2 ? 'pan' : 'punch-soft';
     if(m.shake && !s.ak.length) s.efx = 'shake';
+    // an effect read in the shot itself (RGB split, mirror, strobe): the studio's own, when the plan has it
+    if(REF_FX.includes(m.fx) && !EH.isLocked('fx', m.fx)) s.efx = m.fx;
     // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
     const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
     if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
@@ -1233,7 +1239,7 @@ function copyMatch(){
     const m = M[e.ref ?? i]; if(!m || i === ES.edit.length - 1) return;
     const want = timed ? m.sec : R.medianBeats && m.beats ? m.beats*P0 : m.sec, got = e.end - e.start;
     if(want > 0){ pace += Math.max(0, 1 - Math.abs(Math.log2(got/want))); pn++; }
-    if(i > 0 && !R.learned){ tr += e.tr === (m.tr === 'start' ? 'hard' : EH.REF_TR[m.tr] || 'hard') ? 1 : 0; tn++; }
+    if(i > 0 && !R.learned){ tr += e.tr === refTrOf(m, EH.REF_TR, () => true) ? 1 : 0; tn++; }
     const wantMove = !!(m.move && m.move.length >= 2) || m.zoom === 'in' || m.zoom === 'out', gotMove = !!(e.ak && e.ak.length >= 2) || ['pan','punch-soft','pan-soft'].includes(e.efx);
     mv += wantMove === gotMove ? 1 : 0; mn++;
   });

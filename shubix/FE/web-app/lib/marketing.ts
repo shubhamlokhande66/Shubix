@@ -43,6 +43,7 @@ export function clearRef() { try { localStorage.removeItem(REF_KEY); } catch { /
 import type { Offer, RewardStep } from "@shubix/types";
 export type { MyMarketing, Offer, Quote, RewardStep } from "@shubix/types";
 export type MarketingSettings = {
+  welcome: { on: boolean; credits: number };
   referral: { on: boolean; inviterCredits: number; inviteeCredits: number; inviteeOn: RewardStep; inviterOn: RewardStep; monthlyCap: number };
   share: { on: boolean; min: number; max: number; dailyMax: number; source: "extra" | "all" };
   affiliate: { on: boolean; percent: number; months: number; minPayout: number; applyOpen: boolean };
