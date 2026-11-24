@@ -13,7 +13,7 @@ import type { AdminOffer, Coupon, MarketingSettings } from "@/lib/marketing";
 
 /** Admin → Marketing: invite rewards, sending credits, the affiliate program, coupon codes, offers (sales) and how they
  * all do. Like Settings: a list of sections, each opening its form on the right. Every rule here is live for everyone. */
-type Id = "referral" | "freeai" | "emails" | "share" | "affiliates" | "coupons" | "offers" | "report";
+type Id = "welcome" | "referral" | "freeai" | "emails" | "share" | "affiliates" | "coupons" | "offers" | "report";
 
 const stepName = (s: string) => (s === "signup" ? "signs up" : s === "verified" ? "verifies their email" : "makes a first purchase");
 const num = (v: string, d = 0) => (v === "" || Number.isNaN(Number(v)) ? d : Number(v));
@@ -31,6 +31,7 @@ export function MarketingTab() {
   const s = q.data?.settings, r = q.data?.report;
   const liveOffer = offers.find((o) => o.live), pending = affiliates.filter((a) => a.status === "pending").length;
   const sections: { id: Id; icon: string; title: string; line: string; badge?: { text: string; tone: "success" | "neutral" | "brand" | "warning" | "danger" } }[] = [
+    { id: "welcome", icon: "coins", title: "New user credits", line: s ? (s.welcome.on ? `A new account gets ${s.welcome.credits} free credits the first time they sign in` : "Turned off") : "…", badge: s && { text: s.welcome.on ? "On" : "Off", tone: s.welcome.on ? "success" : "neutral" } },
     { id: "referral", icon: "gift", title: "Invite rewards", line: s ? (s.referral.on ? `Friend ${s.referral.inviteeCredits} when they ${stepName(s.referral.inviteeOn)} · inviter ${s.referral.inviterCredits} when the friend ${stepName(s.referral.inviterOn)}` : "Turned off") : "…", badge: s && { text: s.referral.on ? "On" : "Off", tone: s.referral.on ? "success" : "neutral" } },
     { id: "freeai", icon: "wand", title: "Shubix AI on Free", line: s ? (s.ai.freeWithCredits ? "Free users pay for AI Reels and Ask Shubix with their credits" : "Free users keep their credits for when they upgrade") : "…", badge: s && { text: s.ai.freeWithCredits ? "With credits" : "Plans only", tone: s.ai.freeWithCredits ? "brand" : "neutral" } },
     { id: "emails", icon: "mail", title: "Email notes", line: s ? (s.emails.notes ? "Affiliate approved / paid, credits received, invite rewards, new affiliate requests" : "Only sign-up and password codes are emailed") : "…", badge: s && { text: s.emails.notes ? "On" : "Off", tone: s.emails.notes ? "success" : "neutral" } },
@@ -57,6 +58,7 @@ export function MarketingTab() {
         </button>
       ))}
       <SidePanel open={!!cur} onClose={() => setOpen(null)} title={cur?.title ?? ""} where="Marketing" wide={open === "coupons" || open === "offers" || open === "affiliates"}>
+        {s && open === "welcome" && <WelcomeForm s={s} />}
         {s && open === "referral" && <ReferralForm s={s} />}
         {s && open === "share" && <ShareForm s={s} />}
         {s && open === "freeai" && <FreeAiForm s={s} />}
@@ -110,11 +112,28 @@ function ReferralForm({ s }: { s: MarketingSettings }) {
   );
 }
 
+function WelcomeForm({ s }: { s: MarketingSettings }) {
+  const { save, busy, msg } = useSaveSettings(s), [v, setV] = useState(s.welcome);
+  return (
+    <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void save({ ...s, welcome: v }); }}>
+      <Toggle label="Free credits for a new user" hint="Added by itself the first time they sign in. Then they top up or choose a plan." on={v.on} onChange={(on) => setV({ ...v, on })} />
+      <Field label="Credits" hint="Once per email address. An AI Reel's credits are in Settings → Plans & pricing."><Input type="number" min={0} max={10000} step={1} value={v.credits} onChange={(e) => setV({ ...v, credits: num(e.target.value) })} /></Field>
+      <ul className="m-0 flex list-none flex-col gap-1.5 rounded-2xl bg-surface-2 p-3.5 text-[12.5px] text-muted">
+        <li>Only accounts made after a change get the new number; nobody&apos;s balance changes.</li>
+        <li>They never expire and cannot be sent to a friend. The same inbox (also after deleting the account) gets them once.</li>
+        {!s.ai.freeWithCredits && <li className="font-semibold text-warning">&ldquo;Shubix AI on Free&rdquo; is off: a Free user cannot spend these on an AI Reel until you turn it on.</li>}
+      </ul>
+      <Saved msg={msg} />
+      <Button type="submit" icon="check" loading={busy} className="self-end">Save</Button>
+    </form>
+  );
+}
+
 function FreeAiForm({ s }: { s: MarketingSettings }) {
   const { save, busy, msg } = useSaveSettings(s), [on, setOn] = useState(s.ai.freeWithCredits);
   return (
     <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void save({ ...s, ai: { freeWithCredits: on } }); }}>
-      <Toggle label="Free users can spend credits on Shubix AI" hint="An AI Reel and Ask Shubix changes, charged as on Editor and Pro. Their credits come from invites, gifts and top-ups." on={on} onChange={setOn} />
+      <Toggle label="Free users can spend credits on Shubix AI" hint="An AI Reel and Ask Shubix changes, charged as on Editor and Pro. Their credits come from the welcome gift, invites, gifts and top-ups." on={on} onChange={setOn} />
       <ul className="m-0 flex list-none flex-col gap-1.5 rounded-2xl bg-surface-2 p-3.5 text-[12.5px] text-muted">
         <li><b className="text-foreground">On:</b> invite credits are worth something on Free (a taste of the AI), and when they run out people upgrade or top up.</li>
         <li><b className="text-foreground">Off:</b> Shubix AI stays Editor and Pro only; Free users keep their credits until they upgrade.</li>

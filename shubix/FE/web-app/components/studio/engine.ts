@@ -2511,10 +2511,11 @@ async function upsell(){
   // Shubix Brain: the plans (Shubix AI edits it); Shubix: the phone's own smart edit, free. Never in the app (it sells nothing).
   const id = reelIdNow(); if(upsold === id || IN_APP) return 'skip';
   const cost = aiCostOf('reel');
-  const v = await askCredits({ upsell: true, title: 'How should we make your Reel?', text: 'Shubix Brain is our AI editor on the Editor and Pro plans' + (cost ? ' (' + creditWord(cost) + ' per Reel)' : '') + '. Shubix makes it free, with the smart edit on your phone.' + (aiInfo && aiInfo.creditsOpen ? ' Or invite friends on Invite & earn: your credits pay for AI Reels on Free too.' : ''),
+  const v = await askCredits({ upsell: true, title: 'How should we make your Reel?', text: 'Shubix Brain is our AI editor on the Editor and Pro plans' + (cost ? ' (' + creditWord(cost) + ' per Reel)' : '') + '. Shubix makes it free, with the smart edit on your phone.' + (aiInfo && aiInfo.creditsOpen ? ' Or top up: credits pay for AI Reels on Free too.' : ''),
     list: ['Shubix Brain picks the best moments of every clip', 'Trendy transitions and effects, right on the beat', 'Ask Shubix: change anything in your own words', 'Captions and pro colour, automatically'],
-    bal: null, ok: 'Shubix Brain', no: 'Shubix' });
+    bal: null, ok: 'Shubix Brain', no: 'Shubix', extra: aiInfo && aiInfo.creditsOpen ? 'Top up credits' : '' });
   if(v !== null) upsold = id;
+  if(v === 'extra'){ void toPricing('#topup'); return 'upgrade'; }
   if(v === true){ void toPricing('?feature=ai'); return 'upgrade'; }
   return v === false ? 'basic' : 'close';
 }
