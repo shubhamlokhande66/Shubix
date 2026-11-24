@@ -77,6 +77,8 @@ export async function pricing() {
   const p = await getPricing(), w = (await getMarketing()).welcome, reels = p.costs.studio_ai > 0 ? Math.floor(w.credits / p.costs.studio_ai) : 0;
   // Free says what a new account gets (Admin → Marketing → New user credits)
   if (w.on && w.credits > 0) p.plans = p.plans.map((x) => (x.id === "free" ? { ...x, credits: 0, creditsNote: `${w.credits} free credits for a new account${reels ? ` (${reels} AI Reel${reels > 1 ? "s" : ""})` : ""}` } : x));
+  // (turned off again: the words the admin's pricing page saved with it on are not shown)
+  else p.plans = p.plans.map((x) => (x.id === "free" && /free credits for a new account/.test(x.creditsNote) ? { ...x, creditsNote: "Reels made on your phone" } : x));
   return { currency: "INR", yearlyMonthsCharged: YEARLY_MONTHS_CHARGED, plans: p.plans.map((x) => ({ ...x, yearly: x.monthly * YEARLY_MONTHS_CHARGED })), topUps: p.topUps, costLabels: COST_LABELS,
     creditCosts: [...Object.entries(p.costs).map(([id, credits]) => ({ id, action: COST_LABELS[id], credits })), { id: "free_picture", action: "Classical paintings and pictures from the library: free", credits: 0 }],
     costs: p.costs, paymentsOpen: paymentsOpen(), billingEnabled: settings.billingEnabled };
