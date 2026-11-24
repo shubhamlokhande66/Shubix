@@ -1,6 +1,7 @@
 // The engine's edit core: how a Reel's shots are chosen and placed. Moved from components/studio/engine.ts, with its state in
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
+import { REF_FX, REF_TRX, refTrOf } from '@mobile/video-engine';
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds, useOf } from './pure';
 import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords, wasteShare } from '@mobile/video-engine';
@@ -610,6 +611,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     for(const k of ['loud','drums','bass','voice']) if(m[k] !== undefined) o[k] = c(m[k], 0, 1);
     if(['rising','falling','steady'].includes(m.trend)) o.trend = m.trend;
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
+    if(REF_TRX.includes(m.trx)) o.trx = m.trx; if(REF_FX.includes(m.fx)) o.fx = m.fx;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
     if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
@@ -1214,7 +1216,7 @@ function copyShots(){
   ES.plan.forEach((s,i)=>{
     const m = M[s.ref ?? i]; if(!m) return;
     const len = s.end - s.start;
-    if(i > 0 && !ES.refProfile.learned){ const tr = m.tr === 'start' ? 'hard' : EH.REF_TR[m.tr] || 'hard'; s.tr = tr; s.trByRef = tr !== 'hard'; }
+    if(i > 0 && !ES.refProfile.learned){ const tr = refTrOf(m, EH.REF_TR, k => !EH.isLocked('tr', k)); s.tr = tr; s.trByRef = tr !== 'hard'; }
     s.efx = 'none'; s.ak = []; s.flick = !!m.flick; s.black = !!m.black && EH.copyTimed();   // the black end only where the Reel had it
     if(s.flick || s.black) return;   // a flicker: a new still of the clips on every frame (flickPick), no move of its own
     if(Array.isArray(m.move) && m.move.length >= 2 && len >= 0.3){
@@ -1222,6 +1224,8 @@ function copyShots(){
       s.ak = m.move.map(k=>({ t: +(clip(k.f, 0, 1)*len).toFixed(3), s: clip(k.s, 0.4, 2.5), x: clip(k.x, -0.6, 0.6), y: clip(k.y, -0.6, 0.6), r: clip(k.r, -60, 60), o: 1, ez }));
     } else if(m.zoom === 'in' || m.zoom === 'out') s.efx = len > 1.2 ? 'pan' : 'punch-soft';
     if(m.shake && !s.ak.length) s.efx = 'shake';
+    // an effect read in the shot itself (RGB split, mirror, strobe): the studio's own, when the plan has it
+    if(REF_FX.includes(m.fx) && !EH.isLocked('fx', m.fx)) s.efx = m.fx;
     // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
     const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
     if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
@@ -1235,7 +1239,7 @@ function copyMatch(){
     const m = M[e.ref ?? i]; if(!m || i === ES.edit.length - 1) return;
     const want = timed ? m.sec : R.medianBeats && m.beats ? m.beats*P0 : m.sec, got = e.end - e.start;
     if(want > 0){ pace += Math.max(0, 1 - Math.abs(Math.log2(got/want))); pn++; }
-    if(i > 0 && !R.learned){ tr += e.tr === (m.tr === 'start' ? 'hard' : EH.REF_TR[m.tr] || 'hard') ? 1 : 0; tn++; }
+    if(i > 0 && !R.learned){ tr += e.tr === refTrOf(m, EH.REF_TR, () => true) ? 1 : 0; tn++; }
     const wantMove = !!(m.move && m.move.length >= 2) || m.zoom === 'in' || m.zoom === 'out', gotMove = !!(e.ak && e.ak.length >= 2) || ['pan','punch-soft','pan-soft'].includes(e.efx);
     mv += wantMove === gotMove ? 1 : 0; mn++;
   });

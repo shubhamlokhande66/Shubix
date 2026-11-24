@@ -1299,3 +1299,5 @@ export * from "./clipUse";
 export * from "./shotWords";
 export * from "./bestMoment";
 export * from "./compare";
+export * from "./instaCard";
+export * from "./refCopy";

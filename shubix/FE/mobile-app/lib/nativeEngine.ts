@@ -1,7 +1,7 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
-import { bestMoment, checkExportedReel, clipAdvice, reactionsOf, stillEnd, type ExportExpect } from "@mobile/video-engine";
+import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, reactionsOf, stillEnd, type ExportExpect } from "@mobile/video-engine";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -215,7 +215,10 @@ export function createNativeEngine(io: NativeIo) {
     try {
       const res = await io.fetch(url("sound", `&p=${encodeURIComponent(path)}`));
       if (!res.ok) throw new Error("This file has no sound we can read. Try an MP3, M4A or WAV.");
-      const { sampleRate, channels, mono } = pcmOf(await res.arrayBuffer());
+      let { sampleRate, channels, mono } = pcmOf(await res.arrayBuffer());
+      // a Reel saved from Instagram: its song without the card Instagram adds at its end (instaCard.ts)
+      const end = instaCardStart(mono, sampleRate);
+      if (end !== null) { const n = Math.max(1, Math.floor(end * sampleRate)); mono = mono.slice(0, n); channels = channels.map((c) => c.slice(0, n)); }
       if (stops !== g) throw new Error("Stopped");
       io.task?.("progress", "song", undefined, "Finding the beats, drops and breaks");
       const r = await analyse(mono, sampleRate);

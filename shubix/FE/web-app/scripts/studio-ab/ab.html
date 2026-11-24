@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shubix blind A/B</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#101216;color:#eceef2;font:16px/1.5 system-ui,sans-serif;padding:20px}
+main{max-width:980px;margin:auto}h1{font-size:22px;margin:0 0 8px}p{max-width:65ch}.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+video{width:100%;max-height:62vh;background:#000;border-radius:8px}
+button{font:inherit;color:inherit;background:#262b35;border:1px solid #444c5c;border-radius:8px;padding:10px 16px;cursor:pointer;min-height:44px}
+button:hover{background:#323947}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible{outline:2px solid #7db4ff}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;align-items:center}button.on{background:#2563c9}[hidden]{display:none!important}#who{font:inherit;padding:8px}
+</style>
+<main>
+<h1>Which Reel is better?</h1>
+<section id="start">
+<p>Choose the folder with the pairs: <code>trip1.old.mp4</code> and <code>trip1.new.mp4</code>, made from the same clips and song. You will not see which is which. Nothing is uploaded.</p>
+<div class="row"><label>Your name <input id="who" autocomplete="off"></label><input id="dir" type="file" webkitdirectory multiple aria-label="Folder with the pairs"></div>
+</section>
+<p id="msg" role="status"></p>
+<section id="vote" hidden>
+<p id="where"></p>
+<div class="pair"><div><b>A</b><video id="va" controls playsinline preload="auto"></video></div><div><b>B</b><video id="vb" controls playsinline preload="auto"></video></div></div>
+<p id="need" role="status"></p>
+<div class="row" id="why"></div>
+<div class="row"><button data-v="a">A is better</button><button data-v="t">No difference</button><button data-v="b">B is better</button></div>
+</section>
+<section id="end" hidden><div id="out"></div><div class="row"><button id="save">Save the result</button></div></section>
+</main>
+<script type="module">
+import { plan, verdict } from './ab.mjs';
+const $ = (id) => document.getElementById(id), WHY = ['Opening', 'On the beat', 'Moments chosen', 'Flow', 'Effects', 'Ending'];
+let P = [], at = 0, votes = [], key = '', urls = [], seen = new Set(), why = new Set();
+for (const w of WHY) { const b = document.createElement('button'); b.textContent = w; b.onclick = () => { why.has(w) ? why.delete(w) : why.add(w); b.classList.toggle('on', why.has(w)); }; $('why').append(b); }
+$('dir').onchange = () => {
+  const who = $('who').value.trim();
+  if (!who) { $('msg').textContent = 'Write your name first, then choose the folder again.'; $('dir').value = ''; return; }
+  const r = plan([...$('dir').files], who); P = r.pairs;
+  $('msg').textContent = !P.length ? 'No pair found in this folder (name.old.mp4 and name.new.mp4).' : r.single.length ? `Left out, no partner: ${r.single.join(', ')}` : '';
+  if (!P.length) return;
+  key = 'ab:' + r.id; try { votes = JSON.parse(localStorage.getItem(key)) || []; } catch { votes = []; }
+  at = votes.length; $('start').hidden = true; show();
+};
+function show() {
+  urls.forEach((u) => URL.revokeObjectURL(u)); urls = [];
+  if (at >= P.length) return done();
+  $('vote').hidden = false; seen = new Set(); why = new Set(); $('why').querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+  $('where').textContent = `Pair ${at + 1} of ${P.length}. Mark what made the difference (optional), then vote.`;
+  ready();
+  for (const [v, f, s] of [[$('va'), P[at].a, 'a'], [$('vb'), P[at].b, 'b']]) {
+    const u = URL.createObjectURL(f); urls.push(u);
+    v.onplay = () => (s === 'a' ? $('vb') : $('va')).pause();
+    v.onended = () => { seen.add(s); ready(); };
+    v.onerror = () => { $('need').textContent = `Video ${s.toUpperCase()} cannot be played in this browser.`; };
+    v.src = u;
+  }
+}
+function ready() { const ok = seen.size === 2; $('need').textContent = ok ? 'Ready to vote.' : 'Watch both to the end to vote.'; document.querySelectorAll('[data-v]').forEach((b) => { b.disabled = !ok; }); }
+document.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => {
+  const p = P[at], v = b.dataset.v, won = v === 't' ? 'tie' : v === 'a' ? p.aIs : p.aIs === 'new' ? 'old' : 'new';
+  votes.push({ pair: p.id, won, newWas: p.aIs === 'new' ? 'A' : 'B', why: [...why] });
+  try { localStorage.setItem(key, JSON.stringify(votes)); } catch { /* private window: the votes last until it closes */ }
+  at++; show();
+}; });
+function done() {
+  $('vote').hidden = true; $('end').hidden = false;
+  const r = verdict(votes), o = $('out'), add = (t) => { const p = document.createElement('p'); p.textContent = t; o.append(p); }; o.replaceChildren();
+  add(r.text); add(`New ${r.new}, old ${r.old}, no difference ${r.tie}. Chance of this or better if the two were equal: ${(r.p * 100).toFixed(1)}%.`);
+  add(`A was chosen ${votes.filter((v) => v.won !== 'tie' && (v.won === 'new') === (v.newWas === 'A')).length} times, B ${votes.filter((v) => v.won !== 'tie' && (v.won === 'new') !== (v.newWas === 'A')).length}.`);
+  for (const won of ['new', 'old']) add(`Why the ${won} one won: ` + WHY.map((w) => `${w} ${votes.filter((v) => v.won === won && v.why.includes(w)).length}`).join(', '));
+  $('save').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ who: $('who').value.trim(), result: r, votes }, null, 1)], { type: 'application/json' })); a.download = 'ab-result.json'; a.click(); };
+}
+</script>
+</html>

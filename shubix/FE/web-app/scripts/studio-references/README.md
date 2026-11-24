@@ -82,6 +82,15 @@ this needs Reels with a known song (the same song as a file), so the beats are m
 2. Run `ANON=1 node analyze.mjs references.json all-of-them/*.mp4`.
 3. Commit only the JSON.
 
+## Studying a folder of finished Reels
+
+`node study.mjs <folder> <out>` checks every Reel (no sound, too short, a copy of another), measures it as above, and
+reads where in each shot the movement is and whether its strongest moment is on a beat. It writes `report.md` and
+`study.json` to `<out>`, and goes on where it was when stopped. Name a file `creator__name.mp4`, and put it in a folder
+by kind (`travel/`, `food/`). The set is halved by creator: a rule is found on the "learn" half and is kept only when it
+also holds on the "check" half. It says nothing about choosing from raw footage: that is the blind A/B
+(`../studio-ab/README.md`).
+
 ## The rebuild test: where Shubix puts the shots a human placed
 
 These Reels have no raw footage, so Shubix cannot be asked to make them again. The rebuild test

@@ -18,7 +18,7 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { instaCardStart, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
@@ -458,6 +458,13 @@ async function clipReacts(src){
     return reactionsOf(x, b.sampleRate);
   }catch(e){ return []; }
 }
+// a Reel saved from Instagram: its sound without the card Instagram adds at its end (instaCard.ts)
+function noInstaCard(b, m){
+  const end = instaCardStart(m, b.sampleRate); if(end === null) return null;
+  const n = Math.max(1, Math.floor(end*b.sampleRate)), out = getCtx().createBuffer(b.numberOfChannels, n, b.sampleRate);
+  for(let c=0;c<b.numberOfChannels;c++) out.getChannelData(c).set(b.getChannelData(c).subarray(0, n));
+  return { buf: out, mono: m.slice(0, n), end };
+}
 async function decodeAnyAudio(file){
   const c = getCtx(), isVideo = /^video\//.test(file.type) || /\.(mov|mp4|m4v|3gp|webm|mkv)$/i.test(file.name);
   let firstErr = null;
@@ -506,8 +513,10 @@ async function loadMusic(file, cached = null){
   try{ whole = await decodeAnyAudio(file); }
   catch(e){ if(token !== musicToken) return; songBusy(false); console.warn('song not readable', e); rlog('song', 'Song could not be read: ' + String(e && e.message || e), { name }, 'error'); tasks.fail('song', 'This file has no sound we can read. Try an MP3, M4A or WAV.'); $('s1st').textContent = 'Could not read the sound of this file. Use MP3, M4A, WAV or a video with sound. (Songs in the Apple Music app are protected and cannot be opened by websites.)'; return; }
   if(token !== musicToken) return;
-  const m = new Float32Array(whole.length);
+  let m = new Float32Array(whole.length);
   { const ch = whole.numberOfChannels; for(let c=0;c<ch;c++){ const d = whole.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ch; } }
+  { const cut = noInstaCard(whole, m); if(cut){ whole = cut.buf; m = cut.mono;
+    if(cached && cached.r && (cached.r.beats || []).some(b => b > cut.end)) cached = null; } }   // beats kept from before the card was cut off: found again
   song = { buf: whole, mono: m, r: null, name, file, key: name + '|' + whole.duration.toFixed(2) };
   buf = whole; mono = m; secStart = 0; capWords = null; capLines = null; capAll = null;
   drawMusic();
@@ -3626,6 +3635,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     for(const k of ['loud','drums','bass','voice']) if(m[k] !== undefined) o[k] = c(m[k], 0, 1);
     if(['rising','falling','steady'].includes(m.trend)) o.trend = m.trend;
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
+    if(REF_TRX.includes(m.trx)) o.trx = m.trx; if(REF_FX.includes(m.fx)) o.fx = m.fx;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
     if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
@@ -8007,8 +8017,10 @@ async function analyzeReference(file, onP){
     onP(0.02, 'listening to its music');
     // its music: the beats (shot lengths are measured in beats, so the pace carries over to another tempo)
     let rb = null, rr = null, rmap = null, refAudio = null;
-    try{ const ab = await decodeAnyAudio(file); const m = new Float32Array(ab.length);
+    try{ const ab = await decodeAnyAudio(file); let m = new Float32Array(ab.length);
       for(let c=0;c<ab.numberOfChannels;c++){ const d = ab.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ab.numberOfChannels; }
+      // saved from Instagram: the card at its end is Instagram's, not the editor's last shot (nor a black end, nor a name to copy)
+      { const end = instaCardStart(m, ab.sampleRate); if(end !== null && end > 1){ m = m.slice(0, Math.floor(end*ab.sampleRate)); dur = Math.min(dur, end); } }
       let r; try{ r = await analyseInWorker(m, ab.sampleRate); }catch(e){ r = songAnalysis(m, ab.sampleRate); }
       if(r.beats && r.beats.length > 8) rb = r.beats;
       refAudio = { mono: m, sr: ab.sampleRate, curve: onsetCurve(m, ab.sampleRate) };   // where it is in the creator's song (refAlign)
@@ -8137,6 +8149,9 @@ async function analyzeReference(file, onP){
     const moments = shots.slice(0, 200).map((s,i)=>{
       const mm = { beats: shotBeats[i] || 0, sec: +shotSec[i].toFixed(3), at: +s.a.toFixed(3), tr: i ? (cuts[i-1] ? cuts[i-1].kind : 'hard') : 'start', zoom: s.zoom > 1.03 ? 'in' : s.zoom < 0.97 ? 'out' : 'none' };
       if(s.flick) mm.flick = true;
+      // a transition or an effect the reader knows only by its look, one the studio has: copied too (refCopy.ts)
+      if(i && cuts[i-1] && cuts[i-1].odd && REF_TRX.includes(cuts[i-1].odd.ours)) mm.trx = cuts[i-1].odd.ours;
+      { const f = fxOdd.find(x => Math.abs(x.at - s.a) < 0.02 && REF_FX.includes(x.ours)); if(f && !s.flick) mm.fx = f.ours; }
       if(shotStat[i] && !s.flick){ mm.mo = +(shotStat[i].m/mMax).toFixed(3); mm.br = +shotStat[i].b.toFixed(3);
         const sp = refSpeedOf(smp, s.a, s.b, mMax, s.move ? s.move.freeze : null); if(sp.spd) mm.spd = sp.spd; if(sp.frz !== undefined) mm.frz = sp.frz; }
       // the Reel ends on black (an end card: a logo on black): the copy ends on black too
@@ -8271,7 +8286,7 @@ function copyShots(){
   plan.forEach((s,i)=>{
     const m = M[s.ref ?? i]; if(!m) return;
     const len = s.end - s.start;
-    if(i > 0 && !refProfile.learned){ const tr = m.tr === 'start' ? 'hard' : REF_TR[m.tr] || 'hard'; s.tr = tr; s.trByRef = tr !== 'hard'; }
+    if(i > 0 && !refProfile.learned){ const tr = refTrOf(m, REF_TR, k => !isLocked('tr', k)); s.tr = tr; s.trByRef = tr !== 'hard'; }
     s.efx = 'none'; s.ak = []; s.flick = !!m.flick; s.black = !!m.black && copyTimed();   // the black end only where the Reel had it
     if(s.flick || s.black) return;   // a flicker: a new still of the clips on every frame (flickPick), no move of its own
     if(Array.isArray(m.move) && m.move.length >= 2 && len >= 0.3){
@@ -8279,6 +8294,8 @@ function copyShots(){
       s.ak = m.move.map(k=>({ t: +(clip(k.f, 0, 1)*len).toFixed(3), s: clip(k.s, 0.4, 2.5), x: clip(k.x, -0.6, 0.6), y: clip(k.y, -0.6, 0.6), r: clip(k.r, -60, 60), o: 1, ez }));
     } else if(m.zoom === 'in' || m.zoom === 'out') s.efx = len > 1.2 ? 'pan' : 'punch-soft';
     if(m.shake && !s.ak.length) s.efx = 'shake';
+    // an effect read in the shot itself (RGB split, mirror, strobe): the studio's own, when the plan has it
+    if(REF_FX.includes(m.fx) && !isLocked('fx', m.fx)) s.efx = m.fx;
     // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
     const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
     if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
@@ -8296,7 +8313,7 @@ function copyMatch(){
     const m = M[e.ref ?? i]; if(!m || i === edit.length - 1) return;
     const want = timed ? m.sec : R.medianBeats && m.beats ? m.beats*P0 : m.sec, got = e.end - e.start;
     if(want > 0){ pace += Math.max(0, 1 - Math.abs(Math.log2(got/want))); pn++; }
-    if(i > 0 && !R.learned){ tr += e.tr === (m.tr === 'start' ? 'hard' : REF_TR[m.tr] || 'hard') ? 1 : 0; tn++; }
+    if(i > 0 && !R.learned){ tr += e.tr === refTrOf(m, REF_TR, () => true) ? 1 : 0; tn++; }
     const wantMove = !!(m.move && m.move.length >= 2) || m.zoom === 'in' || m.zoom === 'out', gotMove = !!(e.ak && e.ak.length >= 2) || ['pan','punch-soft','pan-soft'].includes(e.efx);
     mv += wantMove === gotMove ? 1 : 0; mn++;
   });

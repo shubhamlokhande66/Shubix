@@ -56,6 +56,7 @@ export function prompt(name: string, frames: { t: number }[], dur: number) {
   return `${frames.length} frames of one Reel named "${clean(name, 60)}" (${dur.toFixed(1)} s long), in this order: ${list}.
 List what is written or stuck on top of the video (not things that are part of the filmed scene, such as a shop sign):
 - texts: each designed text (a title, hook, label, price, call to action). Not the captions below. For each: "text" exactly as written (keep its language and emoji), "first" and "last" = the first and last frame it shows on (e.g. "f2"), "x","y" = the centre of the text as fractions of the frame (0..1, y from the top), "h" = the height of one line of its letters as a fraction of the frame height, "style" one of ${JSON.stringify(TEXT_STYLES)} (bold = big plain letters with an outline or shadow, box = letters on a filled rectangle, tag = on a rounded pill, neon = glowing letters, clean = thin letters with a soft shadow), "color" = the colour of the letters for bold/neon/clean, or of the box/pill for box/tag, as "#RRGGBB", "anim" one of ${JSON.stringify(ANIMS)} (your best guess at how it appears).
+Instagram's own marks are not the Reel's design: leave out the Instagram logo and name, any @username, and the moving or end-card watermark of a saved Reel.
 - stickers: each sticker, emoji or small graphic: "emoji" = the closest single emoji, "first","last","x","y","h" as for texts.
 - captions: word-by-word subtitles that follow the speech or lyrics (they change from frame to frame) — {"on": true, "style": one of ${JSON.stringify(CAPTION_STYLES)} (pop = big words one or two at a time, karaoke = a full line with the spoken word highlighted, box = words on a filled box, clean = small plain subtitles), "color" = the highlight colour as "#RRGGBB", "y" = their centre}, or {"on": false}.
 - background: when a person stands in front of a background that was replaced or blurred by an app: {"mode": "blur" or "color", "color": "#RRGGBB" for a plain colour}, else {"mode": "none"}.
@@ -71,6 +72,8 @@ const hex = (v: string, d: string) => { const m = /#?([0-9a-f]{6}|[0-9a-f]{3})\b
 /** some models answer in percent or on a 0..1000 grid (Gemini): one scale for the numbers of one item */
 const scaleOf = (...v: (number | undefined)[]) => { const big = Math.max(0, ...v.filter((x): x is number => Number.isFinite(x))); return big > 150 ? 1000 : big > 1.5 ? 100 : 1; };
 const frac = (v: number | undefined, k = scaleOf(v)) => (v === undefined || !Number.isFinite(v) ? undefined : v / k);
+/** Instagram's name or a line that is only someone's @username (a saved Reel's watermark): never put on another Reel */
+const notTheirs = (text: string) => /^(instagram\b\W*)?@\s?[\w.]{2,}$/i.test(text) || /^instagram( reels?)?$/i.test(text);
 const emojiOf = (s: string) => { const m = String(s).match(/\p{Extended_Pictographic}(️|‍\p{Extended_Pictographic}|\p{Emoji_Modifier})*/u); return m ? m[0] : ""; };
 
 /** The model's answer -> bounded texts, stickers, captions and background, with times in seconds of the reference. */
@@ -86,7 +89,7 @@ export function parseLook(frames: { t: number }[], dur: number, d: z.infer<typeo
   const texts: LookText[] = [];
   for (const t of d.texts) {
     const text = clean(t.text, 80).replace(/\s+/g, " ");
-    if (!text || texts.some((x) => x.text === text)) continue;
+    if (!text || notTheirs(text) || texts.some((x) => x.text === text)) continue;
     const style = oneOf(t.style, TEXT_STYLES, "bold");
     texts.push({ text, ...span(t), ...place(t, 0.04), style, color: hex(t.color, style === "box" || style === "tag" ? "#FFD54A" : "#FFFFFF"), anim: oneOf(t.anim, ANIMS, "pop") });
     if (texts.length >= LIMITS.texts) break;
