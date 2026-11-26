@@ -647,7 +647,7 @@ export const STUDIO_HTML = `
 <section class="shotsheet" id="shotsheet" hidden role="dialog" aria-label="Shot">
   <div class="ss-head"><span class="ss-grip" aria-hidden="true"></span><button type="button" class="${Button.close} absolute top-3 right-3" id="ssx" aria-label="Cancel" title="Cancel">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button></div>
   <div class="ss-body shotcard" id="ssbody"></div>
-  <footer class="sheetFooter"><span><i aria-hidden="true"></i><span id="ssfoot">Preview selection</span></span><button type="button" class="${Button.iconPrimary} size-[34px]" id="ssok" title="Apply">Done ${IC.check}</button></footer>
+  <footer class="sheetFooter"><span><i aria-hidden="true"></i><span id="ssfoot">Preview selection</span></span><button type="button" class="${Button.primary}" id="ssok" title="Apply">Done ${IC.check}</button></footer>
   <span class="ss-rs" aria-hidden="true" title="Drag to resize"></span>
 </section>
 <section class="fexp" id="fexp" hidden aria-live="polite" aria-labelledby="fexph">

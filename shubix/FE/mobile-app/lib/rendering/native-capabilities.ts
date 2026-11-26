@@ -10,7 +10,7 @@ const TRANSITIONS: Record<string, string> = {
   slideup: "slide-up", slidedown: "slide-down", swipeup: "slide-up",
   // the studio's pattern transitions, as the nearest one the phone's own export has
   zoomblur: "zoom-in", rotatein: "spin", shake: "whip-pan", dipwhite: "flash", squeeze: "slide-left",
-  stripes: "fade", blinds: "fade", checker: "fade", dots: "fade", noise: "fade", splith: "fade", wave: "fade", chroma: "fade", tiles: "fade",
+  stripes: "fade", blinds: "fade", checker: "fade", dots: "fade", noise: "fade", splith: "fade", wave: "fade", chroma: "fade", tiles: "fade", panels: "fade", hpanels: "fade", vpanels: "fade", window: "fade",
 };
 
 import { PIC_FX } from "@mobile/core/lib/shaders";

@@ -9,7 +9,7 @@ export const PIC_FX: Record<string, number> = { grain: 1, leak: 2, rainbow: 3, n
 /** each transition's usual length in seconds (a shot may have a shorter one of its own) */
 export const TR_DUR: Record<string, number> = {hard:0, fadein:0.35, flash:0.22, whip:0.16, zoom:0.18, glitch:0.14, dip:0.26, dissolve:0.35, iris:0.24, wipe:0.22, bars:0.26, spin:0.2, diamond:0.36, heart:0.42, star:0.4,
   slideleft:0.24, slideright:0.24, slideup:0.24, slidedown:0.24, swipeup:0.2, zoomout:0.3, blur:0.35, flip:0.3, luma:0.45, pixelate:0.4, clock:0.4, doors:0.35, ripple:0.45, burn:0.4, dropin:0.32,
-  stripes:0.4, blinds:0.4, checker:0.45, dots:0.45, noise:0.4, splith:0.35, wave:0.4, dipwhite:0.3, chroma:0.35, tiles:0.45, zoomblur:0.3, shake:0.3, squeeze:0.35, rotatein:0.35, cube:0.45, cubeup:0.45, flip3d:0.5, swing:0.45};
+  stripes:0.4, blinds:0.4, checker:0.45, dots:0.45, noise:0.4, splith:0.35, wave:0.4, dipwhite:0.3, chroma:0.35, tiles:0.45, zoomblur:0.3, shake:0.3, squeeze:0.35, rotatein:0.35, cube:0.45, cubeup:0.45, flip3d:0.5, swing:0.45, panels:0.9, hpanels:0.6, vpanels:0.6, window:0.7};
 
 /** the studio renderer: a full-frame quad */
 export const MAIN_VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a,0.,1.); }`;
@@ -168,6 +168,11 @@ void main(){
   }
   else if(mode<6.5){ float q=1.-pow(1.-prog,3.); vec2 far=max(irisC,res-irisC); float R=length(far)*q*1.05; float f=max(1.,R*0.18); float mk=1.-smoothstep(R-f,R,distance(p0,irisC)); col=mix(A,B,mk); }
   else if(mode<7.5){ float q=1.-pow(1.-prog,3.); float s=(p0.x+p0.y*0.6)/(res.x+res.y*0.6); float e=-0.15+q*1.3; float mk=1.-smoothstep(e-0.08,e,s); col=mix(A,B,mk); }
+  else if(mode>30.5){ float mk = 0.; vec3 base = A;   /* panels: the next shot in pieces (31 blocks out of black, 32 rows, 33 columns, 34 a window that slides across, then opens) */
+    if(mode<31.5){ base = vec3(0.); vec2 c = floor(p0/(res/vec2(2.,3.))); float k = c.y*2. + mod(c.x+c.y, 2.); float s = clamp((prog*1.15 - k*0.14)/0.25, 0., 1.); float e = 1.-pow(1.-s, 3.); float fx = fract(p0.x/(res.x*0.5)); mk = mod(c.x, 2.)<0.5 ? step(1.-e, fx) : step(fx, e); mk *= step(0.001, s); col = mix(base, B, mk); }
+    else if(mode<33.5){ float n = mode<32.5 ? 5. : 4.; float u = mode<32.5 ? p0.y/res.y : p0.x/res.x; float k = floor(u*n); float t0 = hash(vec2(k, mode))*0.55; float s = clamp((prog - t0)/0.12, 0., 1.); mk = s; float f = fract(u*n); float rim = (1.-step(0.025, f))+step(0.975, f); col = mix(mix(A, B, mk), vec3(1.), rim*s*(1.-step(0.98, prog))*0.9); }
+    else { float q = smoothstep(0.7, 1., prog); vec2 h = mix(vec2(0.22, 0.16)*res, res*0.5, q); vec2 c = mix(vec2(mix(0.2, 0.8, smoothstep(0., 0.7, prog))*res.x, res.y*0.45), res*0.5, q); vec2 d = abs(p0-c)-h; mk = 1.-step(0., max(d.x, d.y)); float rim = step(-res.x*0.008, max(d.x, d.y))*mk*(1.-q); col = mix(mix(A, B, mk), vec3(1.), rim); }
+  }
   else if(mode>26.5 && mode<30.5){ col = mode>29.5 ? (s3A>0.001 ? A*s3A : B*s3B) : A*s3A*step(0.001,s3A) + B*s3B*step(0.001,s3B); }
   else if(mode>16.5){ float mk = 0.;   /* the pattern transitions: where the next shot shows */
     if(mode<17.5) mk = step(fract(p0.y/(res.y/12.)), prog);                                   /* stripes */

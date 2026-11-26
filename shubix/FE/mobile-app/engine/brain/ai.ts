@@ -10,7 +10,8 @@ import { STICKERS } from '@mobile/core/lib/stickers';
 
 export function createAiBrain(ES, EH){
 const framesMade = new WeakMap();   // a clip's frames are made once (Cancel, then Proceed: not again)
-function aiGate(again = false){
+// pressed: Make Reel (Next after the clips) asked it: a plan goes straight on, a Free account chooses (Shubix AI or the Free edit)
+function aiGate(again = false, pressed = false){
   if(!ES.aiOn) return Promise.resolve(false);
   const id = EH.reelIdNow(); if(ES.aiReel === id) return Promise.resolve(true);
   if(!again && (ES.aiReel === 'no:' + id || ES.gateNo === id)) return Promise.resolve(false);
@@ -21,19 +22,27 @@ function aiGate(again = false){
       // too few credits: the Reel is still made, by the phone's own smart edit (like the Free plan), never held back;
       // the top-up is offered once per Reel (not again on every Next)
       EH.aiNeed(false); ES.gateNo = id;
-      EH.aiStat('Edited on your phone · Shubix AI needs ' + EH.creditWord(cost) + ' (you have ' + EH.creditWord(bal) + ')');
+      EH.aiStat('Free edit · Shubix AI needs ' + EH.creditWord(cost) + ' (you have ' + EH.creditWord(bal) + ')');
       EH.aiLog('Edited on your phone: Shubix AI needs ' + EH.creditWord(cost) + ' and you have ' + EH.creditWord(bal) + '.');
       if(ES.lowAsked !== id){ ES.lowAsked = id;
-        if(EH.IN_APP) await EH.askCredits({ title: 'Not enough credits for Shubix AI', text: 'Shubix AI uses ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Your Reel is made with the phone\'s own smart edit.', bal, ok: 'OK' });
-        else { const go = await EH.askCredits({ title: 'Top up for Shubix AI', text: 'Shubix AI uses ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Your Reel is made with the phone\'s own smart edit now; top up to let Shubix edit it.', bal, ok: 'Top up', no: 'Use the phone\'s edit' });
+        if(EH.IN_APP) await EH.askCredits({ title: 'Not enough credits for Shubix AI', text: 'Shubix AI needs ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Your Reel is made now with the Free edit: no credits used.', bal, ok: 'OK' });
+        else { const go = await EH.askCredits({ title: bal ? 'Not enough credits' : 'Your Shubix AI credits are used up', text: 'Shubix AI needs ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Make it now with the Free edit (no credits), or get credits for Shubix AI.', bal, ok: 'Get credits', no: 'Free edit' });
           if(go) EH.openPricing(); } }
       return false; }
-    // what Shubix AI does and what it costs, then Use (✕: nothing runs, nothing is taken; no "free" choice)
-    const ok = await EH.askCredits({ title: 'Shubix AI will edit this Reel',
-      text: cost ? 'It uses ' + EH.creditWord(cost) + ' for this Reel. A new Reel after changing it uses credits again.' : 'Included in your plan for this Reel.',
+    // a plan (Editor, Pro): Make Reel is the answer, no question (as the website)
+    const free = ES.planNow === 'free';
+    if(pressed && !free){ ES.aiReel = id; ES.gateNo = ''; EH.aiNeed(false); return true; }
+    // what Shubix AI does and what it costs, then Use; a Free account also gets the Free edit (✕: nothing runs, nothing is taken)
+    // the welcome credits (Free, exactly one Shubix AI Reel's worth): the first Reel says so, it is not a warning
+    const first = free && cost && bal === cost;
+    const ok = await EH.askCredits({ title: first ? 'Your first Shubix AI Reel is on us 🎉' : free ? 'How should we make your Reel?' : 'Shubix AI will edit this Reel',
+      text: first ? 'You have ' + EH.creditWord(bal) + ': enough for one Shubix AI Reel. It finds your best moments, puts the transitions on the beat and adds pro colour.'
+        : free ? 'Shubix AI uses ' + EH.creditWord(cost) + ' for this Reel. The Free edit makes it now on your phone, with no credits.'
+        : cost ? 'It uses ' + EH.creditWord(cost) + ' for this Reel. A new Reel after changing it uses credits again.' : 'Included in your plan for this Reel.',
       list: ['The best moments of every clip', 'Trendy transitions and effects on the beat', 'Pro colour and framing'],
-      bal, after: bal !== null && cost ? bal - cost : null, ok: cost ? 'Use ' + EH.creditWord(cost) : 'Use Shubix AI' });
+      bal, after: bal !== null && cost ? bal - cost : null, ok: free ? (cost ? 'Shubix AI · ' + EH.creditWord(cost) : 'Shubix AI') : cost ? 'Use ' + EH.creditWord(cost) : 'Use Shubix AI', ...(free ? { no: 'Free edit' } : {}) });
     if(ok){ ES.aiReel = id; ES.gateNo = ''; EH.aiNeed(false); return true; }
+    if(ok === false && free){ ES.aiReel = 'no:' + id; ES.gateNo = id; EH.aiNeed(false); EH.aiStat('Free edit · no credits used'); return false; }   // the Free edit: the phone's own, now
     ES.gateNo = id; EH.aiNeed(true); EH.aiStat('Your Reel waits for Shubix AI · tap "Make it with Shubix AI"');
     return false;
   })().finally(() => { ES.gateP = null; });

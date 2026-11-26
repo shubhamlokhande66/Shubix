@@ -2061,7 +2061,7 @@
 .brs .cconf.upsell .cconfi{width:56px;height:56px;background:var(--gold-gradient);color:var(--on-accent);box-shadow:0 12px 28px -10px color-mix(in srgb,var(--accent) 80%,transparent)}
 .brs .cconf.upsell .cconfa{flex-direction:column-reverse;width:100%;align-items:stretch}
 .brs .cconf.upsell #cconfok{min-height:48px;font-size:15px;background:var(--gold-gradient);color:var(--on-accent);border:0}
-/* the free way ("Shubix": the phone's own edit) is a real second button too, under Shubix Brain */
+/* the free way ("Free edit": the phone's own edit) is a real second button too, under Shubix AI */
 .brs .cconf.upsell #cconfno{min-height:44px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px}
 .brs .cconf.upsell #cconfno:hover{background:var(--surface-2)}
 
@@ -2820,7 +2820,7 @@ html:has(.brs .cconf:not([hidden])) body,html:has(.brs .xsheet:not([hidden])) bo
 }
 .brs .sheetFooter > span { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; }
 .brs .sheetFooter > span i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
-.brs #ctpop .ctpopok {
+.brs #ctpop .ctpopok, .brs #shotsheet #ssok {
   position: static !important;
   width: auto !important;
   min-height: 38px;
@@ -2839,8 +2839,8 @@ html:has(.brs .cconf:not([hidden])) body,html:has(.brs .xsheet:not([hidden])) bo
   cursor: pointer !important;
   transition: transform .18s ease, filter .18s ease;
 }
-.brs #ctpop .ctpopok svg { width: 15px; height: 15px; }
-.brs #ctpop .ctpopok:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.brs #ctpop .ctpopok svg, .brs #shotsheet #ssok svg { width: 15px; height: 15px; }
+.brs #ctpop .ctpopok:hover, .brs #shotsheet #ssok:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
 /* a dock tool's panel: its tabs under the sheet's top edge, ✕ in the corner */
 .brs .panels:not([hidden]):has(.panel.on) .panel.on {

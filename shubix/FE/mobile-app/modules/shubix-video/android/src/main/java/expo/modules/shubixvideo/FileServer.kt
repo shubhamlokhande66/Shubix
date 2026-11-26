@@ -28,6 +28,8 @@ import kotlin.concurrent.thread
  *   GET  /probe?k=KEY&p=PATH        a clip's length, its size as shown and what it is (VideoFacts.kt)
  *   POST /faces?k=KEY&p=PATH&dur=D&w=W&h=H  where faces are in a clip (ClipFaces.kt): a line of JSON
  *   POST /aiframes?k=KEY&p=PATH&w=W&h=H  frames at the times in the body, comma separated, for Shubix AI: JSON, a base64 JPEG for each (null: none)
+ *   POST /frames?k=KEY&p=PATH&w=W&h=H  frames at the times in the body, comma separated, as pixels (FrameReader.kt): for each
+ *                                   1 byte (1: a frame), then w*h*4 bytes of RGBA (Copy a Reel's reader, video-engine refReader.ts)
  *   POST /popmask?k=KEY&p=PATH&t=T  the frame at T and its subject (SubjectPop.kt): 1 byte (1: found), the mask, the RGBA pixels
  *   POST /popcut?k=KEY&p=PATH&t=T&w=W&h=H&box=X0,Y0,X1,Y1  the subject cut out (the body: its alpha); answers its PNG's path and size
  *   POST /song?k=KEY                the song's beats and cuts (SongAnalysis.kt); the body is as songFromRequest reads it
@@ -82,6 +84,18 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
         try { reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), jpegsOfFile(f, w, h, times).toString().toByteArray()) }
         catch (e: Throwable) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no frames").toByteArray()) }
         finally { decoders.release() }
+      }
+      url.path == "/frames" && method == "POST" -> {
+        val f = File(url.getQueryParameter("p") ?: ""); val w = url.getQueryParameter("w")?.toIntOrNull() ?: 0; val h = url.getQueryParameter("h")?.toIntOrNull() ?: 0
+        if (!f.isFile || !inside(f) || w !in 2..2048 || h !in 2..2048) return@use reply(out, 404, "Not Found", emptyMap(), null)
+        val body = ByteArray((headers["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 400_000)); var read = 0
+        while (read < body.size) { val n = input.read(body, read, body.size - read); if (n <= 0) break; read += n }
+        val times = String(body, 0, read).split(',').mapNotNull { it.toDoubleOrNull() }.toDoubleArray()
+        if (!decoders.tryAcquire(30, TimeUnit.SECONDS)) return@use reply(out, 503, "Busy", emptyMap(), null)
+        var started = false
+        try { readFrames(f, w, h, times, out) { started = true; write(out, 200, "OK", mapOf("Content-Type" to "application/octet-stream")) } }
+        catch (e: Throwable) { if (!started) reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no frames").toByteArray()) }   // (after the first byte: the answer stops short, the app sees it)
+        finally { decoders.release(); out.flush() }
       }
       url.path == "/faces" && method == "POST" -> {
         val f = File(url.getQueryParameter("p") ?: ""); val dur = url.getQueryParameter("dur")?.toDoubleOrNull() ?: 0.0

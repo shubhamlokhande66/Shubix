@@ -45,6 +45,7 @@ export type NativeLayerRow = { native?: unknown; blend?: string };
 
 /** `studio`: the studio's finished sound (engine.exportMix), which replaces the clips' sound and the song, and its plan: watermark, quality, frame rate. */
 export async function exportReel(p: ReelProject, onProgress: (done: number) => void, studio?: { mix: string | null; layers?: NativeLayerRow[]; plan: { textTrack?: unknown; watermark: boolean; fps: number; bitrate: number; scale: number; stabs?: unknown[]; beats?: number[][]; follow?: (number[][] | null)[] } }) {
+  p = { ...p, overlays: p.overlays.filter((o) => !(o as { ph?: boolean }).ph && o.text?.trim()) };   // a copied Reel's text place not filled in, an empty text: never in the video
   const mix = studio?.mix;
   if (!ShubixVideo) throw new Error("The video engine is not in this app.");
   // a Studio Reel never stops here: what the native engine lacks is named by nativeExportGaps
@@ -154,6 +155,7 @@ export async function exportReelWithSharedRenderer(
   onProgress: (done: number) => void,
 ) {
   if (!ShubixVideo) throw new Error("The native Android video engine is not installed in this build.");
+  project = { ...project, overlays: project.overlays.filter((o) => !(o as { ph?: boolean }).ph && o.text?.trim()) };   // a copied Reel's text place not filled in: never in the video
 
   const job = createRenderJobFromProject(project);
   const renderer = createAndroidRendererAdapter({
