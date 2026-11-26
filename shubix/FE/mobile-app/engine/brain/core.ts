@@ -716,9 +716,9 @@ async function subjectPop(auto = false){
  * tall boxes pop in one after another on the beat, each a picture from the Reel's other clips in a white frame. The
  * pictures: the phone's frame of that clip (popcut with nothing cut away: the whole box kept). ---- */
 const isBox = L => !!(L && L.boxes);
-async function photoBoxes(){
+async function photoBoxes(from = 1){
   if(!ES.edit.length || ES.kind === 'talk' || ES.boxBusy || !EH.popCut) return null;
-  const gen = ES.editGen, shots = boxShots(ES.edit, ES.period, 3);
+  const gen = ES.editGen, shots = boxShots(ES.edit, ES.period, 3, from);
   if(!shots.length) return { shots: [] };
   ES.boxBusy = true;
   try{

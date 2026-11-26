@@ -13,6 +13,7 @@ describe("photo boxes", () => {
     const s = boxShots(reel, 0.4);
     expect(s).toEqual([1, 3, 5]);
     expect(boxShots([shot(0, 3, 0), shot(3, 3.5, 1)], 0.4)).toEqual([]);
+    expect(boxShots([shot(0, 3, 0), shot(3, 3.5, 1)], 0.4, 3, 0)).toEqual([0]);   // a copied Reel with boxes on its first shot
   });
   it("pop in one after another inside the shot and go together before its cut", () => {
     const { t0s, t1 } = boxTimes(reel[1], 0.4);

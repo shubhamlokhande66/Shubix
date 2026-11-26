@@ -21,11 +21,11 @@ export const BOX_ASPECT = 0.38;
 export const BOX_BUMP = 0.2;
 export const BOX_EDGE = 0.008;
 
-/** The shots that get boxes: long enough to show them (1.2 s, or 3 beats) and not the hook's first shot; up to `most`,
- * the longest first, never two side by side, in the Reel's order. */
-export function boxShots(shots: Shot[], period: number, most = 3): number[] {
+/** The shots that get boxes: long enough to show them (1.2 s, or 3 beats) and not the hook's first shot (`from` 0: it may,
+ * as a copied Reel that has them there); up to `most`, the longest first, never two side by side, in the Reel's order. */
+export function boxShots(shots: Shot[], period: number, most = 3, from = 1): number[] {
   const beat = period > 0 ? period : 0.5, len = (i: number) => shots[i].end - shots[i].start;
-  const ok = shots.map((_, i) => i).filter((i) => i >= 1 && len(i) >= Math.max(1.2, 3 * beat)).sort((a, b) => len(b) - len(a) || a - b);
+  const ok = shots.map((_, i) => i).filter((i) => i >= from && len(i) >= Math.max(1.2, 3 * beat)).sort((a, b) => len(b) - len(a) || a - b);
   const out: number[] = [];
   for (const i of ok) { if (out.length >= most) break; if (!out.some((j) => Math.abs(j - i) < 2)) out.push(i); }
   return out.sort((a, b) => a - b);

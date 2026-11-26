@@ -78,7 +78,7 @@ describe("Copy a Reel: what is known only by its look", () => {
     const r = panelRuns(pic, N, gx, gy);
     expect(r).toHaveLength(1); expect(r[0].kind).toBe("boxes"); expect(r[0].area).toBeLessThan(0.45);
     const app = read("../../mobile-app/lib/nativeEngine.ts");
-    expect(web).toContain("refBoxesSoon(refProfile);"); expect(app).toContain("await host.brain.photoBoxes()");
+    expect(web).toContain("refBoxesSoon(refProfile);"); expect(app).toContain("await host.brain.photoBoxes(0)");
   });
   it("the panel transitions exist in both engines and the server", () => {
     for (const t of ["panels", "hpanels", "vpanels", "window"]) { expect(Object.keys(TR_DUR)).toContain(t); expect(api).toContain(`"${t}"`); expect(web).toContain(`case '${t}':`); }
