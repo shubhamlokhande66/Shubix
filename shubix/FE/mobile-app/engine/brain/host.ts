@@ -128,7 +128,7 @@ export function createHost(initial, io = {}){
   async function runAi(wait = (ms) => new Promise(r => setTimeout(r, ms))){
     if(!ES.aiOn) return true;
     ES.dirFailedKey = ''; ES.paceFailedKey = '';
-    if(!brain.aiReelOk()){ const go = await brain.aiGate(true); if(!go) return ES.lowAsked === brain.reelIdNow(); }
+    if(!brain.aiReelOk()){ const go = await brain.aiGate(true, true); if(!go) return ES.lowAsked === brain.reelIdNow() || ES.aiReel === 'no:' + brain.reelIdNow(); }   // (the Free edit: made on the phone)
     await brain.aiRun();
     for(let i = 0; i < 2400 && aiBusy() && !ES.aiDown; i++) await wait(100);   // Shubix AI down: said at once, not after 4 min
     return true;

@@ -528,7 +528,7 @@ export default function EditorScreen() {
   }
   // the text being edited (the Text panel): its settings change as on the website's text editor
   const [txSel, setTxSel] = useState(""), txt = p?.overlays.find((o) => o.id === txSel);
-  const setTx = (patch: Partial<Overlay>) => p && txt && change({ overlays: p.overlays.map((o) => (o.id === txt.id ? { ...o, ...patch } : o)) });
+  const setTx = (patch: Partial<Overlay>) => p && txt && change({ overlays: p.overlays.map((o) => (o.id === txt.id ? { ...o, ...patch, ...("text" in patch ? { ph: undefined } : {}) } : o)) });
   const addText = (text: string, extra: Partial<Overlay> = {}) => {
     if (!text.trim() || !p) return;
     if (now >= total - 0.05) return tell(words("Move the playhead before the end of the Reel to add text."), "info");
@@ -690,6 +690,8 @@ export default function EditorScreen() {
           {p.overlays.map((o) => <Pressable key={o.id} onPress={() => setTxSel(txSel === o.id ? "" : o.id)} className={`flex-row items-center gap-2 rounded-xl border px-3 py-2 ${txSel === o.id ? "border-accent" : "border-border"}`}><Text numberOfLines={1} className="flex-1 text-[13px] text-foreground">{o.text}</Text><IconButton icon="trash" look="danger" size={32} label={words("Delete")} onPress={() => change({ overlays: p.overlays.filter((x) => x.id !== o.id) })} /></Pressable>)}
           {/* the tapped text: its look and motion, as the website's text editor (drawn by the studio in the paused preview and the export) */}
           {txt && <View className="gap-2 rounded-xl border border-border bg-surface-2 p-3">
+            {/* its words (a copied Reel's place shows empty: "Write your text"; one left empty stays out of the video) */}
+            {!(txt as { emoji?: boolean }).emoji && <TextInput key={txt.id} defaultValue={(txt as { ph?: boolean }).ph ? "" : txt.text} onChangeText={(v) => setTx({ text: v.slice(0, 300) })} placeholder={words("Write your text")} placeholderTextColor={look.muted} className="h-11 rounded-xl border border-border bg-surface px-3 text-[14px] text-foreground" />}
             <Label>Style</Label><Choices items={TX_STYLES.map((s) => s[1])} on={TX_STYLES.find((s) => s[0] === (txt.style ?? "bold"))?.[1]} onPick={(v) => setTx({ style: TX_STYLES.find((s) => s[1] === v)![0] })} />
             <Label>Entrance</Label><Choices items={TX_INS.map((s) => s[1])} on={TX_INS.find((s) => s[0] === (txt.anim ?? "pop"))?.[1]} onPick={(v) => setTx({ anim: TX_INS.find((s) => s[1] === v)![0] })} />
             <Label>Exit</Label><Choices items={TX_OUTS.map((s) => s[1])} on={TX_OUTS.find((s) => s[0] === (txt.out ?? "none"))?.[1]} onPick={(v) => setTx({ out: TX_OUTS.find((s) => s[1] === v)![0] })} />
