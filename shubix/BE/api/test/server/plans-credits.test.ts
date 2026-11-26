@@ -93,7 +93,10 @@ describe("plans and Shubix AI credits", () => {
     expect(await reelChargeKey("studio_ai", "reelA", "plan2")).toBe("reelA"); // no plan yet: the same Reel (clips, pace, its plan)
     await markDelivered(first.ref, "plan1");
     expect(await reelChargeKey("studio_ai", "reelA", "plan1")).toBe("reelA"); // the same plan again: a retry, nothing more
+    expect(await reelChargeKey("studio_ai", "reelA", "plan2")).toBe("reelA"); // planned again at once (clips still read): the same Reel
+    vi.useFakeTimers({ now: Date.now() + 6 * 60_000, toFake: ["Date"] });       // minutes later: another Reel on the same id
     const other = await reelChargeKey("studio_ai", "reelA", "plan2");
+    vi.useRealTimers();
     expect((await chargeOnce("studio_ai", other, "AI Reel")).taken).toBe(10); // another plan on the same id: a new charge
     expect((await chargeOnce("studio_ai", other, "AI Reel")).taken).toBe(0);  // and only once
     expect(await balanceNow()).toBe(720 - 20);
