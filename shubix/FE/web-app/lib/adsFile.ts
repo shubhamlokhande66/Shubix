@@ -7,7 +7,8 @@ const KEEP_MS = 300_000;
 export async function fetchAdsFile(name: "ads.txt" | "app-ads.txt"): Promise<Response> {
   const k = kept.get(name);
   if (k && Date.now() - k.at < KEEP_MS) return new Response(k.body, { status: k.status });
-  const r = await fetch(`${(process.env.API_URL || "http://localhost:4000").replace(/\/$/, "")}/${name}`, { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
+  // a new address every 5 minutes: a copy Cloudflare keeps of the API's file (hours, whatever it says) is never read
+  const r = await fetch(`${(process.env.API_URL || "http://localhost:4000").replace(/\/$/, "")}/${name}?v=${Math.floor(Date.now() / KEEP_MS)}`, { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
   const body = await r.text();
   if (r.ok || r.status === 404) kept.set(name, { at: Date.now(), status: r.status, body }); // a server error is asked again
   return new Response(body, { status: r.status });
