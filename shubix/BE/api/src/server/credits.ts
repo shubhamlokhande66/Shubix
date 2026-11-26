@@ -93,16 +93,18 @@ export class PlanNeeded extends AppError {
 /** `credits`: an AI action paid with credits (an AI Reel, Ask Shubix): on a plan without Shubix AI (Free) it is open
  * too when the administrator lets credits pay for it (Admin → Marketing) and the person has credits (viaCredits).
  * Without it (captions, translation…) only a plan with Shubix AI opens it. */
-export async function aiAllowed(admin = false, o: { credits?: boolean } = {}): Promise<{ ok: boolean; plan: string; planName: string; balance: number | null; freeChats: number; viaCredits?: boolean }> {
+export async function aiAllowed(admin = false, o: { credits?: boolean; reelId?: string } = {}): Promise<{ ok: boolean; plan: string; planName: string; balance: number | null; freeChats: number; viaCredits?: boolean }> {
   const uid = currentUser();
   if (!enabled() || admin) return { ok: true, plan: "", planName: "", balance: null, freeChats: 0 };
   if (!uid) return { ok: false, plan: "free", planName: "Free", balance: 0, freeChats: 0 };
   const w = await wallet(uid), plan = (await plansById()).get(String(w.plan)) as { ai?: boolean; name?: string; freeChats?: number } | undefined;
   const out = { ok: !!plan?.ai, plan: String(w.plan), planName: plan?.name ?? String(w.plan), balance: balanceOf(w), freeChats: Number(plan?.freeChats ?? 0) };
-  if (!out.ok && o.credits && out.balance > 0 && (await getMarketing()).ai.freeWithCredits) return { ...out, ok: true, viaCredits: true };
+  // with credits: some left, or this Reel's Shubix AI already paid (its 10 welcome credits spent on it: its picks, its plan
+  // for another part of the song and its retries stay open; a new charge still needs credits, 2026-11-26)
+  if (!out.ok && o.credits && (out.balance > 0 || (o.reelId && (await reelPaid(uid, o.reelId)))) && (await getMarketing()).ai.freeWithCredits) return { ...out, ok: true, viaCredits: true };
   return out;
 }
-export async function requireAiPlan(admin = false, o: { credits?: boolean } = {}) {
+export async function requireAiPlan(admin = false, o: { credits?: boolean; reelId?: string } = {}) {
   const a = await aiAllowed(admin, o);
   if (!a.ok) {
     const withCredits = o.credits && (await getMarketing()).ai.freeWithCredits;
@@ -110,6 +112,10 @@ export async function requireAiPlan(admin = false, o: { credits?: boolean } = {}
       : "Shubix AI is part of the Editor and Pro plans. Your Reel is still edited on your phone, free.", { plan: a.plan });
   }
   return a;
+}
+/** This person's Shubix AI Reel with this id is paid for (a charge that was not given back). */
+async function reelPaid(uid: string, reelId: string) {
+  return !!(await (await col("credit_ledger")).findOne({ ref: `studio_ai:${uid}:${reelId}`, delta: { $lt: 0 }, refunded: { $ne: true } }));
 }
 /** What the signed-in person has: their balance (null: credits are not counted here). */
 export async function balanceNow(): Promise<number | null> { const uid = currentUser(); if (!enabled() || !uid) return null; return balanceOf(await wallet(uid)); }

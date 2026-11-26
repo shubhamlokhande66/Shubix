@@ -105,7 +105,7 @@ async function chatSend(text){
   }
   // the Reel has no Shubix AI plan yet: this message is how Shubix AI makes it (the Reel's credits, agreed just above), not a
   // change of it: no second question, no second charge (the server: direct route), the whole Reel planned with it (the website's)
-  const firstPlan = ES.dirPlannedReel !== EH.reelIdNow();
+  const firstPlan = ES.dirPlannedReel !== EH.reelIdNow() && !ES.dirBusy;   // a plan on its way: that one pays the Reel, this message is a change
   // what this change costs, asked first: a few named shots or the whole Reel
   const size = firstPlan ? 'big' : EH.chatSize(text), freeN = EH.aiFreeChats(), free = bal0 => bal0 !== null && (ES.chatUsed || 0) < freeN, bal = EH.aiBal();
   const cost = firstPlan || free(bal) ? 0 : EH.aiCostOf(size === 'small' ? 'small' : 'big');

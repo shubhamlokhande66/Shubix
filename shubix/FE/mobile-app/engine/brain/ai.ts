@@ -84,7 +84,7 @@ async function aiRun(){
       const r = await EH.apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: ES.aiStopper.signal,
         body: JSON.stringify({ reelId: EH.reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
+      if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').')), { status: r.status });
       EH.aiSpent();
       charged += res.charged || 0; if(typeof res.balance === 'number' && ES.aiInfo){ ES.aiInfo.balance = res.balance; EH.creditsChanged(); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
@@ -105,6 +105,7 @@ async function aiRun(){
     ES.aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => framesMade.delete(s));
+    if(ES.aiOn && e && (e.status === 402 || e.status === 403)){ ES.aiGaveUp = EH.reelIdNow(); EH.aiStat(String(e.message)); EH.chatFail(String(e.message)); return; }   // credits or plan: said as it is (the website's)
     if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // never the phone's own edit instead
     ES.aiGaveUp = EH.reelIdNow();
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));

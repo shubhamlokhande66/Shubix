@@ -2676,7 +2676,7 @@ async function aiRun(){
       const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: stop,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
+      if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').')), { status: r.status });
       tasks.lock();
       charged += res.charged || 0; if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
@@ -2702,6 +2702,7 @@ async function aiRun(){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => { delete s.aiFramesMade; });
+    if(aiOn && e && (e.status === 402 || e.status === 403)){ aiGaveUp = reelIdNow(); aiStat(String(e.message)); chatFail(String(e.message)); aiNeed(true, e.status === 402); return; }   // credits or plan: said as it is
     if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
     aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
@@ -3148,7 +3149,7 @@ async function chatSend(text){
   }
   // the Reel has no Shubix AI plan yet: this message is how Shubix AI makes it (the Reel's credits, agreed just above), not a
   // change of it: no second question, no second charge (the server: direct route), the whole Reel planned with it
-  const firstPlan = dirPlannedReel !== reelIdNow();
+  const firstPlan = dirPlannedReel !== reelIdNow() && !dirBusy;   // a plan on its way: that one pays the Reel, this message is a change
   // what this change costs, asked first: a few named shots or the whole Reel
   const size = firstPlan ? 'big' : chatSize(text), freeN = aiFreeChats(), free = bal0 => bal0 !== null && chatUsed < freeN, bal = aiBal();
   const cost = firstPlan || free(bal) ? 0 : aiCostOf(size === 'small' ? 'small' : 'big');
