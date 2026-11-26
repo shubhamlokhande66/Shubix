@@ -52,7 +52,9 @@ const fx = COMMAND_EFFECTS.map((t) => ({ label: t.label, hint: t.hint, say: `Put
 
 export const CHAT_COMMANDS: ChatCommand[] = [
   { cmd: "/transition", title: "Transition", hint: "how one clip changes to the next", choices: tr },
-  { cmd: "/effect", title: "Effect", hint: "a look or a beat effect on the clips", choices: fx },
+  { cmd: "/effect", title: "Effect", hint: "a look or a beat effect on the clips", choices: [
+    { label: "Photo boxes", hint: "5 boxes with pictures from your clips pop in on the beat", say: "Add photo boxes: five boxes pop in on the beat over the clips" },
+    ...fx] },
   { cmd: "/cutout", title: "Cutout", hint: "a person cut out, or the video inside text", choices: [
     { label: "Subject pop", hint: "the person (or car, bike) cut out, small over the shot before the drop", say: "Add a subject pop: cut out the person before the drop" },
     { label: "Video inside the text", hint: "a colour fills the frame, the video shows through the letters", say: "Add a cutout text \"YOUR TEXT\" at the start, then fly through it into the video" },

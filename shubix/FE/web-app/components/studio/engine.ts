@@ -18,7 +18,7 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { boxShots, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
@@ -3112,6 +3112,13 @@ async function chatSend(text){
   const localVisualIntent = parseDirectorVisualIntent(text);
   const hasLocalVisualIntent = !!(localVisualIntent.openingText || localVisualIntent.squareFrameAll
     || localVisualIntent.transitionAll || localVisualIntent.effectsAll);
+  if(ready && localVisualIntent.photoBoxes && kind !== 'talk'){
+    const before = histSnap(), r = await photoBoxes();
+    if(r && r.shots.length){ hist.u.push(before); if(hist.u.length > HIST_MAX) hist.u.shift(); hist.r = []; hist.cur = histSnap(); hist.cand = ''; histUI(); chatLocalDone = true;
+      chatAnswer('Done ✓ Photo boxes on shot' + (r.shots.length > 1 ? 's ' : ' ') + r.shots.map(i => i + 1).join(', ') + ': five boxes with pictures from your other clips pop in on the beat. No Shubix AI credits used.'); }
+    else chatAnswer(r ? 'This Reel has no shot long enough for photo boxes (about 1.2 s). A longer song part or longer clips help.' : 'I could not make the photo boxes this time. Please try again.');
+    return;
+  }
   if(ready && hasLocalVisualIntent){
     try{
       const before = histSnap();
@@ -5309,22 +5316,24 @@ function drawLayers(g, t){
     if(!src || (M.kind === 'video' && !exporting && M.el.readyState < 2)) continue;
     const W = out.width, H = out.height, c = L.crop, sw0 = src.videoWidth || src.naturalWidth || src.width, sh0 = src.videoHeight || src.naturalHeight || src.height;
     const sx = sw0*c.l, sy = sh0*c.t, sw = Math.max(2, sw0*(1 - c.l - c.r)), sh = Math.max(2, sh0*(1 - c.t - c.b));
-    const P = popAt(L, t);   // a subject pop grows from small in the middle to its own size and place
-    const dw = Math.max(2, Math.round(P.s*W)), dh = Math.max(2, Math.round(dw*sh/sw*(M.h && M.w ? (M.w/M.h)/(sw0/sh0) : 1)));
+    const P = popAt(L, t), B = bumpAt(L, t);   // a subject pop grows from small in the middle to its own size and place; a photo box pops in (boxes.ts)
+    const dw = Math.max(2, Math.round(P.s*B.s*W)), dh = Math.max(2, Math.round(dw*sh/sw*(M.h && M.w ? (M.w/M.h)/(sw0/sh0) : 1)));
     if(!lyBuf){ lyBuf = document.createElement('canvas'); lyG = lyBuf.getContext('2d'); }
     if(lyBuf.width !== dw || lyBuf.height !== dh){ lyBuf.width = dw; lyBuf.height = dh; }
     const q = lyG; q.save(); q.globalCompositeOperation = 'source-over'; q.clearRect(0, 0, dw, dh); q.drawImage(src, sx, sy, sw, sh, 0, 0, dw, dh);
     if(L.key && L.key.on) chromaKey(q, dw, dh, L.key);
     if(L.mask !== 'none' || L.rad > 0){ layerMask(q, L, dw, dh); }
     q.restore();
-    const life = t - L.t0, left = L.t1 - t, a = L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
+    const life = t - L.t0, left = L.t1 - t, a = B.a * L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
     const face = L.follow === 'face' ? facePosOnScreen(t) : null;
     const lx = face ? face.x + (L.followOffsetX || 0) : P.x, ly = face ? face.y + (L.followOffsetY || 0) : P.y;
     if(L.shade > 0){ g.save(); g.globalAlpha = Math.max(0, Math.min(1, a*L.shade)); g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.restore(); }   // the Reel darker behind it
     // a matte: the layer is a window; the Reel shows only through it (matte) or only outside it (matte-inv), black elsewhere
     const matte = L.blend === 'matte' || L.blend === 'matte-inv';
     g.save(); g.globalAlpha = Math.max(0, Math.min(1, a)); g.globalCompositeOperation = matte ? (L.blend === 'matte' ? 'destination-in' : 'destination-out') : (L.blend || 'source-over'); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.scale(L.fh ? -1 : 1, L.fv ? -1 : 1);
-    g.drawImage(lyBuf, -dw/2, -dh/2); g.restore();
+    g.drawImage(lyBuf, -dw/2, -dh/2);
+    if(L.edge > 0){ const ew = Math.max(1, L.edge*W*B.s); g.strokeStyle = L.edgeC || '#FFFFFF'; g.lineWidth = ew; g.strokeRect(-dw/2 - ew/2, -dh/2 - ew/2, dw + ew, dh + ew); }   // a photo box's frame
+    g.restore();
     if(matte){ g.save(); g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.restore(); }
     if(L === layers[lySel] && !exporting && !recording && !playing){   // the chosen layer: a thin frame (preview only)
       g.save(); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.strokeStyle = 'rgba(176,92,255,0.95)'; g.lineWidth = Math.max(2, W*0.004); g.setLineDash([W*0.012, W*0.008]); g.strokeRect(-dw/2, -dh/2, dw, dh); g.restore(); }
@@ -5500,6 +5509,45 @@ async function popFrames(e, sides, local = 0){
   } finally { try{ input.dispose(); }catch(err){} }
 }
 const isPop = L => !!(L && L.pop);
+/* ---- Photo boxes (Shared/video-engine/src/boxes.ts): over the long shots, five tall boxes pop in one after another on
+ * the beat, each a picture from the Reel's other clips in a white frame; they go together before the cut. Asked in
+ * words ("photo boxes", "5 boxes on it") or /effect; Android: engine/brain/core.ts photoBoxes, the same. ---- */
+const isBox = L => !!(L && L.boxes);
+let boxBusy = false;
+async function photoBoxes(){
+  if(!edit.length || kind === 'talk' || boxBusy) return null;
+  const gen = editGen, shots = boxShots(edit, period, 3);
+  if(!shots.length) return { shots: [] };
+  boxBusy = true;
+  try{
+    const made = [], pics = new Map();
+    for(const i of shots){
+      const srcs = boxSources(edit, i), plan = boxLayers(edit[i], period);
+      for(let k = 0; k < plan.length; k++){
+        const q = srcs[k]; if(!q) continue;
+        const key = q.shot + ':' + q.local.toFixed(2);
+        let M = pics.get(key);
+        if(!M){
+          let frame; try{ [frame] = await popFrames(edit[q.shot], [0], q.local); }catch(err){ frame = null; }
+          if(!frame || editGen !== gen) continue;
+          const c = boxCrop(frame.width, frame.height, BOX_ASPECT), cut = document.createElement('canvas');
+          cut.width = Math.max(2, Math.round(frame.width*(1 - c.l - c.r))); cut.height = Math.max(2, Math.round(frame.height*(1 - c.t - c.b)));
+          const s = Math.min(1, 720/cut.height); const fin = document.createElement('canvas'); fin.width = Math.max(2, Math.round(cut.width*s)); fin.height = Math.max(2, Math.round(cut.height*s));
+          fin.getContext('2d').drawImage(frame, frame.width*c.l, frame.height*c.t, cut.width, cut.height, 0, 0, fin.width, fin.height);
+          const blob = await new Promise(r => fin.toBlob(r, 'image/jpeg', 0.9)); if(!blob || editGen !== gen) continue;
+          M = await addLayerMedia(new File([blob], 'Photo box ' + (q.shot + 1) + '.jpg', { type: 'image/jpeg' })); lmedia.push(M); M.at = lmedia.length - 1; pics.set(key, M);
+        }
+        made.push({ id: 0, m: M.at, in: 0, ...JSON.parse(JSON.stringify(LY0)), ...plan[k], boxes: 'mine' });
+      }
+    }
+    if(editGen !== gen || !made.length) return null;
+    layers = layers.filter(L => !isBox(L)).concat(made.map(L => ({ ...L, id: ++lySeq })));   // a new set replaces the last
+    lyUI(); await prepLayers(pos); redrawFrame(); saveNow();
+    rlog('boxes', 'Photo boxes · shots ' + shots.map(i => i + 1).join(', ') + ' · ' + made.length + ' boxes', { shots, boxes: made.length });
+    return { shots };
+  }catch(err){ console.warn('photo boxes', err); return null; }
+  finally{ boxBusy = false; }
+}
 async function subjectPop(auto = false){
   if(!subjectMask){ if(!auto) notify('Pop out needs the subject tools, which this browser cannot run.', 'err'); return null; }
   if(!edit.length || kind === 'talk' || popBusy){ if(!auto && !edit.length) notify('Make the Reel first, then Pop out.'); return null; }

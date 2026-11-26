@@ -6,7 +6,7 @@ import { srcPos, whatClip, velocitySpeed, rampSpeed, keyframesFor, crossesScene,
 import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { autoHook } from '@mobile/core/lib/text-templates';
-import { popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate, pictureOf, fitLook } from '@mobile/video-engine';
+import { boxShots, boxSources, boxCrop, boxLayers, BOX_ASPECT, POP_SIDE, popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate, pictureOf, fitLook } from '@mobile/video-engine';
 
 import { budgetEffects, budgetLiftFrom } from '@mobile/video-engine';
 
@@ -712,6 +712,41 @@ async function subjectPop(auto = false){
   }catch(err){ console.warn('subject pop', err); if(!auto) EH.tasks.fail('pop', 'The subject could not be cut out. Please try again.'); return null; }
   finally{ ES.popBusy = false; }
 }
+/* ---- Photo boxes (Shared/video-engine/src/boxes.ts), as the website's engine.ts photoBoxes: over the long shots, five
+ * tall boxes pop in one after another on the beat, each a picture from the Reel's other clips in a white frame. The
+ * pictures: the phone's frame of that clip (popcut with nothing cut away: the whole box kept). ---- */
+const isBox = L => !!(L && L.boxes);
+async function photoBoxes(){
+  if(!ES.edit.length || ES.kind === 'talk' || ES.boxBusy || !EH.popCut) return null;
+  const gen = ES.editGen, shots = boxShots(ES.edit, ES.period, 3);
+  if(!shots.length) return { shots: [] };
+  ES.boxBusy = true;
+  try{
+    const made = [], pics = new Map(), whole = new Uint8Array(POP_SIDE*POP_SIDE).fill(255);
+    for(const i of shots){
+      const srcs = boxSources(ES.edit, i), plan = boxLayers(ES.edit[i], ES.period);
+      for(let k = 0; k < plan.length; k++){
+        const q = srcs[k]; if(!q) continue;
+        const e = ES.edit[q.shot], src = ES.sources[e.src]; if(!src) continue;
+        const key = q.shot + ':' + q.local.toFixed(2);
+        let at = pics.get(key);
+        if(at === undefined){
+          const c = boxCrop(src.w, src.h, BOX_ASPECT), sc = Math.min(1, 1440/Math.max(src.w, src.h)), W = Math.max(2, Math.round(src.w*sc/2)*2), H = Math.max(2, Math.round(src.h*sc/2)*2);
+          let cut = null; try{ cut = await EH.popCut(src.path, srcPos(e, q.local), W, H, whole, [c.l, c.t, 1 - c.r, 1 - c.b]); }catch(err){ cut = null; }
+          if(!cut || ES.editGen !== gen) continue;
+          const M = await EH.addLayerMedia({ kind: 'photo', path: cut.path, name: 'Photo box ' + (q.shot + 1) + '.png', w: cut.w, h: cut.h });
+          ES.lmedia.push(M); at = ES.lmedia.length - 1; pics.set(key, at);
+        }
+        made.push({ m: at, in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), ...plan[k], boxes: 'mine' });
+      }
+    }
+    if(ES.editGen !== gen || !made.length) return null;
+    ES.layers = ES.layers.filter(L => !isBox(L)).concat(made.map(L => ({ ...L, id: ++ES.lySeq })));   // a new set replaces the last
+    EH.lyUI(); await EH.prepLayers(ES.pos); EH.redrawFrame(); if(EH.saveNow) EH.saveNow();
+    return { shots };
+  }catch(err){ console.warn('photo boxes', err); return null; }
+  finally{ ES.boxBusy = false; }
+}
 function lyDelete(){
   if(!ES.layers[ES.lySel]) return false;
   if(ES.layers[ES.lySel].pop === 'auto') ES.popOff = true;   // Shubix's own pop, deleted: not given again for this Reel
@@ -1196,5 +1231,5 @@ async function forgetSong(fp, quiet){
   if(!used) await idb('files', 'readwrite', s => s.delete('f:' + fp));
   if(!quiet) EH.listRecent();
 }
-  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, slowWish, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, clearTexts, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
+  return { smoothLive, addMark, delMark, clearMarks, stopPart, checkBeatsWithAi, scanGet, scanPut, keptSweep, editCopyFailNote, styleEdit, aiDone, dirArrived, applyChatVisualIntent, chatDone, chatFail, chatLocal, slowWish, applyDirectorStyle, dirRequest, directorMaybe, paceMaybe, account, makeEdit, showShot, changed, shotOp, shotReorder, shotCs, shotSet, shotSlip, shotTrim, shotRoll, shotRipple, histTick, histRebase, histGo, snapRestore, remixNow, lazyPlayer, layerAdd, subjectPop, photoBoxes, brandFinish, finishSet, finishOn, layoutLayer, lySelect, lyDelete, lySet, drawHook, facePosOnScreen, faceYOnScreen, clearTexts, drawCaptions, drawText, aiApply, drawOverlays, kfNow, kfTarget, kfLocal, kfAtHead, kfSeek, kfSet, segRegion, maskNow, maskSoon, shiftCaptions, csGeom, layerOf, shotReverse, lensOf, shapeAt, exportSound, autoExport, cutFramesOf, zoomBetween, frameCuts, renderedLook, copyLook, ttsMake, clearTts, ensureMix, sfxAdd, applyVo, autoTools, speechScan, autoSound, cleanVo, placeTemplateTexts, nextUntitled, idb, putFile, restoreEdit, forgetSong };
 }

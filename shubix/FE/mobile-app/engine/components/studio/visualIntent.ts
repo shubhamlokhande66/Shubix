@@ -9,6 +9,8 @@ export type DirectorVisualIntent = {
   effectsAll?: boolean;
   /** one effect named (a "/effect" choice): that effect on every clip */
   effectType?: string;
+  /** photo boxes: five boxes with pictures from the other clips pop in on the beat over the long shots (boxes.ts) */
+  photoBoxes?: boolean;
 };
 
 const TRANSITION_ALIASES: Array<[string, RegExp]> = [
@@ -79,5 +81,9 @@ export function parseDirectorVisualIntent(prompt: string): DirectorVisualIntent 
   }
   const asksEffects = /\b(?:effects?|effecr|fx)\b|इफेक्ट(?:्स)?|प्रभाव|असर|ಎಫೆಕ್ಟ್|ఎఫెక్ట్స్?|ইফেক্টস?|અસર|ਪ੍ਰਭਾਵ|تأثيرات?|效果|エフェクト|효과|эффекты|efeitos|efectos|effets|effekte|effetti|efektler|efek|hiệu ứng|เอฟเฟกต์/u.test(value);
   if (allClips && (asksEffects || effectType)) { intent.effectsAll = true; if (effectType) intent.effectType = effectType; }
+  // "photo boxes", "5 boxes pop on it", "pizza var 5 box": boxes over the shot (not the box panels transition)
+  const boxWords = /\b(?:photo|picture|pic|image)s?\s*(?:box|boxes|frames?)\b|फोटो\s*बॉक्स/i.test(value)
+    || (/\b(?:box|boxes|boxe|boxs)\b|बॉक्स/i.test(value) && /\b(?:pop|pops|popping|over|on top|on it|tyavar|tyachyavar|var|upar|uppar|pe|par)\b/i.test(value) && !/transition|ट्रान्झिशन|ट्रांजिशन/i.test(value));
+  if (boxWords) intent.photoBoxes = true;
   return intent;
 }
