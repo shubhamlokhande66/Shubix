@@ -32,7 +32,8 @@ export const DEFAULT_LOCKS: PlanLocks = {
     { id: "tr", name: "Transitions", items: [
       ...I("free", [["fadein", "Fade-in"], ["flash", "Flash"], ["whip", "Whip pan"], ["zoom", "Zoom-through"], ["glitch", "Glitch"], ["dip", "Dip to black"], ["dissolve", "Dissolve"], ["iris", "Iris"], ["wipe", "Wipe"], ["bars", "Bars"], ["spin", "Spin"], ["diamond", "Diamond"], ["heart", "Heart"], ["star", "Star"],
         ["slideleft", "Push left"], ["slideright", "Push right"]]),
-      ...I("creator", [["slideup", "Push up"], ["slidedown", "Push down"], ["swipeup", "Swipe up"], ["zoomout", "Zoom out"], ["blur", "Blur through"], ["flip", "Card flip"], ["luma", "Light fade"], ["pixelate", "Pixelate"], ["clock", "Clock wipe"], ["doors", "Doors open"], ["ripple", "Ripple"], ["burn", "Film burn"], ["dropin", "Drop in"]]),
+      ...I("creator", [["slideup", "Push up"], ["slidedown", "Push down"], ["swipeup", "Swipe up"], ["zoomout", "Zoom out"], ["blur", "Blur through"], ["flip", "Card flip"], ["luma", "Light fade"], ["pixelate", "Pixelate"], ["clock", "Clock wipe"], ["doors", "Doors open"], ["ripple", "Ripple"], ["burn", "Film burn"], ["dropin", "Drop in"],
+        ["panels", "Panels build"], ["hpanels", "Row panels"], ["vpanels", "Column panels"], ["window", "Sliding window"]]),
       ...I("pro", [["cube", "3D cube"], ["cubeup", "3D cube (up)"], ["flip3d", "3D card flip"], ["swing", "3D door swing"]]) ] },
     { id: "look", name: "Filters", items: [
       ...I("free", [["natural", "Natural"], ["vivid", "Vivid"], ["cine", "Cinematic"], ["mono", "B&W"], ["warmfilm", "Warm film"], ["cool", "Cool"], ["faded", "Faded"], ["summer", "Summer"], ["moody", "Moody"], ["wedding", "Wedding"]]),

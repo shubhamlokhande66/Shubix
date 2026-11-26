@@ -18,7 +18,7 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { instaCardStart, blurCuts, coverMove, joinFlashes, sharpOfY, warmOf, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { instaCardStart, blurCuts, coverMove, joinFlashes, panelRuns, sharpOfY, warmOf, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
@@ -2224,7 +2224,7 @@ const TR_NAME = {hard:'Hard cut', fadein:'Fade-in', flash:'Exposure flash', whip
   iris:'Mask: iris', wipe:'Mask: soft wipe', bars:'Mask: bars', spin:'Spin + blur', diamond:'Mask: diamond', heart:'Mask: heart', star:'Mask: star',
   slideleft:'Push left', slideright:'Push right', slideup:'Push up', slidedown:'Push down', swipeup:'Swipe up (feed scroll)', zoomout:'Zoom out', blur:'Blur through', flip:'Card flip',
   luma:'Light fade (by brightness)', pixelate:'Pixelate', clock:'Clock wipe', doors:'Doors open', ripple:'Ripple', burn:'Film burn', dropin:'Drop in (bounce)',
-  stripes:'Stripes', blinds:'Blinds', checker:'Checkerboard', dots:'Dots', noise:'Noise dissolve', splith:'Split open', wave:'Wave wipe', dipwhite:'Dip to white', chroma:'Colour split', tiles:'Random tiles',
+  stripes:'Stripes', blinds:'Blinds', checker:'Checkerboard', dots:'Dots', noise:'Noise dissolve', splith:'Split open', wave:'Wave wipe', dipwhite:'Dip to white', chroma:'Colour split', tiles:'Random tiles', panels:'Panels build', hpanels:'Row panels', vpanels:'Column panels', window:'Sliding window',
   zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
   cube:'3D cube', cubeup:'3D cube (up)', flip3d:'3D card flip', swing:'3D door swing'};
 const FX_NAME = {jump:'Punch-in (jump cut)', 'punch-soft':'Soft zoom', 'pan-soft':'Ken Burns (soft)', snap:'Photo snap (freeze + flash)', hook:'Hook zoom + RGB', none:'—', pan:'Ken Burns + beat bounce', zoomburst:'Zoom burst + RGB', drift:'Slow drift + vignette', punch:'Zoom punch', tilt:'Tilt punch', shake:'Shake', bounce:'Beat bounce',
@@ -6464,7 +6464,7 @@ function drawFrame2D(t){
         if(p<0.5){ drawShot(og, pe, pl); og.fillStyle=`rgba(0,0,0,${EASE.inOut(p*2)})`; og.fillRect(0,0,W,H); }
         else { drawShot(og, e, local); og.fillStyle=`rgba(0,0,0,${1-EASE.inOut((p-0.5)*2)})`; og.fillRect(0,0,W,H); }
         break;
-      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing':   // the 2D renderer: a dissolve
+      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing': case 'panels': case 'hpanels': case 'vpanels': case 'window':   // the 2D renderer: a dissolve
       case 'dissolve': drawShot(og, pe, pl, {noFx:true}); drawShot(og, e, local, {alpha:EASE.inOut(p)}); break;
       case 'fadein': drawShot(og, e, local, {alpha:q}); break;
       case 'flash': {   // exposure flash: picture blows out to white, then settles
@@ -6924,6 +6924,7 @@ function drawFrameGL(t){
       case 'shake': { const j = Math.sin(Math.PI*p)*0.05*W, sx = Math.sin(p*90)*j, sy = Math.cos(p*70)*j; S.A = layerOf(pe, pl, {dx:sx, dy:sy, noFx:true}); S.B = layerOf(e, local, {dx:-sx, dy:-sy}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'squeeze': { const k = EASE.inOut(p), a = layerOf(pe, pl, {noFx:true}), [ax, ay, aw, ah] = a.rect, [bx, by, bw, bh] = S.B.rect;
         a.rect = [ax*(1-k), ay, Math.max(1, aw*(1-k)), ah]; a.clip = 1; S.A = a; S.B.rect = [W*(1-k) + bx*k, by, Math.max(1, bw*k), bh]; S.B.clip = 1; S.mode = 3; break; }
+      case 'panels': case 'hpanels': case 'vpanels': case 'window': S.mode = {panels:31, hpanels:32, vpanels:33, window:34}[e.tr]; S.prog = p; break;
       case 'cube': case 'cubeup': case 'flip3d': case 'swing': S.mode = {cube:27, cubeup:28, flip3d:29, swing:30}[e.tr]; S.prog = EASE.inOut(p); break;
       case 'rotatein': S.A = layerOf(pe, pl, {scale:1-0.3*p, zb:0.6*p, noFx:true}); S.B = layerOf(e, local, {rot:-180*(1-q)*(1-q), scale:0.4+0.6*q}); S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'dissolve': S.mode = 1; S.mix = EASE.inOut(p); break;
@@ -7959,13 +7960,14 @@ function cutKind(fr, hint){
 // through it (a 29 s car Reel with 61 cuts and a 3 s flicker read as 21 cuts, none in its first 10 s).
 async function frameCuts(fs, dur, onP){
   const FPS = 30, ts = []; for(let t=0.5/FPS; t<dur-0.02; t+=1/FPS) ts.push(+t.toFixed(4));
-  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), last = []; let pY = null, pH = null;
+  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), last = [], cel = new Array(n); let pY = null, pH = null;
   for(let k=0;k<n;k+=150){
     const cv = await fs.small(ts.slice(k, k+150));
     cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; last.length = 0; return; }
       const g = greyOf(c), H = new Float32Array(16); for(let q=0;q<g.Y.length;q++) H[Math.min(15, (g.Y[q]*16)|0)] += 1/g.Y.length;
       if(pY && pY.length === g.Y.length){ let s2=0; for(let q=0;q<g.Y.length;q++) s2 += Math.abs(g.Y[q]-pY[q]); d[i] = s2/g.Y.length; let h2=0; for(let q=0;q<16;q++) h2 += Math.abs(H[q]-pH[q]); hd[i] = h2/2; }
       pY = g.Y; pH = H; sh[i] = sharpOfY(g.Y, g.FW);
+      { const o = new Float32Array(16*28), cn = new Float32Array(16*28), FH = g.Y.length/g.FW; for(let q=0;q<g.Y.length;q++){ const c = Math.min(27, (((q/g.FW)|0)*28/FH)|0)*16 + Math.min(15, ((q%g.FW)*16/g.FW)|0); o[c] += g.Y[q]; cn[c]++; } for(let c=0;c<o.length;c++) o[c] /= Math.max(1, cn[c]); cel[i] = o; }
       last.push(g.Y); if(last.length > 17) last.shift();
       if(last.length === 17 && i >= 8){ let s3=0; for(let q=0;q<g.Y.length;q++) s3 += Math.abs(g.Y[q]-last[0][q]); far[i-8] = s3/g.Y.length; } });
     if(onP) onP(Math.min(1, (k+150)/n));
@@ -7983,7 +7985,8 @@ async function frameCuts(fs, dur, onP){
     const nb = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nb.push(d[j]); nb.sort((x,y)=>x-y);
     const loc = nb.length ? (nb[(nb.length-1)>>1] + nb[nb.length>>1])/2 : 0;
     if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)) cuts.push(t); }
-  return { cuts, flicker, blurs: blurCuts(sh, far, FPS) };
+  const blank = new Float32Array(16*28);
+  return { cuts, flicker, blurs: blurCuts(sh, far, FPS), panels: panelRuns(i => cel[i] || blank, n, 16, 28, FPS) };
 }
 const refKeyOf = f => f ? f.name + '|' + f.size + '|' + (f.lastModified || 0) : '';
 // A reference shot's speed, read from how much its picture moves over time (a speed ramp is the same footage moving 3x
@@ -8029,7 +8032,7 @@ async function analyzeReference(file, onP){
       refAudio = { mono: m, sr: ab.sampleRate, curve: onsetCurve(m, ab.sampleRate) };   // where it is in the creator's song (refAlign)
       rr = r; try{ rmap = soundMap(m, ab.sampleRate); }catch(e){ rmap = null; } }catch(e){ /* no soundtrack: pace in seconds */ }
     // its cuts: the same reading as a clip (scene changes, frame-accurate)
-    const ps = { url, dur, w, h, file }; let refCutsOut = []; const fxOdd = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
+    const ps = { url, dur, w, h, file }; let refCutsOut = [], refPanels = []; const fxOdd = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)   // file: the scene reading decodes it with WebCodecs (without it, one seek a frame: minutes)
     await scanMotion(ps, p => onP(0.05 + 0.35*p, 'finding its cuts'));
     const shots = [], looks = [];
     const fs = await frameSource(file, player, w, h, dur);
@@ -8044,6 +8047,7 @@ async function analyzeReference(file, onP){
       // every frame: the hard cuts to the frame and the flickers; the scene reading adds its fades, dissolves and the
       // cuts hidden in a moving transition (a whip's blur)
       const fc = await frameCuts(fs, dur, p => onP(0.4 + 0.1*p, 'finding every cut'));
+      refPanels = fc.panels || [];   // panels: pieces of the frame that change one after another (refCopy.ts)
       const inFl = t => fc.flicker.some(f => t > f.t0 - 0.05 && t < f.t1 + 0.05);
       const found = fc.cuts.filter(t => t > 0.08 && t < dur - 0.1).map(t => ({ t, hint: 'cut', exact: true }));
       // a cut: its first new frame; a fade / flash: its darkest / brightest moment; a dissolve: its middle
@@ -8161,6 +8165,8 @@ async function analyzeReference(file, onP){
       if(s.flick) mm.flick = true;
       // a transition or an effect the reader knows only by its look, one the studio has: copied too (refCopy.ts)
       if(i && cuts[i-1] && cuts[i-1].odd && REF_TRX.includes(cuts[i-1].odd.ours)) mm.trx = cuts[i-1].odd.ours;
+      // panels: the shot a build opens (it starts within the build or just after it)
+      if(i && !s.flick){ const pb = refPanels.find(b => s.a >= b.t0 - 0.2 && s.a <= b.t1 + 0.6); if(pb) mm.trx = pb.kind; }
       { const f = fxOdd.find(x => Math.abs(x.at - s.a) < 0.02 && REF_FX.includes(x.ours)); if(f && !s.flick) mm.fx = f.ours; }
       if(shotStat[i] && !s.flick){ mm.mo = +(shotStat[i].m/mMax).toFixed(3); mm.br = +shotStat[i].b.toFixed(3);
         const sp = refSpeedOf(smp, s.a, s.b, mMax, s.move ? s.move.freeze : null); if(sp.spd) mm.spd = sp.spd; if(sp.frz !== undefined) mm.frz = sp.frz; }
