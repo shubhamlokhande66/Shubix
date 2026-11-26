@@ -4394,6 +4394,8 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
+    // a Reel copied to the frame: the reader times a transition by its middle, so the copy's middle lands there (half a lead)
+    if(e.trByRef && copyTimed()) L = L/2;
     L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
@@ -4660,7 +4662,7 @@ function makeEditNow(){
     tasteFx(e, i, taste);
     // When the optional cloud AI director is unavailable, apply the shared on-device director's
     // renderable treatment as a conservative fallback. Never overwrite an explicit AI choice.
-    if(!dirInfo && shared){
+    if(!dirInfo && shared && !copyExact()){   // (a copied shot has the reference's own effect and move, or none)
       if(!e.fxByDir && e.efx === 'none'){
         const fx = shared.effects.find(id => !!FX_NAME[id]);
         if(fx && (e.end - e.start) >= 0.65) e.efx = fx;
@@ -5514,7 +5516,7 @@ const isPop = L => !!(L && L.pop);
  * words ("photo boxes", "5 boxes on it") or /effect; Android: engine/brain/core.ts photoBoxes, the same. ---- */
 const isBox = L => !!(L && L.boxes);
 let boxBusy = false;
-async function photoBoxes(from = 1){
+async function photoBoxes(from = 1, by = 'mine'){
   if(!edit.length || kind === 'talk' || boxBusy) return null;
   const gen = editGen, shots = boxShots(edit, period, 3, from);
   if(!shots.length) return { shots: [] };
@@ -5537,7 +5539,7 @@ async function photoBoxes(from = 1){
           const blob = await new Promise(r => fin.toBlob(r, 'image/jpeg', 0.9)); if(!blob || editGen !== gen) continue;
           M = await addLayerMedia(new File([blob], 'Photo box ' + (q.shot + 1) + '.jpg', { type: 'image/jpeg' })); lmedia.push(M); M.at = lmedia.length - 1; pics.set(key, M);
         }
-        made.push({ id: 0, m: M.at, in: 0, ...JSON.parse(JSON.stringify(LY0)), ...plan[k], boxes: 'mine' });
+        made.push({ id: 0, m: M.at, in: 0, ...JSON.parse(JSON.stringify(LY0)), ...plan[k], boxes: by });
       }
     }
     if(editGen !== gen || !made.length) return null;
@@ -8283,10 +8285,11 @@ async function refLookRun(file, R){
 // the copied Reel's photo boxes (boxes.ts) on the new Reel, once it has its edit: no AI, no credits
 function refBoxesSoon(R){
   clearTimeout(refBoxesSoon.h);
+  if(R && layers.some(L => L.boxes === 'ref')){ layers = layers.filter(L => L.boxes !== 'ref'); lyUI(); redrawFrame(); }   // the last Reel's
   if(!R || !(R.boxes || []).length || R.boxesDone) return;
   refBoxesSoon.h = setTimeout(async () => { if(refProfile !== R || R.boxesDone || mode !== 'copy') return;
     if(!edit.length || pending || !reelLen() || layers.some(L => L.boxes)){ if(!layers.some(L => L.boxes)) refBoxesSoon(R); return; }
-    R.boxesDone = true; await photoBoxes(0); }, 800);
+    R.boxesDone = true; await photoBoxes(0, 'ref'); }, 800);
 }
 // once the new Reel has its edit (song part and clips in)
 function refLookApplySoon(R){

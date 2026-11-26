@@ -716,7 +716,7 @@ async function subjectPop(auto = false){
  * tall boxes pop in one after another on the beat, each a picture from the Reel's other clips in a white frame. The
  * pictures: the phone's frame of that clip (popcut with nothing cut away: the whole box kept). ---- */
 const isBox = L => !!(L && L.boxes);
-async function photoBoxes(from = 1){
+async function photoBoxes(from = 1, by = 'mine'){
   if(!ES.edit.length || ES.kind === 'talk' || ES.boxBusy || !EH.popCut) return null;
   const gen = ES.editGen, shots = boxShots(ES.edit, ES.period, 3, from);
   if(!shots.length) return { shots: [] };
@@ -737,7 +737,7 @@ async function photoBoxes(from = 1){
           const M = await EH.addLayerMedia({ kind: 'photo', path: cut.path, name: 'Photo box ' + (q.shot + 1) + '.png', w: cut.w, h: cut.h });
           ES.lmedia.push(M); at = ES.lmedia.length - 1; pics.set(key, at);
         }
-        made.push({ m: at, in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), ...plan[k], boxes: 'mine' });
+        made.push({ m: at, in: 0, ...JSON.parse(JSON.stringify(EH.LY0)), ...plan[k], boxes: by });
       }
     }
     if(ES.editGen !== gen || !made.length) return null;

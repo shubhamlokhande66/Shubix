@@ -78,7 +78,15 @@ describe("Copy a Reel: what is known only by its look", () => {
     const r = panelRuns(pic, N, gx, gy);
     expect(r).toHaveLength(1); expect(r[0].kind).toBe("boxes"); expect(r[0].area).toBeLessThan(0.45);
     const app = read("../../mobile-app/lib/nativeEngine.ts");
-    expect(web).toContain("refBoxesSoon(refProfile);"); expect(app).toContain("await host.brain.photoBoxes(0)");
+    expect(web).toContain("refBoxesSoon(refProfile);"); expect(app).toContain("await host.brain.photoBoxes(0, \"ref\")");
+  });
+  it("a copy lands each transition's middle on the reference's cut and adds no effect or move of its own (46 Reels, 2026-11-26)", () => {
+    const reel = read("../../mobile-app/engine/brain/reel.ts"), flow = read("../components/studio/flow.ts"), native = read("../../mobile-app/lib/nativeEngine.ts");
+    expect(web).toContain("if(e.trByRef && copyTimed()) L = L/2;"); expect(reel).toContain("if(e.trByRef && EH.copyTimed()) L = L/2;");
+    expect(web).toContain("if(!dirInfo && shared && !copyExact())"); expect(reel).toContain("if(!dirInfo && shared && !EH.copyExact())");
+    // another Reel to match: the last one's photo boxes go, and its song follows when the song was the last Reel's own
+    expect(web).toContain("await photoBoxes(0, 'ref')"); expect(web).toContain("layers = layers.filter(L => L.boxes !== 'ref')");
+    expect(native).toContain('L.boxes !== "ref"'); expect(flow).toContain('(!done("s1") || songFollows)');
   });
   it("the panel transitions exist in both engines and the server", () => {
     for (const t of ["panels", "hpanels", "vpanels", "window"]) { expect(Object.keys(TR_DUR)).toContain(t); expect(api).toContain(`"${t}"`); expect(web).toContain(`case '${t}':`); }
