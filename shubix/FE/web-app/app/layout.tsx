@@ -49,7 +49,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <script suppressHydrationWarning dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {/* Google AdSense on every page, as Google asks. Same id as AdSlot's, so AdSlot does not load it twice. Google's script
             puts one of its own at the top of the head before the page hydrates: not a mismatch to report */}
-        <script suppressHydrationWarning id="adsbygoogle-js" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5459735473283681" crossOrigin="anonymous" />
+        <script suppressHydrationWarning id="adsbygoogle-js" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9632503845692450" crossOrigin="anonymous" />
       </head>
       <body className="min-h-full">
         <Providers>

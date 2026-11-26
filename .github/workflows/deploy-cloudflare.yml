@@ -42,3 +42,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Old copies out of Cloudflare's cache
+        # every page and file of shubix.in (all its addresses) fetched fresh after a deploy: people get the new version at once.
+        # The token needs Zone: Read and Zone: Cache Purge; without them this only warns.
+        if: success()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          zone=$(curl -s -m 30 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/zones?name=shubix.in" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).result[0].id)}catch{console.log("")}})')
+          if [ -z "$zone" ]; then echo "::warning::Cache not purged: the Cloudflare token cannot read the shubix.in zone (give it Zone: Read and Zone: Cache Purge)."; exit 0; fi
+          r=$(curl -s -m 30 -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data '{"purge_everything":true}' "https://api.cloudflare.com/client/v4/zones/$zone/purge_cache")
+          if echo "$r" | grep -q '"success":true'; then echo "::notice::Cloudflare cache purged"; else echo "::warning::Cache not purged: $r (the token needs Zone: Cache Purge)"; fi
