@@ -285,7 +285,7 @@ export function createNativeEngine(io: NativeIo) {
   async function refBoxes() {
     const ES = host.ES, R = ES.refProfile;
     if (!R || !(R.boxes || []).length || R.boxesDone || ES.mode !== "copy" || !ES.edit?.length || ES.layers.some((L: { boxes?: string }) => L.boxes)) return;
-    R.boxesDone = true; try { await host.brain.photoBoxes(); } catch { /* the Reel goes on without them */ }
+    R.boxesDone = true; try { await host.brain.photoBoxes(0); } catch { /* the Reel goes on without them */ }
   }
   function applyRefLook() {
     const ES = host.ES, R = ES.refProfile, V = host.values as Record<string, any>;   // eslint-disable-line @typescript-eslint/no-explicit-any

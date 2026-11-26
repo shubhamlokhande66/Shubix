@@ -5514,9 +5514,9 @@ const isPop = L => !!(L && L.pop);
  * words ("photo boxes", "5 boxes on it") or /effect; Android: engine/brain/core.ts photoBoxes, the same. ---- */
 const isBox = L => !!(L && L.boxes);
 let boxBusy = false;
-async function photoBoxes(){
+async function photoBoxes(from = 1){
   if(!edit.length || kind === 'talk' || boxBusy) return null;
-  const gen = editGen, shots = boxShots(edit, period, 3);
+  const gen = editGen, shots = boxShots(edit, period, 3, from);
   if(!shots.length) return { shots: [] };
   boxBusy = true;
   try{
@@ -8286,7 +8286,7 @@ function refBoxesSoon(R){
   if(!R || !(R.boxes || []).length || R.boxesDone) return;
   refBoxesSoon.h = setTimeout(async () => { if(refProfile !== R || R.boxesDone || mode !== 'copy') return;
     if(!edit.length || pending || !reelLen() || layers.some(L => L.boxes)){ if(!layers.some(L => L.boxes)) refBoxesSoon(R); return; }
-    R.boxesDone = true; await photoBoxes(); }, 800);
+    R.boxesDone = true; await photoBoxes(0); }, 800);
 }
 // once the new Reel has its edit (song part and clips in)
 function refLookApplySoon(R){
