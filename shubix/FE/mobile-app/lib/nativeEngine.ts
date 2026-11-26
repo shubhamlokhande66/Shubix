@@ -1,7 +1,8 @@
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
-import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, reactionsOf, stillEnd, type ExportExpect } from "@mobile/video-engine";
+import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, lookStats, onsetCurve, reactionsOf, readReel, stillEnd, type ExportExpect, type Pic } from "@mobile/video-engine";
+import { describeCut, soundMap } from "../engine/components/studio/soundmap";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
 
 /** The studio: its operations run on the brain in the app's own JS, with the phone's own code doing the heavy work through
@@ -228,6 +229,118 @@ export function createNativeEngine(io: NativeIo) {
       return facts();
     } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "song", e instanceof Error ? e.message : "The song could not be read"); throw e; }
   }
+  /** frames of a video as pixels, read by the phone (FileServer.kt /frames), in the order of the times. The website takes the
+   * frame showing at a time (the last one at or before it), the phone's decoder the first one at or after it: each time is
+   * asked a frame earlier, so both read the same frame (refReader.ts reads them alike). 150 at a time (some 4 MB). */
+  async function framesOf(path: string, w: number, h: number, fps: number, ts: number[]): Promise<(Pic | null)[]> {
+    const out: (Pic | null)[] = new Array(ts.length).fill(null), back = 1 / (fps > 1 ? fps : 30) - 0.0085, size = w * h * 4;
+    for (let k = 0; k < ts.length; k += 150) {
+      const part = ts.slice(k, k + 150).map((t, i) => [Math.max(0, t - back), k + i] as const).sort((x, y) => x[0] - y[0]);
+      const res = await io.fetch(url("frames", `&p=${encodeURIComponent(path)}&w=${w}&h=${h}`), { method: "POST", body: part.map((x) => x[0].toFixed(4)).join(",") });
+      if (!res.ok) throw new Error(await res.text());
+      const b = new Uint8Array(await res.arrayBuffer()); let o = 0;
+      for (const [, i] of part) { if (o >= b.length) break; const got = b[o++] === 1; if (got) { if (o + size > b.length) break; out[i] = { width: w, height: h, data: b.subarray(o, o + size) }; o += size; } }
+    }
+    return out;
+  }
+  /** a frame's colour look, as the website reads it (lookOfImage): a 96-wide copy for colours, a 96 x 96 crop at full size for grain */
+  function lookOfPic(p: Pic) {
+    const cw = 96, ch = Math.max(2, Math.round(96 * p.height / p.width)), small = new Uint8Array(cw * ch * 4), crop = new Uint8Array(96 * 96 * 4);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+      const x0 = Math.floor(x * p.width / cw), x1 = Math.max(x0 + 1, Math.floor((x + 1) * p.width / cw)), y0 = Math.floor(y * p.height / ch), y1 = Math.max(y0 + 1, Math.floor((y + 1) * p.height / ch));
+      const s = [0, 0, 0]; let n = 0;
+      for (let yy = y0; yy < y1; yy += 2) for (let xx = x0; xx < x1; xx += 2) { const i = (yy * p.width + xx) * 4; s[0] += p.data[i]; s[1] += p.data[i + 1]; s[2] += p.data[i + 2]; n++; }
+      const o = (y * cw + x) * 4; small[o] = s[0] / n; small[o + 1] = s[1] / n; small[o + 2] = s[2] / n; small[o + 3] = 255;
+    }
+    const cx = Math.max(0, Math.round(p.width / 2 - 48)), cy = Math.max(0, Math.round(p.height / 2 - 48));
+    for (let y = 0; y < 96; y++) for (let x = 0; x < 96; x++) { const i = (Math.min(p.height - 1, cy + y) * p.width + Math.min(p.width - 1, cx + x)) * 4, o = (y * 96 + x) * 4; crop[o] = p.data[i]; crop[o + 1] = p.data[i + 1]; crop[o + 2] = p.data[i + 2]; crop[o + 3] = 255; }
+    return lookStats(small, cw, ch, crop);
+  }
+  /** Copy a Reel, what is written and stuck on it (the website's refLookRun): with Shubix AI on, 10 small frames go to
+   * /api/studio/ref-look; its texts' places (never its words), stickers and caption style are put on the new Reel once it
+   * is made (refLookApply). */
+  let refLook: Promise<void> | null = null;
+  async function readRefLook(path: string, R: Record<string, any>) {   // eslint-disable-line @typescript-eslint/no-explicit-any
+    const ES = host.ES, V = host.values as Record<string, any>;   // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!ES.aiOn) return;
+    if (!V.aiReelOk?.() && !(await V.aiGate?.())) return;   // Shubix AI only after the Reel's gate (Use), as everything else
+    try {
+      io.task?.("start", "reflook", "Reading its texts and stickers", "Shubix AI looks at 10 frames", "ai");
+      const N = 10, ts = Array.from({ length: N }, (_, i) => +((i + 0.5) * R.dur / N).toFixed(2)), sc = Math.min(1, 512 / Math.max(R.w, R.h));
+      const w = Math.max(2, Math.round(R.w * sc / 2) * 2), h = Math.max(2, Math.round(R.h * sc / 2) * 2);
+      const res = await io.fetch(url("aiframes", `&p=${encodeURIComponent(path)}&w=${w}&h=${h}`), { method: "POST", body: ts.map((t) => t.toFixed(3)).join(",") });
+      if (!res.ok) throw new Error(await res.text());
+      const frames = (await res.json() as (string | null)[]).map((image, i) => image ? { t: ts[i], image } : null).filter(Boolean);
+      if (frames.length < 2) throw new Error("frames not readable");
+      const r = await apiFetch("/api/studio/ref-look", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: String(R.name).slice(0, 200), dur: R.dur, frames }) });
+      const j = await r.json().catch(() => ({})) as { error?: { message?: string } };
+      if (!r.ok) throw new Error(j.error?.message || `Shubix could not do this step (${r.status}).`);
+      if (ES.refProfile !== R) return;   // another Reel was picked meanwhile
+      R.design = j; R.designDone = false;
+      io.task?.("done", "reflook", "Its texts and stickers read");
+    } catch (e) { io.task?.("fail", "reflook", "Its texts could not be read this time"); console.warn("reference texts not read:", e); }
+  }
+  /** the texts' places, stickers and caption style on the Reel just made (the website's refLookApply, the same numbers) */
+  function applyRefLook() {
+    const ES = host.ES, R = ES.refProfile, V = host.values as Record<string, any>;   // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!R || !R.design || R.designDone || ES.mode !== "copy" || !ES.edit?.length) return;
+    const D = R.design, L = V.reelLen?.() || ES.buf?.duration || 0; if (!L) return;
+    R.designDone = true;
+    const clip = (x: number, a: number, b: number) => Math.min(b, Math.max(a, Number.isFinite(x) ? x : a));
+    const k = L / Math.max(0.5, R.dur), base = Math.min(R.w, R.h * 0.5625);
+    const sizeOf = (hf: number, emoji: boolean) => clip(emoji ? hf * R.h / (base * 0.16) : hf * R.h / 0.75 / (base * 0.075), 0.4, 2.6);
+    const timing = (x: { t0: number; t1: number }) => { const whole = x.t0 <= 0.05 && x.t1 >= R.dur - 0.05, t0 = whole ? 0 : Math.max(0, Math.min(L - 0.5, x.t0 * k));
+      return { all: whole, t0, t1: whole ? L : Math.min(L, Math.max(t0 + 0.5, x.t1 * k)), ref: true }; };
+    ES.overlays = ES.overlays.filter((o: { ref?: boolean }) => !o.ref);   // an earlier reference's texts go
+    // only the format is copied, never the other Reel's words: each place waits for the creator's own (ph: left out of the video)
+    for (const x of D.texts || []) ES.overlays.push({ id: ++ES.ovSeq, text: "YOUR TEXT", emoji: false, style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false), ...timing(x), ph: true });
+    for (const x of D.stickers || []) ES.overlays.push({ id: ++ES.ovSeq, text: x.emoji, emoji: true, x: x.x, y: x.y, size: sizeOf(x.h, true), ...timing(x) });
+    if (D.captions) { if (D.captions.style) ES.textStyle = D.captions.style; if (D.captions.color) ES.ACCENT = D.captions.color;
+      if (!ES.capsOn) void host.setCaptions(true, undefined, undefined).catch(() => { ES.capsOn = false; }); }
+    ES.ovSel = -1;
+  }
+  /** Copy a Reel: the Reel picked is read as the website reads it (video-engine refReader.ts): its cuts and what kind each
+   * is, its shots, moves, speeds and look, on its own music's beats. The Reel made next copies its format, never its words. */
+  async function ref(a: Args) {
+    const g = stops, path = String(a.path), name = String(a.name), ES = host.ES;
+    const say = (p: number, what: string) => { io.task?.("progress", "ref", undefined, `Reading the Reel: ${what}`, undefined, p); io.onProgress?.("song", p); };
+    io.task?.("start", "ref", "Reading the Reel to match", "Its cuts, transitions and look", "copy");
+    try {
+      const probe = await io.fetch(url("probe", `&p=${encodeURIComponent(path)}`));
+      if (!probe.ok) throw new Error("This video cannot be read here. Please pick another Reel.");
+      const f = await probe.json() as { dur: number; w: number; h: number; fps?: number; size?: number };
+      let dur = f.dur; const { w, h } = f, fps = f.fps || 30;
+      if (!(dur > 1) || !w || !h) throw new Error("This video cannot be read here. Please pick another Reel.");
+      say(0.02, "listening to its music");
+      let rb: number[] | null = null, rr: Record<string, unknown> | null = null, rmap: unknown = null, audio: unknown = null;
+      try {
+        const s = await readSound(path); let m = s.mono;
+        // saved from Instagram: the card at its end is Instagram's, not the editor's last shot (nor a black end, nor a name to copy)
+        const end = instaCardStart(m, s.sampleRate); if (end !== null && end > 1) { m = m.slice(0, Math.floor(end * s.sampleRate)); dur = Math.min(dur, end); }
+        const r = await analyse(m, s.sampleRate) as unknown as Record<string, unknown> & { beats?: number[] };
+        if (r.beats && r.beats.length > 8) rb = r.beats;
+        audio = { mono: m, sr: s.sampleRate, curve: onsetCurve(m, s.sampleRate) };   // where it is in the creator's song
+        rr = r; try { rmap = soundMap(m, s.sampleRate); } catch { rmap = null; }
+      } catch { /* no soundtrack: pace in seconds */ }
+      if (stops !== g) throw new Error("Stopped");
+      say(0.05, "finding its cuts");
+      const scan = lastLine(await (await io.fetch(url("scan", `&p=${encodeURIComponent(path)}&dur=${dur}`), { method: "POST" })).text(), "{") as { samples: unknown[]; scenes: unknown[] };
+      if (stops !== g) throw new Error("Stopped");
+      const SW = 64, SH = Math.max(8, Math.round(64 * h / w)), LW = Math.min(w, 1080), LH = Math.max(2, Math.round(LW * h / w));
+      const read = await readReel({ dur, small: (ts) => { if (stops !== g) throw new Error("Stopped"); return framesOf(path, SW, SH, fps, ts); },
+        looks: async (ts) => { const out = []; for (const t of ts) { const [p] = await framesOf(path, LW, LH, fps, [t]); out.push(p ? lookOfPic(p) : null); } return out; },
+        scenes: scan.scenes || [], samples: scan.samples || [], rb, rr, rmap, describeCut: describeCut as never, onP: say });
+      if (stops !== g) throw new Error("Stopped");
+      ES.refProfile = { name, key: `${name}|${f.size ?? 0}`, audio, w, h, ...read };
+      // the copied look is on while it is matched (the edit then matches it), as on the website
+      const V = host.values as { GRADES?: Record<string, unknown> };
+      if (V.GRADES) V.GRADES.copy = { con: 1, sat: 1, bri: 1, warm: 0, teal: 0, mono: read.look && read.look.sat < 0.05 ? 1 : 0, lift: 0, vig: 0, grain: 0 };
+      ES.copyLookKey = ""; ES.copyLookScore = null; ES.look = "copy"; ES.mode = "copy";
+      io.task?.("done", "ref", "Reel read");
+      refLook = readRefLook(path, ES.refProfile);   // its texts and stickers, while the clips are added
+      return { cuts: read.cuts.length, shots: read.moments.length, bpm: Math.round(read.bpm), trans: read.trans };
+    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", e instanceof Error ? e.message : "We could not read that Reel. Please try another video."); throw e; }
+  }
   const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, drops: n("drop"), breaks: n("break") }; };
 
   /** My Reels with room left for this person (read at most once a minute); null: not offered */
@@ -345,12 +458,14 @@ export function createNativeEngine(io: NativeIo) {
   const ops: Record<string, (a: Args) => unknown> = {
     setup: async () => { signedIn = true; return { ok: true, ai: await host.account().catch(() => false) }; },
     song,
+    ref,
     songAgain: () => { if (!host.ES.song?.r) throw new Error("Add your song again"); return facts(); },
     advice: (a) => clipAdvice(host.ES.song?.r ? host.ES.plan : null, a.pick === "photos" || a.pick === "mix" ? a.pick : a.photo === true ? "photos" : "videos"),
     cancel: () => { stops++; return { ok: true }; },
     clips,
     choose: async (a) => {
-      if (a.mode) { host.ES.mode = String(a.mode); }
+      // a Reel the creator is copying stays the copy under "auto" (a style asked in words still changes it)
+      if (a.mode) { const R = host.ES.refProfile; host.ES.mode = a.mode === "auto" && R && !R.learned ? "copy" : String(a.mode); }
       if (a.template !== undefined) await templateKind(String(a.template));
       if (a.order) host.ES.seqOn = a.order === "order";
       if (a.text) { host.ES.hookNone = a.text === "none"; if (a.text === "auto") { host.ES.autoHookOff = false; host.ES.autoHookUsed = false; } else host.ES.overlays = host.ES.overlays.filter((o: { auto?: boolean }) => !o.auto); }   // Opening text (engine.ts setHookPref alike)
@@ -360,7 +475,8 @@ export function createNativeEngine(io: NativeIo) {
       return { mode: host.ES.mode, start: host.ES.secStart ?? 0 };
     },
     part: async (a) => { host.sec.start = Number(a.start); host.sec.auto = false; await host.useSection(); return { start: host.ES.secStart ?? 0 }; },
-    ready: () => ({ work: work(), state: state() }),
+    // the Reel is made: what is written on the Reel being copied goes on it (its reading waited for, a minute at most)
+    ready: async () => { if (refLook) { const r = refLook; await Promise.race([r, new Promise((ok) => setTimeout(ok, 60_000))]); } applyRefLook(); return { work: work(), state: state() }; },
     // the edit's own review (shared/video-engine review.ts) and how many takes and repairs it had: read only
     review: () => ({ review: host.brain.editReview?.() ?? null, takes: host.ES.editTakes ?? null }),
     // the finished video read back on this phone (its clip scan) and checked against the edit (video-engine
