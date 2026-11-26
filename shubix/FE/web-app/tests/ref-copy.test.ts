@@ -69,6 +69,17 @@ describe("Copy a Reel: what is known only by its look", () => {
     const hand = (i: number) => { const o = new Float32Array(gx * gy).fill(0.4); const x0 = Math.floor(i / 3) % gx; for (let y = 10; y < 16; y++) for (let x = x0; x < Math.min(gx, x0 + 3); x++) o[y * gx + x] = 0.9; return o; };
     expect(panelRuns(hand, N, gx, gy)).toEqual([]);
   });
+  it("tells photo boxes over a shot (a food Reel's five boxes) from a panels build", () => {
+    const gx = 16, gy = 28, N = 90;
+    // a steady shot, then five small boxes of other pictures pop in one after another and stay; the shot shows around them
+    const box = [[1, 3, 4, 9, 20], [11, 3, 14, 9, 30], [1, 15, 4, 21, 40], [6, 19, 9, 25, 50], [11, 15, 14, 21, 60]];
+    const pic = (i: number) => { const o = new Float32Array(gx * gy);
+      for (let c = 0; c < o.length; c++) { const x = c % gx, y = (c / gx) | 0; o[c] = box.some(([a, b, cc, d, t]) => i >= t && x >= a && x <= cc && y >= b && y <= d) ? 0.85 : 0.35 + 0.1 * ((x + y) % 2); } return o; };
+    const r = panelRuns(pic, N, gx, gy);
+    expect(r).toHaveLength(1); expect(r[0].kind).toBe("boxes"); expect(r[0].area).toBeLessThan(0.45);
+    const app = read("../../mobile-app/lib/nativeEngine.ts");
+    expect(web).toContain("refBoxesSoon(refProfile);"); expect(app).toContain("await host.brain.photoBoxes()");
+  });
   it("the panel transitions exist in both engines and the server", () => {
     for (const t of ["panels", "hpanels", "vpanels", "window"]) { expect(Object.keys(TR_DUR)).toContain(t); expect(api).toContain(`"${t}"`); expect(web).toContain(`case '${t}':`); }
     const kt = read("../../mobile-app/modules/shubix-video/android/src/main/java/expo/modules/shubixvideo/StudioTransitions.kt");

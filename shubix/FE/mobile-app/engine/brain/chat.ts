@@ -70,6 +70,15 @@ async function chatSend(text){
   const localVisualIntent = EH.parseDirectorVisualIntent(text);
   const hasLocalVisualIntent = !!(localVisualIntent.openingText || localVisualIntent.squareFrameAll
     || localVisualIntent.transitionAll || localVisualIntent.effectsAll);
+  // photo boxes asked in words: made on this device, no credits (the website's)
+  if(ready && localVisualIntent.photoBoxes && ES.kind !== 'talk'){
+    const before = EH.histSnap(); if(ES.playing) EH.stopAll();
+    const r = await EH.photoBoxes();
+    if(r && r.shots.length){ EH.hist.u.push(before); if(EH.hist.u.length > EH.HIST_MAX) EH.hist.u.shift(); EH.hist.r = []; EH.hist.cur = EH.histSnap(); EH.hist.cand = ''; EH.histUI(); localDone = true;
+      chatAnswer('Done ✓ Photo boxes on shot' + (r.shots.length > 1 ? 's ' : ' ') + r.shots.map(i => i + 1).join(', ') + ': five boxes with pictures from your other clips pop in on the beat. No Shubix AI credits used.'); }
+    else chatAnswer(r ? 'This Reel has no shot long enough for photo boxes (about 1.2 s). A longer song part or longer clips help.' : 'I could not make the photo boxes this time. Please try again.');
+    return;
+  }
   if(ready && hasLocalVisualIntent){
     try{
       const before = EH.histSnap();

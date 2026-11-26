@@ -62,7 +62,7 @@ export function warmOf(d: ArrayLike<number>): number {
  * columns). cells(i): frame i as gx x gy grey cells (0-1), every frame at fps. A piece: a box that differs before and
  * after it, steady on both sides, while most of the rest stays. Three or more pieces in new places, each within 1.2 s of
  * the last, are one build; its kind from the pieces' shape (rows, columns) and from black (a build out of black). */
-export function panelRuns(cells: (i: number) => ArrayLike<number>, N: number, gx: number, gy: number, fps = 30): { t0: number; t1: number; kind: string }[] {
+export function panelRuns(cells: (i: number) => ArrayLike<number>, N: number, gx: number, gy: number, fps = 30): { t0: number; t1: number; kind: string; n: number; area: number }[] {
   const C = gx * gy, ev: { i: number; bx: number[]; dark: boolean }[] = [];
   for (let i = 7; i < N - 7; i++) {
     const P = cells(i - 4), Q = cells(i + 4), P0 = cells(i - 7), Q1 = cells(i + 7), ch = new Uint8Array(C);
@@ -101,7 +101,13 @@ export function panelRuns(cells: (i: number) => ArrayLike<number>, N: number, gx
     .map((u) => {
       // the pieces' width and height on the 9:16 frame
       const w = u.reduce((a, e) => a + e.bx[2] - e.bx[0] + 1, 0) / u.length, h = (u.reduce((a, e) => a + e.bx[3] - e.bx[1] + 1, 0) / u.length) * (gx / gy) * 1.78;
-      const kind = u.filter((e) => e.dark).length >= u.length / 2 ? "panels" : w > 1.5 * h ? "hpanels" : h > 1.5 * w ? "vpanels" : "panels";
-      return { t0: +(u[0].i / fps).toFixed(2), t1: +(u[u.length - 1].i1 / fps).toFixed(2), kind };
+      const dark = u.filter((e) => e.dark).length >= u.length / 2;
+      // the share of the frame the pieces cover together: a build fills it, boxes over a shot leave most of it
+      const cov = new Uint8Array(C); for (const e of u) for (let y = e.bx[1]; y <= e.bx[3]; y++) for (let x = e.bx[0]; x <= e.bx[2]; x++) cov[y * gx + x] = 1;
+      const area = +(cov.reduce((a, v) => a + v, 0) / C).toFixed(2);
+      // boxes over a shot (pictures pop in and the shot stays behind them: a food Reel's five boxes) cover under half the
+      // frame and come out of the picture, not black; a build fills it
+      const kind = !dark && area < 0.45 ? "boxes" : dark ? "panels" : w > 1.5 * h ? "hpanels" : h > 1.5 * w ? "vpanels" : "panels";
+      return { t0: +(u[0].i / fps).toFixed(2), t1: +(u[u.length - 1].i1 / fps).toFixed(2), kind, n: u.length, area };
     });
 }

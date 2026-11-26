@@ -326,7 +326,7 @@ export async function readReel(io: ReelIo){
     // a transition or an effect the reader knows only by its look, one the studio has: copied too (refCopy.ts)
     if(i && cuts[i-1] && cuts[i-1].odd && REF_TRX.includes(cuts[i-1].odd.ours)) mm.trx = cuts[i-1].odd.ours;
     // panels: the shot a build opens (it starts within the build or just after it)
-    if(i && !s.flick){ const pb = refPanels.find(b => s.a >= b.t0 - 0.2 && s.a <= b.t1 + 0.6); if(pb) mm.trx = pb.kind; }
+    if(i && !s.flick){ const pb = refPanels.find(b => s.a >= b.t0 - 0.2 && s.a <= b.t1 + 0.6); if(pb && pb.kind !== 'boxes') mm.trx = pb.kind; }
     { const f = fxOdd.find(x => Math.abs(x.at - s.a) < 0.02 && REF_FX.includes(x.ours)); if(f && !s.flick) mm.fx = f.ours; }
     const st = shotStat[i];
     if(st && !s.flick){ mm.mo = +(st.m/mMax).toFixed(3); mm.br = +st.b.toFixed(3);
@@ -344,6 +344,8 @@ export async function readReel(io: ReelIo){
     hookBeats: shotBeats[0] || 0, hookSec: shotSec[0] || 0, onBeat, energy, trans,
     zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
     look, bpm: P ? 60/P : 0,
+    // photo boxes over its shots (boxes.ts): the copy gets them on its own long shots
+    boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1 })),
     // the learning log: what this reader could not learn (a transition it does not know; an effect in a shot)
     unread: { cuts: cuts.filter(c => c.odd).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd } };
 }
