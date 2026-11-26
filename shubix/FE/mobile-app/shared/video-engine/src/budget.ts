@@ -57,7 +57,7 @@ export type BudgetResult = { shots: BudgetShot[]; changes: BudgetChange[]; heroe
 
 /** transitions that stand out (light, blur, glitch, a turn): the ones counted against the flashy limits */
 export const FLASHY_TRANSITIONS = new Set(["flash", "whip", "zoom", "glitch", "spin", "zoomblur", "dipwhite", "chroma",
-  "shake", "pixelate", "burn", "ripple", "dropin", "cube", "cubeup", "flip3d", "swing", "rotatein", "squeeze", "flip", "tiles", "noise"]);
+  "shake", "pixelate", "burn", "ripple", "dropin", "cube", "cubeup", "flip3d", "swing", "rotatein", "squeeze", "flip", "tiles", "noise", "hpanels", "vpanels"]);
 /** effects inside a shot that hit hard */
 export const STRONG_EFFECTS = new Set(["shake", "zoomburst", "hook", "snap", "strobe", "rgbpulse", "glitchfx", "chromatic",
   "negative", "radialblur", "fisheye", "swirl", "zoom3d", "blurpulse", "kaleido"]);

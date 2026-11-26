@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { coverMove, REF_FX, REF_TRX, refTrOf } from "../../../Shared/video-engine/src/refCopy";
+import { blurCuts, coverMove, joinFlashes, panelRuns, REF_FX, REF_TRX, refTrOf, warmOf } from "../../../Shared/video-engine/src/refCopy";
 import { TR_DUR } from "@shubix/core/lib/shaders";
 
 const read = (f: string) => fs.readFileSync(path.resolve(__dirname, f), "utf8").replace(/\r\n/g, "\n");
@@ -46,5 +46,32 @@ describe("Copy a Reel: what is known only by its look", () => {
     }
     expect(coverMove([{ s: 1, x: 0, y: 0, r: 0 }, { s: 1.2, x: 0, y: 0, r: 0 }])).toEqual([{ s: 1, x: 0, y: 0, r: 0 }, { s: 1.2, x: 0, y: 0, r: 0 }]);
     for (const s of [web, app]) expect(s).toContain("s.ak = coverMove(m.move.map(");
+  });
+  it("one flash is one cut, not two; a burn's colour is kept; flashes further apart stay", () => {
+    const f = (t: number, kind = "flash", odd: unknown = null) => ({ t, kind, odd });
+    expect(joinFlashes([f(1.4), f(1.47), f(2.6), f(2.67, "flash", "x")]).map((c) => [c.t, c.odd])).toEqual([[1.4, null], [2.6, "x"]]);
+    expect(joinFlashes([f(1), f(1.3), f(2, "hard"), f(2.1)])).toHaveLength(4);
+    expect(joinFlashes([f(1), f(1.2), f(1.4), f(1.6)])).toHaveLength(2);
+  });
+  it("finds a blur-through: soft between two different pictures, not inside one shot", () => {
+    const sharp = new Array(60).fill(0.06), far = new Array(60).fill(0.3); for (const i of [29, 30, 31]) sharp[i] = 0.01 + Math.abs(i - 30) * 0.01;
+    expect(blurCuts(sharp, far, 30)).toEqual([1]); expect(blurCuts(sharp, new Array(60).fill(0.02), 30)).toEqual([]);
+  });
+  it("reads warm light", () => { expect(warmOf([255, 150, 40, 255])).toBeGreaterThan(0.5); expect(warmOf([255, 255, 255, 255])).toBe(0); });
+  it("reads panels: pieces that change one after another and stay; a moving hand is not one", () => {
+    const gx = 16, gy = 28, N = 90, pic = (i: number) => { const o = new Float32Array(gx * gy);
+      // black, then three boxes of a bright picture, one every 12 frames (left-top, right-middle, bottom)
+      const box = [[0, 0, 7, 9, 20], [8, 10, 15, 18, 32], [0, 19, 15, 27, 44]];
+      for (let c = 0; c < o.length; c++) { const x = c % gx, y = (c / gx) | 0; o[c] = box.some(([a, b, cc, d, t]) => i >= t && x >= a && x <= cc && y >= b && y <= d) ? 0.7 : 0.02; } return o; };
+    const r = panelRuns(pic, N, gx, gy);
+    expect(r).toHaveLength(1); expect(r[0].kind).toBe("panels"); expect(r[0].t0).toBeGreaterThan(0.5); expect(r[0].t1).toBeLessThan(1.6);
+    // something moving across a steady shot: it changes and changes back, never stays
+    const hand = (i: number) => { const o = new Float32Array(gx * gy).fill(0.4); const x0 = Math.floor(i / 3) % gx; for (let y = 10; y < 16; y++) for (let x = x0; x < Math.min(gx, x0 + 3); x++) o[y * gx + x] = 0.9; return o; };
+    expect(panelRuns(hand, N, gx, gy)).toEqual([]);
+  });
+  it("the panel transitions exist in both engines and the server", () => {
+    for (const t of ["panels", "hpanels", "vpanels", "window"]) { expect(Object.keys(TR_DUR)).toContain(t); expect(api).toContain(`"${t}"`); expect(web).toContain(`case '${t}':`); }
+    const kt = read("../../mobile-app/modules/shubix-video/android/src/main/java/expo/modules/shubixvideo/StudioTransitions.kt");
+    expect(kt).toContain('"panels" to 31f'); expect(kt).toContain('"window" to 34f');
   });
 });

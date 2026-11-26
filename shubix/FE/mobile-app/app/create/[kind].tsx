@@ -95,6 +95,12 @@ function CreateFlowScreen() {
   };
 
   // a song chosen: on to the clips at once, the song is read behind the screen
+  // Copy a Reel: the Reel picked (its sound is the song) is read too, as the website reads it (its cuts, transitions, look)
+  const refUri = useRef("");
+  async function readRef(s: Song) {
+    if (kind !== "copy" || refUri.current !== s.uri) return;
+    try { await engine.ref(s.uri, s.name); } catch (e) { if (making.current) tell(errorMessage(e), "danger"); }
+  }
   const hearLater = (s: Song) => { const i = order.indexOf("choose"); go(order[i + 1]); void later(() => hear(s)); };
   async function choose(pick: () => Promise<Song | null>) {
     setReading(true);
@@ -113,6 +119,7 @@ function CreateFlowScreen() {
     startFresh(); stage.current = "song"; making.current = true; tasks.start("flow", "music", words("Adding your song"), s.name);
     try {
       const m = await engine.song(s.uri, s.name); setMusic(m); heard.current = s.uri;
+      await readRef(s);
       // the Reel's length until the person chooses one: 30 s on the song's best part, a short song whole
       if (!lengthChosen.current && m.duration > 45) { setLength(30); setStart((await engine.choose({ length: 30 })).start); }
       return true;
@@ -154,6 +161,7 @@ function CreateFlowScreen() {
         if (heard.current !== sg.uri) { // the studio started again (the screen was left): it has lost the song and its part
           tasks.update("flow", null, words("Reading your song…"));
           setMusic(await engine.song(sg.uri, sg.name)); heard.current = sg.uri;
+          await readRef(sg);
           if (length) await engine.choose({ length });
           if (start) await engine.part(start);
         }
@@ -393,7 +401,7 @@ function CreateFlowScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-4 pb-6 pt-2" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
         {step !== "intro" && step !== "analyse" && <View className="mb-4"><AskShubix onAsk={(t) => { setWish((w) => `${w} · ${t}`.replace(/^ · /, "").slice(-800)); return words("Got it! I'll edit your Reel this way as soon as it is made."); }} /></View>}
         {step === "intro" && <FlowIntro kind={kind} />}
-        {step === "choose" && <FlowChoose kind={kind} song={song} recent={recent} busy={reading} onPick={() => void choose(() => pickSong())} onPickReel={() => void choose(() => pickSong("video"))} onRecent={(s) => void pickRecent(s)} onForget={(uri) => { setRecent((r) => r.filter((s) => s.uri !== uri)); if (song?.uri === uri) setSong(null); }} />}
+        {step === "choose" && <FlowChoose kind={kind} song={song} recent={recent} busy={reading} onPick={() => void choose(() => pickSong())} onPickReel={() => void choose(async () => { const s = await pickSong("video"); if (s) refUri.current = s.uri; return s; })} onRecent={(s) => void pickRecent(s)} onForget={(uri) => { setRecent((r) => r.filter((s) => s.uri !== uri)); if (song?.uri === uri) setSong(null); }} />}
         {step === "adjust" && song && <FlowAdjust song={song} music={music} length={length} start={start} onLength={(n) => void lengthTo(n)} onStart={(t) => void partFrom(t)} locked={settings.fit !== false && kind !== "talking"} />}
         {step === "clips" && song && needSong && (
           <View className="mb-3 flex-row items-center gap-3 rounded-[16px] border border-border bg-surface px-3.5 py-3">

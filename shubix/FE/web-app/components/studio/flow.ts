@@ -525,7 +525,7 @@ export function initFlow(root: HTMLElement): () => void {
         void (async () => {
           const go = () => { signInOk = true; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); };
           // just signed in: the studio learns the plan first (it asked while nobody was signed in), so a Free account gets
-          // the Shubix Brain / Shubix choice like one signed in from the start
+          // the Shubix AI / Free edit choice like one signed in from the start
           const fresh = async () => { checking = true; apply(); try { await live()?.account?.(); } catch { /* the edit goes on */ } finally { checking = false; apply(); } go(); };
           checking = true; apply();
           const need = await needsSignIn().finally(() => { checking = false; apply(); });
@@ -538,7 +538,7 @@ export function initFlow(root: HTMLElement): () => void {
       if (live()?.aiPrice?.().low) { void live()!.askLow!().then(() => { if (live()?.aiPrice?.().low) return; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }); return; }   // (Free edit goes on; Top up and closing it do not)
       // still being read: the one popup shows it now, and this goes on by itself when it is done
       if (!stopped().song && !stopped().clips && (working.size > 0 || aiRunning() || !made())) { wantGen = true; apply(); return; }
-      // Free: first, once per Reel, Shubix Brain (the plans) or Shubix (the phone's own edit, free), or ✕ to stay here
+      // Free: first, once per Reel, Shubix AI (the plans, credits) or the Free edit (the phone's own edit), or ✕ to stay here
       const st = live(), run = ++aiRunNo;
       going++;
       void (async () => { try {
