@@ -1521,8 +1521,20 @@
 .brs .chatlog .ai.wait::after{content:"…";animation:chatdots 1.2s steps(3) infinite}
 @keyframes chatdots{0%{opacity:.2}50%{opacity:1}100%{opacity:.2}}
 .brs .chatideas{padding:0 16px 6px;font:600 10.5px var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.brs .chatideas a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .brs .chatchips{display:flex;flex-wrap:wrap;gap:6px;padding:0 16px 12px;max-height:76px;overflow:auto;scrollbar-width:none}
 .brs .chatchips button{flex-shrink:0;font:600 12.5px var(--body);padding:6px 11px;border-radius:999px;border:1px solid var(--line);background:var(--background);color:var(--ink);cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+.brs .chatfield{position:relative}
+.brs .slashmenu{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:30;display:flex;flex-direction:column;gap:2px;max-height:min(300px,50vh);overflow:auto;padding:6px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 18px 40px -18px rgba(0,0,0,.55)}
+.brs .slashmenu.down{bottom:auto;top:calc(100% + 6px)}
+.brs .slashmenu[hidden]{display:none}
+.brs .slashmenu .slashhd{padding:4px 10px 2px;font:700 10.5px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.brs .slashmenu button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:none;color:var(--ink);text-align:left;cursor:pointer}
+.brs .slashmenu button b{font:700 13.5px var(--body)}
+.brs .slashmenu button small{font:12px/1.35 var(--body);color:var(--muted)}
+.brs .slashmenu button.on,.brs .slashmenu button:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.brs .slashmenu button.on b{color:var(--accent)}
+.brs .chatchips .slashchip{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent);font-weight:700}
 .brs .chatchips button:hover{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
 .brs .chatform{display:grid;gap:6px;padding:12px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface)}
 .brs .chatfield{display:flex;align-items:flex-end;gap:8px;padding:6px 6px 6px 14px;border:1px solid var(--line);border-radius:16px;background:var(--background);transition:border-color .15s,box-shadow .15s}

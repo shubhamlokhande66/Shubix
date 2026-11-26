@@ -169,7 +169,13 @@ function applyChatVisualIntent(intent, slots = []){
     });
     transitionCount = plannedTransitions.length;
   }
-  if(intent.effectsAll){
+  // one effect named (an Ask Shubix "/effect" choice): that one on every clip, as asked
+  if(intent.effectsAll && intent.effectType){
+    const fx = intent.effectType;
+    if(!Object.prototype.hasOwnProperty.call(EH.FX_NAME, fx) || EH.isLocked('fx', fx)) throw new Error('That effect is locked or unavailable on your plan.');
+    plannedEffects = ES.edit.map(() => fx); effectCount = plannedEffects.length;
+  }
+  else if(intent.effectsAll){
     const allowed = EH.FX_OK[ES.mode] || EH.FX_OK.auto;
     const canUse = (fx, i) => !!fx && fx !== 'none' && Object.prototype.hasOwnProperty.call(EH.FX_NAME, fx)
       && (fx === 'hook' ? i === 0 : allowed.includes(fx))

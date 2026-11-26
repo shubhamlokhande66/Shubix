@@ -22,6 +22,7 @@ import { instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
+import { commandsFor, choicesFor } from '@shubix/core/lib/chatCommands';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
 import { SFX_REC, sfxRecorded } from '@shubix/core/lib/sfx-recorded';
@@ -2675,7 +2676,7 @@ async function aiRun(){
       const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: stop,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
+      if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').')), { status: r.status });
       tasks.lock();
       charged += res.charged || 0; if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
@@ -2701,6 +2702,7 @@ async function aiRun(){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => { delete s.aiFramesMade; });
+    if(aiOn && e && (e.status === 402 || e.status === 403)){ aiGaveUp = reelIdNow(); aiStat(String(e.message)); chatFail(String(e.message)); aiNeed(true, e.status === 402); return; }   // credits or plan: said as it is
     if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
     aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
@@ -2857,7 +2859,13 @@ function applyChatVisualIntent(intent, slots = []){
     });
     transitionCount = plannedTransitions.length;
   }
-  if(intent.effectsAll){
+  // one effect named (an Ask Shubix "/effect" choice): that one on every clip, as asked
+  if(intent.effectsAll && intent.effectType){
+    const fx = intent.effectType;
+    if(!Object.prototype.hasOwnProperty.call(FX_NAME, fx) || isLocked('fx', fx)) throw new Error('That effect is locked or unavailable on your plan.');
+    plannedEffects = edit.map(() => fx); effectCount = plannedEffects.length;
+  }
+  else if(intent.effectsAll){
     const allowed = FX_OK[mode] || FX_OK.auto;
     const canUse = (fx, i) => !!fx && fx !== 'none' && Object.prototype.hasOwnProperty.call(FX_NAME, fx)
       && (fx === 'hook' ? i === 0 : allowed.includes(fx))
@@ -3075,6 +3083,7 @@ async function chatPatch(text, n, id){
 async function chatSend(text){
   remakeOk();
   text = String(text || '').trim().slice(0, 300); if(!text || chatWaiting) return;
+  if(/^\/\S*$/.test(text)) return;   // a command not chosen yet (its list is open)
   reviewDone();
   if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
   chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
@@ -3129,11 +3138,23 @@ async function chatSend(text){
     return;
   }
   if(!ready){ wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800); chatAnswer('Got it! I\'ll edit your Reel this way as soon as it is made.'); return; }
-  if(!aiReelOk() && !(await aiGate(root.classList.contains('aineed')))){ chatAnswer('This Reel is edited on your phone, so I can only switch its style (say "faster" or "calmer").'); return; }
+  // Shubix AI's question for this Reel answered ✕ (or too few credits): said plainly, and how to go on (2026-11-26)
+  if(!aiReelOk() && !(await aiGate(root.classList.contains('aineed')))){
+    const cost = aiCostOf('reel'), bal = aiBal();
+    if(cost && bal !== null && bal < cost){ chatAnswer('Shubix AI needs ' + creditWord(cost) + ' for this Reel and you have ' + creditWord(bal) + '. Your Reel stays as your phone made it: I can still switch its style (say "faster" or "calmer").'); return; }
+    chatAnswer('Paused, as you asked: Shubix AI has not changed this Reel and no credits were used. To let Shubix AI do it, tap Use Shubix AI.');
+    const b = document.createElement('button'); b.type = 'button'; b.className = `${Button.primary} up`; b.textContent = 'Use Shubix AI';
+    b.addEventListener('click', async () => { b.disabled = true; if(await aiGate(true)){ b.remove(); chatSend(text); } else b.disabled = false; }, SIG);
+    $('chatlog').appendChild(b); return;
+  }
+  // the Reel has no Shubix AI plan yet: this message is how Shubix AI makes it (the Reel's credits, agreed just above), not a
+  // change of it: no second question, no second charge (the server: direct route), the whole Reel planned with it
+  const firstPlan = dirPlannedReel !== reelIdNow() && !dirBusy;   // a plan on its way: that one pays the Reel, this message is a change
   // what this change costs, asked first: a few named shots or the whole Reel
-  const size = chatSize(text), freeN = aiFreeChats(), free = bal0 => bal0 !== null && chatUsed < freeN, bal = aiBal();
-  const cost = free(bal) ? 0 : aiCostOf(size === 'small' ? 'small' : 'big');
-  if(free(bal)){
+  const size = firstPlan ? 'big' : chatSize(text), freeN = aiFreeChats(), free = bal0 => bal0 !== null && chatUsed < freeN, bal = aiBal();
+  const cost = firstPlan || free(bal) ? 0 : aiCostOf(size === 'small' ? 'small' : 'big');
+  if(firstPlan){ /* part of the Reel's own plan */ }
+  else if(free(bal)){
     const left = freeN - chatUsed - 1;
     const ok = await askCredits({ title: size === 'small' ? 'A small change · free' : 'Change the whole Reel · free', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + 'Your plan has ' + freeN + ' free changes per Reel: this one is free, ' + (left ? left + ' more free after it.' : 'after it each change uses credits.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
@@ -3189,7 +3210,43 @@ $('chatin').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftK
 // the message box grows with what is written (up to a few lines)
 const chatFit = () => { const t = $('chatin'); t.style.height = 'auto'; t.style.height = Math.min(120, t.scrollHeight) + 'px'; };
 $('chatin').addEventListener('input', chatFit, SIG);
-$('chatchips').addEventListener('click', e => { const b = e.target.closest('button'); if(b) chatSend(b.dataset.say); }, SIG);
+$('chatchips').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; if(b.dataset.slash){ const t = $('chatin'); t.value = '/'; t.focus(); t.dispatchEvent(new Event('input')); return; } chatSend(b.dataset.say); }, SIG);
+// Ask Shubix's commands (Shared/core chatCommands.ts): "/" lists them, a command its choices, a choice writes its sentence
+// in the box (to add to, then send). Arrow keys and Enter pick, Esc closes. The same in the app (AskShubix.tsx).
+function slashMenu(input, down){
+  const menu = document.createElement('div'); menu.className = 'slashmenu' + (down ? ' down' : ''); menu.setAttribute('role', 'listbox'); menu.hidden = true;
+  input.parentElement.appendChild(menu);
+  let items = [], at = 0;
+  const pick = (it) => {
+    if(it.cmd){ input.value = it.cmd + ' '; show(); input.focus(); return; }
+    input.value = it.say; menu.hidden = true; input.focus();
+    const k = input.value.indexOf('YOUR TEXT'); if(k >= 0 && input.setSelectionRange) input.setSelectionRange(k, k + 9);
+    input.dispatchEvent(new Event('input'));
+  };
+  const show = () => {
+    const v = input.value, r = commandsFor(v);
+    items = r.cmd ? choicesFor(r.cmd, v).map(c => ({ ...c })) : r.list.map(c => ({ cmd: c.cmd, label: c.cmd, hint: c.title + ' · ' + c.hint }));
+    if(!v.startsWith('/') || !items.length){ menu.hidden = true; return; }
+    at = Math.min(at, items.length - 1);
+    menu.replaceChildren(...(r.cmd ? [Object.assign(document.createElement('small'), { className: 'slashhd', textContent: r.cmd.title + ': pick one' })] : []),
+      ...items.map((it, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.className = i === at ? 'on' : '';
+        const t = document.createElement('b'); t.textContent = it.label; b.appendChild(t);
+        if(it.hint){ const h = document.createElement('small'); h.textContent = it.hint; b.appendChild(h); }
+        b.addEventListener('mousedown', e => { e.preventDefault(); pick(it); }); return b; }));
+    menu.hidden = false;
+  };
+  input.addEventListener('input', () => { at = 0; show(); }, SIG);
+  input.addEventListener('focus', show, SIG);
+  input.addEventListener('blur', () => setTimeout(() => { menu.hidden = true; }, 120), SIG);
+  // before the box's own Enter (send): Enter picks, arrows move, Esc closes
+  input.addEventListener('keydown', e => {
+    if(menu.hidden || !items.length) return;
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); at = (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length; show(); menu.children[at + (menu.firstChild && menu.firstChild.tagName === 'SMALL' ? 1 : 0)]?.scrollIntoView({ block: 'nearest' }); }
+    else if(e.key === 'Enter'){ e.preventDefault(); e.stopImmediatePropagation(); pick(items[at]); }
+    else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); menu.hidden = true; }
+  }, { capture: true, signal: SIG.signal });
+}
+slashMenu($('chatin'), false); slashMenu($('askin'), true);
 /* ---- AI director: one text call plans the Reel as a story ----
    The cut times are fixed by the music. For every cut the phone offers its 3 best different moments (rules + AI scores);
    the director picks one per cut plus its transition, effect and speed. Every choice is then checked here: the moment
@@ -3780,7 +3837,7 @@ async function directorRun(key){
     const { req, ctx } = dirRequest(cands), sig = planSig(), mix = mixNo, st = mixStore();
     const r = await apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
+    if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').')), { status: r.status });
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
     chatSync(res); if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
@@ -3802,7 +3859,9 @@ async function directorRun(key){
   }catch(e){
     dirFailedKey = key;
     const back = aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(); }
+    // not enough credits (402) or not on the plan (403): said as it is, never "Shubix AI is not available"
+    if(e && (e.status === 402 || e.status === 403)){ chatFail(String(e.message)); aiStat(String(e.message)); if(aiOn) aiNeed(true, e.status === 402); }
+    else if(late){ aiDown(); }
     else {
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);

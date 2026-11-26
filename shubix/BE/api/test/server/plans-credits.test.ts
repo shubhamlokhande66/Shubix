@@ -164,6 +164,17 @@ describe("Cashfree payments", () => {
     await refund("r1");
     expect(await wallet("n1")).toMatchObject({ extra: 10, welcome: 10 });
   });
+  it("a Free account's Reel paid with its welcome credits keeps Shubix AI for that Reel only", async () => {
+    const { chargeOnce, refund, aiAllowed } = await import("../../src/server/credits");
+    st.cols.set("users", [{ _id: "f1", email: "f1@x.in" }]); st.user = "f1";
+    expect((await aiAllowed(false, { credits: true })).ok).toBe(true);           // 10 welcome credits
+    const c = await chargeOnce("studio_ai", "f1reel", "AI Reel");                         // spent on this Reel: 0 left
+    expect((await aiAllowed(false, { credits: true })).ok).toBe(false);          // a new Reel needs credits
+    expect((await aiAllowed(false, { credits: true, reelId: "f1reel" })).ok).toBe(true);   // its picks, its plan again
+    expect((await aiAllowed(false, { credits: true, reelId: "other1" })).ok).toBe(false);
+    await refund(c.ref);                                                       // given back: open as before (credits again)
+    expect((await aiAllowed(false, { credits: true })).ok).toBe(true);
+  });
   it("the administrator sets the welcome credits, or turns them off", async () => {
     const { wallet } = await import("../../src/server/credits"), { setMarketing, MARKETING_DEFAULTS, getMarketing } = await import("../../src/server/marketing");
     st.cols.set("users", [{ _id: "a1", email: "a1@x.in" }, { _id: "a2", email: "a2@x.in" }]);

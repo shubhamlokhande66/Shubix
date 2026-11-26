@@ -148,7 +148,7 @@ export const STUDIO_HTML = `
     </button>
     <div class="askbody" id="askbody">
     <div class="chatfield askfield">
-      <input id="askin" maxlength="300" autocomplete="off" placeholder="e.g. Fast cuts, zoom on the drop">
+      <input id="askin" maxlength="300" autocomplete="off" placeholder="e.g. Fast cuts, or type / for commands">
       <button type="submit" class="${Button.iconPrimary} size-9" aria-label="Ask Shubix"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
     <div class="askchips" id="askchips"><span>Try:</span>
@@ -696,8 +696,9 @@ export const STUDIO_HTML = `
   </div>
   <div class="chatlog" id="chatlog" aria-live="polite"></div>
   <div class="chatvers" id="chatvers" hidden></div>
-  <span class="chatideas">Quick ideas</span>
+  <span class="chatideas">Quick ideas · type / for commands · <a href="/guides/ask-shubix" target="_blank" rel="noopener">How to ask</a></span>
   <div class="chatchips" id="chatchips">
+    <button type="button" data-slash="1" class="slashchip">/ Commands</button>
     <button type="button" data-say="Make it faster and more energetic">Faster</button>
     <button type="button" data-say="Make it calm and cinematic, slower cuts">Calmer</button>
     <button type="button" data-say="Add more zooms and camera moves on the beats">More zooms</button>
@@ -707,7 +708,7 @@ export const STUDIO_HTML = `
   </div>
   <form class="chatform" id="chatform">
     <div class="chatfield">
-      <textarea id="chatin" rows="1" maxlength="300" placeholder="Describe a change… e.g. zoom on the drop"></textarea>
+      <textarea id="chatin" rows="1" maxlength="300" placeholder="Describe a change, or type / for commands"></textarea>
       <button type="submit" class="${Button.iconPrimary} size-9" id="chatsend" aria-label="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
     <small class="chathint">Enter to send · Shift + Enter for a new line</small>

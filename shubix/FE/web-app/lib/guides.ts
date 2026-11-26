@@ -1,6 +1,7 @@
 /** The guides (app/guides): practical articles on making short vertical videos, written by the Shubix team. The body is
  * RichText: "## " a heading, "- " a list, a blank line a new paragraph, **bold** and [links](/pricing). */
 import { MORE_GUIDES } from "./guides-more";
+import { ASK_SHUBIX_GUIDE } from "./guide-ask-shubix";
 
 export type Guide = { slug: string; title: string; description: string; minutes: number; body: string };
 
@@ -312,6 +313,6 @@ Shubix treats the first cut as the hook: it chooses a striking, clear moment for
   },
 ];
 
-export const GUIDES: Guide[] = [...FIRST_GUIDES, ...MORE_GUIDES];
+export const GUIDES: Guide[] = [ASK_SHUBIX_GUIDE, ...FIRST_GUIDES, ...MORE_GUIDES];
 
 export const guide = (slug: string) => GUIDES.find((g) => g.slug === slug);

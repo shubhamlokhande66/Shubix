@@ -96,11 +96,21 @@ async function chatSend(text){
     return;
   }
   if(!ready){ ES.wish = ES.chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800); chatAnswer('Got it! I\'ll edit your Reel this way as soon as it is made.'); return; }
-  if(!EH.aiReelOk() && !(await EH.aiGate(EH.aiNeedOn()))){ chatAnswer('This Reel is edited on your phone, so I can only switch its style (say "faster" or "calmer").'); return; }
+  // Shubix AI's question for this Reel answered ✕ (or too few credits): said plainly, and how to go on (the website's, 2026-11-26).
+  // Asked again on each message here (the app has no "waits for Shubix AI" bar), so sending it again is the way back
+  if(!EH.aiReelOk() && !(await EH.aiGate(true))){
+    const cost = EH.aiCostOf('reel'), bal = EH.aiBal();
+    if(cost && bal !== null && bal < cost){ chatAnswer('Shubix AI needs ' + EH.creditWord(cost) + ' for this Reel and you have ' + EH.creditWord(bal) + '. Your Reel stays as your phone made it: I can still switch its style (say "faster" or "calmer").'); return; }
+    chatAnswer('Paused, as you asked: Shubix AI has not changed this Reel and no credits were used. To let Shubix AI do it, send your message again and tap Use.'); return;
+  }
+  // the Reel has no Shubix AI plan yet: this message is how Shubix AI makes it (the Reel's credits, agreed just above), not a
+  // change of it: no second question, no second charge (the server: direct route), the whole Reel planned with it (the website's)
+  const firstPlan = ES.dirPlannedReel !== EH.reelIdNow() && !ES.dirBusy;   // a plan on its way: that one pays the Reel, this message is a change
   // what this change costs, asked first: a few named shots or the whole Reel
-  const size = EH.chatSize(text), freeN = EH.aiFreeChats(), free = bal0 => bal0 !== null && (ES.chatUsed || 0) < freeN, bal = EH.aiBal();
-  const cost = free(bal) ? 0 : EH.aiCostOf(size === 'small' ? 'small' : 'big');
-  if(free(bal)){
+  const size = firstPlan ? 'big' : EH.chatSize(text), freeN = EH.aiFreeChats(), free = bal0 => bal0 !== null && (ES.chatUsed || 0) < freeN, bal = EH.aiBal();
+  const cost = firstPlan || free(bal) ? 0 : EH.aiCostOf(size === 'small' ? 'small' : 'big');
+  if(firstPlan){ /* part of the Reel's own plan */ }
+  else if(free(bal)){
     const left = freeN - (ES.chatUsed || 0) - 1;
     const ok = await EH.askCredits({ title: size === 'small' ? 'A small change · free' : 'Change the whole Reel · free', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + 'Your plan has ' + freeN + ' free changes per Reel: this one is free, ' + (left ? left + ' more free after it.' : 'after it each change uses credits.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
