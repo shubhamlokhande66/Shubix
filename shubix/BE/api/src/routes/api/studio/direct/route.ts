@@ -22,7 +22,12 @@ export const POST = route(async (req) => {
   const planPrint = crypto.createHash("sha256").update(JSON.stringify(d.slots.map((s) => [s.t, s.candidates?.map((c) => c.id)]))).digest("hex").slice(0, 16);
   const reelCharge = await chargeOnce("studio_ai", d.chat || d.patch || d.variants ? d.reelId : await reelChargeKey("studio_ai", d.reelId, planPrint), "Shubix AI Reel");
   // the plan's first chat changes on a Reel are free (Editor 2, Pro 5); the rest use credits
-  const chatCharge = d.chat ? await chatTurn(d.reelId, d.chat.id || `n${d.chat.n}`, chatSize(d.chat.text) === "small" ? "studio_chat_small" : "studio_chat_big", "Ask Shubix: " + d.chat.text.slice(0, 60)) : null;
+  // a message that comes with the Reel's own plan (its credits taken just now: "make it fast" before the Reel was made with
+  // Shubix AI) is part of that Reel, not a change of it: no second charge (2026-11-26: a Free account's 10 welcome credits
+  // went to the Reel, the message's 1 credit failed and the popup said Shubix AI was down). Any failure gives the Reel's back.
+  let chatCharge: Awaited<ReturnType<typeof chatTurn>> | null = null;
+  try { chatCharge = d.chat && !reelCharge.taken ? await chatTurn(d.reelId, d.chat.id || `n${d.chat.n}`, chatSize(d.chat.text) === "small" ? "studio_chat_small" : "studio_chat_big", "Ask Shubix: " + d.chat.text.slice(0, 60)) : null; }
+  catch (e) { await refundUndelivered(reelCharge.ref); throw e; }
   const chatOut = chatCharge ? { chat: { free: chatCharge.free, used: chatCharge.used, left: chatCharge.left, charged: chatCharge.taken } } : {};
   if (d.patch) {
     try { const res = await directPatch(d, undefined, await taste()); await markDelivered(reelCharge.ref); recordRun({ kind: "plan", cuts: res.slots.length, mode: d.mode, provider: res.provider, model: res.model, ms: Date.now() - t0, ok: true }); return { ...res, ...(await noChangeBack(d, res, chatCharge, chatOut)), balance: await balanceNow() }; }

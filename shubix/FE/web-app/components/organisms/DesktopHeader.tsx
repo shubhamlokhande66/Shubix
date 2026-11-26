@@ -65,7 +65,7 @@ export function DesktopHeader({ email, credits, admin, onSignOut }: { email?: st
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[14px] font-extrabold text-on-accent [background:var(--gold-gradient)]">{email[0]?.toUpperCase()}</span>
               <span className="flex min-w-0 flex-col leading-tight">
                 <small className="text-[11px] font-semibold text-muted">{text("nav.signedInAs")}</small>
-                <strong title={email} className="truncate text-[13px] font-bold text-foreground">{email}</strong>
+                <strong title={email} className="break-all text-[13px] font-bold text-foreground">{email}</strong>
                 {credits?.planName && <small className="mt-0.5 truncate text-[11px] font-semibold text-accent">{text("nav.planSuffix", { plan: credits.planName })}</small>}
               </span>
             </div>
