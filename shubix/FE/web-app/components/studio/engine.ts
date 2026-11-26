@@ -8019,7 +8019,7 @@ function describeRef(R){
   const tr = Object.entries(R.trans).sort((a,b)=>b[1]-a[1]).map(([k,v])=>Math.round(v*100)+'% '+REF_KINDS[k]).join(', ');
   const pace = R.medianBeats ? 'a cut every ' + R.medianBeats + ' beat' + (R.medianBeats===1?'':'s') + ' (' + Math.round(R.onBeat*100) + '% on the beat)' : 'a cut every ' + R.medianSec.toFixed(1) + ' s';
   return (R.learned ? 'typically ' : R.cuts.length + ' cuts in ' + R.dur.toFixed(0) + ' s · ') + pace + (R.energy !== 'steady' ? ' · pace ' + R.energy : '') + ' · ' + (tr || 'no cuts') +
-    (R.zoomShare > 0.15 ? ' · zooms in ' + Math.round(R.zoomShare*100) + '% of shots' : '') + (words.length ? ' · ' + words.join(', ') : '');
+    (R.zoomShare > 0.15 ? ' · zooms in ' + Math.round(R.zoomShare*100) + '% of shots' : '') + ((R.boxes || []).length ? ' · photo boxes' : '') + (words.length ? ' · ' + words.join(', ') : '');
 }
 // Copy a Reel with the Reel's own song (the usual case: its song comes with it): every shot at its own time, to the frame,
 // not fitted again to beats found in the song: a cut on each eighth note, a stutter of a tenth of a second and a flicker
@@ -8240,6 +8240,7 @@ $('reffile').addEventListener('change', async e=>{
     const lb = $('look').querySelector('[data-l="copy"]'); lb.hidden = false; look = 'copy'; [...$('look').children].forEach(x=>x.setAttribute('aria-pressed', x===lb));
     setMode('copy');
     refLookRun(f, refProfile);   // its texts, stickers, captions, background: the AI reads them (when it is on)
+    refBoxesSoon(refProfile);   // its photo boxes, on the new Reel's long shots
   }catch(err){ console.warn('reference not read:', err); if(run !== refRun) return; $('refinfo').textContent = 'We could not read that Reel. Please try another video.'; notify('We could not read that Reel. Please try another video.', 'err'); }
   finally{ jobDone(); mirror.disconnect(); if(run !== refRun) return; refReading = false; root.classList.remove('refread'); refWaiters.splice(0).forEach(r => r());
     // the same song as the Reel's, given as its own file: its part is cut again at the Reel's place (useSection makes the edit)
@@ -8278,6 +8279,14 @@ async function refLookRun(file, R){
     if(err && err.name === 'AbortError') return;
     console.warn('reference texts not read:', err); note('its texts could not be read this time');
   }finally{ refLookBusy = false; setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+// the copied Reel's photo boxes (boxes.ts) on the new Reel, once it has its edit: no AI, no credits
+function refBoxesSoon(R){
+  clearTimeout(refBoxesSoon.h);
+  if(!R || !(R.boxes || []).length || R.boxesDone) return;
+  refBoxesSoon.h = setTimeout(async () => { if(refProfile !== R || R.boxesDone || mode !== 'copy') return;
+    if(!edit.length || pending || !reelLen() || layers.some(L => L.boxes)){ if(!layers.some(L => L.boxes)) refBoxesSoon(R); return; }
+    R.boxesDone = true; await photoBoxes(); }, 800);
 }
 // once the new Reel has its edit (song part and clips in)
 function refLookApplySoon(R){

@@ -281,6 +281,12 @@ export function createNativeEngine(io: NativeIo) {
     } catch (e) { io.task?.("fail", "reflook", "Its texts could not be read this time"); console.warn("reference texts not read:", e); }
   }
   /** the texts' places, stickers and caption style on the Reel just made (the website's refLookApply, the same numbers) */
+  // the copied Reel's photo boxes (boxes.ts) on the new Reel's long shots, as on the website: no AI, no credits
+  async function refBoxes() {
+    const ES = host.ES, R = ES.refProfile;
+    if (!R || !(R.boxes || []).length || R.boxesDone || ES.mode !== "copy" || !ES.edit?.length || ES.layers.some((L: { boxes?: string }) => L.boxes)) return;
+    R.boxesDone = true; try { await host.brain.photoBoxes(); } catch { /* the Reel goes on without them */ }
+  }
   function applyRefLook() {
     const ES = host.ES, R = ES.refProfile, V = host.values as Record<string, any>;   // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!R || !R.design || R.designDone || ES.mode !== "copy" || !ES.edit?.length) return;
@@ -476,7 +482,7 @@ export function createNativeEngine(io: NativeIo) {
     },
     part: async (a) => { host.sec.start = Number(a.start); host.sec.auto = false; await host.useSection(); return { start: host.ES.secStart ?? 0 }; },
     // the Reel is made: what is written on the Reel being copied goes on it (its reading waited for, a minute at most)
-    ready: async () => { if (refLook) { const r = refLook; await Promise.race([r, new Promise((ok) => setTimeout(ok, 60_000))]); } applyRefLook(); return { work: work(), state: state() }; },
+    ready: async () => { if (refLook) { const r = refLook; await Promise.race([r, new Promise((ok) => setTimeout(ok, 60_000))]); } applyRefLook(); await refBoxes(); return { work: work(), state: state() }; },
     // the edit's own review (shared/video-engine review.ts) and how many takes and repairs it had: read only
     review: () => ({ review: host.brain.editReview?.() ?? null, takes: host.ES.editTakes ?? null }),
     // the finished video read back on this phone (its clip scan) and checked against the edit (video-engine
