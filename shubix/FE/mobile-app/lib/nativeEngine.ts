@@ -285,7 +285,7 @@ export function createNativeEngine(io: NativeIo) {
   async function refBoxes() {
     const ES = host.ES, R = ES.refProfile;
     if (!R || !(R.boxes || []).length || R.boxesDone || ES.mode !== "copy" || !ES.edit?.length || ES.layers.some((L: { boxes?: string }) => L.boxes)) return;
-    R.boxesDone = true; try { await host.brain.photoBoxes(0); } catch { /* the Reel goes on without them */ }
+    R.boxesDone = true; try { await host.brain.photoBoxes(0, "ref"); } catch { /* the Reel goes on without them */ }
   }
   function applyRefLook() {
     const ES = host.ES, R = ES.refProfile, V = host.values as Record<string, any>;   // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -338,6 +338,7 @@ export function createNativeEngine(io: NativeIo) {
         scenes: scan.scenes || [], samples: scan.samples || [], rb, rr, rmap, describeCut: describeCut as never, onP: say });
       if (stops !== g) throw new Error("Stopped");
       ES.refProfile = { name, key: `${name}|${f.size ?? 0}`, audio, w, h, ...read };
+      ES.layers = (ES.layers || []).filter((L: { boxes?: string }) => L.boxes !== "ref");   // the last Reel's photo boxes go with it
       // the copied look is on while it is matched (the edit then matches it), as on the website
       const V = host.values as { GRADES?: Record<string, unknown> };
       if (V.GRADES) V.GRADES.copy = { con: 1, sat: 1, bri: 1, warm: 0, teal: 0, mono: read.look && read.look.sat < 0.05 ? 1 : 0, lift: 0, vig: 0, grain: 0 };

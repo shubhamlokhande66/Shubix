@@ -51,7 +51,7 @@ export function initFlow(root: HTMLElement): () => void {
   let kind: Kind = "music";
   let pct = 0;
   // Copy a Reel: the Reel being copied (its file, for its song) and whether its song is still to come (below)
-  let refFile: File | null = null, refName = "", autoSong = false;
+  let refFile: File | null = null, refName = "", autoSong = false, songFollows = false;
   const lines = new Map<string, "now" | "ok">();
   const working = new Set<string>(); // the WAIT tasks running right now
   let checking = false, wantGen = false, aiLater = false; // Generate pressed: the popup shows what is left, and it goes on by itself
@@ -650,12 +650,14 @@ export function initFlow(root: HTMLElement): () => void {
   root.addEventListener("change", (e) => {
     const inp = e.target as HTMLInputElement;
     if (inp.id !== "reffile" || !inp.files?.[0]) return;
+    const prevRef = refName, sn = (live() as { songName?: string } | undefined)?.songName ?? "";
     refFile = inp.files[0]; refName = refFile.name;
+    songFollows = !!prevRef && !!sn && sn === prevRef.replace(/.[^.]+$/, "");
     setText($("frefpick"), "Change Reel");
     setFlag($("frefsong"), "hidden", false);
     // its song comes with it: no Choose Music screen (phones go straight to the clips; Music stays reachable to change
     // it). Next / Generate wait for that song like for any song (refsong, then the engine's song task)
-    if (!done("s1")) { autoSong = true; working.add("refsong"); apply(); }
+    if (!done("s1") || songFollows) { autoSong = true; working.add("refsong"); apply(); }
     if (step === "intro" || step === "choose") go("clips");
   }, { capture: true, ...sig });
   // what the engine says about the Reel being read ("Reading the Reel: cuts 40%", then what it found)
@@ -664,7 +666,8 @@ export function initFlow(root: HTMLElement): () => void {
     setText($("frefst"), t);
     if (!autoSong || /^Reading/.test(t)) return;
     autoSong = false;
-    if (!/could not read/i.test(t) && !done("s1") && !$("mpick").classList.contains("busy")) refSong();   // the engine's song task takes over
+    if (!/could not read/i.test(t) && (!done("s1") || songFollows) && !$("mpick").classList.contains("busy")) refSong();
+    songFollows = false;   // the engine's song task takes over
     working.delete("refsong"); apply();
   });
   refMo.observe($("refinfo"), { childList: true, characterData: true, subtree: true });

@@ -28,6 +28,8 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
+    // a Reel copied to the frame: the reader times a transition by its middle, so the copy's middle lands there (half a lead)
+    if(e.trByRef && EH.copyTimed()) L = L/2;
     L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = ES.beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
@@ -305,7 +307,7 @@ function makeEditNow(){
     tasteFx(e, i, taste);
     // When the optional cloud AI director is unavailable, apply the shared on-device director's
     // renderable treatment as a conservative fallback. Never overwrite an explicit AI choice.
-    if(!dirInfo && shared){
+    if(!dirInfo && shared && !EH.copyExact()){   // (a copied shot has the reference's own effect and move, or none)
       if(!e.fxByDir && e.efx === 'none'){
         const fx = shared.effects.find(id => !!EH.FX_NAME[id]);
         if(fx && (e.end - e.start) >= 0.65) e.efx = fx;
