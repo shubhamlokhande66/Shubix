@@ -229,6 +229,9 @@ export type AdPlace = "home" | "homeEnd" | "reels" | "rewards" | "account";
 /** AdSense (client, slot) is the website; admob holds the phone app banner ad units */
 export type AdsConfig = { enabled: boolean; client: string; slot: string; places: Record<AdPlace, boolean>; admob: { android: string; ios: string; interstitial: string; rewarded: string; rewardCredits: number; rewardDaily: number } };
 /** A song of Shubix's library (Admin → Songs; BE/api/src/server/songs.ts) */
+/** Get songs: a place the studio sends people for a song (Admin → Songs → Song sites) */
+export type SongSite = { id: string; name: string; note: string; url: string; free: boolean; on: boolean; order: number };
+export type SongSiteInput = { name: string; note: string; url: string; free: boolean; on?: boolean; order?: number };
 export type LibrarySong = { id: string; name: string; artist: string; licence: string; source: string; moods: string[]; bpm: number | null; dur: number; on: boolean; url: string };
 
 export const api = {
@@ -360,6 +363,11 @@ export const api = {
   },
   setSong: (id: string, on: boolean) => request<LibrarySong>(`/api/admin/songs/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ on }) }),
   deleteSong: (id: string) => request<{ ok: boolean }>(`/api/admin/songs/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // Admin → Songs → Song sites: where the studio's Get songs sends people (server/songSites.ts)
+  adminSongSites: () => request<{ sites: SongSite[] }>("/api/admin/song-sites"),
+  addSongSite: (d: SongSiteInput) => request<SongSite>("/api/admin/song-sites", { method: "POST", body: JSON.stringify(d) }),
+  updateSongSite: (id: string, d: Partial<SongSiteInput>) => request<SongSite>(`/api/admin/song-sites/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(d) }),
+  deleteSongSite: (id: string) => request<{ ok: boolean }>(`/api/admin/song-sites/${encodeURIComponent(id)}`, { method: "DELETE" }),
   sendBroadcast: (d: BroadcastInput & { dryRun?: boolean }) => request<{ ok: boolean; people: number; emails?: number; emailsOff?: number; emailed?: number; emailFailed?: number; over?: boolean }>("/api/admin/broadcasts", { method: "POST", body: JSON.stringify(d) }),
   deleteBroadcast: (id: string) => request<{ ok: boolean }>("/api/admin/broadcasts", { method: "DELETE", body: JSON.stringify({ id }) }),
   notifications: () => viaBoot("notifications", () => request<{ items: Notice[]; unread: number }>("/api/notifications")),

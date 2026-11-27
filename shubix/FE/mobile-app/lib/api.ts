@@ -26,6 +26,9 @@ export type SocialPost = { id: string; platform: SocialPlatform["id"]; reelId: s
 /** One of the administrator's messages (Admin → Messages: the bell) */
 export interface Notice { id: string; title: string; body: string; link: string; button: string; at: string; unread: boolean }
 
+/** a place Get songs sends people to (BE/api server/songSites.ts) */
+export type SongSite = { id: string; name: string; note: string; url: string; free: boolean };
+
 export const mobileApi = {
   me: () => api.auth.me(),
   /** the sign-in rules (Administration → Settings → Sign-in rules): the pages open before signing in, as on the website */
@@ -41,6 +44,8 @@ export const mobileApi = {
   notifications: () => json<{ items: Notice[]; unread: number }>("/api/notifications"),
   readNotifications: () => json<{ ok: boolean }>("/api/notifications", { method: "POST" }),
   templates: () => json<{ templates: StudioTemplate[] }>("/api/templates"),
+  /** Get songs: where to send people for a song (Admin → Songs → Song sites), as on the website */
+  songSites: () => json<{ sites: SongSite[] }>("/api/song-sites"),
   features: () => json<Features>("/api/features"),
   /** the Help chat (Admin → Support turns it on): whether it is on, and an answer to the conversation so far */
   helpOn: () => json<{ on: boolean }>("/api/help"),

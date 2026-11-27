@@ -8,7 +8,6 @@ import { PLAN_TOOLS } from "./views";
 import { GLYPH_PATHS } from "@shubix/ui-web";
 import { DOCK_CATEGORIES_DEF, PANEL_NOTE, SHOT_TOOLS_DEF } from "@shubix/core/lib/editor-tools";
 import { TEXT_TEMPLATES } from "@shubix/core/lib/text-templates";
-import { SONG_SITES, SONG_SITES_HOW } from "@shubix/core/lib/song-sites";
 export { DOCK_CATEGORIES_DEF, SHOT_TOOLS_DEF };
 import { Button, Chip, Segmented, Tile } from "./ui";
 /** shapes: drawn in the text's colour, so they take every text tool (keyframes, entrances, exits, loops) */
@@ -642,8 +641,8 @@ export const STUDIO_HTML = `
 <div class="cconf bg-black/70! backdrop-blur-md" id="songsites" hidden><div class="cconfb relative! w-full! max-w-[480px]! max-h-[calc(100dvh-32px)]! gap-3! overflow-y-auto! rounded-[28px]! border! border-accent/30! bg-surface! p-6! text-left! justify-items-stretch!" role="dialog" aria-modal="true" aria-labelledby="songsitesh">
   <button type="button" class="${Button.close} absolute top-2.5 right-2.5" id="songsitesx" aria-label="Close" title="Close">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button>
   <b id="songsitesh" class="pr-10">Get songs</b>
-  <div class="grid gap-2">${SONG_SITES.map((s) => `<a class="grid gap-0.5 rounded-2xl border border-line bg-surface-2 px-4 py-3 no-underline hover:border-accent/60" href="${s.url}" target="_blank" rel="noopener noreferrer" data-site="${s.id}"><span class="flex items-center gap-2 font-semibold text-ink">${s.name}<small class="rounded-full px-2 py-0.5 text-[11px] ${s.free ? "bg-accent/15 text-accent" : "bg-line text-muted"}">${s.free ? "Free to use" : "Trending"}</small></span><small class="text-[12.5px] leading-snug text-muted">${s.note}</small></a>`).join("")}</div>
-  <p class="text-[12.5px]!">${SONG_SITES_HOW}</p>
+  <div class="grid gap-2" id="songsitelist" aria-live="polite"><span class="text-[13px] text-muted">Loading…</span></div>
+  <p class="text-[12.5px]!">The page opens in a new tab. Download the song to your device, come back to Shubix and tap Add your song.</p>
 </div></div>
 <div class="clipbar" id="clipbar" hidden role="toolbar" aria-label="Selected clip"></div>
 <section class="ctpop" id="ctpop" hidden role="dialog" aria-labelledby="ctpoph">
