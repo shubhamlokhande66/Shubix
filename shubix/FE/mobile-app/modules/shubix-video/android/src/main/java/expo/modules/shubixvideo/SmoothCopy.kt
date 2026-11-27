@@ -57,10 +57,7 @@ internal fun makeSmoothCopy(from: String, to: File, start: Double, slices: List<
       kept[n] = px; while (kept.size > 3) kept.remove(kept.keys.first())
       return px
     }
-    val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
-      setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-      setInteger(MediaFormat.KEY_BIT_RATE, bitrate); setInteger(MediaFormat.KEY_FRAME_RATE, fps); setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-    }
+    val format = videoFormat(w, h, bitrate, fps)
     val enc = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { codec = it }
     enc.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE); enc.start()
     val mux = MediaMuxer(part.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxer = it }
