@@ -910,7 +910,7 @@ async function pictureEnd(mb, track, first){
 }
 // light: the clip's reading (motion, scenes, faces, its card's picture) may come from its light copy (960 on its long side):
 // those frames are 48 x 27 to 480 px, the same from the copy as from a 4K file, which a phone decodes many times slower.
-// Shubix AI's pictures, the subject pop and the export read the clip itself.
+// Shubix AI's pictures (768 px) come from it too; the subject pop and the export read the clip itself.
 async function clipReader(src, maxSide, light = false){
   try{
     const mb = await loadMediabunny();
@@ -2613,7 +2613,8 @@ function aiTimes(src){
   return out;
 }
 async function aiFrames(src){
-  const rd = await clipReader(src, 768);
+  // from the light copy when there is one (960: the same 768 px pictures, decoded far faster on a phone)
+  const rd = await clipReader(src, 768, true);
   const sc = Math.min(1, 384/Math.max(src.w, src.h)), w = Math.max(2, Math.round(src.w*sc)), h = Math.max(2, Math.round(src.h*sc));
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
   const out = [], ts = aiTimes(src).slice().sort((a,b)=>a-b);

@@ -195,10 +195,13 @@ export function createNativeEngine(io: NativeIo) {
     }
   }
   /** the frames Shubix AI looks at, as JPEGs from the phone's own decoder */
-  async function aiFrames(src: { path: string; w: number; h: number }) {
+  async function aiFrames(src: { name?: string; path: string; w: number; h: number }) {
     const ts = (host.brain.aiTimes(src) as number[]).slice().sort((x, y) => x - y), sc = Math.min(1, 384 / Math.max(src.w, src.h));
     const w = Math.max(2, Math.round(src.w * sc / 2) * 2), h = Math.max(2, Math.round(src.h * sc / 2) * 2);
-    const res = await io.fetch(url("aiframes", `&p=${encodeURIComponent(src.path)}&w=${w}&h=${h}`), { method: "POST", body: ts.map((t) => t.toFixed(3)).join(",") });
+    // from the clip's small copy when it has one (960 on its long side: the same 384 px pictures, from a key frame every
+    // 0.25 s instead of a 4K decode from one up to 2 s before each), else the clip itself
+    const small = src.name ? await (previews.get(src.name) ?? null) : null;
+    const res = await io.fetch(url("aiframes", `&p=${encodeURIComponent(small ?? src.path)}&w=${w}&h=${h}`), { method: "POST", body: ts.map((t) => t.toFixed(3)).join(",") });
     if (!res.ok) throw new Error(await res.text());
     return (await res.json() as (string | null)[]).map((image, i) => image ? { t: +ts[i].toFixed(2), image } : null).filter(Boolean);
   }
