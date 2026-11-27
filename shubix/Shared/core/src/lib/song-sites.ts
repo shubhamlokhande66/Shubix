@@ -2,7 +2,7 @@
  * "Get songs": where Shubix sends a person for a song (the website and the Android app show the same list). Shubix
  * downloads nothing and keeps nothing: the person gets the song on their own device, comes back and picks it with
  * "Add your song". Only places that are allowed: free songs with a licence for Reels, or Instagram itself (its songs
- * are added in Instagram, where they are licensed: export "For Instagram audio"). No downloader sites (Google Play
+ * are added in Instagram, where they are licensed: export "Without the song"). No downloader sites (Google Play
  * removes apps that lead to unlicensed downloads, and Instagram mutes such Reels).
  */
 export type SongSite = {
@@ -17,7 +17,7 @@ export type SongSite = {
 
 export const SONG_SITES: SongSite[] = [
   { id: "instagram", name: "Instagram trending", url: "https://www.instagram.com/reels/", free: false,
-    note: "Find a trending song. Use your own copy of it here, then export \"For Instagram audio\" and add the song in Instagram." },
+    note: "Find a trending song. Use your own copy of it here, then export \"Without the song\" and add the song in Instagram." },
   { id: "ytcharts", name: "YouTube trending songs", url: "https://charts.youtube.com/charts/TopSongs/in/weekly", free: false,
     note: "See what is trending this week in India. Add the song in Instagram after you export." },
   { id: "pixabay", name: "Pixabay Music", url: "https://pixabay.com/music/", free: true,

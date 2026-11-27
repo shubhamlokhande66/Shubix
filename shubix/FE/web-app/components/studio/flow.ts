@@ -272,6 +272,20 @@ export function initFlow(root: HTMLElement): () => void {
     let n: string | null = null; try { n = localStorage.getItem("shubix-songs"); } catch { /* private mode */ }
     if (n !== "0") $("rwait").hidden = false;
   }
+  // Get songs: where to find one (Shared/core song-sites.ts), each in a new tab; the song is then added with Add your
+  // song from the person's own device (Shubix downloads nothing). Here, not in the studio's code: it works at once
+  {
+    const box = $("songsites"), shut = () => { box.hidden = true; ($("mget") as HTMLElement).focus({ preventScroll: true }); };
+    const log = (msg: string, data: object) => { try { (window as unknown as { __shubixReelLog?: (s: string, m: string, d: object, l: string) => void }).__shubixReelLog?.("songs", msg, data, "info"); } catch { /* no log */ } };
+    $("mget").addEventListener("click", () => { box.hidden = false; box.querySelector("a")?.focus({ preventScroll: true }); log("Get songs opened", {}); }, sig);
+    $("songsitesx").addEventListener("click", shut, sig);
+    box.addEventListener("click", (e) => {
+      if (e.target === box) return shut();
+      const a = (e.target as HTMLElement).closest?.("a[data-site]") as HTMLAnchorElement | null;
+      if (a) { log("Song site: " + a.dataset.site, { site: a.dataset.site }); setTimeout(() => { box.hidden = true; }, 300); }
+    }, sig);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !box.hidden) shut(); }, sig);
+  }
   const early = new Set<HTMLInputElement>(), boxOf = (id: string) => $(id === "mfile" ? "mpick" : "dropzone");
   root.addEventListener("click", (e) => {
     const b = starting() && (e.target as HTMLElement).closest("#mpick,#dropzone");
