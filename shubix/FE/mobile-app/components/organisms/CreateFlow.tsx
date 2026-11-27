@@ -1,7 +1,8 @@
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { SongAnalysis } from "../../lib/engine";
+import { engine, type SongAnalysis } from "../../lib/engine";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Animated, Image, PanResponder, Pressable, ScrollView, Switch, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
@@ -102,6 +103,7 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
             <View className="min-w-0 flex-1"><Text className="text-[15px] font-semibold text-foreground">{words("Reel to match")}</Text><Text className="text-[12.5px] leading-[18px] text-muted">{words("Pick a Reel you like: its song, cuts, transitions and look go on your clips")}</Text></View>
           </View>
           <Button full size="lg" icon="video" loading={busy} title={words("Pick the Reel")} onPress={onPickReel} />
+          <RefWords />
         </FlowCard>
       )}
       <FlowCard>
@@ -393,5 +395,20 @@ export function FlowAnalyse({ pct, done, status, title = "Analysing Clips", step
         <Icon name="lock" size={15} color="muted" /><Text className="flex-1 text-[12.5px] text-muted">{words("This happens on your phone. Your videos are never uploaded.")}</Text>
       </View>
     </View>
+  );
+}
+
+/** Copy a Reel: "Copy its texts", on unless turned off (kept on the phone). On: its texts with their words, never its
+ * watermark or @name; off: none of its texts. The website's #refwords. */
+function RefWords() {
+  const words = useStudioText();
+  const [on, setOn] = useState(true);
+  useEffect(() => { void AsyncStorage.getItem("shubix.refWords").then((v) => { const o = v !== "0"; setOn(o); void engine.refWords(o); }).catch(() => undefined); }, []);
+  const flip = () => { const o = !on; setOn(o); void engine.refWords(o); void AsyncStorage.setItem("shubix.refWords", o ? "1" : "0").catch(() => undefined); };
+  return (
+    <Pressable onPress={flip} accessibilityRole="checkbox" accessibilityState={{ checked: on }} className="flex-row gap-2.5">
+      <View className={`mt-0.5 h-5 w-5 items-center justify-center rounded-md border ${on ? "border-accent bg-accent" : "border-border"}`}>{on && <Text className="text-[12px] font-bold text-background">✓</Text>}</View>
+      <Text className="flex-1 text-[12.5px] leading-[18px] text-foreground">{words("Copy its texts (never its watermark or @name)")}</Text>
+    </Pressable>
   );
 }

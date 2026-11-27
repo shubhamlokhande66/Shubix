@@ -336,8 +336,9 @@ export function createNativeEngine(io: NativeIo) {
     const timing = (x: { t0: number; t1: number }) => { const whole = x.t0 <= 0.05 && x.t1 >= R.dur - 0.05, t0 = whole ? 0 : Math.max(0, Math.min(L - 0.5, x.t0 * k));
       return { all: whole, t0, t1: whole ? L : Math.min(L, Math.max(t0 + 0.5, x.t1 * k)), ref: true }; };
     ES.overlays = ES.overlays.filter((o: { ref?: boolean }) => !o.ref);   // an earlier reference's texts go
-    // only the format is copied, never the other Reel's words: each place waits for the creator's own (ph: left out of the video)
-    for (const x of D.texts || []) ES.overlays.push({ id: ++ES.ovSeq, text: "YOUR TEXT", emoji: false, style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false), ...timing(x), ph: true });
+    // its texts as on the Reel, their words too (the server leaves out Instagram's marks and @names: never a watermark);
+    // "Copy its texts" off (the creator's choice, as the website's): none of them
+    for (const x of ES.refWords === false ? [] : D.texts || []) ES.overlays.push({ id: ++ES.ovSeq, text: x.text || "YOUR TEXT", emoji: false, style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false), ...timing(x), ...(x.text ? {} : { ph: true }) });
     for (const x of D.stickers || []) ES.overlays.push({ id: ++ES.ovSeq, text: x.emoji, emoji: true, x: x.x, y: x.y, size: sizeOf(x.h, true), ...timing(x) });
     if (D.captions) { if (D.captions.style) ES.textStyle = D.captions.style; if (D.captions.color) ES.ACCENT = D.captions.color;
       if (!ES.capsOn) void host.setCaptions(true, undefined, undefined).catch(() => { ES.capsOn = false; }); }
@@ -603,6 +604,7 @@ export function createNativeEngine(io: NativeIo) {
     mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; const ok = (f as (t: number) => unknown)(host.ES.pos) !== false; return { ok, state: state() }; },
     shotStyle: (a) => { const i = host.brain.segAt(host.ES.pos), e = host.ES.edit[i]; if (!e) throw new Error("There is no selected shot"); if (a.kind === "transition") e.tr = String(a.value); else if (a.kind === "effect") e.efx = String(a.value); return { ok: true, state: state() }; },
     look: () => host.lookGrade(),
+    refWords: (a) => { host.ES.refWords = !!a.on; return { ok: true }; },
     exportOptions: async (a) => {
       const base = host.exportOptions(a) as Args, u = await myReelsRoom();
       return u ? { ...base, myReels: true, myReelsNote: `Also kept in your account, to watch, download or share anywhere · ${u.used} of ${u.limit} used` } : base;

@@ -100,6 +100,8 @@ export const engine = {
   /** the song: the website analyses it (beats, drops, breaks) and checks its beats */
   song: (uri: string, name: string) => call<SongAnalysis>("song", { path: pathOf(uri), name }),
   /** Copy a Reel: the Reel to match is read (its cuts, transitions, moves and look: video-engine refReader.ts, as the website) */
+  /** Copy a Reel's "Copy its texts": on, its texts with their words; off, none of them */
+  refWords: (on: boolean) => call("refWords", { on }).catch(() => undefined),
   ref: (uri: string, name: string) => call<{ cuts: number; shots: number; bpm: number; trans: Record<string, number> }>("ref", { path: pathOf(uri), name }),
   /** the Reel's choices, as the website's buttons: length (0 = the whole song), clip order, format, style */
   choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast"; template?: string }) => call<{ start: number }>("choose", c),

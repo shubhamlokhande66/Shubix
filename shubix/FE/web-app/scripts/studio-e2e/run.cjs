@@ -41,6 +41,41 @@ const SCENARIOS = [
   .map((s) => (process.env.CLIPS && !s.talk ? { ...s, clips: process.env.CLIPS.split(',').map(Number) } : s));
 
 const now = () => Date.now();
+
+// the edit as it is now (in the page): each shot's place, transition, effect, speed and camera move, and the look
+function shotsNow() {
+  const S = document.querySelector('.brs').__studio, e = S.edit || [], t0 = e.length ? e[0].start : 0;
+  const G = S.grade || {};
+  return { mode: S.mode, match: S.copyMatch ? S.copyMatch() : null,
+    look: Object.fromEntries(['con', 'sat', 'bri', 'warm', 'teal', 'mono', 'vig', 'grain', 'lift'].map((k) => [k, +(+(G[k] || 0)).toFixed(3)])),
+    shots: e.map((s) => { const L = s.end - s.start, need = (s.sp && s.sp.pos ? s.sp.pos(L) : L) * (s.scaleR || 1);
+      return { a: +(s.start - t0).toFixed(3), b: +(s.end - t0).toFixed(3), src: s.src, in: +(+s.in).toFixed(2), tr: s.tr || 'hard', efx: s.efx || 'none',
+        speed: +(need / Math.max(0.01, L)).toFixed(3), move: !!(s.ak && s.ak.length >= 2) || ['pan', 'punch-soft', 'pan-soft'].includes(s.efx) }; }) };
+}
+/** the copy against the original: cuts within 2 frames, then for the cuts both have the same transition, and per moment
+ * of the Reel the same effect, speed (within 15%), camera move and clip; the look by its numbers. All 0..100. */
+function compareEdits(o, c) {
+  const pc = (x) => Math.round(x * 100), N = 0.07;
+  const oc = o.shots.slice(1).map((s) => s.a), cc = c.shots.slice(1).map((s) => s.a), used = new Set();
+  const pairs = oc.map((t, i) => { let j = -1, d = N; cc.forEach((u, k) => { if (!used.has(k) && Math.abs(u - t) <= d) { d = Math.abs(u - t); j = k; } }); if (j >= 0) used.add(j); return j < 0 ? null : [i + 1, j + 1, d]; }).filter(Boolean);
+  const hit = pairs.length, recall = oc.length ? hit / oc.length : 1, precision = cc.length ? hit / cc.length : 1;
+  const trSame = pairs.filter(([i, j]) => o.shots[i].tr === c.shots[j].tr).length;
+  const trWrong = pairs.filter(([i, j]) => o.shots[i].tr !== c.shots[j].tr).map(([i, j]) => o.shots[i].tr + '->' + c.shots[j].tr);
+  // per 0.1 s of the Reel: the shot each edit shows there
+  const at = (E, t) => E.shots.find((s) => t < s.b) || E.shots[E.shots.length - 1];
+  const len = Math.min(o.shots[o.shots.length - 1].b, c.shots[c.shots.length - 1].b);
+  let n = 0, fx = 0, sp = 0, mv = 0, src = 0; const fxWrong = {};
+  for (let t = 0.05; t < len; t += 0.1) { const a = at(o, t), b = at(c, t); n++;
+    if (a.efx === b.efx) fx++; else fxWrong[a.efx + '->' + b.efx] = (fxWrong[a.efx + '->' + b.efx] || 0) + 1;
+    if (Math.abs(Math.log(a.speed / b.speed)) < Math.log(1.15)) sp++; if (a.move === b.move) mv++; if (a.src === b.src) src++; }
+  const lk = Object.keys(o.look).map((k) => Math.max(0, 1 - Math.abs(o.look[k] - c.look[k]) / (k === 'warm' ? 0.5 : 0.15)));
+  const parts = { cuts: pc((2 * recall * precision) / Math.max(1e-9, recall + precision)), transitions: hit ? pc(trSame / hit) : null, effects: n ? pc(fx / n) : null,
+    speed: n ? pc(sp / n) : null, moves: n ? pc(mv / n) : null, look: pc(lk.reduce((q, x) => q + x, 0) / lk.length) };
+  const w = { cuts: 0.3, transitions: 0.2, effects: 0.15, speed: 0.15, moves: 0.1, look: 0.1 }; let s = 0, ws = 0;
+  for (const k of Object.keys(w)) if (parts[k] !== null) { s += w[k] * parts[k]; ws += w[k]; }
+  return { total: Math.round(s / ws), ...parts, sameClip: n ? pc(src / n) : null, shots: [o.shots.length, c.shots.length], length: [o.shots[o.shots.length - 1].b, c.shots[c.shots.length - 1].b],
+    cutsOff: pairs.length ? +(pairs.reduce((q, x) => q + x[2], 0) / pairs.length).toFixed(3) : null, transitionsWrong: trWrong, effectsWrong: fxWrong, readerSays: c.match, copyMode: c.mode };
+}
 const studio = () => document.querySelector('.brs');
 
 async function scenario(browser, sc) {
@@ -273,6 +308,25 @@ async function scenario(browser, sc) {
     rep.exported = { file, type: exp.type, bytes: exp.size, name: exp.name, quality: exp.quality };
     step('exported', { ms: now() - t0, file, type: exp.type, mb: +(exp.size / 1048576).toFixed(2), quality: exp.quality, ...(await long()) });
     await shot('exported');
+    // ---- 6. ROUNDTRIP=1: the exported Reel is the Reel to copy (Copy a Reel), on the same clips. What the original edit
+    // really had is known here, so the copy is measured against the truth, not against what the reader saw (copyMatch)
+    if (process.env.ROUNDTRIP && !sc.talk) {
+      const before = await p.evaluate(shotsNow);
+      t0 = now();
+      await p.setInputFiles('#reffile', path.join(OUT, file));
+      await p.waitForFunction(() => { const S = document.querySelector('.brs').__studio; return S.ref && !document.querySelector('.brs').classList.contains('refread'); }, null, { timeout: 900000 });
+      step('reference read', { ms: now() - t0, read: await p.evaluate(() => { const R = document.querySelector('.brs').__studio.ref; return { shots: (R.moments || []).length, dur: R.dur, trans: R.trans || null, look: R.look || null }; }) });
+      await settle();
+      if (await p.evaluate(() => document.querySelector('.brs').__studio.mode !== 'copy')) await p.click('#mode [data-m=copy]', { timeout: 15000 });
+      let g2 = -1, same2 = 0;
+      for (let k = 0; k < 240 && same2 < 6; k++) { await settle(2); const g = await p.evaluate(() => document.querySelector('.brs').__studio.editGen); same2 = g === g2 ? same2 + 1 : 0; g2 = g; await p.waitForTimeout(500); }
+      await p.waitForTimeout(4000);   // the copied look is tuned on the edit's own frames after it is made
+      const after = await p.evaluate(shotsNow);
+      rep.roundtrip = { ms: now() - t0, ...compareEdits(before, after) };
+      fs.writeFileSync(path.join(OUT, `${sc.id}-roundtrip.json`), JSON.stringify({ original: before, copy: after, score: rep.roundtrip }, null, 1));
+      step('roundtrip', rep.roundtrip);
+      await shot('copied');
+    }
     rep.ok = true;
     rep.popups = answered;
   } catch (e) {

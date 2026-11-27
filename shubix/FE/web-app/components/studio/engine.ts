@@ -8321,6 +8321,11 @@ function refLookApplySoon(R){
     if(!edit.length || pending || !reelLen()){ refLookApplySoon(R); return; }
     refLookApply(R); }, 600);
 }
+// "Copy its texts" (Copy a Reel): on unless the creator turned it off; changed after the copy, its texts come or go at once
+function refWordsOn(){ try{ return localStorage.getItem('shubix-ref-words') !== '0'; } catch(e){ return true; } }
+{ const b = $('refwords'); if(b){ b.checked = refWordsOn();
+  b.addEventListener('change', () => { try{ localStorage.setItem('shubix-ref-words', b.checked ? '1' : '0'); } catch(e){}
+    if(refProfile && refProfile.designDone && mode === 'copy'){ refProfile.designDone = false; refLookApply(refProfile); } }); } }
 function refLookApply(R){
   const D = R.design, L = reelLen(); if(!D || !L) return;
   R.designDone = true;
@@ -8329,12 +8334,13 @@ function refLookApply(R){
   const sizeOf = (hf, emoji) => clip(emoji ? hf*R.h/(base*0.16) : hf*R.h/0.75/(base*0.075), 0.4, 2.6);
   const timing = (ov, x) => { const whole = x.t0 <= 0.05 && x.t1 >= R.dur - 0.05; ov.all = whole; ov.t0 = whole ? 0 : Math.max(0, Math.min(L - 0.5, x.t0*k)); ov.t1 = whole ? L : Math.min(L, Math.max(ov.t0 + 0.5, x.t1*k)); ov.ref = true; };
   overlays = overlays.filter(o => !o.ref);   // an earlier reference's texts go
-  // only the format is copied, never the other Reel's words: each text's place, style, colour, entrance and time wait for
-  // the creator's own words (ph: shown while editing, left out of the video until something is written)
-  for(const x of D.texts || []){ const ov = addOverlay({ text: 'YOUR TEXT', style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false) }); ov.ph = true; timing(ov, x); }
+  // its texts as on the Reel, their words too (the server leaves out Instagram's marks and @names: never a watermark);
+  // "Copy its texts" off (2026-11-27, the creator's choice, kept): none of them
+  const words = refWordsOn();
+  for(const x of words ? D.texts || [] : []){ const ov = addOverlay({ text: x.text || 'YOUR TEXT', style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false) }); if(!x.text) ov.ph = true; timing(ov, x); }
   for(const x of D.stickers || []){ const ov = addOverlay({ text: x.emoji, emoji: true, x: x.x, y: x.y, size: sizeOf(x.h, true) }); timing(ov, x); }
   const said = [];
-  if(D.texts && D.texts.length) said.push(D.texts.length + ' text place' + (D.texts.length > 1 ? 's' : ''));
+  if(words && D.texts && D.texts.length) said.push(D.texts.length + ' text' + (D.texts.length > 1 ? 's' : ''));
   if(D.stickers && D.stickers.length) said.push(D.stickers.length + ' sticker' + (D.stickers.length > 1 ? 's' : ''));
   if(D.captions){ press('tstyle', 't', D.captions.style); ACCENT = D.captions.color || ACCENT;
     if(!capsOn && !$('capwrap').hidden){ $('caps').checked = true; capsOn = true; $('caprow').hidden = false; loadCaptions(); }
