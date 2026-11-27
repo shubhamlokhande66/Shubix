@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Image, Modal, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
+import { AppState, FlatList, Image, Linking, Modal, Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import type { ImagePickerAsset } from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library/legacy";
@@ -12,7 +12,9 @@ import { Thumb } from "./CreateFlow";
 /** Shubix's own gallery, as WhatsApp's: the phone's videos (or photos) newest first, its albums along the top (Camera,
  * WhatsApp, Downloads, Screenshots… every folder on the phone and the SD card); each tap numbers a clip (1, 2, 3…, a
  * second tap takes it out) and the clips come back in exactly that order ("In my order"). "Files" opens the phone's file
- * picker for anything else (Drive, other apps). Without the gallery permission, or in a browser: that file picker. */
+ * picker for anything else (Drive, other apps). In a browser: that file picker.
+ * The phone's permission is asked the proper way: first Shubix says why (its own screen), then Android's own question;
+ * when it was refused for good, the same screen opens the phone's Settings, and "Files" always works without it. */
 type Want = { kind: "video" | "image" | "both"; limit: number };
 type Asset = ImagePickerAsset;
 type Album = { id: string; title: string; count: number };
@@ -33,8 +35,6 @@ const filePick = async ({ kind, limit }: Want): Promise<Asset[] | null> => {
 /** The clips chosen, in the order tapped (null: closed without choosing). */
 export async function pickInOrder(want: Want): Promise<Asset[] | null> {
   if (Platform.OS === "web" || !show) return filePick(want);
-  const p = await MediaLibrary.requestPermissionsAsync(false, ["photo", "video"]).catch(() => null);
-  if (!p?.granted) return filePick(want);
   return new Promise((resolve) => show!(want, resolve));
 }
 
@@ -43,6 +43,10 @@ async function asAsset(a: MediaLibrary.Asset): Promise<Asset> {
   const uri = Platform.OS === "ios" ? (await MediaLibrary.getAssetInfoAsync(a)).localUri ?? a.uri : a.uri;
   return { uri, assetId: a.id, fileName: a.filename, width: a.width, height: a.height, type: a.mediaType === "photo" ? "image" : "video", duration: a.mediaType === "video" ? a.duration * 1000 : null };
 }
+/** What the phone allows: "ok" (all or some of the gallery), "ask" (Android may still ask), "settings" (only in Settings). */
+type Access = "ok" | "ask" | "settings" | "checking";
+const accessOf = (p: MediaLibrary.PermissionResponse | null): Access => (p?.granted || p?.accessPrivileges === "limited" ? "ok" : p?.canAskAgain === false ? "settings" : "ask");
+const permission = () => MediaLibrary.getPermissionsAsync(false, ["photo", "video"]).catch(() => null);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 /** One square. Android draws a video's picture from the phone's own thumbnail (fast, small, cached, as WhatsApp does);
@@ -72,6 +76,7 @@ export function GalleryHost() {
   const [want, setWant] = useState<Want | null>(null), [done, setDone] = useState<((a: Asset[] | null) => void) | null>(null);
   const [items, setItems] = useState<MediaLibrary.Asset[]>([]), [more, setMore] = useState(true), [albums, setAlbums] = useState<Album[]>([]), [album, setAlbum] = useState<string | undefined>();
   const [picked, setPicked] = useState<MediaLibrary.Asset[]>([]), [limited, setLimited] = useState(false), [busy, setBusy] = useState(false);
+  const [access, setAccess] = useState<Access>("checking");
   const page = useRef({ after: undefined as string | undefined, loading: false, gen: 0 });
   useEffect(() => { show = (w, d) => { setWant(w); setDone(() => d); setPicked([]); setAlbum(undefined); }; return () => { show = null; }; }, []);
 
@@ -87,16 +92,28 @@ export function GalleryHost() {
       pg.after = r.endCursor; setMore(r.hasNextPage); setItems((old) => (reset ? r.assets : [...old, ...r.assets]));
     } finally { if (gen === pg.gen) pg.loading = false; }
   }
+  // on opening, and on coming back from the phone's Settings: what the phone allows now
   useEffect(() => {
     if (!want) return;
+    setAccess("checking"); void permission().then((p) => setAccess(accessOf(p)));
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") void permission().then((p) => setAccess((a) => (a === "ok" ? a : accessOf(p)))); });
+    return () => sub.remove();
+  }, [want]);
+  async function allow() {
+    if (access === "settings") return void Linking.openSettings().catch(() => {});
+    const p = await MediaLibrary.requestPermissionsAsync(false, ["photo", "video"]).catch(() => null);
+    setAccess(accessOf(p));
+  }
+  useEffect(() => {
+    if (!want || access !== "ok") return;
     setItems([]); setMore(true); void load(true);
-  }, [want, album]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [want, album, access]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!want) return;
+    if (!want || access !== "ok") return;
     void MediaLibrary.getPermissionsAsync(false, ["photo", "video"]).then((p) => setLimited(p.accessPrivileges === "limited"));
     // the phone's folders with something in them, the biggest first
     void MediaLibrary.getAlbumsAsync({ includeSmartAlbums: true }).then((list) => setAlbums(list.filter((a) => a.assetCount > 0).sort((a, b) => b.assetCount - a.assetCount).map((a) => ({ id: a.id, title: a.title, count: a.assetCount })))).catch(() => setAlbums([]));
-  }, [want]);
+  }, [want, access]);
 
   const close = (out: Asset[] | null) => { done?.(out); setWant(null); setDone(null); setItems([]); };
   const limit = want?.limit ?? 30;
@@ -117,6 +134,19 @@ export function GalleryHost() {
           </View>
           <Button title={words("Add")} disabled={!picked.length} loading={busy} onPress={() => void finish()} />
         </View>
+        {access !== "ok" ? (
+          <View className="flex-1 items-center justify-center gap-4 px-8">
+            {access !== "checking" && <>
+              <View className="h-16 w-16 items-center justify-center rounded-full bg-accent/15"><Icon name="upload" size={28} color="accent" /></View>
+              <Text className="text-center text-[18px] font-semibold text-foreground">{words(want?.kind === "image" ? "Let Shubix see your photos" : "Let Shubix see your videos")}</Text>
+              <Text className="text-center text-[13.5px] leading-5 text-muted">{words(access === "settings"
+                ? "Shubix needs your gallery to show your clips here. Open Settings → Permissions → Photos and videos, and choose Allow."
+                : "Shubix shows your gallery here so you can tap clips in the order they should play. They stay on your phone until you make your Reel.")}</Text>
+              <Button title={words(access === "settings" ? "Open Settings" : "Allow")} onPress={() => void allow()} />
+              <Pressable onPress={() => void files()} hitSlop={8} accessibilityRole="button"><Text className="text-[13.5px] font-semibold text-accent">{words("Choose from Files instead")}</Text></Pressable>
+            </>}
+          </View>
+        ) : <>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="max-h-[52px] flex-grow-0" contentContainerClassName="items-center gap-2 px-3 py-2.5">
           <Pressable onPress={() => void files()} className="flex-row items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 py-1.5">
             <Icon name="upload" size={14} color="accent" /><Text className="text-[12.5px] font-semibold text-foreground">{words("Files")}</Text>
@@ -135,6 +165,7 @@ export function GalleryHost() {
           onEndReached={() => void load()} onEndReachedThreshold={1.5} initialNumToRender={24} maxToRenderPerBatch={18} windowSize={11} removeClippedSubviews
           ListEmptyComponent={<Text className="p-8 text-center text-[13px] text-muted">{words(more ? "Loading…" : "Nothing here yet.")}</Text>}
           extraData={picked} renderItem={({ item }) => <Cell item={item} n={picked.findIndex((x) => x.id === item.id) + 1} size={cell} onTap={tap} />} />
+        </>}
       </View></ThemeLayer>
     </Modal>
   );

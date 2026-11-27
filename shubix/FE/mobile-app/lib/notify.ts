@@ -8,7 +8,7 @@ import { mobileApi } from "./api";
 
 /** The phone's own notifications: the administrator's new messages (the bell's, Admin → Messages) and a Reel exported
  * while the app was away. A tap opens the message's page. Asked for once (Android 13+), never before something to say. */
-const web = Platform.OS === "web", SEEN = "shubix.notes.told";
+const web = Platform.OS === "web", SEEN = "shubix.notes.told", ASKED = "shubix.notify.asked";
 if (!web) Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }) });
 
 async function allowed() {
@@ -21,8 +21,20 @@ async function allowed() {
 export async function notify(title: string, body: string, link?: string) {
   try { if (await allowed()) await Notifications.scheduleNotificationAsync({ content: { title, body, data: link ? { link } : {} }, trigger: null }); } catch { /* not on this phone */ }
 }
-/** Only while the app is not on screen (a Reel finished in the background). */
-export const notifyAway = (title: string, body: string, link?: string) => { if (AppState.currentState !== "active") void notify(title, body, link); };
+/** Only while the app is not on screen (a Reel finished in the background), and only when already allowed: Android
+ * cannot ask while the app is away, so the question is asked before, with `askNotify`. */
+export const notifyAway = (title: string, body: string, link?: string) => {
+  if (web || AppState.currentState === "active") return;
+  void Notifications.getPermissionsAsync().then((p) => (p.granted ? notify(title, body, link) : undefined)).catch(() => {});
+};
+/** Asked once, at the moment it means something (a Reel starts: "tell me when it's ready"), never on opening the app. */
+export async function askNotify() {
+  try {
+    if (web || (await SecureStore.getItemAsync(ASKED))) return;
+    await SecureStore.setItemAsync(ASKED, "1");
+    await allowed();
+  } catch { /* not on this phone */ }
+}
 
 /** In the app's frame: a tap on a notification opens its page; the bell's new messages told once each. */
 export function useNotes(signedIn: boolean) {
