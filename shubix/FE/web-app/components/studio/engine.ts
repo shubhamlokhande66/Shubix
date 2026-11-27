@@ -6473,7 +6473,7 @@ async function loadCaptions(){
   const from = !tk && !vk && secStart + buf.duration > 179 ? secStart : 0;   // a part past 3 minutes: from where it starts
   const lang = $('caplang').value, key = (tk ? 'talk|' + talk.sig : vk ? 'vo|' + vo.key : song ? song.key : musicKey) + '|' + from.toFixed(2) + '|' + lang, token = musicToken;
   if(capCache.has(key)){ capAll = capCache.get(key); capKeyNow = key; shiftCaptions(); capStat(capWords.length + ' words'); return; }
-  capStat('Listening to the words of the song…');
+  capStat(tk || vk ? 'Listening to what is said…' : 'Listening to the words of the song…');
   try{
     const wav = await songWav(M, sr, from);
     const r = await apiFetch('/api/studio/transcribe?lang=' + encodeURIComponent(lang), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: wav, signal: ac.signal });
