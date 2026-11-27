@@ -156,7 +156,7 @@ export function createNativeEngine(io: NativeIo) {
     if (!plan) return null;
     const known = previews.get(name); if (known) return known;
     const job = (async () => {
-      const made = await io.fetch(url("copy", `&p=${encodeURIComponent(path)}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}&k=0.25`), { method: "POST" });
+      const made = await io.fetch(url("copy", `&p=${encodeURIComponent(path)}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}&gop=0.25`), { method: "POST" });
       return made.ok ? (await made.json() as { path: string }).path : null;
     })().catch(() => null);
     previews.set(name, job);

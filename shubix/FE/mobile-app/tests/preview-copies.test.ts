@@ -35,7 +35,7 @@ describe("the preview's small copies", () => {
     expect(pv).toEqual({ "1-a.mp4": "/cache/small-a.mp4" });   // the small clip plays as it is
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain("w=540&h=960");
-    expect(asked[0]).toContain("k=0.25");
+    expect(asked[0]).toContain("gop=0.25");
     expect(scanned).toEqual(["/cache/small-a.mp4", "/b.mp4"]);
     expect(faced).toEqual(["/cache/small-a.mp4 1080x1920", "/b.mp4 540x960"]);   // faces placed on the clip's own size
     // the clip the Reel and its export use is the clip itself

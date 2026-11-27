@@ -139,7 +139,10 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
         finally { decoders.release(); out.flush() }
       }
       url.path == "/song" && method == "POST" -> {
-        val body = ByteArray((headers["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 400_000_000)); var read = 0
+        // at most 20 minutes of 48 kHz sound as floats (230 MB): a bigger body is refused, never held in memory
+        val len = headers["content-length"]?.toLongOrNull() ?: 0L
+        if (len <= 0L || len > 230_000_000L) return@use reply(out, 413, "Too Large", emptyMap(), "sound too long".toByteArray())
+        val body = ByteArray(len.toInt()); var read = 0
         while (read < body.size) { val n = input.read(body, read, body.size - read); if (n <= 0) break; read += n }
         try { reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), songFromRequest(body).toString().toByteArray()) }
         catch (e: Throwable) { reply(out, 500, "Song failed", mapOf("Content-Type" to "text/plain"), (e.message ?: "song failed").toByteArray()) }
@@ -148,7 +151,10 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
       // 32 ms (Silero VAD, Models.kt) as 32-bit floats. A talking video's pauses are cut by it (talk.ts)
       url.path == "/speech" && method == "POST" -> {
         val sr = url.getQueryParameter("sr")?.toIntOrNull() ?: 0
-        val body = ByteArray((headers["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 400_000_000)); var read = 0
+        // at most 20 minutes of 48 kHz sound as floats (230 MB): a bigger body is refused, never held in memory
+        val len = headers["content-length"]?.toLongOrNull() ?: 0L
+        if (len <= 0L || len > 230_000_000L) return@use reply(out, 413, "Too Large", emptyMap(), "sound too long".toByteArray())
+        val body = ByteArray(len.toInt()); var read = 0
         while (read < body.size) { val n = input.read(body, read, body.size - read); if (n <= 0) break; read += n }
         if (sr <= 0 || read < 4) return@use reply(out, 400, "Bad Request", emptyMap(), "no sound".toByteArray())
         try {
@@ -174,14 +180,14 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
         val f = File(url.getQueryParameter("p") ?: "")
         val w = url.getQueryParameter("w")?.toIntOrNull() ?: 0; val h = url.getQueryParameter("h")?.toIntOrNull() ?: 0
         val fps = url.getQueryParameter("fps")?.toFloatOrNull() ?: 30f; val rate = url.getQueryParameter("b")?.toIntOrNull() ?: 6_000_000
-        // the key frame every `k` seconds: 0.5 for an edit copy, 0.25 for the editor's small preview copy
-        val key = (url.getQueryParameter("k")?.toFloatOrNull() ?: 0.5f).coerceIn(0.1f, 2f)
+        // a key frame every `gop` seconds: 0.5 for an edit copy, 0.25 for the editor's small preview copy (not `k`: the key)
+        val gop = (url.getQueryParameter("gop")?.toFloatOrNull() ?: 0.5f).coerceIn(0.1f, 2f)
         if (!f.isFile || !inside(f) || w !in 2..3840 || h !in 2..3840) return@use reply(out, 404, "Not Found", emptyMap(), null)
         // the same clip at the same size is made once
-        val to = File(outDir.apply { mkdirs() }, "copy-${(f.path + f.length() + f.lastModified() + w + h + fps + rate + (if (key == 0.5f) "" else "k$key")).hashCode().toUInt()}.mp4")
+        val to = File(outDir.apply { mkdirs() }, "copy-${(f.path + f.length() + f.lastModified() + w + h + fps + rate + (if (gop == 0.5f) "" else "g$gop")).hashCode().toUInt()}.mp4")
         copies.acquire()   // the phone's hardware encoder: one copy at a time; the others wait for their turn
         try {
-          if (!to.isFile || to.length() == 0L) makeEditCopy(context, f, to, w, h, fps, rate, key)
+          if (!to.isFile || to.length() == 0L) makeEditCopy(context, f, to, w, h, fps, rate, gop)
           reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), "{\"path\":${org.json.JSONObject.quote(to.absolutePath)}}".toByteArray())
         } catch (e: Exception) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no copy").toByteArray()) }
         finally { copies.release() }
