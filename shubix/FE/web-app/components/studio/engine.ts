@@ -1934,13 +1934,15 @@ async function buildTalk(){
     while(p.b - a > 5){ const m = splitPoint(v, a, p.b); shots.push({ si: p.si, in: a, start: t0, end: t0 + (m - a) }); t0 += m - a; a = m; }
     shots.push({ si: p.si, in: a, start: t0, end: p.t1 });
   }
-  const useCount = sources.map(()=>0); let zoomed = false;
+  const useCount = sources.map(()=>0);
   const keptUk = ukKeep();
-  edit = shots.map((sh, i) => {
-    const prev = shots[i-1], sameTake = prev && prev.si === sh.si;
-    zoomed = sameTake ? !zoomed : false;
-    const src = sources[sh.si], e = { start: sh.start, end: sh.end, type: 'cut', fx: 'Hard cut', tr: 'hard', efx: zoomed ? 'jump' : 'none', sp: SPEED.normal,
-      src: sh.si, in: sh.in, scaleR: 1, cx: 0.5, cy: 0.45, face: 0, fs: 0, mot: 0, ov: 0, el: src.els[(useCount[sh.si]++)%3], dirWhy: '', why: sameTake ? 'jump cut: framed closer' : '' };
+  // the talking video is shown as it was filmed (2026-11-27, the creator's ask): no punch-in on a jump cut, and a video
+  // wider than the Reel is fitted whole over its own blurred copy, not cut down at its sides
+  const [cW, cH] = SIZES[aspect];
+  edit = shots.map((sh) => {
+    const src = sources[sh.si], e = { start: sh.start, end: sh.end, type: 'cut', fx: 'Hard cut', tr: 'hard', efx: 'none', sp: SPEED.normal,
+      src: sh.si, in: sh.in, scaleR: 1, cx: 0.5, cy: 0.45, face: 0, fs: 0, mot: 0, ov: 0, el: src.els[(useCount[sh.si]++)%3], dirWhy: '', why: '' };
+    if(src.w && src.h && src.w/src.h > (cW/cH)*1.15) e.cs = { fit: true, bg: 'blur' };
     const fz = (src.faces || []).filter(f => f.n > 0 && f.t >= sh.in && f.t <= sh.in + (sh.end - sh.start));
     if(fz.length){ e.face = fz.length/Math.max(1, (src.faces || []).filter(f => f.t >= sh.in && f.t <= sh.in + (sh.end - sh.start)).length);
       e.cx = fz.reduce((q,f)=>q + f.fx, 0)/fz.length; e.cy = fz.reduce((q,f)=>q + f.fy, 0)/fz.length; e.fs = fz.reduce((q,f)=>q + (f.fs || 0), 0)/fz.length; }
@@ -5855,7 +5857,8 @@ function drawWatermark(){
 /* ---- captions for talking: the key word of each line, highlighted, and a zoom punch on it ----
  * In talking videos and voiceovers one word per caption line is the key word: the one said hardest (its loudness against
  * the line's) that is not a small word, numbers and long words counting a little more. It is drawn in the accent colour,
- * bigger, with an emoji when one fits, and the picture punches in on it (8% over 0.12 s, eased back over 0.6 s). */
+ * bigger, with an emoji when one fits, and, with a voiceover (not in a Talking Reel), the picture punches in on it (8% over
+ * 0.12 s, eased back over 0.6 s). */
 let keyOn = true;
 const STOP = new Set('a an the and or but so to of in on at for with from by is are was were be been am i you he she it we they me my your our this that these those do does did not no yes just very really then than if as up out about into over also can will would there here what when how why who all any some more most much many one'.split(' ')
   .concat('है हैं था थी थे और या के की का को में से पर यह वह ये वो तो भी ही ना न हाँ आणि हे ते ती तो आहे आहेत होता होती चा ची चे ला ने मध्ये पण तर ही'.split(' ')));
@@ -5879,6 +5882,8 @@ function markKeyWords(lines){
 }
 // the zoom punch at time t: 1 when there is none
 function emphAt(t){
+  // a talking video is shown as it was filmed (2026-11-27): its key words are highlighted, the picture does not zoom on them
+  if(kind === 'talk') return 1;
   if(!keyOn || !capsOn || !capLines || !speakingVoice()) return 1;
   let z = 1;
   for(const L of capLines){ if(L.a > t + 0.01 || L.b < t - 1) continue; for(const w of L.words){ if(!w.key) continue; const d = t - w.start; if(d < 0 || d > 0.72) continue;
@@ -9143,7 +9148,11 @@ window.addEventListener('beforeunload', e => {
 // the page was reloaded in the middle of the Create steps: the Reel so far is a draft on this phone; offer it back
 async function resumeOffer(){
   let id = ''; try{ id = sessionStorage.getItem('brs-resume:' + location.pathname) || ''; }catch(e){}
-  if(!id || new URLSearchParams(location.search).get('p')) return;
+  const qs = new URLSearchParams(location.search);
+  // a video just handed over from Vlog / Talking video is a new Reel: the old draft is not offered over it (it stopped the
+  // Reel being made by itself, 2026-11-27)
+  if(qs.get('from') === 'clips'){ try{ sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){} return; }
+  if(!id || qs.get('p')) return;
   const p = await idb('meta', 'readonly', st => st.get(id)).catch(() => null); if(!p) return;
   // what is waiting, in plain words: its name, its clips and length, when it was saved
   const n = (p.state && Array.isArray(p.state.clips)) ? p.state.clips.length : 0, mins = Math.max(0, Math.round((Date.now() - (p.updated || Date.now()))/60000));
