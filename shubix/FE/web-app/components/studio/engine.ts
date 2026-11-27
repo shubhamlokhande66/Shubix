@@ -54,6 +54,8 @@ const ac = new AbortController(), SIG = { signal: ac.signal };
 const IOS = typeof navigator !== 'undefined' && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 // a phone or a tablet (a small screen too): its decoder is slow and few, so big clips are read from their light copies
 const phoneLike = () => IOS || /Android|Mobi/i.test(navigator.userAgent) || matchMedia('(max-width:1023px)').matches;
+// this browser makes H.264 copies of this size with WebCodecs (fast), not by recording them in real time
+const fastEncoder = async plan => { try{ return typeof VideoEncoder !== 'undefined' && !!(await VideoEncoder.isConfigSupported({ codec: 'avc1.42001f', width: plan.width, height: plan.height, bitrate: plan.bitrate })).supported; }catch(e){ return false; } };
 // Browser hints are advisory (Safari/iOS often hides deviceMemory). Prefer a smaller decoder working set
 // on iOS and low-memory Android devices; this trades a little parallel decode for fewer export OOMs.
 const DEVICE_MEMORY_GB = typeof navigator !== 'undefined' ? Number(navigator.deviceMemory) || 0 : 0;
@@ -1610,7 +1612,8 @@ async function compressHighResolutionPreview(src, dd){
   updateClipHoverInfo(src);
   // on a phone the copy comes first and the clip is read from it (clipReader's light): one decode of the big file, not
   // a copy and a reading of it at once (ten 30 s 4K clips hung phones, 2026-11-27). A computer reads now, the copy behind
-  if(phoneLike() && typeof VideoEncoder !== 'undefined') await lightCopy(src, dd, plan);
+  // (only with a fast encoder: a browser without H.264 in WebCodecs records the copy in real time, as long as the clip)
+  if(phoneLike() && await fastEncoder(plan)) await lightCopy(src, dd, plan);
   else bgCopy(src, () => lightCopy(src, dd, plan));
 }
 async function lightCopy(src, dd, plan){
