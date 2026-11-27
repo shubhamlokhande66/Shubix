@@ -201,7 +201,9 @@ async function playerToEncoder(file: File, plan: PreviewProxyPlan, onProgress?: 
     const emit = (upTo: number) => {
       while (slot * step <= upTo + 1e-6 && slot * step < dur) {
         // Rec. 709 limited range made here (lib/videoColor.ts): the export reads this copy, so its colours stay the clip's
-        const sample = new mb.VideoSample(i420Of(g, canvas.width, canvas.height), { format: "I420", codedWidth: canvas.width, codedHeight: canvas.height, timestamp: slot * step, duration: step, colorSpace: REC709 });
+        let sample: InstanceType<typeof mb.VideoSample>;
+        try { sample = new mb.VideoSample(i420Of(g, canvas.width, canvas.height), { format: "I420", codedWidth: canvas.width, codedHeight: canvas.height, timestamp: slot * step, duration: step, colorSpace: REC709 }); }
+        catch { sample = new mb.VideoSample(canvas, { timestamp: slot * step, duration: step }); }   // (a browser without it: the canvas, as before)
         chain = chain.then(() => vs.add(sample)).catch(e => { failed = e; }).finally(() => sample.close());
         slot++;
       }
