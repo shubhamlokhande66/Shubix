@@ -22,6 +22,7 @@ import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, 
 import { boxShots, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
+import { i420Of, REC709 } from '@/lib/videoColor';
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { commandsFor, choicesFor } from '@shubix/core/lib/chatCommands';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -7480,7 +7481,9 @@ async function fastExport(){
       return ab; };
 
     const output = new mb.Output({ format: mp4 ? new mb.Mp4OutputFormat({ fastStart: 'in-memory' }) : new mb.WebMOutputFormat(), target: new mb.BufferTarget() });
-    const vs = new mb.CanvasSource(out, { codec: vcodec, bitrate: XQ[xq.res].bitrate * (fps > 30 ? 1.5 : 1), keyFrameInterval: 2 });
+    // each frame made into Rec. 709 limited-range video here (lib/videoColor.ts), not by the browser: its own made the colours
+    // of the export differ from the preview (crushed blacks, stronger colours), and differently on each device
+    const vs = new mb.VideoSampleSource({ codec: vcodec, bitrate: XQ[xq.res].bitrate * (fps > 30 ? 1.5 : 1), keyFrameInterval: 2 });
     const as = audio ? new mb.AudioBufferSource({ codec: acodec, bitrate: 256e3 }) : null;   // no sound at all: no audio track
     output.addVideoTrack(vs, { frameRate: fps });
     if(as) output.addAudioTrack(as);
@@ -7612,7 +7615,8 @@ async function fastExport(){
           if(firstUsefulFrame || periodicFrame){ qualityFrames.push(sampleQualityFrame(k/fps)); lastQualityShot = i; }
         }
         const tb = performance.now(); prof.draw += tb - ta;
-        await vs.add(k/fps, 1/fps);
+        { const sample = new mb.VideoSample(i420Of(og, out.width, out.height), { format: 'I420', codedWidth: out.width, codedHeight: out.height, timestamp: k/fps, duration: 1/fps, colorSpace: REC709 });
+          try{ await vs.add(sample); } finally { sample.close(); } }
         if(expCancel){ const err = new Error('Export cancelled'); err.code = 'CANCELLED'; throw err; }
         tq = performance.now(); prof.encode += tq - tb; prof.frames++;
         while(as && nextAudio <= k/fps + 1 && nextAudio*1 < dur){ const ab = chunkOf(nextAudio); if(ab) await as.add(ab); nextAudio++; }
@@ -9226,8 +9230,10 @@ async function openProject(id){
   finally{ if(keepSaved && edit.length) aiDoneSig = inputSig(); lastSig = JSON.stringify(stateOf()); restoring = false; root.classList.remove('opening');
     // nothing to show (gone, or its files are not on this phone): say so, not a blank page
     if(!edit.length && !sources.length && expectedClips){ root.classList.add('openfail'); $('openh').textContent = 'This Reel could not be opened'; }
-    // a Reel left in the Create steps (a song, no clips yet): not an empty editor, but its steps again, where it was left
-    else if(!edit.length && !sources.length && proj && /^\/(editor|create\/edit)$/.test(location.pathname)){
+    // a Reel left in the Create steps (a song, no clips yet; or its clips, never made: Pricing was opened from Make Reel to buy
+    // credits): not an empty editor, but its steps again, where it was left. Make Reel there asks Shubix AI or the Free edit
+    // again, with the credits now on the account (a draft opened from Home or My Reels is /editor?p=…)
+    else if(!edit.length && (!sources.length || kind !== 'talk') && proj && /^\/(editor|create\/edit)$/.test(location.pathname)){
       const slug = { talk: 'talking', photo: 'photo', copy: 'copy' }[kind] || 'music';
       location.replace('/create/' + slug + '?p=' + encodeURIComponent(proj.id) + '&step=' + (song ? 'clips' : 'choose'));
     } }

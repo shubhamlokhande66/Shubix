@@ -57,11 +57,27 @@ function MyCredits({ c }: { c: Extract<Credits, { enabled: true }> }) {
   );
 }
 
-/** The studio sent them here (?back=): their Reel is saved, this goes back to it (a whole page load: the studio's own setup). */
+/** The studio sent them here (?back=): their Reel is saved, this goes back to it (a whole page load: the studio's own setup).
+ * Kept in this tab too: Cashfree's own page comes back to /pricing?order=… without it. */
+const BACK = "shubix-pricing-back";
+function reelBack(): string {
+  try {
+    const q = new URLSearchParams(window.location.search), b = q.get("back");
+    if (b) { sessionStorage.setItem(BACK, safeNext(b)); return safeNext(b); }
+    if (q.has("order") && sessionStorage.getItem(BACK)) return safeNext(sessionStorage.getItem(BACK));   // back from Cashfree's page
+    sessionStorage.removeItem(BACK); return "";   // Pricing opened by itself: an older Reel is not gone back to
+  } catch { return ""; }
+}
+/** Paid: back to the Reel at once (its Make Reel asks Shubix AI again, with the new credits); nothing to go back to: stay */
+function backAfterPaid(back = reelBack()) {
+  if (!back || back === "/") return;
+  try { sessionStorage.removeItem(BACK); } catch { /* private mode */ }
+  setTimeout(() => window.location.assign(back), 1200);   // the "paid" note is seen first
+}
 function BackToReel({ strong = false }: { strong?: boolean }) {
   const text = useText();
   const [back, setBack] = useState("");
-  useEffect(() => { const b = new URLSearchParams(window.location.search).get("back"); if (b) setBack(safeNext(b)); }, []);
+  useEffect(() => { setBack(reelBack()); }, []);
   if (!back || back === "/") return null;
   return <a href={back} className={buttonClass({ variant: strong ? "primary" : "secondary", className: "self-center" })}>{text("pricing.backToReel")}</a>;
 }
@@ -98,6 +114,7 @@ export default function PricingPage() {
       if (r.status === "paid") {
         qc.setQueryData(["credits"], r.credits);
         setNotice({ ok: true, text: text("pricing.paid", { item: label }) });
+        backAfterPaid();
       } else if (r.status === "failed") {
         setNotice({ ok: false, text: r.message });
       }
@@ -111,9 +128,10 @@ export default function PricingPage() {
   useEffect(() => {
     const u = new URL(location.href), order = u.searchParams.get("order");
     if (!order) return;
+    const back = reelBack();   // (before ?order= is taken off the address)
     u.searchParams.delete("order"); history.replaceState(history.state, "", u);
     void paidOrder(order).then((r) => {
-      if (r.status === "paid") { qc.setQueryData(["credits"], r.credits); setNotice({ ok: true, text: text("pricing.paidBack") }); }
+      if (r.status === "paid") { qc.setQueryData(["credits"], r.credits); setNotice({ ok: true, text: text("pricing.paidBack") }); backAfterPaid(back); }
       else if (r.status === "failed") setNotice({ ok: false, text: r.message });
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, as the page opens

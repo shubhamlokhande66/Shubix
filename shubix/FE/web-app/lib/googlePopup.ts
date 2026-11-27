@@ -23,16 +23,22 @@ export function tellSignedIn() {
  * with `poll` every 3 s), then calls `done` once. */
 export function watchSignIn(done: () => void, poll: boolean): () => void {
   let busy = false, over = false;
+  // with `poll` (Google's page open) it asks even while this page is hidden: a phone opens Google as a tab over this one,
+  // and these questions keep the API awake (it sleeps 30 s after the last request). Choosing an account took longer, so
+  // Google came back to a sleeping server: a long wait, an error, then a second try worked (2026-11-27)
   const check = async (told = false) => {
-    if (busy || over || (document.hidden && !told)) return;
+    if (busy || over || (document.hidden && !told && !poll)) return;
     busy = true;
     try { if (!(await needsSignIn()) && !over) { over = true; done(); } } finally { busy = false; }
   };
   const seen = () => void check();
+  const shown = () => { if (!document.hidden) void check(true); };   // seen again: asked whatever the time
   let c: BroadcastChannel | null = null;
   try { c = new BroadcastChannel(CHANNEL); c.onmessage = () => void check(true); } catch { /* old browser */ }
-  const t = poll ? setInterval(seen, 3000) : undefined;
-  window.addEventListener("focus", seen);
-  document.addEventListener("visibilitychange", seen);
-  return () => { over = true; c?.close(); clearInterval(t); window.removeEventListener("focus", seen); document.removeEventListener("visibilitychange", seen); };
+  // (for 10 minutes at most: a Google tab left open does not keep the server awake for ever; after that, on being seen again)
+  const until = Date.now() + 10 * 60_000;
+  const t = poll ? setInterval(() => { if (Date.now() > until) { clearInterval(t); return; } seen(); }, 3000) : undefined;
+  window.addEventListener("focus", shown);
+  document.addEventListener("visibilitychange", shown);
+  return () => { over = true; c?.close(); clearInterval(t); window.removeEventListener("focus", shown); document.removeEventListener("visibilitychange", shown); };
 }

@@ -76,6 +76,17 @@ export async function exportReel(p: ReelProject, onProgress: (done: number) => v
   const output = `${root}/exports/${safeId}-${Date.now()}.mp4`;
   // a clip played backwards: its own reversed file (a Studio Reel only: its sound comes from the mix)
   const clips = studio ? await Promise.all(p.clips.map(async (c) => c.reverse && c.kind !== "image" ? { ...c, uri: await ShubixVideo!.reverseCopy(c.uri, c.start, c.end), start: 0, end: c.end - c.start, reverse: false } : c)) : p.clips;
+  // Smooth slow-mo (the studio's cs.smooth, on a slowed shot): its blended copy, made before the export (SmoothCopy.kt). The
+  // export plays that file instead (smoothUri) and keeps the shot's own times for its other effects. Only with the studio's
+  // mix (the copy has no sound); an older app without it exports the shot as before
+  if (studio && mix && ShubixVideo.smoothCopy) for (const [i, c] of clips.entries()) {
+    const sm = Number((c.cs as { smooth?: number } | undefined)?.smooth) || 0;
+    if (sm <= 0 || c.kind === "image" || c.reverse || (c.speed >= 0.985 && !c.speedRamp?.length)) continue;
+    try {
+      const made = await ShubixVideo.smoothCopy(c.uri, c.start, c.end, c.speed, c.speedRamp?.length ? JSON.stringify(c.speedRamp) : "", studio.plan.fps || 30, 1920);
+      if (made) clips[i] = { ...c, smoothUri: made } as typeof c;
+    } catch { /* not made: this shot steps as before, the Reel is still exported */ }
+  }
   if (studio) for (const [i, c] of clips.entries()) clips[i] = { ...c, filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", effect: c.effect && !BEAT_FX.has(c.effect) && !isAndroidEffectSupported(c.effect) ? undefined : c.effect };
   const made = nativeSpec({ ...p, clips }, width, height);
   const spec = { ...made, output, ...(studio ? {
@@ -108,6 +119,7 @@ function nativeSpec(p: ReelProject, width: number, height: number, preview = fal
     shaders: { vert: PASS_VERT, pic: PIC_FRAG, grade: GRADE_FRAG, adj: ADJ_FRAG, key: KEY_FRAG, main: MAIN_FRAG, beauty: BEAUTY_FRAG },
     clips: p.clips.map((clip, i) => ({
       uri: clip.uri, kind: clip.kind, start: clip.start, end: clip.end, speed: clip.speed,
+      ...((clip as { smoothUri?: string }).smoothUri ? { smoothUri: (clip as { smoothUri?: string }).smoothUri } : {}),
       speedRamp: clip.speedRamp, keyframes: clip.keyframes, muted: clip.muted, volume: clip.volume,
       rotation: clip.rotation, mirror: clip.mirror, flip: clip.flip, fit: clip.fit, filter: clip.filter,
       effects: clip.effect && clip.effect !== "none" && !PIC_FX[clip.effect] && (!preview || isAndroidEffectSupported(clip.effect)) ? [{ type: clip.effect, intensity: 0.5 }] : [],
@@ -142,12 +154,34 @@ function previewUri(c: ProjectClip) {
   if (ok === undefined) { try { ok = new FsFile(c.preview).exists; } catch { ok = false; } previewOk.set(c.preview, ok); }
   return ok ? c.preview : c.uri;
 }
+/** Smooth slow-mo in the editor's player, as in the export: each slowed shot's blended copy (SmoothCopy.kt), made from
+ * the small preview copy one at a time behind the editor; until it is there the shot plays as before. `smoothReady`
+ * tells the player a copy came, so it loads the Reel again with it. */
+const smoothPrev = new Map<string, string | null>();   // its copy, null while it is made (or it failed)
+const smoothQueue: (() => Promise<void>)[] = [];
+let smoothBusy = false;
+const smoothSeen = new Set<() => void>();
+export function smoothReady(fn: () => void) { smoothSeen.add(fn); return () => { smoothSeen.delete(fn); }; }
+const slowed = (c: ProjectClip) => (Number((c.cs as { smooth?: number } | undefined)?.smooth) || 0) > 0 && c.kind !== "image" && !c.reverse && (c.speed < 0.985 || !!c.speedRamp?.length);
+function smoothPreviewOf(c: ProjectClip, uri: string, ramp: string): string | undefined {
+  if (!ShubixVideo?.smoothCopy) return undefined;
+  const key = [uri, c.start, c.end, c.speed, ramp].join("|");
+  if (smoothPrev.has(key)) return smoothPrev.get(key) ?? undefined;
+  smoothPrev.set(key, null);
+  smoothQueue.push(async () => {
+    try { const made = await ShubixVideo!.smoothCopy!(uri, c.start, c.end, c.speed, ramp, 30, 960); if (made) { smoothPrev.set(key, made); smoothSeen.forEach((f) => f()); } }
+    catch { /* not made: this shot steps in the player, as before */ }
+  });
+  if (!smoothBusy) void (async () => { smoothBusy = true; try { while (smoothQueue.length) await smoothQueue.shift()!(); } finally { smoothBusy = false; } })();
+  return undefined;
+}
 /** the player's spec: the export's, half size (smooth on any phone), without what the phone's engine cannot draw yet
  * (it is left out, never an error: the export still checks it); null when the engine is not in this app */
 export function previewSpec(p: ReelProject, layers: { native?: unknown }[] = []): string | null {
   if (!ShubixVideo || !p.clips.length) return null;
   const [w, h] = SIZE[p.settings?.aspect ?? "9:16"] ?? SIZE["9:16"], k = 540 / Math.min(w, h);
-  const spec = nativeSpec({ ...p, clips: p.clips.map((c) => ({ ...c, ...fitTimes(c), uri: previewUri(c), reverse: false, filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", volume: Math.min(1, c.volume ?? 1) })),
+  const spec = nativeSpec({ ...p, clips: p.clips.map((c) => ({ ...c, ...fitTimes(c), uri: previewUri(c), reverse: false,
+    ...(slowed(c) ? { smoothUri: smoothPreviewOf(c, previewUri(c), fitTimes(c).speedRamp?.length ? JSON.stringify(fitTimes(c).speedRamp) : "") } : {}), filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", volume: Math.min(1, c.volume ?? 1) })),
     overlays: p.overlays.filter((o) => o.text?.trim() && o.end > o.start).slice(0, 40).map((o) => ({ ...o, text: o.text.slice(0, 300), size: Math.min(120, Math.max(8, o.size ?? 36)) })) }, Math.round(w * k / 2) * 2, Math.round(h * k / 2) * 2, true);
   return JSON.stringify({ ...spec, layers: layers.map((l) => l.native).filter(Boolean) });
 }

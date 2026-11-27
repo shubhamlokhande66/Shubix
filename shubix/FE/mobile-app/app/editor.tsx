@@ -16,7 +16,7 @@ import { useLocked } from "../lib/data";
 import { AskShubix, styleFromWords } from "../components/organisms/AskShubix";
 import { ExportScreen } from "../components/organisms/ExportScreen";
 import { pickInOrder } from "../components/organisms/Gallery";
-import { isNativeEffectSupported, isNativeTransitionSupported, previewSpec, videoEngine } from "../lib/video";
+import { isNativeEffectSupported, isNativeTransitionSupported, previewSpec, smoothReady, videoEngine } from "../lib/video";
 import { ShubixPreviewView, type PreviewRef } from "../modules/shubix-video";
 import { type AiPlan, type MyBrand, brandGet, brandSave, engine, onChatStat, textsOf } from "../lib/engine";
 import { TEXT_TEMPLATES } from "@mobile/core/lib/text-templates";
@@ -67,7 +67,10 @@ const CANVAS_COLS = [["#000000", "Black"], ["#FFFFFF", "White"], ["#E85D75", "Pi
  * picture, playing, paused or on a scrubbed frame. Its time moves the playhead; a playhead moved by hand moves it. */
 function ReelPlayer({ p, layers, now, playing, sound, onTime, onEnd, onError }: { p: ReelProject; layers: { native?: unknown }[]; now: number; playing: boolean; sound: boolean; onTime: (t: number) => void; onEnd: () => void; onError: (why: string | null) => void }) {
   const ref = useRef<PreviewRef>(null), told = useRef(now), nowRef = useRef(now); nowRef.current = now;
-  const [loaded, setLoaded] = useState(false), spec = useMemo(() => previewSpec(p, layers), [p, layers]);
+  // a slowed shot's smooth copy made behind (Smooth slow-mo): the Reel is loaded again with it
+  const [smoothN, setSmoothN] = useState(0);
+  useEffect(() => smoothReady(() => setSmoothN((n) => n + 1)), []);
+  const [loaded, setLoaded] = useState(false), spec = useMemo(() => previewSpec(p, layers), [p, layers, smoothN]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!spec) return;
     const t = setTimeout(() => { const v = ref.current; if (!v) return; onError(null); told.current = nowRef.current; v.load(spec, nowRef.current).then(() => setLoaded(true)).catch((e) => onError(errorMessage(e))); }, loaded ? 250 : 0);

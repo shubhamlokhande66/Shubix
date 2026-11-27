@@ -1149,6 +1149,7 @@ function dirLookFit(e, look){
   const need = e.sp.pos(e.end - e.start)*e.scaleR, st = s.samples && s.samples.length ? windowStats(s, e.in, e.in + need) : null;
   return fitLook(look, pictureOf(ES.aiOn && s.ai ? s.ai.frames : null, s.faces, e.in, e.in + need, st ? st.b : undefined, EH.out.height/EH.out.width)).look;
 }
+const slowPart = e => { const len = e.end - e.start; for(let k = 0; k < 20; k++){ const r = EH.rateAt(e, (k + 0.5)/20*len); if(r > 0 && r < 0.985) return true; } return false; };
 function autoTools(){
   if(ES.kind === 'talk' || !ES.edit.length) return;
   ES.edit.forEach(EH.csAutoClear);
@@ -1164,6 +1165,11 @@ function autoTools(){
     // the clips' own sound, as chosen (a shot's own volume set by hand always stays)
     if(ES.au.clip === 'all') EH.csAutoSet(e, { vol: 0.7 });
     else if(ES.au.clip === 'voices' && EH.speechShare(s, e.in, e.in + need) > 0.4) EH.csAutoSet(e, { vol: 0.9 });
+    // a slowed shot (0.5x, a ramp's slow part) glides with Smooth slow-mo, as an editor turns it on in CapCut: 30 fps footage at
+    // half speed shows every picture twice and steps. Not for footage of 50 fps or more played from its own file (its real
+    // pictures fill the slow part); a heavy clip played from its 30 fps edit copy is 30 fps. (The export blends it: SmoothCopy.kt)
+    const fps = s.facts && s.facts.fps || 0;
+    if(!(fps >= 50 && !s.edFile) && slowPart(e)) EH.csAutoSet(e, { smooth: 1 });
   });
   // the AI director's own look for a shot (mirror, black and white, a framed photo, a fade...), like a person's clip tools
   // fitted to the shot's picture first (lookFit.ts): a mask round the subject, a key only on a green screen, gentle curves

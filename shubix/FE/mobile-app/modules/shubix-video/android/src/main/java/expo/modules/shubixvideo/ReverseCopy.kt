@@ -32,10 +32,7 @@ internal fun makeReverseCopy(from: String, to: File, start: Double, end: Double,
     val scale = min(1f, longSide.toFloat() / max(probe.width, probe.height))
     val w = (probe.width * scale / 2).roundToInt() * 2; val h = (probe.height * scale / 2).roundToInt() * 2
     probe.recycle()
-    val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
-      setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-      setInteger(MediaFormat.KEY_BIT_RATE, bitrate); setInteger(MediaFormat.KEY_FRAME_RATE, fps); setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-    }
+    val format = videoFormat(w, h, bitrate, fps)
     val enc = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { codec = it }
     enc.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE); enc.start()
     val mux = MediaMuxer(part.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4).also { muxer = it }
@@ -83,17 +80,29 @@ internal fun makeReverseCopy(from: String, to: File, start: Double, end: Double,
   }
 }
 
-// ARGB pixels into the encoder's planes, whatever their layout (BT.601, the range H.264 encoders expect)
-private fun fillYuv(image: android.media.Image, argb: IntArray, w: Int, h: Int) {
+/** the copies' H.264 format: Rec. 709, limited range, SDR, labelled so every player reads the colours as made */
+internal fun videoFormat(w: Int, h: Int, bitrate: Int, fps: Int): MediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, w, h).apply {
+  setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+  setInteger(MediaFormat.KEY_BIT_RATE, bitrate); setInteger(MediaFormat.KEY_FRAME_RATE, fps); setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+  if (Build.VERSION.SDK_INT >= 24) {
+    setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
+    setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
+    setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
+  }
+}
+
+// ARGB pixels into the encoder's planes, whatever their layout: Rec. 709 in limited range, as the copy is labelled
+// (videoFormat). BT.601 unlabelled was read as 709 by players and the export: reds and greens shifted (2026-11-27)
+internal fun fillYuv(image: android.media.Image, argb: IntArray, w: Int, h: Int) {
   val (py, pu, pv) = image.planes
   val yb = py.buffer; val ub = pu.buffer; val vb = pv.buffer
   for (row in 0 until h) for (col in 0 until w) {
     val c = argb[row * w + col]; val r = (c shr 16) and 255; val g = (c shr 8) and 255; val b = c and 255
-    yb.put(row * py.rowStride + col * py.pixelStride, (((66 * r + 129 * g + 25 * b + 128) shr 8) + 16).toByte())
+    yb.put(row * py.rowStride + col * py.pixelStride, ((47 * r + 157 * g + 16 * b + 4224) shr 8).toByte())
     if (row % 2 == 0 && col % 2 == 0) {
       val cr = row / 2; val cc = col / 2
-      ub.put(cr * pu.rowStride + cc * pu.pixelStride, (((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128).toByte())
-      vb.put(cr * pv.rowStride + cc * pv.pixelStride, (((112 * r - 94 * g - 18 * b + 128) shr 8) + 128).toByte())
+      ub.put(cr * pu.rowStride + cc * pu.pixelStride, (((-26 * r - 86 * g + 112 * b + 128) shr 8) + 128).toByte())
+      vb.put(cr * pv.rowStride + cc * pv.pixelStride, (((112 * r - 102 * g - 10 * b + 128) shr 8) + 128).toByte())
     }
   }
 }
