@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import {
   validateRenderJob,
   type RenderJobSpec,
@@ -235,7 +236,7 @@ export function createAndroidRendererAdapter(options: AndroidRendererOptions): R
         if (nativeCode === "E_EXPORT_CANCELLED") {
           onProgress({ phase: "cancelled", progress: 0 });
         } else {
-          const message = error instanceof Error ? error.message : "Android render failed.";
+          const message = safeMessage(error instanceof Error ? error.message : "", "The export stopped. Please try again.");
           onProgress({ phase: "failed", progress: 0, code: error instanceof UnsupportedAndroidRenderFeature ? error.code : nativeCode || "ANDROID_RENDER_FAILED", message });
         }
         throw error;

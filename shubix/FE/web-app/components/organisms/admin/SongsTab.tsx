@@ -7,6 +7,7 @@ import { EmptyState, ErrorBanner, Field } from "@/components/molecules";
 import { ProgressBar } from "@/components/molecules/ProgressBar";
 import { confirmAction } from "@/components/molecules/ConfirmDialog";
 import { api, errorMessage } from "@/lib/api";
+import { SongSites } from "./SongSites";
 
 /** Admin → Songs: Shubix's song library. A Reel can be made with one of these when the creator has no song ("Choose a
  * song for me" in the studio picks by the clips' energy and these moods). Only songs the business may use in the Reels
@@ -71,6 +72,7 @@ export function SongsTab() {
           ))}
         </section>
       )}
+      <SongSites />
     </div>
   );
 }

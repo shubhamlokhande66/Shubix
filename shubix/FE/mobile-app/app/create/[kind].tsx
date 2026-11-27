@@ -33,6 +33,7 @@ function CreateFlowScreen() {
   // Vlog / Talking video and its old link (the website's one entry for talking videos) are the app's Talking Reel
   const asked = params.kind === "vlog" || params.kind === "clips" ? "talking" : params.kind;
   const kind: FlowKind = (["music", "talking", "photo", "copy"] as const).find((k) => k === asked) ?? "music";
+  const talking = kind === "talking";   // (made by the engine as the website: talk.ts)
   const words = useStudioText(), look = useColors(), insets = useSafeAreaInsets(), queryClient = useQueryClient(), order = ORDER[kind];
   const [step, setStep] = useState<FlowStep>("intro");
   // Make Reel needs an account (free or paid), as on the website: signed out, the sign-in opens over this screen, which
@@ -66,7 +67,8 @@ function CreateFlowScreen() {
   const styleNow = () => styleFromWords(wish);
   // leaving the screen: the studio drops everything (no AI keeps working), so what it held is read again
   const making = useRef(false), stage = useRef<"song" | "clips" | "ai">("song"), askAgain = useRef(false), songStopped = useRef(false), madeReel = useRef<{ id: string; sig: string; media: ImagePicker.ImagePickerAsset[]; song: Song | null; start: number; length: number; kept: { uris: string[]; clips: ProjectClip[] } } | null>(null), kept = useRef<{ uris: string[]; clips: ProjectClip[] }>({ uris: [], clips: [] }), fresh = useRef(false), heard = useRef("");
-  const read = useRef<{ key: string; clips: ProjectClip[]; sources: ProjectClip[] } | null>(null), draft = useRef(`draft-${Date.now()}`);
+  const longTold = useRef("");   // the clips a long reading was told for
+  const read = useRef<{ key: string; clips: ProjectClip[]; sources: ProjectClip[]; names: string[] } | null>(null), draft = useRef(`draft-${Date.now()}`);
   const stop = () => { making.current = false; tasks.clear("flow"); read.current = null; heard.current = ""; fresh.current = true; engine.stop(); };
   // the popup's Cancel: the studio stops what is running, what is done stays done, and Next goes on from there
   const cancelWork = () => {
@@ -143,6 +145,10 @@ function CreateFlowScreen() {
   async function readClips(list: ImagePicker.ImagePickerAsset[], sg: Song | null = song) {
     stage.current = "clips"; making.current = true; setWorking(true);
     tasks.start("flow", "clips", words("Adding your clips"), `${words("Clip")} 1 / ${list.length}`);
+    // a lot of footage (long or many clips): said once, nothing held back. Every second is read, so the Reel stays as
+    // accurate; it only takes longer (about a quarter of the footage's length on a mid-range phone)
+    const footage = list.reduce((t, m) => t + (m.type === "video" ? (m.duration ?? 0) / 1000 : 0), 0);
+    if (footage > 300 && longTold.current !== keyOf(list)) { longTold.current = keyOf(list); tell(words("{m} min of video: reading it takes about {n} min. Keep Shubix open.", { m: Math.round(footage / 60), n: Math.max(1, Math.round(footage / 240)) })); }
     // each clip's card says how it goes (its number in the name it is read by)
     setClipState((was) => Object.fromEntries(list.map((m) => [m.uri, was[m.uri] === "ok" ? "ok" : "wait"])));
     onClipRead((name, ok, best) => { const m = list.find((x) => keptBy.current.get(x.uri)?.name === name); if (!m) return; setClipState((was) => ({ ...was, [m.uri]: ok ? "ok" : "bad" })); if (ok && best != null) setClipBest((was) => ({ ...was, [m.uri]: best })); });
@@ -154,11 +160,11 @@ function CreateFlowScreen() {
       rest.forEach((m, i) => keptBy.current.set(m.uri, { clip: got[i], name: `${from + i + 1}-${got[i].name}` }));
       const clips = list.map((m) => keptBy.current.get(m.uri)!.clip);
       kept.current = { uris: list.map((m) => m.uri), clips };
-      let sources = clips;
-      if (engineOn && sg) {
+      let sources = clips, names: string[] = [];
+      if (engineOn && (sg || talking)) {   // (a Talking Reel may have no song: its clips are read all the same)
         startFresh();
-        if (songStopped.current) { setMusic(await engine.songAgain()); songStopped.current = false; heard.current = sg.uri; }
-        if (heard.current !== sg.uri) { // the studio started again (the screen was left): it has lost the song and its part
+        if (sg && songStopped.current) { setMusic(await engine.songAgain()); songStopped.current = false; heard.current = sg.uri; }
+        if (sg && heard.current !== sg.uri) { // the studio started again (the screen was left): it has lost the song and its part
           tasks.update("flow", null, words("Reading your song…"));
           setMusic(await engine.song(sg.uri, sg.name)); heard.current = sg.uri;
           await readRef(sg);
@@ -167,7 +173,7 @@ function CreateFlowScreen() {
         }
         await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: styleNow() || "auto", template: params.templateId ?? "" });
         // each clip numbered once (phones name many clips the same): the ones the studio kept, in its order
-        const names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
+        names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
         if (!making.current) return false;
         // heavy clips (4K / HDR / 60 fps / a changing frame rate): the studio's smooth copies play instead (the phone's
         // preview and export decode them easily; the Reel is the same)
@@ -176,7 +182,7 @@ function CreateFlowScreen() {
         sources = names.map((n) => { const c = byName.get(n), copy = copies.get(n); return c && copy ? { ...c, uri: `file://${copy.path}`, ...(copy.photo ? { kind: "video" as const, duration: copy.photo, sourceDuration: copy.photo, end: copy.photo } : {}) } : c; }).filter((c): c is ProjectClip => !!c);
       }
       if (!making.current) return false;
-      read.current = { key: keyOf(list), clips, sources }; askAgain.current = false;
+      read.current = { key: keyOf(list), clips, sources, names }; askAgain.current = false;
       return true;
     } catch (e) { if (making.current) tell(errorMessage(e), "danger"); return false; }
     finally {
@@ -255,7 +261,7 @@ function CreateFlowScreen() {
     const again = !!old && (await engine.aiOn().catch(() => false));
     // changed: a new Reel; when it costs credits it is asked first (never spent without a yes), the old Reel stays in My Reels
     if (again) {
-      const q = engineOn && song ? await engine.aiPrice().catch(() => null) : null;
+      const q = engineOn && (song || talking) ? await engine.aiPrice().catch(() => null) : null;
       if (q?.on && q.cost && (q.balance === null || q.balance >= q.cost)) {
         const v = await askAction({ title: words("Make a new version?"), body: words("Your last Reel stays in My Reels. The new one uses {n} credits · you have {b}.", { n: q.cost, b: q.balance ?? 0 }),
           ok: words("Make new Reel · {n} credits", { n: q.cost }), cancel: words("Open my last Reel") });
@@ -266,7 +272,7 @@ function CreateFlowScreen() {
     }
     // (a plan without Shubix AI: no offer in between, Make Reel makes the Reel in one popup; the plans are on the screen)
     // too few credits: said at once, before any waiting; without a plan the Reel can still be made by the phone's own edit, on a plan it waits for credits
-    const p = engineOn && song ? await engine.aiPrice().catch(() => null) : null;
+    const p = engineOn && (song || talking) ? await engine.aiPrice().catch(() => null) : null;
     if (p?.on && p.cost && p.balance !== null && p.balance < p.cost) {
       const v = await askAction({ title: words("Not enough credits"), body: words("Shubix AI needs {n} credits and you have {b}.", { n: p.cost, b: p.balance }), ok: words("Add more credits"), cancel: words(p.paid ? "Go back" : "Free edit") });
       if (v === 0) router.push("/credits");
@@ -304,10 +310,32 @@ function CreateFlowScreen() {
       if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have, short, f.clips === 1 && kind === "music" ? (f.exact ?? f.have) : 0)) === "stop") return; }
       else if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need, short)) === "stop") return;
     }
-    const id = draft.current, { sources } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
-    let clips = read.current!.clips, studio = false;
+    // the clips' small copies for the editor's player (made while the Reel was made); the export reads the clips
+    const withPreviews = async (list: ProjectClip[]) => {
+      const names = read.current!.names; if (!names.length) return list;
+      tasks.update("flow", null, words("Making the preview smooth…"));
+      const pv = await engine.previews();
+      return list.map((c, i) => { const f = pv[names[i]]; return f && c.kind === "video" ? { ...c, preview: f.startsWith("file://") ? f : `file://${f}` } : c; });
+    };
+    const id = draft.current, { sources: read0 } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
+    let clips = read.current!.clips, studio = false, talkAudio: string | undefined;
     try {
-      if (engineOn && now.current.music) {
+      if (engineOn && talking) {
+        // a Talking Reel, as the website makes it: the voice with its pauses cut (Pauses), the song quietly under it
+        // (Music under voice), captions of what is said, the video as it was filmed; its sound is the Reel's own
+        stage.current = "ai"; making.current = true; setStep("analyse"); tasks.unlock();
+        tasks.start("flow", "ai", words("Shubix at work"), words("Getting your Reel ready…"));
+        await engine.choose({ aspect: settings.aspect });
+        if (again) await engine.newReel();
+        await engine.talk({ pace: settings.pace, music: song ? Number(settings.under) || 0 : 0 });
+        const went = await engine.ai();
+        if (!went && again && making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return void keepOldReel(old); }
+        if (!went || !making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return; }
+        const sources = await withPreviews(read0);
+        clips = shotsOf((await engine.ready(id)).state.edit, sources.length ? sources : clips); studio = true;
+        const mix = await engine.talkMix(`${id}-talk.wav`);
+        if (mix) talkAudio = await keepPickedFile(id, mix.startsWith("file://") ? mix : `file://${mix}`, `${id}-talk.wav`);
+      } else if (engineOn && now.current.music) {
         stage.current = "ai"; making.current = true; setStep("analyse"); tasks.unlock();   // (the cards stop playing: another step)
         tasks.start("flow", "ai", words("Shubix at work"), words("Getting your Reel ready…"));
         await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: style || "auto" }); // (the length and the part are set already)
@@ -315,12 +343,13 @@ function CreateFlowScreen() {
         const went = await engine.ai();
         if (!went && again && making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return void keepOldReel(old); }   // Shubix AI's question closed: the old Reel
         if (!went || !making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return; }
+        const sources = await withPreviews(read0);
         clips = shotsOf((await engine.ready(id)).state.edit, sources.length ? sources : clips); studio = true;
       } else clips = clips.map((c) => ({ ...c, speed: { fast: 1.25, smooth: 0.8, "": 1 }[style] }));
-      const audioUri = song ? await keepPickedFile(id, song.uri, `${song.name}.m4a`) : undefined;
+      const audioUri = talkAudio ?? (song ? await keepPickedFile(id, song.uri, `${song.name}.m4a`) : undefined);
       const when = new Date().toISOString();
-      await saveProject({ id, title: words(KINDS[kind].title), kind, clips, audioUri, audioName: song?.name, overlays: [], ...(heardMusic ? { music: heardMusic } : {}), studio, createdAt: when, updatedAt: when, status: "draft",
-        ...(params.templateId ? { templateId: params.templateId } : {}), settings: { start: at, length: long, ...settings, ...(wish ? { wish } : {}) } });
+      await saveProject({ id, title: words(KINDS[kind].title), kind, clips, audioUri, audioName: talkAudio ? words("Your voice") : song?.name, overlays: [], ...(heardMusic && !talkAudio ? { music: heardMusic } : {}), studio, createdAt: when, updatedAt: when, status: "draft",
+        ...(params.templateId ? { templateId: params.templateId } : {}), settings: { start: talkAudio ? 0 : at, length: long, ...settings, ...(wish ? { wish } : {}) } });
       if (old && old.id !== id) { await removeProject(old.id); forgetKeptFiles(old.id); }
       madeReel.current = { id, sig: `${keyOf(media)};${song?.uri ?? ""};${at};${long}`, media, song, start: at, length: long, kept: kept.current };
       void AsyncStorage.removeItem(DRAFT);

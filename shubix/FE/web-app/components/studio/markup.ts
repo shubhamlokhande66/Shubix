@@ -211,6 +211,7 @@ export const STUDIO_HTML = `
     <div class="row fpickrow">
       <button class="${Button.primary}" id="mpick">${IC.music}<span>Add your song</span><small class="lg:hidden">MP3, M4A, WAV, or the sound of a video</small></button>
       <button class="${Button.secondary}" id="mauto" type="button" hidden>${IC.spark}<span>Choose a song for me</span></button>
+      <button class="${Button.secondary}" id="mget" type="button" aria-haspopup="dialog">${IC.save}<span>Get songs</span></button>
       <input id="mfile" type="file" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav,.mov,.mp4" hidden>
       <span class="fname" id="mname">MP3, M4A, WAV or any video's sound (iPhone: from Files or Photos)</span>
       <button class="${Button.ghost} max-lg:hidden!" id="skipmusic" type="button" hidden>Continue without music</button>
@@ -636,6 +637,12 @@ export const STUDIO_HTML = `
   <span class="cconfi" aria-hidden="true">${IC.spark}</span>
   <b id="cconft"></b><p id="cconfp"></p><ul class="cconfl" id="cconfl" hidden></ul><p class="cconfbal" id="cconfbal"></p>
   <div class="cconfa w-full flex-row! flex-nowrap! items-stretch! [&>button]:h-auto! [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:flex-1 [&>button]:whitespace-normal! [&>button]:px-2.5! [&>button]:py-2! [&>button]:text-center [&>button]:leading-tight"><button type="button" class="${Button.secondary}" id="cconfno"></button><button type="button" class="${Button.primary}" id="cconfok"></button><button type="button" class="${Button.danger}" id="cconfex" hidden></button></div>
+</div></div>
+<div class="cconf bg-black/70! backdrop-blur-md" id="songsites" hidden><div class="cconfb relative! w-full! max-w-[480px]! max-h-[calc(100dvh-32px)]! gap-3! overflow-y-auto! rounded-[28px]! border! border-accent/30! bg-surface! p-6! text-left! justify-items-stretch!" role="dialog" aria-modal="true" aria-labelledby="songsitesh">
+  <button type="button" class="${Button.close} absolute top-2.5 right-2.5" id="songsitesx" aria-label="Close" title="Close">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button>
+  <b id="songsitesh" class="pr-10">Get songs</b>
+  <div class="grid gap-2" id="songsitelist" aria-live="polite"><span class="text-[13px] text-muted">Loading…</span></div>
+  <p class="text-[12.5px]!">The page opens in a new tab. Download the song to your device, come back to Shubix and tap Add your song.</p>
 </div></div>
 <div class="clipbar" id="clipbar" hidden role="toolbar" aria-label="Selected clip"></div>
 <section class="ctpop" id="ctpop" hidden role="dialog" aria-labelledby="ctpoph">

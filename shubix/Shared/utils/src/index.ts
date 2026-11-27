@@ -30,3 +30,21 @@ export function timeLeft(ends: string | null) {
   const h = Math.floor(ms / 3600_000), d = Math.floor(h / 24);
   return d >= 1 ? `in ${d} day${d > 1 ? "s" : ""}` : h >= 1 ? `in ${h} h` : "soon";
 }
+
+/** The words of an error that may be shown to people: our own messages are, but nothing from inside the app or the
+ * phone (a file's path or address, a code error, a library's or the system's message, a server's details) is: that is
+ * replaced by `fallback` (the full error still goes to the logs). Used by both apps' errorMessage. */
+export function safeMessage(message: unknown, fallback = "Something went wrong. Please try again."): string {
+  const m = typeof message === "string" ? message.trim() : "";
+  if (!m || m.length > 300) return fallback;
+  const inside = [
+    /(file|content|blob|data):\/?\//i, /https?:\/\//i, /(^|[\s(])\/(data|storage|sdcard|var|tmp|private|Users|home|api|cache)\//i, /\b[A-Za-z]:\\/, // paths, addresses
+    /\b[\w-]+\.(kt|java|ts|tsx|js|mjs|py|mp4|mov|m4a|wav|webm|onnx|json|db)\b/i,                                             // file names
+    /\b(\w*Exception|\w*Error:|TypeError|ReferenceError|SyntaxError|RangeError|undefined|null pointer|NaN|stack trace)\b/,   // code errors
+    /\bat [\w.$<>]+\s*\(/,                                                                                                   // a stack line
+    /\b(java|kotlin|android|androidx|expo|mediabunny|onnx|ort|ffmpeg|mongo\w*|ECONN\w*|ENOENT|EACCES|ETIMEDOUT|ERR_\w+)\b/i, // libraries, system
+    /\b(cannot read|is not a function|is not defined|unexpected token|failed to fetch|network request failed|load failed)\b/i,
+    /[{}<>[\]]|\bstatus\s*\d{3}\b|\(\d{3}\)|\b0x[0-9a-f]+\b/i,                                                             // JSON, markup, codes
+  ];
+  return inside.some((re) => re.test(m)) ? fallback : m;
+}

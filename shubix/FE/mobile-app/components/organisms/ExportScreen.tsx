@@ -1,7 +1,7 @@
 import { useAdPlan } from "../molecules/AdBanner";
 import { showInterstitial } from "../../lib/ads";
 import { useEffect, useState } from "react";
-import { Image, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
+import { Image, Linking, Modal, Platform, ScrollView, Switch, Text, View } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { SMALL_BUFFER } from "./CreateFlow";
 import * as MediaLibrary from "expo-media-library/legacy";
@@ -35,7 +35,7 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
   const words = useStudioText(), insets = useSafeAreaInsets();
   const [step, setStep] = useState<"choose" | "make" | "done">("choose"), [allowed, setAllowed] = useState<ExportOptions | null>(null);
   const [choice, setChoice] = useState<Required<Omit<ExportChoice, "fixLocked">>>({ res: "1080", fps: 30, noWatermark: false, noSong: false, myReels: true });
-  const [pct, setPct] = useState(0), [done, setDone] = useState<Made | null>(null), [saved, setSaved] = useState(false), [notice, setNotice] = useState(""), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
+  const [pct, setPct] = useState(0), [done, setDone] = useState<Made | null>(null), [saved, setSaved] = useState(false), [notice, setNotice] = useState(""), [songTip, setSongTip] = useState(""), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
   const player = useVideoPlayer(done?.uri ?? null, (p) => { p.bufferOptions = SMALL_BUFFER; p.loop = true; if (done) p.play(); });
   const first = reel?.clips[0], picture = useThumb(first?.uri, first?.kind === "image" ? "image" : "video");
   // the plans with ads: a full-screen ad once the Reel is made (never while editing)
@@ -48,20 +48,23 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
   useEffect(() => {
     if (!reel || step !== "make") return;
     let live = true;
-    setPct(0); setDone(null); setSaved(false); setNotice(""); setFailed(false);
+    setPct(0); setDone(null); setSaved(false); setNotice(""); setFailed(false); setSongTip("");
     // A Studio Reel uses the Studio renderer, so its layers, masks, effects and keyframes survive the export.
+    // Without the song: the song is left out (the clips' own sound too: a Reel's voice comes from the studio's mix)
+    const silent = (p: ReelProject): ReelProject => ({ ...p, audioUri: undefined, clips: p.clips.map((c) => ({ ...c, muted: true })) });
     const make = async (): Promise<Made> => {
       if (reel.studio) {
         if (!engine.holds(reel.id)) throw new Error("The original Studio editing session is not available. Reopen this Reel from Fast Studio before exporting so its advanced effects and layers are preserved.");
         if (!(await engine.edit(reel))) throw new Error("Studio could not sync this edit. Your advanced effects have been kept; reopen the Reel in Fast Studio and try Export again.");
         // the Reel's sound from the brain, the picture and its layers from the phone's export
-        const { path, plan } = await engine.exportMix(`${reel.id}-mix.wav`, { ...choice, fixLocked: true }); // the person saw the list and chose Export
+        const { path, plan, tip } = await engine.exportMix(`${reel.id}-mix.wav`, { ...choice, fixLocked: true }); // the person saw the list and chose Export
+        if (tip) setSongTip(tip);
         const rows = await engine.tool("layerList"), layers = Array.isArray(rows) ? rows as NativeLayerRow[] : [];
         const gaps = nativeExportGaps(reel, layers);
         if (gaps.length) tell(words("This export leaves out: {gaps}", { gaps: gaps.join(", ") }), "info");
         // the video read back and checked against the edit; a renderer fault (a stalled decoder, black where footage
         // belongs, a short file) is made once more. A finished Reel is never thrown away: a second miss keeps it.
-        const once = () => exportReel(reel, (p) => live && setPct(p), { mix: path, layers, plan });
+        const once = () => exportReel(choice.noSong && !path ? silent(reel) : reel, (p) => live && setPct(p), { mix: path, layers, plan });
         const checked = async (made: Made, take: number) => {
           const v = (await engine.checkExport(made.uri).catch(() => null))?.verdict ?? null;
           if (v && !v.ok) void mobileApi.reelLog(reel.id, { step: "export", msg: `Export check (take ${take}): ${v.problems.map((x) => x.msg).join(" ")}`.slice(0, 500), data: { ...v, take } }).catch(() => undefined);
@@ -76,8 +79,10 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
           tell(typeof at === "number" ? words(what === "frozen" ? "Your Reel is ready. Check it at {t}: the picture may stop there." : "Your Reel is ready. Check it at {t}: it may go dark there.", { t: `${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, "0")}` }) : words("Your Reel is ready. Watch it once before you share it: its length came out a little different."), "info"); }
         return again;
       }
-      if (canUseSharedAndroidRenderer(reel)) return exportReelWithSharedRenderer(reel, (p) => live && setPct(p));
-      return exportReel(reel, (p) => live && setPct(p));
+      const what = choice.noSong ? silent(reel) : reel;
+      if (choice.noSong && reel.audioName) setSongTip(`in Instagram tap "Add audio" and choose "${reel.audioName.replace(/\.[^.]+$/, "")}" — start it at ${Math.floor((reel.settings?.start ?? 0) / 60)}:${String(Math.floor((reel.settings?.start ?? 0) % 60)).padStart(2, "0")}.`);
+      if (canUseSharedAndroidRenderer(what)) return exportReelWithSharedRenderer(what, (p) => live && setPct(p));
+      return exportReel(what, (p) => live && setPct(p));
     };
     keepAwake(true, words("Shubix is exporting your Reel"));
     const run = make();
@@ -154,6 +159,13 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
               <Text className="text-center text-[24px] font-semibold text-foreground">{words("Reel Exported!")}</Text>
               <View className="h-[380px] self-center overflow-hidden rounded-[18px] bg-black" style={{ aspectRatio: 9 / 16 }}><VideoView player={player} surfaceType="textureView" nativeControls contentFit="contain" style={{ flex: 1 }} /></View>
               <View className="items-center gap-1"><Text className="text-[15px] font-semibold text-foreground">{words(saved ? "Saved to your phone" : "Your Reel is ready")}</Text><Text className="text-[12.5px] text-muted">{megabytes(done.size)}</Text>{!!notice && <Text accessibilityRole="alert" className="text-center text-[12px] text-muted">{notice}</Text>}</View>
+              {!!songTip && (
+                <View className="gap-2 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3">
+                  <Text className="text-[14px] font-semibold text-foreground">{words("Add the song in Instagram")}</Text>
+                  <Text selectable className="text-[13px] leading-5 text-foreground">{songTip.charAt(0).toUpperCase() + songTip.slice(1)}</Text>
+                  <Button size="sm" variant="secondary" icon="music" title={words("Open Instagram")} onPress={() => void Linking.openURL("https://www.instagram.com/")} />
+                </View>
+              )}
               <Button full size="xl" icon="upload" title={words("Share")} onPress={() => void Sharing.shareAsync(done.uri, { mimeType: "video/mp4" })} />
               <Button full size="lg" variant="secondary" icon={saved ? "check" : "download"} title={words(saved ? "Saved to Photos" : "Download")} onPress={() => void download()} />
               {!!done.caption && (

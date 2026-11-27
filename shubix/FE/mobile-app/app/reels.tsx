@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import { useEffect, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Modal, Pressable, Share, Text, View, useWindowDimensions } from "react-native";
@@ -78,7 +79,7 @@ function Saved({ query }: { query: ReturnType<typeof useQuery<Awaited<ReturnType
   const text = useText(), column = useColumn(), [watching, setWatching] = useState<{ uri: string; name: string } | null>(null);
   const [publishing, setPublishing] = useState<CloudReel | null>(null);
   if (query.isError) return (
-    <Card className="gap-3 border-danger/35"><Text className="text-[13px] text-danger">{query.error instanceof Error ? query.error.message : text("reels.failed")}</Text><Button size="sm" variant="secondary" title={text("common.retry")} onPress={() => void query.refetch()} /></Card>
+    <Card className="gap-3 border-danger/35"><Text className="text-[13px] text-danger">{safeMessage(query.error instanceof Error ? query.error.message : "", text("reels.failed"))}</Text><Button size="sm" variant="secondary" title={text("common.retry")} onPress={() => void query.refetch()} /></Card>
   );
   if (!query.data) return <ActivityIndicator color={colors.accent} />;
   const { reels, usage } = query.data, share = Math.min(100, (usage.used / Math.max(1, usage.limit)) * 100);
@@ -108,7 +109,7 @@ function Saved({ query }: { query: ReturnType<typeof useQuery<Awaited<ReturnType
 function SavedCard({ reel, onWatch, onChange, onPublish }: { reel: CloudReel; onWatch: (uri: string) => void; onChange: () => void; onPublish: () => void }) {
   const text = useText(), [busy, setBusy] = useState(false), [note, setNote] = useState<string | null>(null);
   const flash = (s: string) => { setNote(s); setTimeout(() => setNote(null), 2500); };
-  const run = async (work: () => Promise<void>) => { setBusy(true); try { await work(); } catch (e) { flash(e instanceof Error ? e.message : text("reels.failed")); } finally { setBusy(false); } };
+  const run = async (work: () => Promise<void>) => { setBusy(true); try { await work(); } catch (e) { flash(safeMessage(e instanceof Error ? e.message : "", text("reels.failed"))); } finally { setBusy(false); } };
   const file = () => mobileApi.downloadReel(reel.id);
   const watch = () => run(async () => onWatch(await file()));
   const save = () => run(async () => {

@@ -1052,6 +1052,8 @@ function markKeyWords(lines){
 }
 // the zoom punch at time t: 1 when there is none
 function emphAt(t){
+  // a talking video is shown as it was filmed (2026-11-27): its key words are highlighted, the picture does not zoom on them
+  if(ES.kind === 'talk') return 1;
   if(!ES.keyOn || !ES.capsOn || !ES.capLines || !speakingVoice()) return 1;
   let z = 1;
   for(const L of ES.capLines){ if(L.a > t + 0.01 || L.b < t - 1) continue; for(const w of L.words){ if(!w.key) continue; const d = t - w.start; if(d < 0 || d > 0.72) continue;

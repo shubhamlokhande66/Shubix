@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { Badge, Button, Chip, Field, Icon, Input, SidePanel, TextArea, colors } from "@mobile/ui-mobile";
@@ -39,7 +40,7 @@ export function PublishPanel({ reel, onClose }: { reel: { id: string; name: stri
       const s = await mobileApi.social();
       setPlatforms(s.platforms); setPosts(s.posts); setError(null);
       if (first) setPick(s.platforms.filter((p) => p.connected).map((p) => p.id));
-    } catch (e) { setError(e instanceof Error ? e.message : "Shubix cannot be reached. Check your internet and try again."); }
+    } catch (e) { setError(safeMessage(e instanceof Error ? e.message : "", "Shubix cannot be reached. Check your internet and try again.")); }
   }, []);
   useEffect(() => { if (reel) void load(true); }, [reel, load]);
   const mine = posts.filter((p) => reel && p.reelId === reel.id);
@@ -48,7 +49,7 @@ export function PublishPanel({ reel, onClose }: { reel: { id: string; name: stri
 
   const run = async (what: typeof busy, work: () => Promise<void>) => {
     setBusy(what); setError(null);
-    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "That did not work. Please try again."); }
+    try { await work(); } catch (e) { setError(safeMessage(e instanceof Error ? e.message : "", "That did not work. Please try again.")); }
     setBusy("");
   };
   const connect = (p: Id) => run(p, async () => { await Linking.openURL((await mobileApi.socialConnectLink(p)).url); });
