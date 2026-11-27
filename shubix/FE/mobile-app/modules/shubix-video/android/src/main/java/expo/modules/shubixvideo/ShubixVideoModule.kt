@@ -175,7 +175,8 @@ class ShubixVideoModule : Module() {
       }
     }
     // a slowed part of a clip, blended (Smooth slow-mo, SmoothCopy.kt); made once. "" back: nothing in it is slowed
-    AsyncFunction("smoothCopy") { uri: String, start: Double, end: Double, speed: Double, ramp: String, fps: Int, promise: Promise ->
+    // (`side`: its long side, 1920 for the export, 960 for the editor's player)
+    AsyncFunction("smoothCopy") { uri: String, start: Double, end: Double, speed: Double, ramp: String, fps: Int, side: Int, promise: Promise ->
       val c = appContext.reactContext ?: throw IllegalStateException("No app")
       kotlin.concurrent.thread(isDaemon = true, name = "shubix-smooth") {
         try {
@@ -184,9 +185,9 @@ class ShubixVideoModule : Module() {
           val slices = (if (ramp.isNotBlank()) speedRampSlices(org.json.JSONArray(ramp), len, rate) else emptyList())
             .ifEmpty { listOf(RampSlice(0.0, len, rate)) }
           if (slices.none { it.speed < 0.985 }) { promise.resolve(""); return@thread }
-          val path = Uri.parse(uri).path ?: uri; val from = File(path); val f = fps.coerceIn(24, 60)
-          val to = File(File(c.cacheDir, "engine-out").apply { mkdirs() }, "smo-${(path + from.length() + from.lastModified() + start + end + speed + ramp + f).hashCode().toUInt()}.mp4")
-          if (!to.isFile || to.length() == 0L) makeSmoothCopy(path, to, start, slices.map { Triple(it.start, it.end, it.speed) }, f)
+          val path = Uri.parse(uri).path ?: uri; val from = File(path); val f = fps.coerceIn(24, 60); val long = side.coerceIn(320, 3840)
+          val to = File(File(c.cacheDir, "engine-out").apply { mkdirs() }, "smo-${(path + from.length() + from.lastModified() + start + end + speed + ramp + f + "x" + long).hashCode().toUInt()}.mp4")
+          if (!to.isFile || to.length() == 0L) makeSmoothCopy(path, to, start, slices.map { Triple(it.start, it.end, it.speed) }, f, if (long <= 1280) 6_000_000 else 12_000_000, long)
           promise.resolve(Uri.fromFile(to).toString())
         } catch (e: Throwable) { promise.reject("E_SMOOTH", e.message ?: "The clip could not be made smooth.", e) }
       }
@@ -369,9 +370,9 @@ class ShubixVideoModule : Module() {
       // the file's real length: the player needs it, and a shot never runs past the end of its file
       val sourceMs = if (image) null else sourceLengthMs(uri, lengths)
       val endMs = (endSeconds * 1000).toLong().let { if (sourceMs != null && sourceMs > startMs) minOf(it, sourceMs) else it }
-      // Smooth slow-mo: the shot's blended copy (SmoothCopy.kt), already at its speed: played whole at 1×. The shot's own
-      // times (start, speed) stay for its other effects (steadying, the person's mask)
-      val smooth = if (!live && !image) c.optString("smoothUri").trim().takeIf { it.isNotEmpty() } else null
+      // Smooth slow-mo: the shot's blended copy (SmoothCopy.kt), already at its speed: played whole at 1×, by the export and
+      // the editor's player alike. The shot's own times (start, speed) stay for its other effects (steadying, the person's mask)
+      val smooth = if (!image) c.optString("smoothUri").trim().takeIf { it.isNotEmpty() } else null
       val smoothFileMs = smooth?.let { sourceLengthMs(it, lengths) }?.takeIf { it > 0L }
       var item = MediaItem.Builder().setUri(Uri.parse(uri)).apply {
         if (image) setImageDurationMs(endMs - startMs)
