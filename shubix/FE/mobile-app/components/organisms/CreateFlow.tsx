@@ -13,6 +13,7 @@ import type { IconName } from "@mobile/ui-core";
 import { clock } from "@mobile/utils";
 import { forgetSong, type Song } from "../../lib/songs";
 import { useThumb } from "../../lib/thumbs";
+import { GetSongs } from "../molecules/GetSongs";
 
 /** The website's phone Create flow (FE/web-app/components/studio/flow.ts and markup.ts), one screen at a time: the
  * intro, Choose Music, Adjust Music, Add Your Clips and Analysing. The words are the studio's (Admin → CMS → Create
@@ -109,6 +110,8 @@ export function FlowChoose({ kind, song, recent, busy, onPick, onPickReel, onRec
         {/* most people have the song only in a video (a Reel they saved, a WhatsApp video): its sound is the song (the review with ChatGPT, 2026-11-20) */}
         {kind !== "copy" && <Button full variant="secondary" icon="video" disabled={busy} title={words("Use the song from a video")} onPress={onPickReel} />}
         {kind !== "copy" && <Text className="text-[12.5px] leading-[18px] text-muted">{words("A Reel you saved, a WhatsApp video, any video on your phone: Shubix uses its sound. Only its sound is used, not the video.")}</Text>}
+        {/* no song yet: where to find one (Instagram trending, free songs), saved on the phone, then Add your song */}
+        <GetSongs disabled={busy} />
         {recent.length > 0 && (
           <View className="gap-2.5">
             <Label>{words("Recent songs")}</Label>

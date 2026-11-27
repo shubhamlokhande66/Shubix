@@ -695,10 +695,12 @@ export function createNativeEngine(io: NativeIo) {
       host.exportChoose(a); if (a.fixLocked) host.exportFix();
       await host.brain.ensureMix();
       const s = host.brain.exportSound(), plan = host.exportPlan();
-      if (!s) return { path: null, plan };
+      // without the song: where to start it in Instagram so the cuts land on its beats (the website's noSongTip)
+      const tip = host.ES.noSong ? String(host.brain.noSongTip()) : null;
+      if (!s) return { path: null, plan, tip };
       const res = await io.fetch(url("out", `&name=${encodeURIComponent(String(a.name || "mix.wav"))}`), { method: "PUT", body: new Uint8Array(wavOf(s.buf, s.gain)) });
       if (!res.ok) throw new Error("The Reel's sound could not be saved on the phone");
-      return { ...(await res.json() as Args), plan };
+      return { ...(await res.json() as Args), plan, tip };
     },
   };
   const NOT_YET: string[] = [];

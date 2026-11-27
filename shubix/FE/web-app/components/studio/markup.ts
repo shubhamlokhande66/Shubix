@@ -8,6 +8,7 @@ import { PLAN_TOOLS } from "./views";
 import { GLYPH_PATHS } from "@shubix/ui-web";
 import { DOCK_CATEGORIES_DEF, PANEL_NOTE, SHOT_TOOLS_DEF } from "@shubix/core/lib/editor-tools";
 import { TEXT_TEMPLATES } from "@shubix/core/lib/text-templates";
+import { SONG_SITES, SONG_SITES_HOW } from "@shubix/core/lib/song-sites";
 export { DOCK_CATEGORIES_DEF, SHOT_TOOLS_DEF };
 import { Button, Chip, Segmented, Tile } from "./ui";
 /** shapes: drawn in the text's colour, so they take every text tool (keyframes, entrances, exits, loops) */
@@ -211,6 +212,7 @@ export const STUDIO_HTML = `
     <div class="row fpickrow">
       <button class="${Button.primary}" id="mpick">${IC.music}<span>Add your song</span><small class="lg:hidden">MP3, M4A, WAV, or the sound of a video</small></button>
       <button class="${Button.secondary}" id="mauto" type="button" hidden>${IC.spark}<span>Choose a song for me</span></button>
+      <button class="${Button.secondary}" id="mget" type="button" aria-haspopup="dialog">${IC.save}<span>Get songs</span></button>
       <input id="mfile" type="file" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav,.mov,.mp4" hidden>
       <span class="fname" id="mname">MP3, M4A, WAV or any video's sound (iPhone: from Files or Photos)</span>
       <button class="${Button.ghost} max-lg:hidden!" id="skipmusic" type="button" hidden>Continue without music</button>
@@ -636,6 +638,12 @@ export const STUDIO_HTML = `
   <span class="cconfi" aria-hidden="true">${IC.spark}</span>
   <b id="cconft"></b><p id="cconfp"></p><ul class="cconfl" id="cconfl" hidden></ul><p class="cconfbal" id="cconfbal"></p>
   <div class="cconfa w-full flex-row! flex-nowrap! items-stretch! [&>button]:h-auto! [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:flex-1 [&>button]:whitespace-normal! [&>button]:px-2.5! [&>button]:py-2! [&>button]:text-center [&>button]:leading-tight"><button type="button" class="${Button.secondary}" id="cconfno"></button><button type="button" class="${Button.primary}" id="cconfok"></button><button type="button" class="${Button.danger}" id="cconfex" hidden></button></div>
+</div></div>
+<div class="cconf bg-black/70! backdrop-blur-md" id="songsites" hidden><div class="cconfb relative! w-full! max-w-[480px]! max-h-[calc(100dvh-32px)]! gap-3! overflow-y-auto! rounded-[28px]! border! border-accent/30! bg-surface! p-6! text-left! justify-items-stretch!" role="dialog" aria-modal="true" aria-labelledby="songsitesh">
+  <button type="button" class="${Button.close} absolute top-2.5 right-2.5" id="songsitesx" aria-label="Close" title="Close">${I('<path d="M6 6l12 12M18 6L6 18"/>')}</button>
+  <b id="songsitesh" class="pr-10">Get songs</b>
+  <div class="grid gap-2">${SONG_SITES.map((s) => `<a class="grid gap-0.5 rounded-2xl border border-line bg-surface-2 px-4 py-3 no-underline hover:border-accent/60" href="${s.url}" target="_blank" rel="noopener noreferrer" data-site="${s.id}"><span class="flex items-center gap-2 font-semibold text-ink">${s.name}<small class="rounded-full px-2 py-0.5 text-[11px] ${s.free ? "bg-accent/15 text-accent" : "bg-line text-muted"}">${s.free ? "Free to use" : "Trending"}</small></span><small class="text-[12.5px] leading-snug text-muted">${s.note}</small></a>`).join("")}</div>
+  <p class="text-[12.5px]!">${SONG_SITES_HOW}</p>
 </div></div>
 <div class="clipbar" id="clipbar" hidden role="toolbar" aria-label="Selected clip"></div>
 <section class="ctpop" id="ctpop" hidden role="dialog" aria-labelledby="ctpoph">

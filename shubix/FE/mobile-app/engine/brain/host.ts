@@ -95,7 +95,7 @@ export function createHost(initial, io = {}){
     if(xq.fps === 60 && !R.fps60) out.push({ need: 'creator', name: '60 fps', fix: () => { xq.fps = 30; } });
     const seen = new Set(); return out.filter(x => !seen.has(x.name) && seen.add(x.name));
   }
-  function exportChoose(a = {}){ if(a.res && XQ[a.res]) xq.res = a.res; if(a.fps === 30 || a.fps === 60) xq.fps = a.fps; if(a.noWatermark !== undefined) xq.nowm = !!a.noWatermark; }
+  function exportChoose(a = {}){ if(a.res && XQ[a.res]) xq.res = a.res; if(a.fps === 30 || a.fps === 60) xq.fps = a.fps; if(a.noWatermark !== undefined) xq.nowm = !!a.noWatermark; if(a.noSong !== undefined) ES.noSong = !!a.noSong; }   // (Without the song: exportSound)
   function exportPlan(){
     return { watermark: !(exRule().noWatermark && xq.nowm), res: xq.res, fps: xq.fps, bitrate: XQ[xq.res].bitrate * (xq.fps > 30 ? 1.5 : 1), scale: XQ[xq.res].scale,
       beats: ES.edit.map(e => e.beatsIn || []),

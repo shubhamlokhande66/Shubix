@@ -186,7 +186,7 @@ export const engine = {
     return shotsOf((await call<EngineReel>("set", { box, value, ...(attr ? { attr } : {}) })).state.edit, sources);
   },
   /** for the native export: the Reel's whole sound as a WAV on the phone (null: no sound), and what the studio decided from the plan and these choices */
-  exportMix: (name: string, o: ExportChoice = {}) => call<{ path: string | null; plan: StudioExportPlan }>("exportMix", { name, ...o }),
+  exportMix: (name: string, o: ExportChoice = {}) => call<{ path: string | null; plan: StudioExportPlan; tip?: string | null }>("exportMix", { name, ...o }),
   /** the finished video read back and checked against the edit: retake says making it again should fix it */
   checkExport: (uri: string) => call<{ verdict: ExportVerdict | null }>("checkExport", { path: pathOf(uri) }),
   /** a finished Reel saved to My Reels too */

@@ -876,7 +876,14 @@ async function songForMe(){
   }catch(err){ if(!(err && err.name === 'AbortError')) notify((err && err.message) || 'No song could be chosen. Please try again.', 'err'); }
   finally{ btn.disabled = false; }
 }
-$('mauto').addEventListener('click', () => songForMe(), SIG);
+$('mauto').addEventListener('click', () => songForMe(), SIG);
+// Get songs: where to find one (Shared/core song-sites.ts); each opens in a new tab, and the song is then added with
+// Add your song from the person's own device (Shubix downloads nothing)
+{ const box = $('songsites'), shut = () => { box.hidden = true; $('mget').focus({ preventScroll: true }); };
+  $('mget').addEventListener('click', () => { box.hidden = false; box.querySelector('a').focus({ preventScroll: true }); rlog('songs', 'Get songs opened', {}, 'info'); }, SIG);
+  $('songsitesx').addEventListener('click', shut, SIG);
+  box.addEventListener('click', e => { if(e.target === box) shut(); else { const a = e.target.closest && e.target.closest('a[data-site]'); if(a){ rlog('songs', 'Song site: ' + a.dataset.site, { site: a.dataset.site }, 'info'); setTimeout(() => { box.hidden = true; }, 300); } } }, SIG);
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && !box.hidden) shut(); }, SIG); }
 window.addEventListener('resize', ()=>{ drawMusic(); sources.forEach(drawSpark); drawTimeline(); }, SIG);
 
 /* =============== STEP 2: VIDEOS =============== */
