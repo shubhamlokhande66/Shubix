@@ -4,6 +4,9 @@ import { requireNativeView, requireOptionalNativeModule, type EventSubscription 
 type Engine = {
   exportReel(spec: string): Promise<{ uri: string; size: number; duration: number }>;
   reverseCopy(uri: string, start: number, end: number): Promise<string>;
+  /** a slowed part of a clip as its own silent file at the Reel's speed, each picture between two real frames the two mixed
+   * (Smooth slow-mo, SmoothCopy.kt); `ramp` its speed ramp as JSON ("" none). "" back: nothing in it is slowed */
+  smoothCopy?(uri: string, start: number, end: number, speed: number, ramp: string, fps: number): Promise<string>;
   cancel(): Promise<void>;
   /** why Android closed the app after `since` (ms): JSON [{ at, reason, description, pss, rss, trace }] */
   lastExits?(since: number): string;

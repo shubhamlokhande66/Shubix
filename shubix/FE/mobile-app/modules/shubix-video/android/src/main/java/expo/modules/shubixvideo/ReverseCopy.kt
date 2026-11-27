@@ -84,7 +84,7 @@ internal fun makeReverseCopy(from: String, to: File, start: Double, end: Double,
 }
 
 // ARGB pixels into the encoder's planes, whatever their layout (BT.601, the range H.264 encoders expect)
-private fun fillYuv(image: android.media.Image, argb: IntArray, w: Int, h: Int) {
+internal fun fillYuv(image: android.media.Image, argb: IntArray, w: Int, h: Int) {
   val (py, pu, pv) = image.planes
   val yb = py.buffer; val ub = pu.buffer; val vb = pv.buffer
   for (row in 0 until h) for (col in 0 until w) {

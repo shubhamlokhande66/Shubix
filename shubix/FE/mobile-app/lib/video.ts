@@ -76,6 +76,17 @@ export async function exportReel(p: ReelProject, onProgress: (done: number) => v
   const output = `${root}/exports/${safeId}-${Date.now()}.mp4`;
   // a clip played backwards: its own reversed file (a Studio Reel only: its sound comes from the mix)
   const clips = studio ? await Promise.all(p.clips.map(async (c) => c.reverse && c.kind !== "image" ? { ...c, uri: await ShubixVideo!.reverseCopy(c.uri, c.start, c.end), start: 0, end: c.end - c.start, reverse: false } : c)) : p.clips;
+  // Smooth slow-mo (the studio's cs.smooth, on a slowed shot): its blended copy, made before the export (SmoothCopy.kt). The
+  // export plays that file instead (smoothUri) and keeps the shot's own times for its other effects. Only with the studio's
+  // mix (the copy has no sound); an older app without it exports the shot as before
+  if (studio && mix && ShubixVideo.smoothCopy) for (const [i, c] of clips.entries()) {
+    const sm = Number((c.cs as { smooth?: number } | undefined)?.smooth) || 0;
+    if (sm <= 0 || c.kind === "image" || c.reverse || (c.speed >= 0.985 && !c.speedRamp?.length)) continue;
+    try {
+      const made = await ShubixVideo.smoothCopy(c.uri, c.start, c.end, c.speed, c.speedRamp?.length ? JSON.stringify(c.speedRamp) : "", studio.plan.fps || 30);
+      if (made) clips[i] = { ...c, smoothUri: made } as typeof c;
+    } catch { /* not made: this shot steps as before, the Reel is still exported */ }
+  }
   if (studio) for (const [i, c] of clips.entries()) clips[i] = { ...c, filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", effect: c.effect && !BEAT_FX.has(c.effect) && !isAndroidEffectSupported(c.effect) ? undefined : c.effect };
   const made = nativeSpec({ ...p, clips }, width, height);
   const spec = { ...made, output, ...(studio ? {
@@ -108,6 +119,7 @@ function nativeSpec(p: ReelProject, width: number, height: number, preview = fal
     shaders: { vert: PASS_VERT, pic: PIC_FRAG, grade: GRADE_FRAG, adj: ADJ_FRAG, key: KEY_FRAG, main: MAIN_FRAG, beauty: BEAUTY_FRAG },
     clips: p.clips.map((clip, i) => ({
       uri: clip.uri, kind: clip.kind, start: clip.start, end: clip.end, speed: clip.speed,
+      ...(!preview && (clip as { smoothUri?: string }).smoothUri ? { smoothUri: (clip as { smoothUri?: string }).smoothUri } : {}),
       speedRamp: clip.speedRamp, keyframes: clip.keyframes, muted: clip.muted, volume: clip.volume,
       rotation: clip.rotation, mirror: clip.mirror, flip: clip.flip, fit: clip.fit, filter: clip.filter,
       effects: clip.effect && clip.effect !== "none" && !PIC_FX[clip.effect] && (!preview || isAndroidEffectSupported(clip.effect)) ? [{ type: clip.effect, intensity: 0.5 }] : [],

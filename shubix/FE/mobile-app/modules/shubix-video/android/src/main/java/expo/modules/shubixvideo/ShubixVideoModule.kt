@@ -174,6 +174,23 @@ class ShubixVideoModule : Module() {
         } catch (e: Throwable) { promise.reject("E_REVERSE", e.message ?: "The clip could not be reversed.", e) }
       }
     }
+    // a slowed part of a clip, blended (Smooth slow-mo, SmoothCopy.kt); made once. "" back: nothing in it is slowed
+    AsyncFunction("smoothCopy") { uri: String, start: Double, end: Double, speed: Double, ramp: String, fps: Int, promise: Promise ->
+      val c = appContext.reactContext ?: throw IllegalStateException("No app")
+      kotlin.concurrent.thread(isDaemon = true, name = "shubix-smooth") {
+        try {
+          require(end > start && speed.isFinite() && speed > 0.0) { "Nothing to make smooth." }
+          val len = end - start, rate = speed.coerceIn(0.25, 4.0)
+          val slices = (if (ramp.isNotBlank()) speedRampSlices(org.json.JSONArray(ramp), len, rate) else emptyList())
+            .ifEmpty { listOf(RampSlice(0.0, len, rate)) }
+          if (slices.none { it.speed < 0.985 }) { promise.resolve(""); return@thread }
+          val path = Uri.parse(uri).path ?: uri; val from = File(path); val f = fps.coerceIn(24, 60)
+          val to = File(File(c.cacheDir, "engine-out").apply { mkdirs() }, "smo-${(path + from.length() + from.lastModified() + start + end + speed + ramp + f).hashCode().toUInt()}.mp4")
+          if (!to.isFile || to.length() == 0L) makeSmoothCopy(path, to, start, slices.map { Triple(it.start, it.end, it.speed) }, f)
+          promise.resolve(Uri.fromFile(to).toString())
+        } catch (e: Throwable) { promise.reject("E_SMOOTH", e.message ?: "The clip could not be made smooth.", e) }
+      }
+    }
     // the live preview: the Reel as the export makes it, playing (ShubixPreviewView); a smaller frame is fine here
     View(ShubixPreviewView::class) {
       Events("onTime", "onEnded", "onError")
@@ -352,7 +369,11 @@ class ShubixVideoModule : Module() {
       // the file's real length: the player needs it, and a shot never runs past the end of its file
       val sourceMs = if (image) null else sourceLengthMs(uri, lengths)
       val endMs = (endSeconds * 1000).toLong().let { if (sourceMs != null && sourceMs > startMs) minOf(it, sourceMs) else it }
-      val item = MediaItem.Builder().setUri(Uri.parse(uri)).apply {
+      // Smooth slow-mo: the shot's blended copy (SmoothCopy.kt), already at its speed: played whole at 1×. The shot's own
+      // times (start, speed) stay for its other effects (steadying, the person's mask)
+      val smooth = if (!live && !image) c.optString("smoothUri").trim().takeIf { it.isNotEmpty() } else null
+      val smoothFileMs = smooth?.let { sourceLengthMs(it, lengths) }?.takeIf { it > 0L }
+      var item = MediaItem.Builder().setUri(Uri.parse(uri)).apply {
         if (image) setImageDurationMs(endMs - startMs)
         else setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(startMs).setEndPositionMs(endMs).build())
       }.build()
@@ -361,6 +382,10 @@ class ShubixVideoModule : Module() {
       val ramp = if (!image) speedRampSlices(c.optJSONArray("speedRamp"), sourceDuration, speed.toDouble()) else emptyList()
       val slices = if (ramp.isNotEmpty()) ramp else listOf(RampSlice(0.0, sourceDuration, if (image) 1.0 else speed.toDouble()))
       val clipOutputDuration = slices.sumOf { (it.end - it.start) / it.speed }
+      // the copy is made a frame long (SmoothCopy.kt): played to the shot's exact length, so the Reel stays on the song's beat
+      val smoothMs = smoothFileMs?.let { kotlin.math.round(clipOutputDuration * 1000).toLong().coerceIn(1L, it) }
+      if (smooth != null && smoothMs != null) item = MediaItem.Builder().setUri(Uri.parse(smooth))
+        .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(0).setEndPositionMs(smoothMs).build()).build()
       validateKeyframes(c.optJSONArray("keyframes"), clipOutputDuration, "Clip ${i + 1}")
       val volumeValue = c.optDouble("volume", 1.0)
       require(volumeValue.isFinite()) { "Clip ${i + 1} has an invalid audio volume." }
@@ -437,12 +462,15 @@ class ShubixVideoModule : Module() {
         (c.optJSONArray("effects")?.length() ?: 0) == 0 && c.optJSONObject("cs") == null && c.optJSONObject("pic") == null && c.optJSONObject("grade") == null) {
         video = sharedEffects.getOrPut(c.optString("fit") + "|" + c.optString("filter")) { video }
       }
-      items += EditedMediaItem.Builder(item).setRemoveAudio(muted).setEffects(Effects(audio, video)).apply {
+      items += EditedMediaItem.Builder(item).setRemoveAudio(muted || smoothMs != null).setEffects(Effects(audio, video)).apply {
         if (image) setFrameRate(30)
         else {
-          setDurationUs((sourceMs ?: endMs) * 1000)
-          // one speed for the whole shot, or its speed ramp: the one way both the export and the live player take speed
-          if (slices.any { it.speed.toFloat() != 1f }) setSpeed(ClipSpeed(slices))
+          if (smoothMs != null) setDurationUs(smoothFileMs!! * 1000)
+          else {
+            setDurationUs((sourceMs ?: endMs) * 1000)
+            // one speed for the whole shot, or its speed ramp: the one way both the export and the live player take speed
+            if (slices.any { it.speed.toFloat() != 1f }) setSpeed(ClipSpeed(slices))
+          }
         }
       }.build()
       require(clipOutputDuration.isFinite() && clipOutputDuration > 0.0 && at + clipOutputDuration <= 24.0 * 60.0 * 60.0) {
