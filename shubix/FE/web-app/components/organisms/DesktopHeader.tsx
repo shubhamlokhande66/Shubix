@@ -59,6 +59,17 @@ export function DesktopHeader({ email, credits, admin, onSignOut }: { email?: st
         {/* the account menu: the person's initial, or a person when accounts are off (a local studio) */}
         <MoreMenu
           items={menu}
+          header={email ? (
+            // who is signed in: the email (the avatar shows only its first letter), and the plan
+            <div className="mb-1 flex items-center gap-2.5 border-b border-border px-2.5 pb-2.5 pt-1.5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[14px] font-extrabold text-on-accent [background:var(--gold-gradient)]">{email[0]?.toUpperCase()}</span>
+              <span className="flex min-w-0 flex-col leading-tight">
+                <small className="text-[11px] font-semibold text-muted">{text("nav.signedInAs")}</small>
+                <strong title={email} className="break-all text-[13px] font-bold text-foreground">{email}</strong>
+                {credits?.planName && <small className="mt-0.5 truncate text-[11px] font-semibold text-accent">{text("nav.planSuffix", { plan: credits.planName })}</small>}
+              </span>
+            </div>
+          ) : undefined}
           label={text("common.account")}
           triggerClass="flex items-center gap-1.5 rounded-full p-0.5 pr-1.5 text-muted transition-colors hover:bg-surface-2"
           trigger={

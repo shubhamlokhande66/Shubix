@@ -281,6 +281,12 @@ export function createNativeEngine(io: NativeIo) {
     } catch (e) { io.task?.("fail", "reflook", "Its texts could not be read this time"); console.warn("reference texts not read:", e); }
   }
   /** the texts' places, stickers and caption style on the Reel just made (the website's refLookApply, the same numbers) */
+  // the copied Reel's photo boxes (boxes.ts) on the new Reel's long shots, as on the website: no AI, no credits
+  async function refBoxes() {
+    const ES = host.ES, R = ES.refProfile;
+    if (!R || !(R.boxes || []).length || R.boxesDone || ES.mode !== "copy" || !ES.edit?.length || ES.layers.some((L: { boxes?: string }) => L.boxes)) return;
+    R.boxesDone = true; try { await host.brain.photoBoxes(0, "ref"); } catch { /* the Reel goes on without them */ }
+  }
   function applyRefLook() {
     const ES = host.ES, R = ES.refProfile, V = host.values as Record<string, any>;   // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!R || !R.design || R.designDone || ES.mode !== "copy" || !ES.edit?.length) return;
@@ -332,6 +338,7 @@ export function createNativeEngine(io: NativeIo) {
         scenes: scan.scenes || [], samples: scan.samples || [], rb, rr, rmap, describeCut: describeCut as never, onP: say });
       if (stops !== g) throw new Error("Stopped");
       ES.refProfile = { name, key: `${name}|${f.size ?? 0}`, audio, w, h, ...read };
+      ES.layers = (ES.layers || []).filter((L: { boxes?: string }) => L.boxes !== "ref");   // the last Reel's photo boxes go with it
       // the copied look is on while it is matched (the edit then matches it), as on the website
       const V = host.values as { GRADES?: Record<string, unknown> };
       if (V.GRADES) V.GRADES.copy = { con: 1, sat: 1, bri: 1, warm: 0, teal: 0, mono: read.look && read.look.sat < 0.05 ? 1 : 0, lift: 0, vig: 0, grain: 0 };
@@ -476,7 +483,7 @@ export function createNativeEngine(io: NativeIo) {
     },
     part: async (a) => { host.sec.start = Number(a.start); host.sec.auto = false; await host.useSection(); return { start: host.ES.secStart ?? 0 }; },
     // the Reel is made: what is written on the Reel being copied goes on it (its reading waited for, a minute at most)
-    ready: async () => { if (refLook) { const r = refLook; await Promise.race([r, new Promise((ok) => setTimeout(ok, 60_000))]); } applyRefLook(); return { work: work(), state: state() }; },
+    ready: async () => { if (refLook) { const r = refLook; await Promise.race([r, new Promise((ok) => setTimeout(ok, 60_000))]); } applyRefLook(); await refBoxes(); return { work: work(), state: state() }; },
     // the edit's own review (shared/video-engine review.ts) and how many takes and repairs it had: read only
     review: () => ({ review: host.brain.editReview?.() ?? null, takes: host.ES.editTakes ?? null }),
     // the finished video read back on this phone (its clip scan) and checked against the edit (video-engine
@@ -563,7 +570,7 @@ export function createNativeEngine(io: NativeIo) {
       const M = host.ES.lmedia[L.m as number] as { path?: string; kind?: string } | undefined;
       return { index, id: L.id, t0: L.t0, t1: L.t1, x: L.x, y: L.y, scale: L.s, opacity: L.op, rotation: L.r, mask: L.mask, blend: L.blend || "source-over", follow: L.follow || "none", followOffsetX: L.followOffsetX || 0, followOffsetY: L.followOffsetY || 0,
         maskWidth: L.mk?.w ?? 0.8, maskHeight: L.mk?.h ?? 0.8, maskThreshold: L.mk?.th ?? 0.5, maskFeather: L.mk?.f ?? 0.12, maskAngle: L.mk?.a ?? 0, maskInverted: !!L.mk?.inv, chromaKey: !!L.key?.on, chromaColor: L.key?.c ?? "#00FF00", chromaTolerance: L.key?.tol ?? 0.35,
-        native: M?.path || FILL_KINDS.includes(String(M?.kind)) ? { path: M?.path || "", kind: M?.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend, ...(L.grow ? { grow: L.grow } : {}), ...(L.shade ? { shade: L.shade } : {}), ...(L.ratio ? { ratio: L.ratio } : {}), ...(L.pulses ? { pulses: L.pulses } : {}) } : null, pop: L.pop || null, brand: L.brand || null, finish: L.finish || null };
+        native: M?.path || FILL_KINDS.includes(String(M?.kind)) ? { path: M?.path || "", kind: M?.kind, t0: L.t0, t1: L.t1, in: L.in, x: L.x, y: L.y, s: L.s, r: L.r, op: L.op, fh: L.fh, fv: L.fv, fin: L.fin, fout: L.fout, crop: L.crop, mask: L.mask, mk: L.mk, rad: L.rad, key: L.key, blend: L.blend, ...(L.grow ? { grow: L.grow } : {}), ...(L.shade ? { shade: L.shade } : {}), ...(L.ratio ? { ratio: L.ratio } : {}), ...(L.pulses ? { pulses: L.pulses } : {}), ...(L.bump ? { bump: L.bump } : {}), ...(L.edge ? { edge: L.edge, edgeC: L.edgeC || "#FFFFFF" } : {}) } : null, pop: L.pop || null, brand: L.brand || null, finish: L.finish || null };
     }),
     layerAdd: async (a) => {
       const path = String(a.path), name = String(a.name || "overlay"), p = await io.fetch(url("probe", `&p=${encodeURIComponent(path)}`));

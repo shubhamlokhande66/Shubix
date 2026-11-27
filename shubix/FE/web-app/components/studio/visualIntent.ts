@@ -1,4 +1,5 @@
 import { asksForAllClips } from "@shubix/core/lib/chatSize";
+import { COMMAND_EFFECTS, COMMAND_TRANSITIONS } from "@shubix/core/lib/chatCommands";
 
 export type DirectorVisualIntent = {
   openingText?: string;
@@ -6,10 +7,19 @@ export type DirectorVisualIntent = {
   transitionAll?: boolean;
   transitionType?: string;
   effectsAll?: boolean;
+  /** one effect named (a "/effect" choice): that effect on every clip */
+  effectType?: string;
+  /** photo boxes: five boxes with pictures from the other clips pop in on the beat over the long shots (boxes.ts) */
+  photoBoxes?: boolean;
 };
 
 const TRANSITION_ALIASES: Array<[string, RegExp]> = [
   ["hard", /\bhard\s*cut\b/i],
+  // the panels: the next clip in pieces (6 boxes out of black, 5 rows, 4 columns, a sliding window)
+  ["panels", /\b(?:\d\s*)?box(?:es)?\s*(?:panels?|transition|animation)\b|\bpanels?\s*build\b|\bblocks?\s*(?:transition|animation)\b|बॉक्स/i],
+  ["hpanels", /\brows?\s*panels?\b|\bhorizontal\s*(?:panels?|strips?)\b/i],
+  ["vpanels", /\bcolumns?\s*panels?\b|\bvertical\s*(?:panels?|strips?)\b/i],
+  ["window", /\bsliding\s*window\b/i],
   ["fadein", /\bfade\s*in\b|\bfadein\b/i],
   ["flash", /\bflash\b/i],
   ["whip", /\bwhip(?:\s*pan)?\b/i],
@@ -60,13 +70,20 @@ export function parseDirectorVisualIntent(prompt: string): DirectorVisualIntent 
   const allClips = asksForAllClips(value);
   if (squareFrame && allClips) intent.squareFrameAll = true;
 
-  const namedTransition = TRANSITION_ALIASES.find(([, pattern]) => pattern.test(value))?.[0];
+  // a name from the commands first (exact), then the words people use
+  const low = value.toLowerCase(), byLabel = <T extends { id: string; label: string }>(list: T[]) => [...list].sort((a, b) => b.label.length - a.label.length).find((x) => low.includes(x.label.toLowerCase()))?.id;
+  const effectType = byLabel(COMMAND_EFFECTS), labelTransition = byLabel(COMMAND_TRANSITIONS);
+  const namedTransition = labelTransition || (effectType ? undefined : TRANSITION_ALIASES.find(([, pattern]) => pattern.test(value))?.[0]);
   const asksTransition = /\btransitions?\b|ट्रांजिशन|ट्रान्जिशन|ट्रांज़िशन|संक्रमण|மாற்றம்|మార్పు|পদক্ষেপ|انتقال|转场|过渡|トランジション|切り替え|전환|переход|transição|transicion|transition|übergang|transizione|geçiş|transisi|chuyển\s*cảnh|ทรานซิชัน/u.test(value);
   if (allClips && (asksTransition || namedTransition)) {
     intent.transitionAll = true;
     if (namedTransition) intent.transitionType = namedTransition;
   }
   const asksEffects = /\b(?:effects?|effecr|fx)\b|इफेक्ट(?:्स)?|प्रभाव|असर|ಎಫೆಕ್ಟ್|ఎఫెక్ట్స్?|ইফেক্টস?|અસર|ਪ੍ਰਭਾਵ|تأثيرات?|效果|エフェクト|효과|эффекты|efeitos|efectos|effets|effekte|effetti|efektler|efek|hiệu ứng|เอฟเฟกต์/u.test(value);
-  if (allClips && asksEffects) intent.effectsAll = true;
+  if (allClips && (asksEffects || effectType)) { intent.effectsAll = true; if (effectType) intent.effectType = effectType; }
+  // "photo boxes", "5 boxes pop on it", "pizza var 5 box": boxes over the shot (not the box panels transition)
+  const boxWords = /\b(?:photo|picture|pic|image)s?\s*(?:box|boxes|frames?)\b|फोटो\s*बॉक्स/i.test(value)
+    || (/\b(?:box|boxes|boxe|boxs)\b|बॉक्स/i.test(value) && /\b(?:pop|pops|popping|over|on top|on it|tyavar|tyachyavar|var|upar|uppar|pe|par)\b/i.test(value) && !/transition|ट्रान्झिशन|ट्रांजिशन/i.test(value));
+  if (boxWords) intent.photoBoxes = true;
   return intent;
 }
