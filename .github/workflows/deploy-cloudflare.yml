@@ -42,6 +42,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: One request to the new API, so its container can sleep
+        # a deploy starts the new container, but its sleep timer only runs once a request comes: with no traffic (QA, UAT)
+        # it stayed awake, and billed, for hours (2026-11-13). One health request starts the timer; it sleeps a few minutes
+        # later. Tried for up to 2 minutes (the old container can answer for a moment); a miss only warns.
+        run: |
+          if [ "${{ inputs.target }}" = prod ]; then url="https://shubix.in"; else url="https://${{ inputs.target }}.shubix.in"; fi
+          api=""; for i in $(seq 1 12); do api=$(curl -s -m 30 "$url/api/health" || true); echo "$api" | grep -q '"ok"' && break; sleep 10; done
+          echo "API health: $api"; echo "$api" | grep -q '"ok"' || echo "::warning::$url/api/health did not answer: the new container may stay awake until its first request"
       - name: Old copies out of Cloudflare's cache
         # every page and file of shubix.in (all its addresses) fetched fresh after a deploy: people get the new version at once.
         # The token needs Zone: Read and Zone: Cache Purge; without them this only warns.
