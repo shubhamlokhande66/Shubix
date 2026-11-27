@@ -33,7 +33,9 @@ describe("the website's engine and the Android app's brain pick the same moments
     ["a clip's black start and end", "function blackEnds(src){", "pure.ts"],
     ["cuts too close together", "function noFlashCuts(", "edit.ts"],
     ["the pace of creators' beat Reels", "function paceWell(p){", "edit.ts"],
-  ];
+    // a Talking Reel: where its pauses are cut and its long takes split (2026-11-27: the app made none before)
+    ["Talking Reel: the speech parts of a clip", "function speechParts(v, dur, pace){", "talk.ts"],
+    ["Talking Reel: where a long take is split", "function splitPoint(v, a, b){", "talk.ts"],  ];
   for (const [what, head, file] of alike) {
     it(what, () => { expect(norm(fn(brain(file), head.replace("function ", "function "))) === norm(fn(web, head))).toBe(true); });
   }

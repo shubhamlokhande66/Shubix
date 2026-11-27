@@ -1,4 +1,4 @@
-import { Paths } from "expo-file-system";
+import { File as FsFile, Paths } from "expo-file-system";
 import { clipDuration, type ProjectClip, type ReelProject } from "@mobile/validations";
 import { ShubixVideo } from "../modules/shubix-video";
 import { ADJ_FRAG, BEAUTY_FRAG, GRADE_FRAG, KEY_FRAG, MAIN_FRAG, PASS_VERT, PIC_FRAG, PIC_FX, TR_DUR } from "@mobile/core/lib/shaders";
@@ -133,12 +133,21 @@ function fitTimes(c: ProjectClip) {
   const rising = <T,>(list: T[] | undefined, at: (x: T) => unknown, len: number) => { let last = -1; return list?.filter((x) => { const t = at(x); if (typeof t !== "number" || !Number.isFinite(t) || t < 0 || t > len || t <= last) return false; last = t; return true; }); };
   return { keyframes: rising(c.keyframes, (k) => (k as { t?: unknown }).t, clipDuration(c)), speedRamp: rising(c.speedRamp, (k) => (k as { time?: unknown }).time, Math.max(0, c.end - c.start))?.filter((k) => Number((k as { speed?: unknown }).speed) > 0) };
 }
+/** the file the editor's player reads: the clip's small preview copy when it is still on the phone (it is kept with the
+ * phone's cache, which Android may empty), else the clip itself */
+const previewOk = new Map<string, boolean>();
+function previewUri(c: ProjectClip) {
+  if (!c.preview) return c.uri;
+  let ok = previewOk.get(c.preview);
+  if (ok === undefined) { try { ok = new FsFile(c.preview).exists; } catch { ok = false; } previewOk.set(c.preview, ok); }
+  return ok ? c.preview : c.uri;
+}
 /** the player's spec: the export's, half size (smooth on any phone), without what the phone's engine cannot draw yet
  * (it is left out, never an error: the export still checks it); null when the engine is not in this app */
 export function previewSpec(p: ReelProject, layers: { native?: unknown }[] = []): string | null {
   if (!ShubixVideo || !p.clips.length) return null;
   const [w, h] = SIZE[p.settings?.aspect ?? "9:16"] ?? SIZE["9:16"], k = 540 / Math.min(w, h);
-  const spec = nativeSpec({ ...p, clips: p.clips.map((c) => ({ ...c, ...fitTimes(c), reverse: false, filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", volume: Math.min(1, c.volume ?? 1) })),
+  const spec = nativeSpec({ ...p, clips: p.clips.map((c) => ({ ...c, ...fitTimes(c), uri: previewUri(c), reverse: false, filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", volume: Math.min(1, c.volume ?? 1) })),
     overlays: p.overlays.filter((o) => o.text?.trim() && o.end > o.start).slice(0, 40).map((o) => ({ ...o, text: o.text.slice(0, 300), size: Math.min(120, Math.max(8, o.size ?? 36)) })) }, Math.round(w * k / 2) * 2, Math.round(h * k / 2) * 2, true);
   return JSON.stringify({ ...spec, layers: layers.map((l) => l.native).filter(Boolean) });
 }

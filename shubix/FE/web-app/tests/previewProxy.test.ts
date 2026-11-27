@@ -40,8 +40,11 @@ describe("browser editor preview proxies", () => {
   });
 
   it("does not proxy small clips or footage already within preview limits", () => {
-    expect(previewProxyPlan({ size: 12 * MB, width: 3840, height: 2160, duration: 30 })).toBeNull();
+    expect(previewProxyPlan({ size: 3 * MB, width: 3840, height: 2160, duration: 10 })).toBeNull();
     expect(previewProxyPlan({ size: 15 * MB, width: 960, height: 540, duration: 60 })).toBeNull();
+  });
+  it("gives a short 4K clip a light copy too: the preview never decodes 4K for a phone's screen", () => {
+    expect(previewProxyPlan({ size: 12 * MB, width: 3840, height: 2160, duration: 30 })).toMatchObject({ width: 960, height: 540, reason: "resolution-and-bitrate" });
   });
 
   it("fails safely for invalid metadata and proxy jobs that exceed memory limits", () => {

@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import { AppRegistry, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
@@ -106,6 +107,11 @@ export const engine = {
   advice: (pick: MediaPick) => call<ClipAdvice | null>("advice", { pick }),
   /** the clips: the website reads them (motion, scenes, faces) and makes the Reel on the beats */
   clips: (list: { uri: string; name: string }[]) => call<{ clips: number; names: string[] }>("clips", { paths: list.map((c) => ({ path: pathOf(c.uri), name: c.name })) }),
+  /** a Talking Reel, as the website makes it: the clips' voice with its pauses cut, the song quietly under it, captions */
+  talk: (o: { pace?: "tight" | "natural" | "relaxed" | "off"; music?: number; captions?: boolean } = {}) =>
+    call<{ duration: number; shots: number; parts: number; retakes: number; mute: number; captions: boolean }>("talk", o),
+  /** a Talking Reel's sound (its voice and the song under it) as a WAV file on the phone; null: not a Talking Reel */
+  talkMix: (name: string) => call<{ path: string | null }>("talkMix", { name }).then((r) => r.path),
   /** once the Reel is made: its shots (`id`: the phone's draft, which the studio now holds) */
   ready: (id: string) => call<EngineReel>("ready").then((r) => { held = id; return r; }),
   /** whether the studio holds this draft as it made it (then the website's export makes it, with its transitions and effects) */
@@ -181,7 +187,7 @@ export const engine = {
     return shotsOf((await call<EngineReel>("set", { box, value, ...(attr ? { attr } : {}) })).state.edit, sources);
   },
   /** for the native export: the Reel's whole sound as a WAV on the phone (null: no sound), and what the studio decided from the plan and these choices */
-  exportMix: (name: string, o: ExportChoice = {}) => call<{ path: string | null; plan: StudioExportPlan }>("exportMix", { name, ...o }),
+  exportMix: (name: string, o: ExportChoice = {}) => call<{ path: string | null; plan: StudioExportPlan; tip?: string | null }>("exportMix", { name, ...o }),
   /** the finished video read back and checked against the edit: retake says making it again should fix it */
   checkExport: (uri: string) => call<{ verdict: ExportVerdict | null }>("checkExport", { path: pathOf(uri) }),
   /** a finished Reel saved to My Reels too */
@@ -216,6 +222,8 @@ export const engine = {
   /** the clips' smooth copies the studio made (4K / HDR / 60 fps / a changing frame rate), saved on the phone: the
    * phone's preview and export play these, so heavy footage never stutters or stalls (`name`: the clip as sent) */
   copies: () => call<{ name: string; path: string; w: number; h: number; photo?: number }[]>("copies").catch(() => []),
+  /** the clips' small preview copies, by the clip's name (null: none), waited for at most `wait` seconds */
+  previews: (wait = 180) => call<Record<string, string | null>>("previews", { wait }).catch(() => ({} as Record<string, string | null>)),
   /** Ask Shubix from the editor: the website's own AI chat on the Reel the studio holds; its plan is applied there and
    * the Reel's clips come back (null: the studio does not hold this Reel) */
   chat: async (p: ReelProject, text: string) => {
@@ -261,7 +269,7 @@ function onTask(t: TaskEvent) {
   if (t.state === "start") tasks.start(t.id, t.kind ?? "ai", t.title ?? "", t.detail ?? "");
   else if (t.state === "progress") tasks.update(t.id, t.p, t.detail, t.title);
   else if (t.state === "done") tasks.done(t.id, t.title);
-  else if (t.state === "fail") tasks.fail(t.id, t.title ?? "");
+  else if (t.state === "fail") tasks.fail(t.id, safeMessage(t.title ?? ""));   // our words, never a path or a system error
   else tasks.clear(t.id);
 }
 // everything starts again: what it was doing stops, no card stays

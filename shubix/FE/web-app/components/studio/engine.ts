@@ -10,6 +10,7 @@
  * Plain JS on purpose (ported from the standalone page); the page mounts it with initStudio(root).
  */
 import { createTasks } from './tasks';
+import { safeMessage } from '@shubix/utils';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
@@ -52,6 +53,10 @@ const tasks = createTasks(root);   // what is happening now, always in view (com
 const ac = new AbortController(), SIG = { signal: ac.signal };
 // iPhone / iPad (iPadOS says it is a Mac): Safari there gives a page much less memory, and reloads it when it runs out
 const IOS = typeof navigator !== 'undefined' && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+// a phone or a tablet (a small screen too): its decoder is slow and few, so big clips are read from their light copies
+const phoneLike = () => IOS || /Android|Mobi/i.test(navigator.userAgent) || matchMedia('(max-width:1023px)').matches;
+// this browser makes H.264 copies of this size with WebCodecs (fast), not by recording them in real time
+const fastEncoder = async plan => { try{ return typeof VideoEncoder !== 'undefined' && !!(await VideoEncoder.isConfigSupported({ codec: 'avc1.42001f', width: plan.width, height: plan.height, bitrate: plan.bitrate })).supported; }catch(e){ return false; } };
 // Browser hints are advisory (Safari/iOS often hides deviceMemory). Prefer a smaller decoder working set
 // on iOS and low-memory Android devices; this trades a little parallel decode for fewer export OOMs.
 const DEVICE_MEMORY_GB = typeof navigator !== 'undefined' ? Number(navigator.deviceMemory) || 0 : 0;
@@ -906,10 +911,13 @@ async function pictureEnd(mb, track, first){
     if(p && p.timestamp - first > 0.3) return Math.min(end > 0 ? end : Infinity, p.timestamp - first + step); }catch(e){}
   return end;
 }
-async function clipReader(src, maxSide){
+// light: the clip's reading (motion, scenes, faces, its card's picture) may come from its light copy (960 on its long side):
+// those frames are 48 x 27 to 480 px, the same from the copy as from a 4K file, which a phone decodes many times slower.
+// Shubix AI's pictures (768 px) come from it too; the subject pop and the export read the clip itself.
+async function clipReader(src, maxSide, light = false){
   try{
     const mb = await loadMediabunny();
-    const input = new mb.Input({ source: new mb.BlobSource(decFile(src)), formats: mb.ALL_FORMATS });
+    const input = new mb.Input({ source: new mb.BlobSource(light && src.lightFile && maxSide <= 960 ? src.lightFile : decFile(src)), formats: mb.ALL_FORMATS });
     const track = await input.getPrimaryVideoTrack();
     if(!track || !(await track.canDecode())){ try{ input.dispose(); }catch(e){} throw new Error('no WebCodecs decoder'); }
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
@@ -935,7 +943,7 @@ const STILL = 0.0007;   // the same picture again (a camera's own noise moves a 
 async function scanMotion(src, onProgress, faces){
   // read the clip's frames (see clipReader) and compare small frames: how much moves, where it moves, how bright.
   // faces (a faceScanner): its frames come from this same pass, so the clip is decoded once (an iPhone)
-  const rd = await clipReader(src, faces ? 480 : 256); if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
+  const rd = await clipReader(src, faces ? 480 : 256, true); if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
   const c = document.createElement('canvas'); c.width=SW; c.height=SH; const g = c.getContext('2d', {willReadFrequently:true});
   const c2 = document.createElement('canvas'); c2.width=128; c2.height=72; const g2 = c2.getContext('2d', {willReadFrequently:true});
   let prev = null; const out = [], hists = [], lums = [];
@@ -1181,7 +1189,7 @@ function faceScanner(src){
 }
 async function scanFaces(src, onProgress){
   const fs = faceScanner(src); if(!fs) return;
-  const rd = await clipReader(src, 480), ts = fs.ts;
+  const rd = await clipReader(src, 480, true), ts = fs.ts;
   let k = 0;
   try{ for await (const v of rd.frames(ts)){ const tt = ts[k++]; if(!v) continue;
     if(!(await fs.each(v, tt))) break;
@@ -1277,6 +1285,9 @@ function addVideos(files, restored = false){
   const fresh = list.filter(f => { const k = fileKey(f); if(seen.has(k)) return false; seen.add(k); return true; });
   if(fresh.length < list.length && !restored) notify('Same clip already added, removed');
   if(!fresh.length) return;
+  // a lot of video at once (over 1.5 GB, about five minutes of 4K): said once, nothing held back. Every clip is read in
+  // full, so the Reel stays as accurate; it only takes longer
+  { const gb = fresh.reduce((t, f) => t + (f.size || 0), 0) / 1024 ** 3; if(gb > 1.5 && !restored) notify('Big clips (' + gb.toFixed(1) + ' GB): reading them takes a few minutes. Keep this page open.'); }
   const jobs = fresh.map(f=>{ const j = makeCard(f); j.card.dataset.fp = fileKey(f); return j; });
   queueClips([...unreadClips(), ...jobs]);
   fresh.forEach(wipKeep);
@@ -1367,7 +1378,7 @@ function setClipStatus(src, status, detail){
   el.classList.toggle('is-failed',failed);
   el.classList.toggle('is-reading',!ready&&!failed);
   el.querySelector('.clip-status-mark').textContent=ready?'✓':failed?'!':'…';
-  el.title=detail || (ready?'Video analysed and ready':failed?'Could not read this video':'Analysing video');
+  el.title=(detail && safeMessage(detail, '')) || (ready?'Video analysed and ready':failed?'Could not read this video':'Analysing video');
   el.setAttribute('aria-label',el.title);
 }
 /* ---- on the Create page each clip plays itself in its card (muted, looping), once the work is over. Only the cards on the
@@ -1443,24 +1454,13 @@ function clipBytes(bytes){
 }
 function updateClipHoverInfo(src){
   if(!src || !src.card || !src.file) return;
+  // only what helps: its length and size, and whether its light copy is ready (no file name, format, bitrate, copy
+  // details or errors: those are the app's insides; they go to the logs)
   const lines=[
-    src.name,
-    'Original: '+clipBytes(src.file.size)+' · '+(src.w&&src.h ? src.w+' × '+src.h : 'resolution pending'),
-    'Format: '+(src.file.type || (src.name.split('.').pop() || 'unknown').toUpperCase()),
-    'Duration: '+(Number.isFinite(src.dur)&&src.dur>0 ? fmt(src.dur) : '—'),
-    'Average bitrate: '+(src.dur>0 ? ((src.file.size*8/src.dur)/1e6).toFixed(2)+' Mbps (estimated)' : '—'),
-    'Preview: '+(src.proxyStatus || 'Checking…'),
+    'Length: '+(Number.isFinite(src.dur)&&src.dur>0 ? fmt(src.dur) : '—'),
+    'Size: '+clipBytes(src.file.size)+(src.w&&src.h ? ' · '+src.w+' × '+src.h : ''),
+    src.previewProxy ? 'Light copy ready: smooth to edit, exported in full quality' : 'Exported in full quality',
   ];
-  if(src.previewProxy && src.proxySize){
-    const saved=Math.max(0,src.file.size-src.proxySize);
-    const pct=src.file.size ? saved/src.file.size*100 : 0;
-    lines.push('Preview copy: '+clipBytes(src.proxySize)+' · '+(src.proxyW&&src.proxyH ? src.proxyW+' × '+src.proxyH : '—'));
-    lines.push('Saved: '+clipBytes(saved)+' ('+pct.toFixed(1)+'%)');
-    lines.push('Format: '+(src.proxyMime || 'browser preview'));
-  }else if(src.proxyReason){
-    lines.push('Details: '+src.proxyReason);
-  }
-  lines.push(src.edFile ? 'Export: the smooth edit copy (' + (src.edW||'?') + ' × ' + (src.edH||'?') + ', 30 fps)' : 'Export: original file · unchanged');
   src.card.title=lines.join('\n');
   src.card.setAttribute('aria-label',lines.join('. '));
 }
@@ -1576,6 +1576,7 @@ async function compressHighResolutionPreview(src, dd){
   const pictured = cached && cached.blob instanceof Blob && (heavy ? cached.v === 2 && cached.edit : cached.v === 1 && cached.blob.size < src.file.size) && await hasPicture(cached.blob);
   if(pictured){
     if(cached.edit){ src.edFile = cached.blob; src.edW = cached.width || 0; src.edH = cached.height || 0; src.edAudio = !!cached.audio; }
+    else src.lightFile = cached.blob;
     src.url = URL.createObjectURL(cached.blob);
     src.previewProxy = true; src.proxySize = cached.blob.size;
     src.proxyW = cached.width || 0; src.proxyH = cached.height || 0;
@@ -1599,7 +1600,11 @@ async function compressHighResolutionPreview(src, dd){
   }
   src.proxyStatus='Compressing…'; src.proxyReason='Target preview: '+plan.width+' × '+plan.height+' · '+(plan.bitrate/1e6).toFixed(2)+' Mbps';
   updateClipHoverInfo(src);
-  bgCopy(src, () => lightCopy(src, dd, plan));   // only for a smoother preview: made behind, the clip is read now
+  // on a phone the copy comes first and the clip is read from it (clipReader's light): one decode of the big file, not
+  // a copy and a reading of it at once (ten 30 s 4K clips hung phones, 2026-11-27). A computer reads now, the copy behind
+  // (only with a fast encoder: a browser without H.264 in WebCodecs records the copy in real time, as long as the clip)
+  if(phoneLike() && await fastEncoder(plan)) await lightCopy(src, dd, plan);
+  else bgCopy(src, () => lightCopy(src, dd, plan));
 }
 async function lightCopy(src, dd, plan){
   previewBatchDetected++;
@@ -1612,7 +1617,7 @@ async function lightCopy(src, dd, plan){
     }, plan);
     if(src.removed) return;
     if(result && result.blob && result.blob.size<src.file.size){
-      const oldUrl=src.url; src.url=URL.createObjectURL(result.blob); swapSrc(src); src.previewProxy=true; src.proxySize=result.blob.size; src.proxyW=result.plan.width; src.proxyH=result.plan.height; src.proxyMime=result.blob.type; src.proxyStatus='Success'; src.proxyReason='Downscaled preview generated successfully.';
+      const oldUrl=src.url; src.url=URL.createObjectURL(result.blob); swapSrc(src); src.lightFile=result.blob; src.previewProxy=true; src.proxySize=result.blob.size; src.proxyW=result.plan.width; src.proxyH=result.plan.height; src.proxyMime=result.blob.type; src.proxyStatus='Success'; src.proxyReason='Downscaled preview generated successfully.';
       // Persist the compressed preview separately; export always keeps using the original File.
       await keptPut('p:', src.file, { v: 1, blob: result.blob, width: result.plan.width, height: result.plan.height, mime: result.blob.type || '' });
       try{URL.revokeObjectURL(oldUrl);}catch(e){}
@@ -1680,7 +1685,7 @@ async function readVideo(src){
     stage = 'thumbnail';
     const th = card.querySelector('.th'); th.width=320; th.height=180; const tg=th.getContext('2d');
     const r = Math.max(320/src.w, 180/src.h); let pic = v;
-    if(facts){ const rd = await clipReader(src, 640); try{ pic = await rd.at(Math.min(src.dur*0.3, 2)); } finally { rd.close(); } }
+    if(facts){ const rd = await clipReader(src, 640, true); try{ pic = await rd.at(Math.min(src.dur*0.3, 2)); } finally { rd.close(); } }
     if(pic) tg.drawImage(pic,(320-src.w*r)/2,(180-src.h*r)/2,src.w*r,src.h*r);
     if(v){ v.removeAttribute('src'); v.load(); }
     if(src.removed) return;
@@ -1732,7 +1737,7 @@ async function readVideo(src){
   }catch(e){
     if(src.removed) return;
     rlog('clip', 'Clip could not be read: ' + src.name + ' · ' + String(e && e.message || e), { stage, type: src.file && src.file.type, mb: mb2(src.file && src.file.size) }, 'error');
-    setClipStatus(src,'failed',e && e.message ? 'Could not read video: '+e.message : 'Could not read video');
+    setClipStatus(src,'failed','Could not read this video. Try another clip or export it again from your gallery.');
     console.warn('clip not readable:', src.name, e && e.message || e);
     // Reopening a saved edit should not fail just because optional motion/face analysis could not run again.
     // The saved edit already contains its shot choices; keep the decoded source and use neutral scan data.
@@ -2547,7 +2552,7 @@ async function upsell(){
 }
 const aiCache = new Map();
 const fpOf = src => [src.name, src.file ? src.file.size : 0, src.file ? src.file.lastModified : 0].join('|');
-function aiStat(t, err){ const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
+function aiStat(t, err){ if(err && t) t = safeMessage(t); const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
   if(!t) tasks.clear('ai'); else if(/…$/.test(t)){ tasks.start('ai', 'ai', 'Shubix at work', t.replace(/…$/, '')); tasks.units('ai', sources.filter(x => !x.removed).length); } else if(err) tasks.fail('ai', t); else if(tasks.has('ai')) tasks.done('ai', t); el.style.color = err ? 'var(--drop)' : ''; }
 // The AI's view of footage [a,b]: frames nearby (same scene only), weighted by distance
 // what a clip is about: the vision AI's subjects seen in at least a third of its frames (one stray frame says little)
@@ -2601,7 +2606,8 @@ function aiTimes(src){
   return out;
 }
 async function aiFrames(src){
-  const rd = await clipReader(src, 768);
+  // from the light copy when there is one (960: the same 768 px pictures, decoded far faster on a phone)
+  const rd = await clipReader(src, 768, true);
   const sc = Math.min(1, 384/Math.max(src.w, src.h)), w = Math.max(2, Math.round(src.w*sc)), h = Math.max(2, Math.round(src.h*sc));
   const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
   const out = [], ts = aiTimes(src).slice().sort((a,b)=>a-b);
@@ -2941,7 +2947,7 @@ async function chatGenerate(btn){
     if(!edit.length) throw new Error('The Reel timeline could not be verified after applying the plan.');
   } catch(error) {
     btn.textContent = 'Not applied'; if(small && wasOpen) chatOpen(true);
-    chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error) + ' The Reel was not marked as generated; please try the instruction again.');
+    chatAnswer('I could not verify that every requested change was applied. ' + safeMessage(String(error && error.message || error), '') + ' The Reel was not marked as generated; please try the instruction again.');
     return;
   }
   if(!playing && !recording && buf && edit.length) startPlayback(0);
@@ -2976,7 +2982,7 @@ async function chatApp(text){
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (director && director.story ? ': ' + director.story : '.') : said || (chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
 }
 function chatDone(story){ if(!chatWaiting) return; chatAnswer('Done ✓ Your Reel is edited the way you asked' + (story ? ': ' + story : '.') + ' Tell me if you want anything else.'); }
-function chatFail(msg){ if(chatWaiting) chatAnswer(msg); }
+function chatFail(msg){ if(chatWaiting) chatAnswer(safeMessage(msg, 'Shubix could not do this now. Please try again.')); }
 function chatRestore(list){
   if(!Array.isArray(list)) return; chatMsgs = list.filter(m => m && typeof m.text === 'string').slice(-CHAT_KEEP);
   $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep, m.at)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text, false, m.at); });
@@ -3134,7 +3140,7 @@ async function chatSend(text){
       chatLocalDone = true;
       chatAnswer('Done ✓ Applied ' + applied + ' to the current Reel on this device. No Shubix AI credits used.');
     }catch(error){
-      chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error));
+      chatAnswer('I could not verify that every requested change was applied. ' + safeMessage(String(error && error.message || error), ''));
     }
     return;
   }
@@ -7315,12 +7321,13 @@ function saveFile(blob, name){
   return false;
 }
 const savedMsg = (shared, what) => shared ? what + ' is ready: tap the button below to save it to Photos or share it.' : what + ' saved';
-function showMsg(t, err, cls){ const m=$('xmsg'); m.hidden=false; m.textContent=t; m.title=t; m.classList.toggle('err', !!err); m.classList.toggle('addclips', cls === 'addclips'); if(err) notify(t, 'err'); }
+function showMsg(t, err, cls){ if(err) t = safeMessage(t); const m=$('xmsg'); m.hidden=false; m.textContent=t; m.title=t; m.classList.toggle('err', !!err); m.classList.toggle('addclips', cls === 'addclips'); if(err) notify(t, 'err'); }
 // a short note that pops up at the bottom and goes away by itself (errors stay a little longer)
 // a message: a popup with OK (Toaster). What only says an action worked says nothing: its result is on the screen
 const QUIET = /^(Undone|Redone|Shot \d|Marker|Using the sound|Your clips' own|The clips' own|Only the voices|All the sound|Your phone reloaded)/;
 function notify(t, kind){
   if(!t || kind === 'ok' || (!kind && QUIET.test(t))) return;
+  if(kind === 'err') t = safeMessage(t);   // an error says what happened in our words, never a path, a code or a system error
   window.dispatchEvent(new CustomEvent('shubix-toast', { detail: { kind: kind === 'err' ? 'error' : 'info', text: t } }));
 }
 // a message with one action button (a late AI plan: "Use it"); it stays a while, the action runs once

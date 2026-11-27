@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
@@ -39,6 +40,17 @@ export function variesFrameRate(times: number[]) {
   return off > 0.12 || Math.max(...d) > Math.max(0.25, med * 6);
 }
 export type ClipFacts = { dur: number; w: number; h: number; size?: number; fps?: number; hdr?: boolean; tenBit?: boolean; chroma422?: boolean; times?: number[]; end?: number };
+/** The preview copy every clip larger than the editor's player gets (CapCut and VN do the same): at most 960 on its long
+ * side, 30 fps, a key frame every quarter of a second, so each cut of a beat Reel starts at once and the phone decodes a
+ * small picture. Only the editor's player reads it; the export reads the clip (or its edit copy) at full size.
+ * null: the clip is small enough already. */
+export const PREVIEW_SIDE = 960;
+export function previewCopyOf(w: number, h: number, dur: number) {
+  const long = Math.max(w, h);
+  if (long <= PREVIEW_SIDE * 1.15 || dur <= 0 || dur > 1200) return null;
+  const k = PREVIEW_SIDE / long, even = (v: number) => Math.max(2, Math.round((v * k) / 2) * 2);
+  return { w: even(w), h: even(h), bitrate: 3_000_000 };
+}
 /** The edit copy a heavy clip needs (HDR, 10-bit, more than 30 fps, a varying frame rate, very large), H.264 at 30 fps; null: none. */
 export function editCopyOf(f: ClipFacts) {
   const long = Math.max(f.w, f.h), size = f.size ?? 0, rate = f.dur > 0 ? (size * 8) / f.dur : 0;
@@ -100,7 +112,7 @@ export function pcmOfWav(bytes: ArrayBuffer): { pcm: Float32Array; sr: number } 
 const FILL_KINDS = ["shade", "bars", "tint"];
 
 export function createNativeEngine(io: NativeIo) {
-  const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, speechProbs, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
   // My brand (the app keeps it: lib/engine.ts): every new Reel's host gets it
   let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
   const make = () => { const h = make0(); h.ES.brand = brand; return h; };
@@ -135,12 +147,35 @@ export function createNativeEngine(io: NativeIo) {
   }
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: Copy[] = [];
+  // the clips' small copies (previewCopyOf), by the clip's name: the editor's player reads them
+  let previews = new Map<string, Promise<string | null>>();
+  /** a clip's small copy, made before it is read: its motion, scenes and faces are read from it (they are read on
+   * 128 x 72 and face-sized frames, so a 960 copy gives the same readings as the 4K file, from one decode of the 4K
+   * file instead of two), and the preview plays it. null: none needed, or none made (the clip itself is read). */
+  async function smallCopy(name: string, path: string, w: number, h: number, dur: number) {
+    const plan = previewCopyOf(w, h, dur);
+    if (!plan) return null;
+    const known = previews.get(name); if (known) return known;
+    const job = (async () => {
+      const made = await io.fetch(url("copy", `&p=${encodeURIComponent(path)}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}&gop=0.25`), { method: "POST" });
+      return made.ok ? (await made.json() as { path: string }).path : null;
+    })().catch(() => null);
+    previews.set(name, job);
+    return job;
+  }
   const url = (path: string, q = "") => `${io.base}/${path}?k=${io.key}${q}`;
   /** a file's sound, read by the phone (SoundReader.kt); it fails when the file has none */
   async function readSound(path: string) {
     const res = await io.fetch(url("sound", `&p=${encodeURIComponent(path)}`));
     if (!res.ok) throw new Error("No sound");
     return pcmOf(await res.arrayBuffer());
+  }
+  /** where people speak in a sound: the probability of speech every 32 ms (Silero VAD on the phone, Models.kt, as the
+   * website's lib/vad); it fails when the model cannot run, and the brain then goes by loudness */
+  async function speechProbs(mono: Float32Array, sr: number) {
+    const res = await io.fetch(url("speech", `&sr=${Math.round(sr)}`), { method: "POST", body: new Uint8Array(mono.buffer, mono.byteOffset, mono.byteLength) });
+    if (!res.ok) throw new Error(await res.text());
+    return new Float32Array(await res.arrayBuffer());
   }
   function getCtx() { return { createBuffer: (count: number, n: number, sr: number) => soundOf(Array.from({ length: count }, () => new Float32Array(n)), sr) }; }
 
@@ -161,10 +196,13 @@ export function createNativeEngine(io: NativeIo) {
     }
   }
   /** the frames Shubix AI looks at, as JPEGs from the phone's own decoder */
-  async function aiFrames(src: { path: string; w: number; h: number }) {
+  async function aiFrames(src: { name?: string; path: string; w: number; h: number }) {
     const ts = (host.brain.aiTimes(src) as number[]).slice().sort((x, y) => x - y), sc = Math.min(1, 384 / Math.max(src.w, src.h));
     const w = Math.max(2, Math.round(src.w * sc / 2) * 2), h = Math.max(2, Math.round(src.h * sc / 2) * 2);
-    const res = await io.fetch(url("aiframes", `&p=${encodeURIComponent(src.path)}&w=${w}&h=${h}`), { method: "POST", body: ts.map((t) => t.toFixed(3)).join(",") });
+    // from the clip's small copy when it has one (960 on its long side: the same 384 px pictures, from a key frame every
+    // 0.25 s instead of a 4K decode from one up to 2 s before each), else the clip itself
+    const small = src.name ? await (previews.get(src.name) ?? null) : null;
+    const res = await io.fetch(url("aiframes", `&p=${encodeURIComponent(small ?? src.path)}&w=${w}&h=${h}`), { method: "POST", body: ts.map((t) => t.toFixed(3)).join(",") });
     if (!res.ok) throw new Error(await res.text());
     return (await res.json() as (string | null)[]).map((image, i) => image ? { t: +ts[i].toFixed(2), image } : null).filter(Boolean);
   }
@@ -227,7 +265,7 @@ export function createNativeEngine(io: NativeIo) {
       await host.setSong({ channels, mono, r, name, sampleRate });
       io.task?.("done", "song", "Song ready");
       return facts();
-    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "song", e instanceof Error ? e.message : "The song could not be read"); throw e; }
+    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "song", safeMessage(e instanceof Error ? e.message : "", "The song could not be read")); throw e; }
   }
   /** frames of a video as pixels, read by the phone (FileServer.kt /frames), in the order of the times. The website takes the
    * frame showing at a time (the last one at or before it), the phone's decoder the first one at or after it: each time is
@@ -346,7 +384,7 @@ export function createNativeEngine(io: NativeIo) {
       io.task?.("done", "ref", "Reel read");
       refLook = readRefLook(path, ES.refProfile);   // its texts and stickers, while the clips are added
       return { cuts: read.cuts.length, shots: read.moments.length, bpm: Math.round(read.bpm), trans: read.trans };
-    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", e instanceof Error ? e.message : "We could not read that Reel. Please try another video."); throw e; }
+    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", safeMessage(e instanceof Error ? e.message : "", "We could not read that Reel. Please try another video.")); throw e; }
   }
   const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, drops: n("drop"), breaks: n("break") }; };
 
@@ -418,7 +456,9 @@ export function createNativeEngine(io: NativeIo) {
       const made = await io.fetch(url("copy", `${p}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}`), { method: "POST" });
       if (made.ok) { path = (await made.json() as { path: string }).path; W = plan.w; H = plan.h; copies.push({ name: c.name, path, w: plan.w, h: plan.h }); }
     }
-    const q = `&p=${encodeURIComponent(path)}&dur=${dur}`;
+    // the reading's own small copy (smallCopy): what is read is the same picture, at the size the reading uses
+    const look = photo ? null : await smallCopy(c.name, path, W, H, dur);
+    const q = `&p=${encodeURIComponent(look ?? path)}&dur=${dur}`;
     const scan = lastLine(await (await io.fetch(url("scan", q), { method: "POST" })).text(), "{");
     let raw: { t: number; rects: unknown[] }[] = [];
     try { raw = lastLine(await (await io.fetch(url("faces", `${q}&w=${W}&h=${H}`), { method: "POST" })).text(), "["); } catch { /* no faces read: the Reel is still made */ }
@@ -451,7 +491,7 @@ export function createNativeEngine(io: NativeIo) {
       }
       if (stops === g && !host.ES.sources.length && lastError) throw lastError;
       io.task?.(stops !== g ? "clear" : "done", "clips", `${host.ES.sources.length} clip${host.ES.sources.length > 1 ? "s" : ""} ready`);
-    } catch (e) { io.task?.("fail", "clips", e instanceof Error ? e.message : "The clip could not be read"); throw e; }
+    } catch (e) { io.task?.("fail", "clips", safeMessage(e instanceof Error ? e.message : "", "The clip could not be read")); throw e; }
     finally { reading--; }
     host.ES.sources.sort((x: { name: string }, y: { name: string }) => names.indexOf(x.name) - names.indexOf(y.name));
     read = list;
@@ -566,6 +606,13 @@ export function createNativeEngine(io: NativeIo) {
     },
     saveToMyReels: (a) => saveToMyReels(String(a.path), String(a.name || "reel.mp4")),
     copies: () => copies,
+    /** the clips' preview copies (by the clip's name; null: none), waited for at most `wait` seconds in all */
+    previews: async (a) => {
+      const wait = Math.max(0, Number(a.wait ?? 180)) * 1000, end = new Promise<null>((ok) => setTimeout(() => ok(null), wait));
+      const out: Args = {};
+      for (const [name, job] of previews) out[name] = await Promise.race([job, end]);
+      return out;
+    },
     layerList: () => host.ES.layers.map((L: Args & { m: number; mk?: { w?: number; h?: number; th?: number; f?: number; a?: number; inv?: boolean }; key?: { on?: boolean; c?: string; tol?: number }; followOffsetX?: number; followOffsetY?: number; s: number; op: number; r: number }, index: number) => {
       const M = host.ES.lmedia[L.m as number] as { path?: string; kind?: string } | undefined;
       return { index, id: L.id, t0: L.t0, t1: L.t1, x: L.x, y: L.y, scale: L.s, opacity: L.op, rotation: L.r, mask: L.mask, blend: L.blend || "source-over", follow: L.follow || "none", followOffsetX: L.followOffsetX || 0, followOffsetY: L.followOffsetY || 0,
@@ -621,20 +668,46 @@ export function createNativeEngine(io: NativeIo) {
       else throw new Error(`The phone's own engine has no ${box}`);
       return { work: work(), state: state() };
     },
+    /** a Talking Reel (the website's setKind('talk') and buildTalk): the clips' voice, pauses cut, the song quietly under
+     * it; its captions as well when this person can have them. Throws when no one talks in the clips. */
+    talk: async (a) => {
+      const ES = host.ES;
+      if (a.pace) ES.talkPace = String(a.pace);
+      if (a.music !== undefined) ES.talkMusic = Number(a.music);
+      io.task?.("start", "talk", "Cutting the pauses", "Finding where you speak", "voice");
+      try {
+        if (ES.kind !== "talk") await host.brain.setKind("talk"); else await host.brain.buildTalk();
+        if (ES.nomake || !ES.edit.length) throw new Error(ES.nomake || "We could not hear anyone talking in these clips.");
+        io.task?.("done", "talk", "Pauses cut");
+      } catch (e) { io.task?.("fail", "talk", safeMessage(e instanceof Error ? e.message : "", "The talk could not be read")); throw e; }
+      // its captions by themselves (the website's autoCaptions): most people watch with the sound off
+      if (a.captions !== false && !ES.capsOn) await host.setCaptions(true, undefined, undefined).catch(() => { ES.capsOn = false; });
+      const t = ES.talk as { parts: unknown[]; retakes: number; mute: number } | null;
+      return { duration: ES.buf?.duration ?? 0, shots: ES.edit.length, parts: t?.parts.length ?? 0, retakes: t?.retakes ?? 0, mute: t?.mute ?? 0, captions: !!ES.capsOn };
+    },
+    /** a Talking Reel's sound (the voice and the song under it) as a WAV on the phone: the Reel's own sound in the editor */
+    talkMix: async (a) => {
+      const ES = host.ES; if (ES.kind !== "talk" || !ES.buf) return { path: null };
+      const res = await io.fetch(url("out", `&name=${encodeURIComponent(String(a.name || "talk.wav"))}`), { method: "PUT", body: new Uint8Array(wavOf(ES.buf, 1)) });
+      if (!res.ok) throw new Error("The Reel's sound could not be saved on the phone");
+      return await res.json() as Args;
+    },
     exportMix: async (a) => {
       host.exportChoose(a); if (a.fixLocked) host.exportFix();
       await host.brain.ensureMix();
       const s = host.brain.exportSound(), plan = host.exportPlan();
-      if (!s) return { path: null, plan };
+      // without the song: where to start it in Instagram so the cuts land on its beats (the website's noSongTip)
+      const tip = host.ES.noSong ? String(host.brain.noSongTip()) : null;
+      if (!s) return { path: null, plan, tip };
       const res = await io.fetch(url("out", `&name=${encodeURIComponent(String(a.name || "mix.wav"))}`), { method: "PUT", body: new Uint8Array(wavOf(s.buf, s.gain)) });
       if (!res.ok) throw new Error("The Reel's sound could not be saved on the phone");
-      return { ...(await res.json() as Args), plan };
+      return { ...(await res.json() as Args), plan, tip };
     },
   };
   const NOT_YET: string[] = [];
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
-    fresh: () => { stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
+    fresh: () => { stops++; read = []; copies = []; previews = new Map(); readBefore.clear(); signedIn = false; host = make(); },
     // Undo: the website keeps a step whenever the Reel stops changing (a ticker, every 500 ms); here there is no ticker,
     // so each tool's change is kept as its step around the call (Undo did nothing on the phone: no step was ever kept)
     call: async (op: string, a: Args = {}) => {

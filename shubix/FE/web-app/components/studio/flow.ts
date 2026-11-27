@@ -272,6 +272,38 @@ export function initFlow(root: HTMLElement): () => void {
     let n: string | null = null; try { n = localStorage.getItem("shubix-songs"); } catch { /* private mode */ }
     if (n !== "0") $("rwait").hidden = false;
   }
+  // Get songs: where to find one (Admin → Songs → Song sites), each in a new tab; the song is then added with Add your
+  // song from the person's own device (Shubix downloads nothing). Here, not in the studio's code: it works at once
+  {
+    const box = $("songsites"), shut = () => { box.hidden = true; ($("mget") as HTMLElement).focus({ preventScroll: true }); };
+    const log = (msg: string, data: object) => { try { (window as unknown as { __shubixReelLog?: (s: string, m: string, d: object, l: string) => void }).__shubixReelLog?.("songs", msg, data, "info"); } catch { /* no log */ } };
+    // the places, from Admin → Songs → Song sites (GET /api/song-sites); their names and notes are the administrator's
+    type Site = { id: string; name: string; note: string; url: string; free: boolean };
+    let got: Promise<void> | null = null;
+    const load = () => got ??= fetch("/api/song-sites").then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))).then((j: { sites?: Site[] }) => {
+      const list = $("songsitelist"), sites = (j.sites ?? []).filter((x) => /^https:\/\//.test(x.url));
+      list.replaceChildren(...sites.map((x) => {
+        const a = document.createElement("a"), head = document.createElement("span"), name = document.createElement("span"), tag = document.createElement("small"), note = document.createElement("small");
+        a.className = "grid gap-0.5 rounded-2xl border border-line bg-surface-2 px-4 py-3 no-underline transition-[background-color,border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-accent hover:bg-accent/10 hover:shadow-[0_8px_24px_-12px_var(--accent)] focus-visible:border-accent focus-visible:bg-accent/10 focus-visible:outline-none";
+        a.href = x.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.dataset.site = x.id;
+        head.className = "flex items-center gap-2 font-semibold text-ink"; name.textContent = x.name;
+        tag.className = "rounded-full px-2 py-0.5 text-[11px] " + (x.free ? "bg-accent/15 text-accent" : "bg-line text-muted");
+        tag.textContent = x.free ? "Free to use" : "Trending";
+        note.className = "text-[12.5px] leading-snug text-muted"; note.textContent = x.note;
+        head.append(name, tag); a.append(head); if (x.note) a.append(note);
+        return a;
+      }));
+      if (!sites.length) list.textContent = "No places to get songs yet.";
+    }).catch(() => { got = null; $("songsitelist").textContent = "Could not load the list. Check your connection and try again."; });
+    $("mget").addEventListener("click", () => { box.hidden = false; void load().then(() => box.querySelector<HTMLElement>("a")?.focus({ preventScroll: true })); log("Get songs opened", {}); }, sig);
+    $("songsitesx").addEventListener("click", shut, sig);
+    box.addEventListener("click", (e) => {
+      if (e.target === box) return shut();
+      const a = (e.target as HTMLElement).closest?.("a[data-site]") as HTMLAnchorElement | null;
+      if (a) { log("Song site: " + a.dataset.site, { site: a.dataset.site }); setTimeout(() => { box.hidden = true; }, 300); }
+    }, sig);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !box.hidden) shut(); }, sig);
+  }
   const early = new Set<HTMLInputElement>(), boxOf = (id: string) => $(id === "mfile" ? "mpick" : "dropzone");
   root.addEventListener("click", (e) => {
     const b = starting() && (e.target as HTMLElement).closest("#mpick,#dropzone");
