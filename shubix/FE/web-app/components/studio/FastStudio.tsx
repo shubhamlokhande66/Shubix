@@ -115,11 +115,13 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
             const gen = root.current?.querySelector<HTMLButtonElement>("#fgen");
             void (async () => { for (let i = 0; gen && i < 240 && !cancelled; i++) { if (!gen.disabled) { gen.click(); break; } await new Promise((ok) => setTimeout(ok, 250)); } })();
           }
+          else root.current?.dispatchEvent(new Event("studio-handoff-end"));   // nothing came over: the clips screen, to add them
           const u = new URL(location.href); u.searchParams.delete("from"); history.replaceState(history.state, "", u);
         }
         if (engine && root.current) { const { initBridge } = await import("@/components/studio/bridge"); const stop = initBridge(root.current), stopStudio = cleanup; cleanup = () => { stop(); stopStudio?.(); }; }
       } catch (e) {
         root.current?.dispatchEvent(new Event("studio-ready"));
+        root.current?.dispatchEvent(new Event("studio-handoff-end"));
         setFailed(e instanceof Error ? e.message : String(e));
         reportError("studio", "Fast Studio could not start: " + (e instanceof Error ? e.message : String(e)), e instanceof Error ? e.stack ?? "" : "");
       }

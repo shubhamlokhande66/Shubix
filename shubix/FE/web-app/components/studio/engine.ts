@@ -18,10 +18,11 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { boxShots, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { chatSize } from '@shubix/core/lib/chatSize';
+import { commandsFor, choicesFor } from '@shubix/core/lib/chatCommands';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
 import { STICKERS } from '@shubix/core/lib/stickers';
 import { SFX_REC, sfxRecorded } from '@shubix/core/lib/sfx-recorded';
@@ -1933,13 +1934,15 @@ async function buildTalk(){
     while(p.b - a > 5){ const m = splitPoint(v, a, p.b); shots.push({ si: p.si, in: a, start: t0, end: t0 + (m - a) }); t0 += m - a; a = m; }
     shots.push({ si: p.si, in: a, start: t0, end: p.t1 });
   }
-  const useCount = sources.map(()=>0); let zoomed = false;
+  const useCount = sources.map(()=>0);
   const keptUk = ukKeep();
-  edit = shots.map((sh, i) => {
-    const prev = shots[i-1], sameTake = prev && prev.si === sh.si;
-    zoomed = sameTake ? !zoomed : false;
-    const src = sources[sh.si], e = { start: sh.start, end: sh.end, type: 'cut', fx: 'Hard cut', tr: 'hard', efx: zoomed ? 'jump' : 'none', sp: SPEED.normal,
-      src: sh.si, in: sh.in, scaleR: 1, cx: 0.5, cy: 0.45, face: 0, fs: 0, mot: 0, ov: 0, el: src.els[(useCount[sh.si]++)%3], dirWhy: '', why: sameTake ? 'jump cut: framed closer' : '' };
+  // the talking video is shown as it was filmed (2026-11-27, the creator's ask): no punch-in on a jump cut, and a video
+  // wider than the Reel is fitted whole over its own blurred copy, not cut down at its sides
+  const [cW, cH] = SIZES[aspect];
+  edit = shots.map((sh) => {
+    const src = sources[sh.si], e = { start: sh.start, end: sh.end, type: 'cut', fx: 'Hard cut', tr: 'hard', efx: 'none', sp: SPEED.normal,
+      src: sh.si, in: sh.in, scaleR: 1, cx: 0.5, cy: 0.45, face: 0, fs: 0, mot: 0, ov: 0, el: src.els[(useCount[sh.si]++)%3], dirWhy: '', why: '' };
+    if(src.w && src.h && src.w/src.h > (cW/cH)*1.15) e.cs = { fit: true, bg: 'blur' };
     const fz = (src.faces || []).filter(f => f.n > 0 && f.t >= sh.in && f.t <= sh.in + (sh.end - sh.start));
     if(fz.length){ e.face = fz.length/Math.max(1, (src.faces || []).filter(f => f.t >= sh.in && f.t <= sh.in + (sh.end - sh.start)).length);
       e.cx = fz.reduce((q,f)=>q + f.fx, 0)/fz.length; e.cy = fz.reduce((q,f)=>q + f.fy, 0)/fz.length; e.fs = fz.reduce((q,f)=>q + (f.fs || 0), 0)/fz.length; }
@@ -2675,7 +2678,7 @@ async function aiRun(){
       const r = await apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: stop,
         body: JSON.stringify({ reelId: reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
+      if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').')), { status: r.status });
       tasks.lock();
       charged += res.charged || 0; if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
@@ -2701,6 +2704,7 @@ async function aiRun(){
     aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => { delete s.aiFramesMade; });
+    if(aiOn && e && (e.status === 402 || e.status === 403)){ aiGaveUp = reelIdNow(); aiStat(String(e.message)); chatFail(String(e.message)); aiNeed(true, e.status === 402); return; }   // credits or plan: said as it is
     if(aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // no Reel from the phone's own edit (aiDown)
     aiGaveUp = reelIdNow();
     console.warn('AI picks not used:', e); aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
@@ -2857,7 +2861,13 @@ function applyChatVisualIntent(intent, slots = []){
     });
     transitionCount = plannedTransitions.length;
   }
-  if(intent.effectsAll){
+  // one effect named (an Ask Shubix "/effect" choice): that one on every clip, as asked
+  if(intent.effectsAll && intent.effectType){
+    const fx = intent.effectType;
+    if(!Object.prototype.hasOwnProperty.call(FX_NAME, fx) || isLocked('fx', fx)) throw new Error('That effect is locked or unavailable on your plan.');
+    plannedEffects = edit.map(() => fx); effectCount = plannedEffects.length;
+  }
+  else if(intent.effectsAll){
     const allowed = FX_OK[mode] || FX_OK.auto;
     const canUse = (fx, i) => !!fx && fx !== 'none' && Object.prototype.hasOwnProperty.call(FX_NAME, fx)
       && (fx === 'hook' ? i === 0 : allowed.includes(fx))
@@ -3075,6 +3085,7 @@ async function chatPatch(text, n, id){
 async function chatSend(text){
   remakeOk();
   text = String(text || '').trim().slice(0, 300); if(!text || chatWaiting) return;
+  if(/^\/\S*$/.test(text)) return;   // a command not chosen yet (its list is open)
   reviewDone();
   if(aiHeldBack()){ chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text }); $('chatin').value = ''; chatAnswer('Your song or clips changed. Go on with Next to make a new Reel first.'); return; }
   chatSay('me', text); chatMsgs.push({ at: Date.now(), who: 'me', text });
@@ -3103,6 +3114,13 @@ async function chatSend(text){
   const localVisualIntent = parseDirectorVisualIntent(text);
   const hasLocalVisualIntent = !!(localVisualIntent.openingText || localVisualIntent.squareFrameAll
     || localVisualIntent.transitionAll || localVisualIntent.effectsAll);
+  if(ready && localVisualIntent.photoBoxes && kind !== 'talk'){
+    const before = histSnap(), r = await photoBoxes();
+    if(r && r.shots.length){ hist.u.push(before); if(hist.u.length > HIST_MAX) hist.u.shift(); hist.r = []; hist.cur = histSnap(); hist.cand = ''; histUI(); chatLocalDone = true;
+      chatAnswer('Done ✓ Photo boxes on shot' + (r.shots.length > 1 ? 's ' : ' ') + r.shots.map(i => i + 1).join(', ') + ': five boxes with pictures from your other clips pop in on the beat. No Shubix AI credits used.'); }
+    else chatAnswer(r ? 'This Reel has no shot long enough for photo boxes (about 1.2 s). A longer song part or longer clips help.' : 'I could not make the photo boxes this time. Please try again.');
+    return;
+  }
   if(ready && hasLocalVisualIntent){
     try{
       const before = histSnap();
@@ -3129,11 +3147,23 @@ async function chatSend(text){
     return;
   }
   if(!ready){ wish = chatMsgs.filter(m => m.who === 'me').map(m => m.text).join(' · ').slice(-800); chatAnswer('Got it! I\'ll edit your Reel this way as soon as it is made.'); return; }
-  if(!aiReelOk() && !(await aiGate(root.classList.contains('aineed')))){ chatAnswer('This Reel is edited on your phone, so I can only switch its style (say "faster" or "calmer").'); return; }
+  // Shubix AI's question for this Reel answered ✕ (or too few credits): said plainly, and how to go on (2026-11-26)
+  if(!aiReelOk() && !(await aiGate(root.classList.contains('aineed')))){
+    const cost = aiCostOf('reel'), bal = aiBal();
+    if(cost && bal !== null && bal < cost){ chatAnswer('Shubix AI needs ' + creditWord(cost) + ' for this Reel and you have ' + creditWord(bal) + '. Your Reel stays as your phone made it: I can still switch its style (say "faster" or "calmer").'); return; }
+    chatAnswer('Paused, as you asked: Shubix AI has not changed this Reel and no credits were used. To let Shubix AI do it, tap Use Shubix AI.');
+    const b = document.createElement('button'); b.type = 'button'; b.className = `${Button.primary} up`; b.textContent = 'Use Shubix AI';
+    b.addEventListener('click', async () => { b.disabled = true; if(await aiGate(true)){ b.remove(); chatSend(text); } else b.disabled = false; }, SIG);
+    $('chatlog').appendChild(b); return;
+  }
+  // the Reel has no Shubix AI plan yet: this message is how Shubix AI makes it (the Reel's credits, agreed just above), not a
+  // change of it: no second question, no second charge (the server: direct route), the whole Reel planned with it
+  const firstPlan = dirPlannedReel !== reelIdNow() && !dirBusy;   // a plan on its way: that one pays the Reel, this message is a change
   // what this change costs, asked first: a few named shots or the whole Reel
-  const size = chatSize(text), freeN = aiFreeChats(), free = bal0 => bal0 !== null && chatUsed < freeN, bal = aiBal();
-  const cost = free(bal) ? 0 : aiCostOf(size === 'small' ? 'small' : 'big');
-  if(free(bal)){
+  const size = firstPlan ? 'big' : chatSize(text), freeN = aiFreeChats(), free = bal0 => bal0 !== null && chatUsed < freeN, bal = aiBal();
+  const cost = firstPlan || free(bal) ? 0 : aiCostOf(size === 'small' ? 'small' : 'big');
+  if(firstPlan){ /* part of the Reel's own plan */ }
+  else if(free(bal)){
     const left = freeN - chatUsed - 1;
     const ok = await askCredits({ title: size === 'small' ? 'A small change · free' : 'Change the whole Reel · free', text: (size === 'small' ? 'Shubix changes only the shots you named; the rest stays as it is. ' : 'Shubix plans the whole Reel again with what you asked. ') + 'Your plan has ' + freeN + ' free changes per Reel: this one is free, ' + (left ? left + ' more free after it.' : 'after it each change uses credits.'), bal, ok: 'Make the change', no: 'Cancel' });
     if(!ok){ chatAnswer('OK, nothing changed.'); return; }
@@ -3189,7 +3219,43 @@ $('chatin').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftK
 // the message box grows with what is written (up to a few lines)
 const chatFit = () => { const t = $('chatin'); t.style.height = 'auto'; t.style.height = Math.min(120, t.scrollHeight) + 'px'; };
 $('chatin').addEventListener('input', chatFit, SIG);
-$('chatchips').addEventListener('click', e => { const b = e.target.closest('button'); if(b) chatSend(b.dataset.say); }, SIG);
+$('chatchips').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; if(b.dataset.slash){ const t = $('chatin'); t.value = '/'; t.focus(); t.dispatchEvent(new Event('input')); return; } chatSend(b.dataset.say); }, SIG);
+// Ask Shubix's commands (Shared/core chatCommands.ts): "/" lists them, a command its choices, a choice writes its sentence
+// in the box (to add to, then send). Arrow keys and Enter pick, Esc closes. The same in the app (AskShubix.tsx).
+function slashMenu(input, down){
+  const menu = document.createElement('div'); menu.className = 'slashmenu' + (down ? ' down' : ''); menu.setAttribute('role', 'listbox'); menu.hidden = true;
+  input.parentElement.appendChild(menu);
+  let items = [], at = 0;
+  const pick = (it) => {
+    if(it.cmd){ input.value = it.cmd + ' '; show(); input.focus(); return; }
+    input.value = it.say; menu.hidden = true; input.focus();
+    const k = input.value.indexOf('YOUR TEXT'); if(k >= 0 && input.setSelectionRange) input.setSelectionRange(k, k + 9);
+    input.dispatchEvent(new Event('input'));
+  };
+  const show = () => {
+    const v = input.value, r = commandsFor(v);
+    items = r.cmd ? choicesFor(r.cmd, v).map(c => ({ ...c })) : r.list.map(c => ({ cmd: c.cmd, label: c.cmd, hint: c.title + ' · ' + c.hint }));
+    if(!v.startsWith('/') || !items.length){ menu.hidden = true; return; }
+    at = Math.min(at, items.length - 1);
+    menu.replaceChildren(...(r.cmd ? [Object.assign(document.createElement('small'), { className: 'slashhd', textContent: r.cmd.title + ': pick one' })] : []),
+      ...items.map((it, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.className = i === at ? 'on' : '';
+        const t = document.createElement('b'); t.textContent = it.label; b.appendChild(t);
+        if(it.hint){ const h = document.createElement('small'); h.textContent = it.hint; b.appendChild(h); }
+        b.addEventListener('mousedown', e => { e.preventDefault(); pick(it); }); return b; }));
+    menu.hidden = false;
+  };
+  input.addEventListener('input', () => { at = 0; show(); }, SIG);
+  input.addEventListener('focus', show, SIG);
+  input.addEventListener('blur', () => setTimeout(() => { menu.hidden = true; }, 120), SIG);
+  // before the box's own Enter (send): Enter picks, arrows move, Esc closes
+  input.addEventListener('keydown', e => {
+    if(menu.hidden || !items.length) return;
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); at = (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length; show(); menu.children[at + (menu.firstChild && menu.firstChild.tagName === 'SMALL' ? 1 : 0)]?.scrollIntoView({ block: 'nearest' }); }
+    else if(e.key === 'Enter'){ e.preventDefault(); e.stopImmediatePropagation(); pick(items[at]); }
+    else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); menu.hidden = true; }
+  }, { capture: true, signal: SIG.signal });
+}
+slashMenu($('chatin'), false); slashMenu($('askin'), true);
 /* ---- AI director: one text call plans the Reel as a story ----
    The cut times are fixed by the music. For every cut the phone offers its 3 best different moments (rules + AI scores);
    the director picks one per cut plus its transition, effect and speed. Every choice is then checked here: the moment
@@ -3780,7 +3846,7 @@ async function directorRun(key){
     const { req, ctx } = dirRequest(cands), sig = planSig(), mix = mixNo, st = mixStore();
     const r = await apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });
     const res = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
+    if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').')), { status: r.status });
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
     chatSync(res); if(typeof res.balance === 'number' && aiInfo){ aiInfo.balance = res.balance; window.dispatchEvent(new Event('brs-credits')); }
@@ -3802,7 +3868,9 @@ async function directorRun(key){
   }catch(e){
     dirFailedKey = key;
     const back = aiCostOf('reel') && dirPlannedReel !== reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(); }
+    // not enough credits (402) or not on the plan (403): said as it is, never "Shubix AI is not available"
+    if(e && (e.status === 402 || e.status === 403)){ chatFail(String(e.message)); aiStat(String(e.message)); if(aiOn) aiNeed(true, e.status === 402); }
+    else if(late){ aiDown(); }
     else {
       chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
@@ -4328,6 +4396,8 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
+    // a Reel copied to the frame: the reader times a transition by its middle, so the copy's middle lands there (half a lead)
+    if(e.trByRef && copyTimed()) L = L/2;
     L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
@@ -4594,7 +4664,7 @@ function makeEditNow(){
     tasteFx(e, i, taste);
     // When the optional cloud AI director is unavailable, apply the shared on-device director's
     // renderable treatment as a conservative fallback. Never overwrite an explicit AI choice.
-    if(!dirInfo && shared){
+    if(!dirInfo && shared && !copyExact()){   // (a copied shot has the reference's own effect and move, or none)
       if(!e.fxByDir && e.efx === 'none'){
         const fx = shared.effects.find(id => !!FX_NAME[id]);
         if(fx && (e.end - e.start) >= 0.65) e.efx = fx;
@@ -5250,22 +5320,24 @@ function drawLayers(g, t){
     if(!src || (M.kind === 'video' && !exporting && M.el.readyState < 2)) continue;
     const W = out.width, H = out.height, c = L.crop, sw0 = src.videoWidth || src.naturalWidth || src.width, sh0 = src.videoHeight || src.naturalHeight || src.height;
     const sx = sw0*c.l, sy = sh0*c.t, sw = Math.max(2, sw0*(1 - c.l - c.r)), sh = Math.max(2, sh0*(1 - c.t - c.b));
-    const P = popAt(L, t);   // a subject pop grows from small in the middle to its own size and place
-    const dw = Math.max(2, Math.round(P.s*W)), dh = Math.max(2, Math.round(dw*sh/sw*(M.h && M.w ? (M.w/M.h)/(sw0/sh0) : 1)));
+    const P = popAt(L, t), B = bumpAt(L, t);   // a subject pop grows from small in the middle to its own size and place; a photo box pops in (boxes.ts)
+    const dw = Math.max(2, Math.round(P.s*B.s*W)), dh = Math.max(2, Math.round(dw*sh/sw*(M.h && M.w ? (M.w/M.h)/(sw0/sh0) : 1)));
     if(!lyBuf){ lyBuf = document.createElement('canvas'); lyG = lyBuf.getContext('2d'); }
     if(lyBuf.width !== dw || lyBuf.height !== dh){ lyBuf.width = dw; lyBuf.height = dh; }
     const q = lyG; q.save(); q.globalCompositeOperation = 'source-over'; q.clearRect(0, 0, dw, dh); q.drawImage(src, sx, sy, sw, sh, 0, 0, dw, dh);
     if(L.key && L.key.on) chromaKey(q, dw, dh, L.key);
     if(L.mask !== 'none' || L.rad > 0){ layerMask(q, L, dw, dh); }
     q.restore();
-    const life = t - L.t0, left = L.t1 - t, a = L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
+    const life = t - L.t0, left = L.t1 - t, a = B.a * L.op * Math.min(L.fin > 0 ? Math.min(1, life/L.fin) : 1, L.fout > 0 ? Math.min(1, left/L.fout) : 1);
     const face = L.follow === 'face' ? facePosOnScreen(t) : null;
     const lx = face ? face.x + (L.followOffsetX || 0) : P.x, ly = face ? face.y + (L.followOffsetY || 0) : P.y;
     if(L.shade > 0){ g.save(); g.globalAlpha = Math.max(0, Math.min(1, a*L.shade)); g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.restore(); }   // the Reel darker behind it
     // a matte: the layer is a window; the Reel shows only through it (matte) or only outside it (matte-inv), black elsewhere
     const matte = L.blend === 'matte' || L.blend === 'matte-inv';
     g.save(); g.globalAlpha = Math.max(0, Math.min(1, a)); g.globalCompositeOperation = matte ? (L.blend === 'matte' ? 'destination-in' : 'destination-out') : (L.blend || 'source-over'); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.scale(L.fh ? -1 : 1, L.fv ? -1 : 1);
-    g.drawImage(lyBuf, -dw/2, -dh/2); g.restore();
+    g.drawImage(lyBuf, -dw/2, -dh/2);
+    if(L.edge > 0){ const ew = Math.max(1, L.edge*W*B.s); g.strokeStyle = L.edgeC || '#FFFFFF'; g.lineWidth = ew; g.strokeRect(-dw/2 - ew/2, -dh/2 - ew/2, dw + ew, dh + ew); }   // a photo box's frame
+    g.restore();
     if(matte){ g.save(); g.globalCompositeOperation = 'destination-over'; g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.restore(); }
     if(L === layers[lySel] && !exporting && !recording && !playing){   // the chosen layer: a thin frame (preview only)
       g.save(); g.translate(lx*W, ly*H); if(L.r) g.rotate(L.r*Math.PI/180); g.strokeStyle = 'rgba(176,92,255,0.95)'; g.lineWidth = Math.max(2, W*0.004); g.setLineDash([W*0.012, W*0.008]); g.strokeRect(-dw/2, -dh/2, dw, dh); g.restore(); }
@@ -5441,6 +5513,45 @@ async function popFrames(e, sides, local = 0){
   } finally { try{ input.dispose(); }catch(err){} }
 }
 const isPop = L => !!(L && L.pop);
+/* ---- Photo boxes (Shared/video-engine/src/boxes.ts): over the long shots, five tall boxes pop in one after another on
+ * the beat, each a picture from the Reel's other clips in a white frame; they go together before the cut. Asked in
+ * words ("photo boxes", "5 boxes on it") or /effect; Android: engine/brain/core.ts photoBoxes, the same. ---- */
+const isBox = L => !!(L && L.boxes);
+let boxBusy = false;
+async function photoBoxes(from = 1, by = 'mine'){
+  if(!edit.length || kind === 'talk' || boxBusy) return null;
+  const gen = editGen, shots = boxShots(edit, period, 3, from);
+  if(!shots.length) return { shots: [] };
+  boxBusy = true;
+  try{
+    const made = [], pics = new Map();
+    for(const i of shots){
+      const srcs = boxSources(edit, i), plan = boxLayers(edit[i], period);
+      for(let k = 0; k < plan.length; k++){
+        const q = srcs[k]; if(!q) continue;
+        const key = q.shot + ':' + q.local.toFixed(2);
+        let M = pics.get(key);
+        if(!M){
+          let frame; try{ [frame] = await popFrames(edit[q.shot], [0], q.local); }catch(err){ frame = null; }
+          if(!frame || editGen !== gen) continue;
+          const c = boxCrop(frame.width, frame.height, BOX_ASPECT), cut = document.createElement('canvas');
+          cut.width = Math.max(2, Math.round(frame.width*(1 - c.l - c.r))); cut.height = Math.max(2, Math.round(frame.height*(1 - c.t - c.b)));
+          const s = Math.min(1, 720/cut.height); const fin = document.createElement('canvas'); fin.width = Math.max(2, Math.round(cut.width*s)); fin.height = Math.max(2, Math.round(cut.height*s));
+          fin.getContext('2d').drawImage(frame, frame.width*c.l, frame.height*c.t, cut.width, cut.height, 0, 0, fin.width, fin.height);
+          const blob = await new Promise(r => fin.toBlob(r, 'image/jpeg', 0.9)); if(!blob || editGen !== gen) continue;
+          M = await addLayerMedia(new File([blob], 'Photo box ' + (q.shot + 1) + '.jpg', { type: 'image/jpeg' })); lmedia.push(M); M.at = lmedia.length - 1; pics.set(key, M);
+        }
+        made.push({ id: 0, m: M.at, in: 0, ...JSON.parse(JSON.stringify(LY0)), ...plan[k], boxes: by });
+      }
+    }
+    if(editGen !== gen || !made.length) return null;
+    layers = layers.filter(L => !isBox(L)).concat(made.map(L => ({ ...L, id: ++lySeq })));   // a new set replaces the last
+    lyUI(); await prepLayers(pos); redrawFrame(); saveNow();
+    rlog('boxes', 'Photo boxes · shots ' + shots.map(i => i + 1).join(', ') + ' · ' + made.length + ' boxes', { shots, boxes: made.length });
+    return { shots };
+  }catch(err){ console.warn('photo boxes', err); return null; }
+  finally{ boxBusy = false; }
+}
 async function subjectPop(auto = false){
   if(!subjectMask){ if(!auto) notify('Pop out needs the subject tools, which this browser cannot run.', 'err'); return null; }
   if(!edit.length || kind === 'talk' || popBusy){ if(!auto && !edit.length) notify('Make the Reel first, then Pop out.'); return null; }
@@ -5746,7 +5857,8 @@ function drawWatermark(){
 /* ---- captions for talking: the key word of each line, highlighted, and a zoom punch on it ----
  * In talking videos and voiceovers one word per caption line is the key word: the one said hardest (its loudness against
  * the line's) that is not a small word, numbers and long words counting a little more. It is drawn in the accent colour,
- * bigger, with an emoji when one fits, and the picture punches in on it (8% over 0.12 s, eased back over 0.6 s). */
+ * bigger, with an emoji when one fits, and, with a voiceover (not in a Talking Reel), the picture punches in on it (8% over
+ * 0.12 s, eased back over 0.6 s). */
 let keyOn = true;
 const STOP = new Set('a an the and or but so to of in on at for with from by is are was were be been am i you he she it we they me my your our this that these those do does did not no yes just very really then than if as up out about into over also can will would there here what when how why who all any some more most much many one'.split(' ')
   .concat('है हैं था थी थे और या के की का को में से पर यह वह ये वो तो भी ही ना न हाँ आणि हे ते ती तो आहे आहेत होता होती चा ची चे ला ने मध्ये पण तर ही'.split(' ')));
@@ -5770,6 +5882,8 @@ function markKeyWords(lines){
 }
 // the zoom punch at time t: 1 when there is none
 function emphAt(t){
+  // a talking video is shown as it was filmed (2026-11-27): its key words are highlighted, the picture does not zoom on them
+  if(kind === 'talk') return 1;
   if(!keyOn || !capsOn || !capLines || !speakingVoice()) return 1;
   let z = 1;
   for(const L of capLines){ if(L.a > t + 0.01 || L.b < t - 1) continue; for(const w of L.words){ if(!w.key) continue; const d = t - w.start; if(d < 0 || d > 0.72) continue;
@@ -6359,7 +6473,7 @@ async function loadCaptions(){
   const from = !tk && !vk && secStart + buf.duration > 179 ? secStart : 0;   // a part past 3 minutes: from where it starts
   const lang = $('caplang').value, key = (tk ? 'talk|' + talk.sig : vk ? 'vo|' + vo.key : song ? song.key : musicKey) + '|' + from.toFixed(2) + '|' + lang, token = musicToken;
   if(capCache.has(key)){ capAll = capCache.get(key); capKeyNow = key; shiftCaptions(); capStat(capWords.length + ' words'); return; }
-  capStat('Listening to the words of the song…');
+  capStat(tk || vk ? 'Listening to what is said…' : 'Listening to the words of the song…');
   try{
     const wav = await songWav(M, sr, from);
     const r = await apiFetch('/api/studio/transcribe?lang=' + encodeURIComponent(lang), { method:'POST', headers:{'Content-Type':'audio/wav'}, body: wav, signal: ac.signal });
@@ -7912,7 +8026,7 @@ function describeRef(R){
   const tr = Object.entries(R.trans).sort((a,b)=>b[1]-a[1]).map(([k,v])=>Math.round(v*100)+'% '+REF_KINDS[k]).join(', ');
   const pace = R.medianBeats ? 'a cut every ' + R.medianBeats + ' beat' + (R.medianBeats===1?'':'s') + ' (' + Math.round(R.onBeat*100) + '% on the beat)' : 'a cut every ' + R.medianSec.toFixed(1) + ' s';
   return (R.learned ? 'typically ' : R.cuts.length + ' cuts in ' + R.dur.toFixed(0) + ' s · ') + pace + (R.energy !== 'steady' ? ' · pace ' + R.energy : '') + ' · ' + (tr || 'no cuts') +
-    (R.zoomShare > 0.15 ? ' · zooms in ' + Math.round(R.zoomShare*100) + '% of shots' : '') + (words.length ? ' · ' + words.join(', ') : '');
+    (R.zoomShare > 0.15 ? ' · zooms in ' + Math.round(R.zoomShare*100) + '% of shots' : '') + ((R.boxes || []).length ? ' · photo boxes' : '') + (words.length ? ' · ' + words.join(', ') : '');
 }
 // Copy a Reel with the Reel's own song (the usual case: its song comes with it): every shot at its own time, to the frame,
 // not fitted again to beats found in the song: a cut on each eighth note, a stutter of a tenth of a second and a flicker
@@ -8133,6 +8247,7 @@ $('reffile').addEventListener('change', async e=>{
     const lb = $('look').querySelector('[data-l="copy"]'); lb.hidden = false; look = 'copy'; [...$('look').children].forEach(x=>x.setAttribute('aria-pressed', x===lb));
     setMode('copy');
     refLookRun(f, refProfile);   // its texts, stickers, captions, background: the AI reads them (when it is on)
+    refBoxesSoon(refProfile);   // its photo boxes, on the new Reel's long shots
   }catch(err){ console.warn('reference not read:', err); if(run !== refRun) return; $('refinfo').textContent = 'We could not read that Reel. Please try another video.'; notify('We could not read that Reel. Please try another video.', 'err'); }
   finally{ jobDone(); mirror.disconnect(); if(run !== refRun) return; refReading = false; root.classList.remove('refread'); refWaiters.splice(0).forEach(r => r());
     // the same song as the Reel's, given as its own file: its part is cut again at the Reel's place (useSection makes the edit)
@@ -8171,6 +8286,15 @@ async function refLookRun(file, R){
     if(err && err.name === 'AbortError') return;
     console.warn('reference texts not read:', err); note('its texts could not be read this time');
   }finally{ refLookBusy = false; setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+// the copied Reel's photo boxes (boxes.ts) on the new Reel, once it has its edit: no AI, no credits
+function refBoxesSoon(R){
+  clearTimeout(refBoxesSoon.h);
+  if(R && layers.some(L => L.boxes === 'ref')){ layers = layers.filter(L => L.boxes !== 'ref'); lyUI(); redrawFrame(); }   // the last Reel's
+  if(!R || !(R.boxes || []).length || R.boxesDone) return;
+  refBoxesSoon.h = setTimeout(async () => { if(refProfile !== R || R.boxesDone || mode !== 'copy') return;
+    if(!edit.length || pending || !reelLen() || layers.some(L => L.boxes)){ if(!layers.some(L => L.boxes)) refBoxesSoon(R); return; }
+    R.boxesDone = true; await photoBoxes(0, 'ref'); }, 800);
 }
 // once the new Reel has its edit (song part and clips in)
 function refLookApplySoon(R){
@@ -9024,7 +9148,11 @@ window.addEventListener('beforeunload', e => {
 // the page was reloaded in the middle of the Create steps: the Reel so far is a draft on this phone; offer it back
 async function resumeOffer(){
   let id = ''; try{ id = sessionStorage.getItem('brs-resume:' + location.pathname) || ''; }catch(e){}
-  if(!id || new URLSearchParams(location.search).get('p')) return;
+  const qs = new URLSearchParams(location.search);
+  // a video just handed over from Vlog / Talking video is a new Reel: the old draft is not offered over it (it stopped the
+  // Reel being made by itself, 2026-11-27)
+  if(qs.get('from') === 'clips'){ try{ sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){} return; }
+  if(!id || qs.get('p')) return;
   const p = await idb('meta', 'readonly', st => st.get(id)).catch(() => null); if(!p) return;
   // what is waiting, in plain words: its name, its clips and length, when it was saved
   const n = (p.state && Array.isArray(p.state.clips)) ? p.state.clips.length : 0, mins = Math.max(0, Math.round((Date.now() - (p.updated || Date.now()))/60000));

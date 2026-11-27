@@ -84,7 +84,7 @@ async function aiRun(){
       const r = await EH.apiFetch('/api/studio/rank-shots', { method:'POST', headers:{'Content-Type':'application/json'}, signal: ES.aiStopper.signal,
         body: JSON.stringify({ reelId: EH.reelIdNow(), clips: part.map(j=>({ id:j.id, name:j.src.name, frames:j.frames })) }) });
       const res = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').'));
+      if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not do this step (' + r.status + ').')), { status: r.status });
       EH.aiSpent();
       charged += res.charged || 0; if(typeof res.balance === 'number' && ES.aiInfo){ ES.aiInfo.balance = res.balance; EH.creditsChanged(); }
       for(const c of res.clips || []){ const j = part.find(x=>x.id===c.id); if(!j) continue;
@@ -105,6 +105,7 @@ async function aiRun(){
     ES.aiBusy = false;
     if(e && e.name === 'AbortError') return;
     need.forEach(s => framesMade.delete(s));
+    if(ES.aiOn && e && (e.status === 402 || e.status === 403)){ ES.aiGaveUp = EH.reelIdNow(); EH.aiStat(String(e.message)); EH.chatFail(String(e.message)); return; }   // credits or plan: said as it is (the website's)
     if(ES.aiOn){ console.warn('AI picks failed:', e); aiDown(); return; }   // never the phone's own edit instead
     ES.aiGaveUp = EH.reelIdNow();
     console.warn('AI picks not used:', e); EH.aiStat('Shubix could not look at your clips right now. Your Reel uses the best moments picked on your phone' + (EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ' · any credits taken for it come back within the hour.' : '.'));
@@ -206,7 +207,7 @@ async function directorRun(key){
     const { req, ctx } = EH.dirRequest(cands), sig = EH.planSig(), mix = ES.mixNo, st = EH.mixStore();
     const r = await EH.apiFetch('/api/studio/direct', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(req), signal: tm.signal });   // (asked again for a minute: nativeEngine apiFetch)
     const res = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').'));
+    if(!r.ok) throw Object.assign(new Error((res.error && res.error.message) || ('Shubix could not plan the Reel (' + r.status + ').')), { status: r.status });
     const slots = toSlots(res.slots, cands);
     if(!slots.some(x => x && !x.auto)) throw new Error('Shubix returned no usable plan.');
     EH.chatSync(res); if(typeof res.balance === 'number' && ES.aiInfo){ ES.aiInfo.balance = res.balance; EH.creditsChanged(); }
@@ -228,13 +229,15 @@ async function directorRun(key){
   }catch(e){
     ES.dirFailedKey = key;
     const back = EH.aiCostOf('reel') && ES.dirPlannedReel !== EH.reelIdNow() ? ', and the credits for it come back.' : '.';
-    if(late){ aiDown(); }
+    // not enough credits (402) or not on the plan (403): said as it is, never "Shubix AI is not available" (the website's)
+    if(e && (e.status === 402 || e.status === 403)){ EH.chatFail(String(e.message)); EH.aiStat(String(e.message)); }
+    else if(late){ aiDown(); }
     else {
       EH.chatFail(tm.timedOut() ? 'Shubix took too long this time. Try again in a moment.' : 'Shubix could not change the Reel right now. Try again in a moment.');
       if(tm.timedOut()) EH.aiStat('Shubix took too long this time. Your Reel uses the phone\'s own smart edit' + back);
       else if(!(e && e.name==='AbortError')){ console.warn('AI director not used:', e); EH.aiStat('Shubix is busy right now. Your Reel uses the phone\'s own smart edit' + back); }
     }
-    if(late || !(e && e.name==='AbortError') || tm.timedOut()) aiDown();
+    if(!(e && (e.status === 402 || e.status === 403)) && (late || !(e && e.name==='AbortError') || tm.timedOut())) aiDown();
   }finally{ clearTimeout(soft); if(!late) ES.dirBusy = false; tm.done(); }
 }
 /* ---- Shubix AI as the editor: what a person does with the tools (texts and their keyframes, video boxes, the look, captions,

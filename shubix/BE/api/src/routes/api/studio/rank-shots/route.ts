@@ -17,8 +17,9 @@ export const GET = route(async (req) => {
 });
 export const POST = route(async (req) => {
   await requireFeature(req, "studioAI");
-  await requireAiPlan(await isPlanAdmin(req), { credits: true }); // part of the AI Reel (its credits)
+  const input = await body(req, RankIn);
+  await requireAiPlan(await isPlanAdmin(req), { credits: true, reelId: input.reelId }); // part of the AI Reel (its credits)
   limits.ai(req); // each AI call costs money
-  const res = await rankShots(await body(req, RankIn));
+  const res = await rankShots(input);
   return { ...res, balance: await balanceNow() };
 });

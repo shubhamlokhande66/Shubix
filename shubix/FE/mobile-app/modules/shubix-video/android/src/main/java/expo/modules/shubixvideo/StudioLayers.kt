@@ -70,7 +70,11 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
     val ease = ((t - t0) / max(1e-3, t1 - t0)).coerceIn(0.0, 1.0).let { it * it * (3 - 2 * it) }
     val own = followed(L, t)
     val place = if (grow == null) own else Pair((grow.optDouble("x", 0.5) + (own.first - grow.optDouble("x", 0.5)) * ease).toFloat(), (grow.optDouble("y", 0.5) + (own.second - grow.optDouble("y", 0.5)) * ease).toFloat())
-    val size = L.optDouble("s", 0.5) * (if (grow == null) 1.0 else grow.optDouble("s", 1.0) + (1 - grow.optDouble("s", 1.0)) * ease)
+    // a photo box pops in: from 55% with a little overshoot, faded in quickly (boxes.ts bumpAt)
+    val bumpD = L.optDouble("bump", 0.0); val bq = if (bumpD > 0) ((t - t0) / bumpD).coerceIn(0.0, 1.0) else 1.0
+    val bumpS = if (bumpD > 0) 0.55 + 0.45 * (1 + 2.70158 * (bq - 1).pow(3) + 1.70158 * (bq - 1).pow(2)) else 1.0
+    val bumpA = if (bumpD > 0) min(1.0, bq * 2.5) else 1.0
+    val size = bumpS * L.optDouble("s", 0.5) * (if (grow == null) 1.0 else grow.optDouble("s", 1.0) + (1 - grow.optDouble("s", 1.0)) * ease)
     val crop = L.optJSONObject("crop")
     fun cut(k: String) = crop?.optDouble(k, 0.0) ?: 0.0
     val from = Rect((pic.width * cut("l")).toInt(), (pic.height * cut("t")).toInt(), (pic.width * (1 - cut("r"))).toInt(), (pic.height * (1 - cut("b"))).toInt())
@@ -78,7 +82,7 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
     val dw = maxOf(2f, size.toFloat() * W); val dh = dw * from.height() / from.width()
     val fadeIn = L.optDouble("fin", 0.0); val fadeOut = L.optDouble("fout", 0.0)
     val fade = min(if (fadeIn > 0) min(1.0, (t - L.optDouble("t0")) / fadeIn) else 1.0, if (fadeOut > 0) min(1.0, (L.optDouble("t1") - t) / fadeOut) else 1.0)
-    val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { alpha = (L.optDouble("op", 1.0) * fade * 255).toInt().coerceIn(0, 255) }
+    val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { alpha = (L.optDouble("op", 1.0) * fade * bumpA * 255).toInt().coerceIn(0, 255) }
     val shade = L.optDouble("shade", 0.0)   // the Reel darker behind it
     if (shade > 0) g.drawRect(0f, 0f, W, H, Paint().apply { color = Color.BLACK; alpha = (L.optDouble("op", 1.0) * fade * shade * 255).toInt().coerceIn(0, 255) })
     g.save()
@@ -97,6 +101,9 @@ internal class StudioLayerRenderer(layers: JSONArray, private val w: Int, privat
     if (soft && shaped != null) softMasked(g, shaped, kind, feather, min(dw, dh) * (m?.optDouble("w", 0.8)?.toFloat() ?: 0.8f) / 2, m?.optBoolean("inv") == true, dw, dh, paint) { c, b, plain -> if (keyed != null) c.drawBitmap(keyed, null, b, plain) else c.drawBitmap(pic, from, b, plain) }
     else if (keyed != null) g.drawBitmap(keyed, null, box, paint) else g.drawBitmap(pic, from, box, paint)
     keyed?.recycle()
+    val edge = L.optDouble("edge", 0.0)   // a photo box's frame (the website's drawLayers)
+    if (edge > 0) { val ew = max(1f, (edge * W * bumpS).toFloat())
+      g.drawRect(RectF(box.left - ew / 2, box.top - ew / 2, box.right + ew / 2, box.bottom + ew / 2), Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = ew; color = runCatching { Color.parseColor(L.optString("edgeC", "#FFFFFF")) }.getOrDefault(Color.WHITE); alpha = paint.alpha }) }
     g.restore()
   }
 
