@@ -10,6 +10,7 @@
  * Plain JS on purpose (ported from the standalone page); the page mounts it with initStudio(root).
  */
 import { createTasks } from './tasks';
+import { safeMessage } from '@shubix/utils';
 import { DUB_LANGS, DUB_MAX_SECONDS, dubSegments, placeDub, activity } from './dub';
 import { createDirectorPlan, createAutonomousReelPlan, validateAutonomousReelPlan, assessAutonomousRenderQuality, inferAutonomousMood, evaluateKeyframes, reviewAutonomousEdit, describeEditReview, chooseEditTake, editTakesFor, EDIT_REVIEW_LIMITS, shortReelFor, SHORT_REEL, oneTakeLength, ONE_TAKE, clearOfFaces, textBoxEstimate } from '@shubix/video-engine';
 import { frameTone, toneOf, matchTones } from '@shubix/video-engine';
@@ -878,7 +879,7 @@ async function songForMe(){
   }catch(err){ if(!(err && err.name === 'AbortError')) notify((err && err.message) || 'No song could be chosen. Please try again.', 'err'); }
   finally{ btn.disabled = false; }
 }
-$('mauto').addEventListener('click', () => songForMe(), SIG);
+$('mauto').addEventListener('click', () => songForMe(), SIG);
 window.addEventListener('resize', ()=>{ drawMusic(); sources.forEach(drawSpark); drawTimeline(); }, SIG);
 
 /* =============== STEP 2: VIDEOS =============== */
@@ -1377,7 +1378,7 @@ function setClipStatus(src, status, detail){
   el.classList.toggle('is-failed',failed);
   el.classList.toggle('is-reading',!ready&&!failed);
   el.querySelector('.clip-status-mark').textContent=ready?'✓':failed?'!':'…';
-  el.title=detail || (ready?'Video analysed and ready':failed?'Could not read this video':'Analysing video');
+  el.title=(detail && safeMessage(detail, '')) || (ready?'Video analysed and ready':failed?'Could not read this video':'Analysing video');
   el.setAttribute('aria-label',el.title);
 }
 /* ---- on the Create page each clip plays itself in its card (muted, looping), once the work is over. Only the cards on the
@@ -1453,24 +1454,13 @@ function clipBytes(bytes){
 }
 function updateClipHoverInfo(src){
   if(!src || !src.card || !src.file) return;
+  // only what helps: its length and size, and whether its light copy is ready (no file name, format, bitrate, copy
+  // details or errors: those are the app's insides; they go to the logs)
   const lines=[
-    src.name,
-    'Original: '+clipBytes(src.file.size)+' · '+(src.w&&src.h ? src.w+' × '+src.h : 'resolution pending'),
-    'Format: '+(src.file.type || (src.name.split('.').pop() || 'unknown').toUpperCase()),
-    'Duration: '+(Number.isFinite(src.dur)&&src.dur>0 ? fmt(src.dur) : '—'),
-    'Average bitrate: '+(src.dur>0 ? ((src.file.size*8/src.dur)/1e6).toFixed(2)+' Mbps (estimated)' : '—'),
-    'Preview: '+(src.proxyStatus || 'Checking…'),
+    'Length: '+(Number.isFinite(src.dur)&&src.dur>0 ? fmt(src.dur) : '—'),
+    'Size: '+clipBytes(src.file.size)+(src.w&&src.h ? ' · '+src.w+' × '+src.h : ''),
+    src.previewProxy ? 'Light copy ready: smooth to edit, exported in full quality' : 'Exported in full quality',
   ];
-  if(src.previewProxy && src.proxySize){
-    const saved=Math.max(0,src.file.size-src.proxySize);
-    const pct=src.file.size ? saved/src.file.size*100 : 0;
-    lines.push('Preview copy: '+clipBytes(src.proxySize)+' · '+(src.proxyW&&src.proxyH ? src.proxyW+' × '+src.proxyH : '—'));
-    lines.push('Saved: '+clipBytes(saved)+' ('+pct.toFixed(1)+'%)');
-    lines.push('Format: '+(src.proxyMime || 'browser preview'));
-  }else if(src.proxyReason){
-    lines.push('Details: '+src.proxyReason);
-  }
-  lines.push(src.edFile ? 'Export: the smooth edit copy (' + (src.edW||'?') + ' × ' + (src.edH||'?') + ', 30 fps)' : 'Export: original file · unchanged');
   src.card.title=lines.join('\n');
   src.card.setAttribute('aria-label',lines.join('. '));
 }
@@ -1747,7 +1737,7 @@ async function readVideo(src){
   }catch(e){
     if(src.removed) return;
     rlog('clip', 'Clip could not be read: ' + src.name + ' · ' + String(e && e.message || e), { stage, type: src.file && src.file.type, mb: mb2(src.file && src.file.size) }, 'error');
-    setClipStatus(src,'failed',e && e.message ? 'Could not read video: '+e.message : 'Could not read video');
+    setClipStatus(src,'failed','Could not read this video. Try another clip or export it again from your gallery.');
     console.warn('clip not readable:', src.name, e && e.message || e);
     // Reopening a saved edit should not fail just because optional motion/face analysis could not run again.
     // The saved edit already contains its shot choices; keep the decoded source and use neutral scan data.
@@ -2562,7 +2552,7 @@ async function upsell(){
 }
 const aiCache = new Map();
 const fpOf = src => [src.name, src.file ? src.file.size : 0, src.file ? src.file.lastModified : 0].join('|');
-function aiStat(t, err){ const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
+function aiStat(t, err){ if(err && t) t = safeMessage(t); const el = $('aistat'); el.hidden = !t; el.textContent = t || '';
   if(!t) tasks.clear('ai'); else if(/…$/.test(t)){ tasks.start('ai', 'ai', 'Shubix at work', t.replace(/…$/, '')); tasks.units('ai', sources.filter(x => !x.removed).length); } else if(err) tasks.fail('ai', t); else if(tasks.has('ai')) tasks.done('ai', t); el.style.color = err ? 'var(--drop)' : ''; }
 // The AI's view of footage [a,b]: frames nearby (same scene only), weighted by distance
 // what a clip is about: the vision AI's subjects seen in at least a third of its frames (one stray frame says little)
@@ -2957,7 +2947,7 @@ async function chatGenerate(btn){
     if(!edit.length) throw new Error('The Reel timeline could not be verified after applying the plan.');
   } catch(error) {
     btn.textContent = 'Not applied'; if(small && wasOpen) chatOpen(true);
-    chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error) + ' The Reel was not marked as generated; please try the instruction again.');
+    chatAnswer('I could not verify that every requested change was applied. ' + safeMessage(String(error && error.message || error), '') + ' The Reel was not marked as generated; please try the instruction again.');
     return;
   }
   if(!playing && !recording && buf && edit.length) startPlayback(0);
@@ -2992,7 +2982,7 @@ async function chatApp(text){
   return { applied, answer: applied ? 'Done ✓ Your Reel is edited the way you asked' + (director && director.story ? ': ' + director.story : '.') : said || (chatWaiting ? 'Shubix is still working on it. Ask again in a moment.' : 'OK') };
 }
 function chatDone(story){ if(!chatWaiting) return; chatAnswer('Done ✓ Your Reel is edited the way you asked' + (story ? ': ' + story : '.') + ' Tell me if you want anything else.'); }
-function chatFail(msg){ if(chatWaiting) chatAnswer(msg); }
+function chatFail(msg){ if(chatWaiting) chatAnswer(safeMessage(msg, 'Shubix could not do this now. Please try again.')); }
 function chatRestore(list){
   if(!Array.isArray(list)) return; chatMsgs = list.filter(m => m && typeof m.text === 'string').slice(-CHAT_KEEP);
   $('chatlog').innerHTML = ''; chatMsgs.forEach(m => { if(m.rep && Array.isArray(m.rep.items)) $('chatlog').appendChild(reportBox(m.rep, m.at)); else chatSay(m.who === 'me' ? 'me' : 'ai', m.text, false, m.at); });
@@ -3150,7 +3140,7 @@ async function chatSend(text){
       chatLocalDone = true;
       chatAnswer('Done ✓ Applied ' + applied + ' to the current Reel on this device. No Shubix AI credits used.');
     }catch(error){
-      chatAnswer('I could not verify that every requested change was applied. ' + String(error && error.message || error));
+      chatAnswer('I could not verify that every requested change was applied. ' + safeMessage(String(error && error.message || error), ''));
     }
     return;
   }
@@ -7331,12 +7321,13 @@ function saveFile(blob, name){
   return false;
 }
 const savedMsg = (shared, what) => shared ? what + ' is ready: tap the button below to save it to Photos or share it.' : what + ' saved';
-function showMsg(t, err, cls){ const m=$('xmsg'); m.hidden=false; m.textContent=t; m.title=t; m.classList.toggle('err', !!err); m.classList.toggle('addclips', cls === 'addclips'); if(err) notify(t, 'err'); }
+function showMsg(t, err, cls){ if(err) t = safeMessage(t); const m=$('xmsg'); m.hidden=false; m.textContent=t; m.title=t; m.classList.toggle('err', !!err); m.classList.toggle('addclips', cls === 'addclips'); if(err) notify(t, 'err'); }
 // a short note that pops up at the bottom and goes away by itself (errors stay a little longer)
 // a message: a popup with OK (Toaster). What only says an action worked says nothing: its result is on the screen
 const QUIET = /^(Undone|Redone|Shot \d|Marker|Using the sound|Your clips' own|The clips' own|Only the voices|All the sound|Your phone reloaded)/;
 function notify(t, kind){
   if(!t || kind === 'ok' || (!kind && QUIET.test(t))) return;
+  if(kind === 'err') t = safeMessage(t);   // an error says what happened in our words, never a path, a code or a system error
   window.dispatchEvent(new CustomEvent('shubix-toast', { detail: { kind: kind === 'err' ? 'error' : 'info', text: t } }));
 }
 // a message with one action button (a late AI plan: "Use it"); it stays a while, the action runs once

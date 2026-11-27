@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
@@ -264,7 +265,7 @@ export function createNativeEngine(io: NativeIo) {
       await host.setSong({ channels, mono, r, name, sampleRate });
       io.task?.("done", "song", "Song ready");
       return facts();
-    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "song", e instanceof Error ? e.message : "The song could not be read"); throw e; }
+    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "song", safeMessage(e instanceof Error ? e.message : "", "The song could not be read")); throw e; }
   }
   /** frames of a video as pixels, read by the phone (FileServer.kt /frames), in the order of the times. The website takes the
    * frame showing at a time (the last one at or before it), the phone's decoder the first one at or after it: each time is
@@ -383,7 +384,7 @@ export function createNativeEngine(io: NativeIo) {
       io.task?.("done", "ref", "Reel read");
       refLook = readRefLook(path, ES.refProfile);   // its texts and stickers, while the clips are added
       return { cuts: read.cuts.length, shots: read.moments.length, bpm: Math.round(read.bpm), trans: read.trans };
-    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", e instanceof Error ? e.message : "We could not read that Reel. Please try another video."); throw e; }
+    } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", safeMessage(e instanceof Error ? e.message : "", "We could not read that Reel. Please try another video.")); throw e; }
   }
   const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, drops: n("drop"), breaks: n("break") }; };
 
@@ -490,7 +491,7 @@ export function createNativeEngine(io: NativeIo) {
       }
       if (stops === g && !host.ES.sources.length && lastError) throw lastError;
       io.task?.(stops !== g ? "clear" : "done", "clips", `${host.ES.sources.length} clip${host.ES.sources.length > 1 ? "s" : ""} ready`);
-    } catch (e) { io.task?.("fail", "clips", e instanceof Error ? e.message : "The clip could not be read"); throw e; }
+    } catch (e) { io.task?.("fail", "clips", safeMessage(e instanceof Error ? e.message : "", "The clip could not be read")); throw e; }
     finally { reading--; }
     host.ES.sources.sort((x: { name: string }, y: { name: string }) => names.indexOf(x.name) - names.indexOf(y.name));
     read = list;
@@ -678,7 +679,7 @@ export function createNativeEngine(io: NativeIo) {
         if (ES.kind !== "talk") await host.brain.setKind("talk"); else await host.brain.buildTalk();
         if (ES.nomake || !ES.edit.length) throw new Error(ES.nomake || "We could not hear anyone talking in these clips.");
         io.task?.("done", "talk", "Pauses cut");
-      } catch (e) { io.task?.("fail", "talk", e instanceof Error ? e.message : "The talk could not be read"); throw e; }
+      } catch (e) { io.task?.("fail", "talk", safeMessage(e instanceof Error ? e.message : "", "The talk could not be read")); throw e; }
       // its captions by themselves (the website's autoCaptions): most people watch with the sound off
       if (a.captions !== false && !ES.capsOn) await host.setCaptions(true, undefined, undefined).catch(() => { ES.capsOn = false; });
       const t = ES.talk as { parts: unknown[]; retakes: number; mute: number } | null;

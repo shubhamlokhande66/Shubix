@@ -1,4 +1,5 @@
 import { noteMe, noteSignedIn, skipSignedOut, viaBoot } from "@/lib/boot";
+import { safeMessage } from "@shubix/utils";
 import type { Features } from "@shubix/core/lib/features-list";
 import type { Access } from "@shubix/core/lib/access";
 /** the sign-in rules, and whether the server can sign in with Google */
@@ -454,8 +455,8 @@ export const api = {
   },
 };
 
+/** what people are told: our own messages, never a path, a file name, a code or a system error (safeMessage) */
 export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  if (err instanceof Error) return err.message;
-  return "Something went wrong.";
+  if (err instanceof Error && /failed to fetch|load failed|networkerror|timed? ?out/i.test(err.message)) return "Could not reach Shubix. Check your connection and try again.";
+  return safeMessage(err instanceof Error ? err.message : "");
 }

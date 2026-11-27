@@ -1,3 +1,4 @@
+import { safeMessage } from "@mobile/utils";
 import { AppRegistry, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { askAction, tasks, tell, type TaskKind } from "@mobile/ui-mobile";
@@ -268,7 +269,7 @@ function onTask(t: TaskEvent) {
   if (t.state === "start") tasks.start(t.id, t.kind ?? "ai", t.title ?? "", t.detail ?? "");
   else if (t.state === "progress") tasks.update(t.id, t.p, t.detail, t.title);
   else if (t.state === "done") tasks.done(t.id, t.title);
-  else if (t.state === "fail") tasks.fail(t.id, t.title ?? "");
+  else if (t.state === "fail") tasks.fail(t.id, safeMessage(t.title ?? ""));   // our words, never a path or a system error
   else tasks.clear(t.id);
 }
 // everything starts again: what it was doing stops, no card stays

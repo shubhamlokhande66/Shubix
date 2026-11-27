@@ -1,4 +1,5 @@
 import type { ApiErrorBody, AuthResponse, MeResponse, OkResponse } from "@mobile/types";
+import { safeMessage } from "@mobile/utils";
 
 /** One API client for the website and the phone app. The website sends the httpOnly cookie (credentials: include);
  * the phone app passes getToken/setToken (secure storage) and sends the token as Bearer. */
@@ -15,7 +16,11 @@ export type ClientOptions = {
   /** a call starts: what it returns is called when the call ends (the pressed button's spinner) */
   onStart?: () => (() => void) | null;
 };
-export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong. Please try again.");
+/** what people are told: our own messages, never a path, a file name, a code or a system error (safeMessage) */
+export const errorMessage = (e: unknown) =>
+  e instanceof Error && /network request failed|failed to fetch|load failed|timed? ?out/i.test(e.message)
+    ? "Could not reach Shubix. Check your connection and try again."
+    : safeMessage(e instanceof Error ? e.message : "");
 
 export function createApiClient(o: ClientOptions) {
   const base = o.baseUrl.replace(/\/$/, "");

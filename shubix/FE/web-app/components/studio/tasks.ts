@@ -9,6 +9,7 @@
  * Create flow's "Analysing" screen (flow.ts) shows the same progress.
  */
 
+import { safeMessage } from "@shubix/utils";
 import { stayAlive } from "../../lib/background";
 import { tx } from "./i18n";
 import { Button } from "./ui";
@@ -246,7 +247,7 @@ export function createTasks(host: HTMLElement) {
     /** Finished: a tick, then the card goes. */
     done: (id: string, text = "Done") => finish(id, true, text, 500),
     /** Did not work: its reason, with OK. */
-    fail: (id: string, text: string) => finish(id, false, text, 0),
+    fail: (id: string, text: string) => finish(id, false, safeMessage(text), 0),   // our words, never a path or a system error
     /** How the work can be stopped while the Create flow is open. */
     setGuard: (g: { onCancel: () => void; onCancelReel: () => void } | null) => { if (guard === g) return; guard = g; if (cards.size) refresh(); },
     /** The AI has answered, its tokens are spent: nothing can be cancelled until unlock. */
