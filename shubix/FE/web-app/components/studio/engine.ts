@@ -9226,8 +9226,10 @@ async function openProject(id){
   finally{ if(keepSaved && edit.length) aiDoneSig = inputSig(); lastSig = JSON.stringify(stateOf()); restoring = false; root.classList.remove('opening');
     // nothing to show (gone, or its files are not on this phone): say so, not a blank page
     if(!edit.length && !sources.length && expectedClips){ root.classList.add('openfail'); $('openh').textContent = 'This Reel could not be opened'; }
-    // a Reel left in the Create steps (a song, no clips yet): not an empty editor, but its steps again, where it was left
-    else if(!edit.length && !sources.length && proj && /^\/(editor|create\/edit)$/.test(location.pathname)){
+    // a Reel left in the Create steps (a song, no clips yet; or its clips, never made: Pricing was opened from Make Reel to buy
+    // credits): not an empty editor, but its steps again, where it was left. Make Reel there asks Shubix AI or the Free edit
+    // again, with the credits now on the account (a draft opened from Home or My Reels is /editor?p=…)
+    else if(!edit.length && (!sources.length || kind !== 'talk') && proj && /^\/(editor|create\/edit)$/.test(location.pathname)){
       const slug = { talk: 'talking', photo: 'photo', copy: 'copy' }[kind] || 'music';
       location.replace('/create/' + slug + '?p=' + encodeURIComponent(proj.id) + '&step=' + (song ? 'clips' : 'choose'));
     } }
