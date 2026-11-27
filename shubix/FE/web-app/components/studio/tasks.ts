@@ -37,7 +37,9 @@ const ICON: Record<TaskKind, string> = {
 const TICK = `<svg class="motion-safe:animate-pop" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
 
 // what the Create flow's popup lists, in order (a task's id, its line)
-const STEPS: [string, string][] = [["song", "Reading your song"], ["beats", "Checking every beat"], ["clips", "Preparing and analysing your clips"], ["ai", "Shubix AI editing your Reel"]];
+const ALL_STEPS: [string, string][] = [["song", "Reading your song"], ["beats", "Checking every beat"], ["clips", "Preparing and analysing your clips"], ["ai", "Shubix AI editing your Reel"]];
+// a Talking Reel has no song and no beats to read: its own steps (it showed the song and beat lines ticked, 2026-11-27)
+const TALK_STEPS: [string, string][] = [["clips", "Reading your video and your voice"], ["ai", "Cutting the pauses, adding captions and music"]];
 
 // Shubix AI's time: what it says how far it is (a server's answer has no percent), so the card shows the time so far and,
 // from this phone's own last AI Reels, how long it usually takes for this many clips (2026-11-12)
@@ -73,6 +75,7 @@ export function createTasks(host: HTMLElement) {
   head.querySelector("[data-sub]")!.textContent = tx("Every beat, every clip, every moment.");
   const paintSteps = () => {
     steps.textContent = "";
+    const STEPS = host.classList.contains("talkmode") ? TALK_STEPS : ALL_STEPS;
     const running = (id: string) => cards.has(id) && !doneSteps.has(id), last = STEPS.reduce((at, [id], i) => (running(id) ? i : at), -1);   // a step before the one running is behind us
     for (const [i, [id, words]] of STEPS.entries()) {
       const now = running(id), ok = doneSteps.has(id) || (!now && i < last), li = document.createElement("li");
@@ -124,7 +127,7 @@ export function createTasks(host: HTMLElement) {
     if (was) { hideOk = false; clearTimeout(hideTimer); hideTimer = setTimeout(() => { hideOk = true; refresh(); }, 30_000); }
     head.hidden = steps.hidden = !guard; if (guard) paintSteps();
     // what Shubix AI uses, under the popup's title, once Generate was pressed (flow.ts)
-    head.querySelector("[data-sub]")!.textContent = host.dataset.fcredit || tx("Every beat, every clip, every moment.");
+    head.querySelector("[data-sub]")!.textContent = host.dataset.fcredit || tx(host.classList.contains("talkmode") ? "Every word, every pause, every moment." : "Every beat, every clip, every moment.");
     notes = locked || shown.some(([, c]) => c.kind === "ai") ? [tx(window.matchMedia?.("(pointer: coarse)").matches ? "Keep this page open with the screen on." : "You can switch tabs. Keep this tab open."), ...(guard && locked ? [tx("Shubix AI is making your Reel now and finishes it. If it fails, no credits are used.")] : [])] : [];
     why.hidden = !notes.length; if (notes.length) why.textContent = notes[note % notes.length];
     if (notes.length) void stayAwake(true);

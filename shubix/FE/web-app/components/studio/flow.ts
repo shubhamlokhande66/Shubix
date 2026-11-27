@@ -47,7 +47,17 @@ export function initFlow(root: HTMLElement): () => void {
   if (q.has("p")) root.classList.add("opening");
   let step: Step = q.has("p") && (["choose", "adjust", "clips"] as string[]).includes(q.get("step") ?? "") ? (q.get("step") as Step) : "intro";
   // a moment cut out in Clips from a Video (/create/talking?from=clips): straight to its clip (FastStudio puts it in)
-  if (q.get("from") === "clips" && location.pathname === "/create/talking") step = "clips";
+  // The video was already added in Vlog / Talking video: "Add Your Clips" is not shown again (it looked like being asked to
+  // upload once more, 2026-11-27); "Getting your Reel ready" covers it until Make Reel's popup takes over, or the clips
+  // could not be used (no voice, nothing handed over: the clips screen with its message)
+  let handoff = q.get("from") === "clips" && location.pathname === "/create/talking";
+  if (handoff) { step = "clips"; root.classList.add("fhandoff"); }
+  const endHandoff = () => { if (!handoff) return; handoff = false; root.classList.remove("fhandoff"); };
+  if (handoff) {
+    const end = () => { if (handoff) { endHandoff(); apply(); } };
+    setTimeout(end, 120_000);   // never for ever
+    root.addEventListener("studio-handoff-end", end, { once: true });
+  }
   let kind: Kind = "music";
   let pct = 0;
   // Copy a Reel: the Reel being copied (its file, for its song) and whether its song is still to come (below)
@@ -245,11 +255,11 @@ export function initFlow(root: HTMLElement): () => void {
   // (2026-11-11)
   const syncPopup = () => {
     // no popup until Generate: the work goes on behind the page
-    const quiet = !revealed && !aiGo && !wantGen && !inEngine ? "1" : "";
+    const quiet = !revealed && !aiGo && !wantGen && !inEngine && !handoff ? "1" : "";   // (a video handed over from Vlog / Talking video: its reading shows at once)
     // from Make Reel to the editor the popup stays open, also between two steps with nothing running (it closed there, and
     // Make Reel had to be pressed again)
     // (only while Make Reel is really on its way: aiGo stays on after the editor opened and Back, and held it for ever)
-    const hold = (wantGen || going > 0) && !revealed && !inEngine ? "1" : "";
+    const hold = (wantGen || going > 0 || handoff) && !revealed && !inEngine ? "1" : "";
     if ((root.dataset.fquiet ?? "") !== quiet || (root.dataset.fhold ?? "") !== hold) { root.dataset.fquiet = quiet; root.dataset.fhold = hold; root.dispatchEvent(new Event("studio-quiet")); }
   };
   // leaving the finished Reel (Back to the clips, the song…): its preview stops, the song does not play on under another screen
@@ -282,6 +292,8 @@ export function initFlow(root: HTMLElement): () => void {
     early.clear();
   }, sig);
   const apply = () => {
+    // the handed-over video is being made (Make Reel's popup), made, or cannot be (no voice): the cover goes
+    if (handoff && (wantGen || aiGo || revealed || !!root.dataset.nomake)) endHandoff();
     if (wasRevealed && !revealed) live()?.stopPreview?.();
     wasRevealed = revealed;
     live()?.guard?.(!revealed);   // the popup's Cancel, while the Reel is being made
