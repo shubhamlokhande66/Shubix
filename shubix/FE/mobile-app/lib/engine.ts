@@ -106,6 +106,11 @@ export const engine = {
   advice: (pick: MediaPick) => call<ClipAdvice | null>("advice", { pick }),
   /** the clips: the website reads them (motion, scenes, faces) and makes the Reel on the beats */
   clips: (list: { uri: string; name: string }[]) => call<{ clips: number; names: string[] }>("clips", { paths: list.map((c) => ({ path: pathOf(c.uri), name: c.name })) }),
+  /** a Talking Reel, as the website makes it: the clips' voice with its pauses cut, the song quietly under it, captions */
+  talk: (o: { pace?: "tight" | "natural" | "relaxed" | "off"; music?: number; captions?: boolean } = {}) =>
+    call<{ duration: number; shots: number; parts: number; retakes: number; mute: number; captions: boolean }>("talk", o),
+  /** a Talking Reel's sound (its voice and the song under it) as a WAV file on the phone; null: not a Talking Reel */
+  talkMix: (name: string) => call<{ path: string | null }>("talkMix", { name }).then((r) => r.path),
   /** once the Reel is made: its shots (`id`: the phone's draft, which the studio now holds) */
   ready: (id: string) => call<EngineReel>("ready").then((r) => { held = id; return r; }),
   /** whether the studio holds this draft as it made it (then the website's export makes it, with its transitions and effects) */

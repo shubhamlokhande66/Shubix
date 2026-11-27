@@ -100,7 +100,7 @@ export function pcmOfWav(bytes: ArrayBuffer): { pcm: Float32Array; sr: number } 
 const FILL_KINDS = ["shade", "bars", "tint"];
 
 export function createNativeEngine(io: NativeIo) {
-  const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
+  const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, speechProbs, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
   // My brand (the app keeps it: lib/engine.ts): every new Reel's host gets it
   let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
   const make = () => { const h = make0(); h.ES.brand = brand; return h; };
@@ -141,6 +141,13 @@ export function createNativeEngine(io: NativeIo) {
     const res = await io.fetch(url("sound", `&p=${encodeURIComponent(path)}`));
     if (!res.ok) throw new Error("No sound");
     return pcmOf(await res.arrayBuffer());
+  }
+  /** where people speak in a sound: the probability of speech every 32 ms (Silero VAD on the phone, Models.kt, as the
+   * website's lib/vad); it fails when the model cannot run, and the brain then goes by loudness */
+  async function speechProbs(mono: Float32Array, sr: number) {
+    const res = await io.fetch(url("speech", `&sr=${Math.round(sr)}`), { method: "POST", body: new Uint8Array(mono.buffer, mono.byteOffset, mono.byteLength) });
+    if (!res.ok) throw new Error(await res.text());
+    return new Float32Array(await res.arrayBuffer());
   }
   function getCtx() { return { createBuffer: (count: number, n: number, sr: number) => soundOf(Array.from({ length: count }, () => new Float32Array(n)), sr) }; }
 
@@ -620,6 +627,30 @@ export function createNativeEngine(io: NativeIo) {
       else if (box === "aspect") host.ES.aspect = String(v);
       else throw new Error(`The phone's own engine has no ${box}`);
       return { work: work(), state: state() };
+    },
+    /** a Talking Reel (the website's setKind('talk') and buildTalk): the clips' voice, pauses cut, the song quietly under
+     * it; its captions as well when this person can have them. Throws when no one talks in the clips. */
+    talk: async (a) => {
+      const ES = host.ES;
+      if (a.pace) ES.talkPace = String(a.pace);
+      if (a.music !== undefined) ES.talkMusic = Number(a.music);
+      io.task?.("start", "talk", "Cutting the pauses", "Finding where you speak", "voice");
+      try {
+        if (ES.kind !== "talk") await host.brain.setKind("talk"); else await host.brain.buildTalk();
+        if (ES.nomake || !ES.edit.length) throw new Error(ES.nomake || "We could not hear anyone talking in these clips.");
+        io.task?.("done", "talk", "Pauses cut");
+      } catch (e) { io.task?.("fail", "talk", e instanceof Error ? e.message : "The talk could not be read"); throw e; }
+      // its captions by themselves (the website's autoCaptions): most people watch with the sound off
+      if (a.captions !== false && !ES.capsOn) await host.setCaptions(true, undefined, undefined).catch(() => { ES.capsOn = false; });
+      const t = ES.talk as { parts: unknown[]; retakes: number; mute: number } | null;
+      return { duration: ES.buf?.duration ?? 0, shots: ES.edit.length, parts: t?.parts.length ?? 0, retakes: t?.retakes ?? 0, mute: t?.mute ?? 0, captions: !!ES.capsOn };
+    },
+    /** a Talking Reel's sound (the voice and the song under it) as a WAV on the phone: the Reel's own sound in the editor */
+    talkMix: async (a) => {
+      const ES = host.ES; if (ES.kind !== "talk" || !ES.buf) return { path: null };
+      const res = await io.fetch(url("out", `&name=${encodeURIComponent(String(a.name || "talk.wav"))}`), { method: "PUT", body: new Uint8Array(wavOf(ES.buf, 1)) });
+      if (!res.ok) throw new Error("The Reel's sound could not be saved on the phone");
+      return await res.json() as Args;
     },
     exportMix: async (a) => {
       host.exportChoose(a); if (a.fixLocked) host.exportFix();

@@ -144,6 +144,23 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
         try { reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), songFromRequest(body).toString().toByteArray()) }
         catch (e: Throwable) { reply(out, 500, "Song failed", mapOf("Content-Type" to "text/plain"), (e.message ?: "song failed").toByteArray()) }
       }
+      // where people speak: the body is a sound as 32-bit floats at `sr`; the answer, the probability of speech every
+      // 32 ms (Silero VAD, Models.kt) as 32-bit floats. A talking video's pauses are cut by it (talk.ts)
+      url.path == "/speech" && method == "POST" -> {
+        val sr = url.getQueryParameter("sr")?.toIntOrNull() ?: 0
+        val body = ByteArray((headers["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 400_000_000)); var read = 0
+        while (read < body.size) { val n = input.read(body, read, body.size - read); if (n <= 0) break; read += n }
+        if (sr <= 0 || read < 4) return@use reply(out, 400, "Bad Request", emptyMap(), "no sound".toByteArray())
+        try {
+          val x = FloatArray(read / 4); java.nio.ByteBuffer.wrap(body, 0, read).order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(x)
+          // to 16 kHz (linear, as the website's fallback when the browser cannot resample)
+          val len = Math.ceil(x.size * 16000.0 / sr).toInt(); val y = FloatArray(len); val r = sr / 16000.0
+          for (i in 0 until len) { val t = i * r; val k = t.toInt(); val f = (t - k).toFloat(); y[i] = (x.getOrElse(k) { 0f }) * (1 - f) + (x.getOrElse(k + 1) { 0f }) * f }
+          val p = models.speechProbs(y)
+          val b = java.nio.ByteBuffer.allocate(p.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN); b.asFloatBuffer().put(p)
+          reply(out, 200, "OK", mapOf("Content-Type" to "application/octet-stream"), b.array())
+        } catch (e: Throwable) { reply(out, 500, "Speech failed", mapOf("Content-Type" to "text/plain"), (e.message ?: "speech failed").toByteArray()) }
+      }
       url.path == "/speak" && method == "POST" -> {
         val body = ByteArray((headers["content-length"]?.toIntOrNull() ?: 0).coerceIn(0, 200_000)); var read = 0
         while (read < body.size) { val n = input.read(body, read, body.size - read); if (n <= 0) break; read += n }

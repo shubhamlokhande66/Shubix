@@ -91,7 +91,37 @@ class Models(private val dir: File, private val api: String) {
     }
   }
 
+  /** Where people speak (Silero VAD v6, MIT, 16 kHz): the probability of speech for every 32 ms (512 samples) of `x`, as
+   * the website's lib/vad/vad.worker.ts and Silero's own wrapper compute it (each window sees the 64 samples before it,
+   * the model's state carried from one window to the next). The model is downloaded once. */
+  fun speechProbs(x: FloatArray): FloatArray {
+    fetch(VAD_URL) {}
+    val n = x.size / VAD_WIN; val out = FloatArray(n)
+    using(VAD_URL) { session ->
+      var state = FloatArray(2 * 128); val inp = FloatArray(VAD_CTX + VAD_WIN)
+      OnnxTensor.createTensor(env, java.nio.LongBuffer.wrap(longArrayOf(16000L)), longArrayOf()).use { sr ->
+        for (k in 0 until n) {
+          java.util.Arrays.fill(inp, 0, VAD_CTX, 0f)
+          if (k > 0) System.arraycopy(x, k * VAD_WIN - VAD_CTX, inp, 0, VAD_CTX)
+          System.arraycopy(x, k * VAD_WIN, inp, VAD_CTX, VAD_WIN)
+          OnnxTensor.createTensor(env, FloatBuffer.wrap(inp.copyOf()), longArrayOf(1, (VAD_CTX + VAD_WIN).toLong())).use { i ->
+            OnnxTensor.createTensor(env, FloatBuffer.wrap(state), longArrayOf(2, 1, 128)).use { st ->
+              session.run(mapOf("input" to i, "state" to st, "sr" to sr)).use { r ->
+                val o = (r.get("output").get() as OnnxTensor).floatBuffer; out[k] = o.get(0)
+                val s = (r.get("stateN").get() as OnnxTensor).floatBuffer; state = FloatArray(s.remaining()).also { s.get(it) }
+              }
+            }
+          }
+        }
+      }
+    }
+    return out
+  }
+
   private companion object {
+    const val VAD_URL = "/api/studio/model/silero_vad_16k_op15.onnx"
+    const val VAD_WIN = 512
+    const val VAD_CTX = 64
     const val SMALL = 5L * 1024 * 1024
     const val MAX_OPEN = 60L * 1024 * 1024   // the beat tracker with the small models
   }
