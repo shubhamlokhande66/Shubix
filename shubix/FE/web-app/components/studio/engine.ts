@@ -23,6 +23,7 @@ import { boxShots, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCard
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { i420Of, REC709 } from '@/lib/videoColor';
+let ownYuvOff = false;   // this browser did not take our own video frames (lib/videoColor.ts): the canvas, as before
 import { chatSize } from '@shubix/core/lib/chatSize';
 import { commandsFor, choicesFor } from '@shubix/core/lib/chatCommands';
 import { TEXT_TEMPLATES, templateTexts, autoHook } from '@shubix/core/lib/text-templates';
@@ -7615,8 +7616,14 @@ async function fastExport(){
           if(firstUsefulFrame || periodicFrame){ qualityFrames.push(sampleQualityFrame(k/fps)); lastQualityShot = i; }
         }
         const tb = performance.now(); prof.draw += tb - ta;
-        { const sample = new mb.VideoSample(i420Of(og, out.width, out.height), { format: 'I420', codedWidth: out.width, codedHeight: out.height, timestamp: k/fps, duration: 1/fps, colorSpace: REC709 });
-          try{ await vs.add(sample); } finally { sample.close(); } }
+        { // a browser that will not take our frame (an old WebCodecs): the canvas itself for the rest of the Reel, as before
+          let sample = null;
+          if(!ownYuvOff) try{ sample = new mb.VideoSample(i420Of(og, out.width, out.height), { format: 'I420', codedWidth: out.width, codedHeight: out.height, timestamp: k/fps, duration: 1/fps, colorSpace: REC709 }); }
+            catch(err){ ownYuvOff = true; console.warn('own video colours off:', err); }
+          if(!sample) sample = new mb.VideoSample(out, { timestamp: k/fps, duration: 1/fps });
+          try{ await vs.add(sample); }
+          catch(err){ if(ownYuvOff || k > 0) throw err; ownYuvOff = true; console.warn('own video colours off:', err); sample.close(); sample = new mb.VideoSample(out, { timestamp: k/fps, duration: 1/fps }); await vs.add(sample); }
+          finally { sample.close(); } }
         if(expCancel){ const err = new Error('Export cancelled'); err.code = 'CANCELLED'; throw err; }
         tq = performance.now(); prof.encode += tq - tb; prof.frames++;
         while(as && nextAudio <= k/fps + 1 && nextAudio*1 < dur){ const ab = chunkOf(nextAudio); if(ab) await as.add(ab); nextAudio++; }
