@@ -39,6 +39,17 @@ export function variesFrameRate(times: number[]) {
   return off > 0.12 || Math.max(...d) > Math.max(0.25, med * 6);
 }
 export type ClipFacts = { dur: number; w: number; h: number; size?: number; fps?: number; hdr?: boolean; tenBit?: boolean; chroma422?: boolean; times?: number[]; end?: number };
+/** The preview copy every clip larger than the editor's player gets (CapCut and VN do the same): at most 960 on its long
+ * side, 30 fps, a key frame every quarter of a second, so each cut of a beat Reel starts at once and the phone decodes a
+ * small picture. Only the editor's player reads it; the export reads the clip (or its edit copy) at full size.
+ * null: the clip is small enough already. */
+export const PREVIEW_SIDE = 960;
+export function previewCopyOf(w: number, h: number, dur: number) {
+  const long = Math.max(w, h);
+  if (long <= PREVIEW_SIDE * 1.15 || dur <= 0 || dur > 1200) return null;
+  const k = PREVIEW_SIDE / long, even = (v: number) => Math.max(2, Math.round((v * k) / 2) * 2);
+  return { w: even(w), h: even(h), bitrate: 3_000_000 };
+}
 /** The edit copy a heavy clip needs (HDR, 10-bit, more than 30 fps, a varying frame rate, very large), H.264 at 30 fps; null: none. */
 export function editCopyOf(f: ClipFacts) {
   const long = Math.max(f.w, f.h), size = f.size ?? 0, rate = f.dur > 0 ? (size * 8) / f.dur : 0;
@@ -135,6 +146,17 @@ export function createNativeEngine(io: NativeIo) {
   }
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: Copy[] = [];
+  // the clips' preview copies (previewCopyOf), by the clip's name: made one after another once the clips are read
+  let previews = new Map<string, Promise<string | null>>(), previewChain: Promise<unknown> = Promise.resolve();
+  function previewOf(name: string, path: string, w: number, h: number, dur: number) {
+    const plan = previewCopyOf(w, h, dur);
+    if (!plan || previews.has(name)) return;
+    const job = previewChain.then(async () => {
+      const made = await io.fetch(url("copy", `&p=${encodeURIComponent(path)}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}&k=0.25`), { method: "POST" });
+      return made.ok ? (await made.json() as { path: string }).path : null;
+    }).catch(() => null);
+    previewChain = job; previews.set(name, job);
+  }
   const url = (path: string, q = "") => `${io.base}/${path}?k=${io.key}${q}`;
   /** a file's sound, read by the phone (SoundReader.kt); it fails when the file has none */
   async function readSound(path: string) {
@@ -436,8 +458,10 @@ export function createNativeEngine(io: NativeIo) {
     // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
     try { const s = await readSound(from); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
     readBefore.set(c.name, src);
+    if (!photo) later.push(() => previewOf(c.name, path, W, H, dur));
     return src;
   }
+  let later: (() => void)[] = [];
   async function clips(a: Args) {
     const list = a.paths as Clip[], g = stops, names = list.map((c) => c.name);
     // what was read stays read, by the clip's name: a clip added, taken out or moved never reads the others again
@@ -460,6 +484,8 @@ export function createNativeEngine(io: NativeIo) {
       io.task?.(stops !== g ? "clear" : "done", "clips", `${host.ES.sources.length} clip${host.ES.sources.length > 1 ? "s" : ""} ready`);
     } catch (e) { io.task?.("fail", "clips", e instanceof Error ? e.message : "The clip could not be read"); throw e; }
     finally { reading--; }
+    // the preview copies after the reading (the phone's encoder is one: the edit copies the reading needs go first)
+    if (stops === g) { const jobs = later; later = []; jobs.forEach((j) => j()); } else later = [];
     host.ES.sources.sort((x: { name: string }, y: { name: string }) => names.indexOf(x.name) - names.indexOf(y.name));
     read = list;
     if (stops === g) host.makeReel();
@@ -573,6 +599,13 @@ export function createNativeEngine(io: NativeIo) {
     },
     saveToMyReels: (a) => saveToMyReels(String(a.path), String(a.name || "reel.mp4")),
     copies: () => copies,
+    /** the clips' preview copies (by the clip's name; null: none), waited for at most `wait` seconds in all */
+    previews: async (a) => {
+      const wait = Math.max(0, Number(a.wait ?? 180)) * 1000, end = new Promise<null>((ok) => setTimeout(() => ok(null), wait));
+      const out: Args = {};
+      for (const [name, job] of previews) out[name] = await Promise.race([job, end]);
+      return out;
+    },
     layerList: () => host.ES.layers.map((L: Args & { m: number; mk?: { w?: number; h?: number; th?: number; f?: number; a?: number; inv?: boolean }; key?: { on?: boolean; c?: string; tol?: number }; followOffsetX?: number; followOffsetY?: number; s: number; op: number; r: number }, index: number) => {
       const M = host.ES.lmedia[L.m as number] as { path?: string; kind?: string } | undefined;
       return { index, id: L.id, t0: L.t0, t1: L.t1, x: L.x, y: L.y, scale: L.s, opacity: L.op, rotation: L.r, mask: L.mask, blend: L.blend || "source-over", follow: L.follow || "none", followOffsetX: L.followOffsetX || 0, followOffsetY: L.followOffsetY || 0,
@@ -665,7 +698,7 @@ export function createNativeEngine(io: NativeIo) {
   const NOT_YET: string[] = [];
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
-    fresh: () => { stops++; read = []; copies = []; readBefore.clear(); signedIn = false; host = make(); },
+    fresh: () => { stops++; read = []; copies = []; later = []; previews = new Map(); readBefore.clear(); signedIn = false; host = make(); },
     // Undo: the website keeps a step whenever the Reel stops changing (a ticker, every 500 ms); here there is no ticker,
     // so each tool's change is kept as its step around the call (Undo did nothing on the phone: no step was ever kept)
     call: async (op: string, a: Args = {}) => {

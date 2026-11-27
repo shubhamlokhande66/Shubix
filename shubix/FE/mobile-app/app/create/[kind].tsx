@@ -67,7 +67,7 @@ function CreateFlowScreen() {
   const styleNow = () => styleFromWords(wish);
   // leaving the screen: the studio drops everything (no AI keeps working), so what it held is read again
   const making = useRef(false), stage = useRef<"song" | "clips" | "ai">("song"), askAgain = useRef(false), songStopped = useRef(false), madeReel = useRef<{ id: string; sig: string; media: ImagePicker.ImagePickerAsset[]; song: Song | null; start: number; length: number; kept: { uris: string[]; clips: ProjectClip[] } } | null>(null), kept = useRef<{ uris: string[]; clips: ProjectClip[] }>({ uris: [], clips: [] }), fresh = useRef(false), heard = useRef("");
-  const read = useRef<{ key: string; clips: ProjectClip[]; sources: ProjectClip[] } | null>(null), draft = useRef(`draft-${Date.now()}`);
+  const read = useRef<{ key: string; clips: ProjectClip[]; sources: ProjectClip[]; names: string[] } | null>(null), draft = useRef(`draft-${Date.now()}`);
   const stop = () => { making.current = false; tasks.clear("flow"); read.current = null; heard.current = ""; fresh.current = true; engine.stop(); };
   // the popup's Cancel: the studio stops what is running, what is done stays done, and Next goes on from there
   const cancelWork = () => {
@@ -155,11 +155,11 @@ function CreateFlowScreen() {
       rest.forEach((m, i) => keptBy.current.set(m.uri, { clip: got[i], name: `${from + i + 1}-${got[i].name}` }));
       const clips = list.map((m) => keptBy.current.get(m.uri)!.clip);
       kept.current = { uris: list.map((m) => m.uri), clips };
-      let sources = clips;
-      if (engineOn && sg) {
+      let sources = clips, names: string[] = [];
+      if (engineOn && (sg || talking)) {   // (a Talking Reel may have no song: its clips are read all the same)
         startFresh();
-        if (songStopped.current) { setMusic(await engine.songAgain()); songStopped.current = false; heard.current = sg.uri; }
-        if (heard.current !== sg.uri) { // the studio started again (the screen was left): it has lost the song and its part
+        if (sg && songStopped.current) { setMusic(await engine.songAgain()); songStopped.current = false; heard.current = sg.uri; }
+        if (sg && heard.current !== sg.uri) { // the studio started again (the screen was left): it has lost the song and its part
           tasks.update("flow", null, words("Reading your song…"));
           setMusic(await engine.song(sg.uri, sg.name)); heard.current = sg.uri;
           await readRef(sg);
@@ -168,7 +168,7 @@ function CreateFlowScreen() {
         }
         await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: styleNow() || "auto", template: params.templateId ?? "" });
         // each clip numbered once (phones name many clips the same): the ones the studio kept, in its order
-        const names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
+        names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
         if (!making.current) return false;
         // heavy clips (4K / HDR / 60 fps / a changing frame rate): the studio's smooth copies play instead (the phone's
         // preview and export decode them easily; the Reel is the same)
@@ -177,7 +177,7 @@ function CreateFlowScreen() {
         sources = names.map((n) => { const c = byName.get(n), copy = copies.get(n); return c && copy ? { ...c, uri: `file://${copy.path}`, ...(copy.photo ? { kind: "video" as const, duration: copy.photo, sourceDuration: copy.photo, end: copy.photo } : {}) } : c; }).filter((c): c is ProjectClip => !!c);
       }
       if (!making.current) return false;
-      read.current = { key: keyOf(list), clips, sources }; askAgain.current = false;
+      read.current = { key: keyOf(list), clips, sources, names }; askAgain.current = false;
       return true;
     } catch (e) { if (making.current) tell(errorMessage(e), "danger"); return false; }
     finally {
@@ -305,7 +305,14 @@ function CreateFlowScreen() {
       if (f && settings.fit !== false && kind !== "talking") { if ((await fitLength(f.have, short, f.clips === 1 && kind === "music" ? (f.exact ?? f.have) : 0)) === "stop") return; }
       else if (f && f.need && f.have < f.need * 0.95 && (await tooShort(f.have, f.need, short)) === "stop") return;
     }
-    const id = draft.current, { sources } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
+    // the clips' small copies for the editor's player (made while the Reel was made); the export reads the clips
+    const withPreviews = async (list: ProjectClip[]) => {
+      const names = read.current!.names; if (!names.length) return list;
+      tasks.update("flow", null, words("Making the preview smooth…"));
+      const pv = await engine.previews();
+      return list.map((c, i) => { const f = pv[names[i]]; return f && c.kind === "video" ? { ...c, preview: f.startsWith("file://") ? f : `file://${f}` } : c; });
+    };
+    const id = draft.current, { sources: read0 } = read.current!, style = styleNow(), { music: heardMusic, start: at, length: long } = now.current;
     let clips = read.current!.clips, studio = false, talkAudio: string | undefined;
     try {
       if (engineOn && talking) {
@@ -319,6 +326,7 @@ function CreateFlowScreen() {
         const went = await engine.ai();
         if (!went && again && making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return void keepOldReel(old); }
         if (!went || !making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return; }
+        const sources = await withPreviews(read0);
         clips = shotsOf((await engine.ready(id)).state.edit, sources.length ? sources : clips); studio = true;
         const mix = await engine.talkMix(`${id}-talk.wav`);
         if (mix) talkAudio = await keepPickedFile(id, mix.startsWith("file://") ? mix : `file://${mix}`, `${id}-talk.wav`);
@@ -330,6 +338,7 @@ function CreateFlowScreen() {
         const went = await engine.ai();
         if (!went && again && making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return void keepOldReel(old); }   // Shubix AI's question closed: the old Reel
         if (!went || !making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return; }
+        const sources = await withPreviews(read0);
         clips = shotsOf((await engine.ready(id)).state.edit, sources.length ? sources : clips); studio = true;
       } else clips = clips.map((c) => ({ ...c, speed: { fast: 1.25, smooth: 0.8, "": 1 }[style] }));
       const audioUri = talkAudio ?? (song ? await keepPickedFile(id, song.uri, `${song.name}.m4a`) : undefined);

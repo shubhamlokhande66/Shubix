@@ -174,12 +174,14 @@ class FileServer(private val context: Context, private val roots: List<File>, pr
         val f = File(url.getQueryParameter("p") ?: "")
         val w = url.getQueryParameter("w")?.toIntOrNull() ?: 0; val h = url.getQueryParameter("h")?.toIntOrNull() ?: 0
         val fps = url.getQueryParameter("fps")?.toFloatOrNull() ?: 30f; val rate = url.getQueryParameter("b")?.toIntOrNull() ?: 6_000_000
+        // the key frame every `k` seconds: 0.5 for an edit copy, 0.25 for the editor's small preview copy
+        val key = (url.getQueryParameter("k")?.toFloatOrNull() ?: 0.5f).coerceIn(0.1f, 2f)
         if (!f.isFile || !inside(f) || w !in 2..3840 || h !in 2..3840) return@use reply(out, 404, "Not Found", emptyMap(), null)
         // the same clip at the same size is made once
-        val to = File(outDir.apply { mkdirs() }, "copy-${(f.path + f.length() + f.lastModified() + w + h + fps + rate).hashCode().toUInt()}.mp4")
+        val to = File(outDir.apply { mkdirs() }, "copy-${(f.path + f.length() + f.lastModified() + w + h + fps + rate + (if (key == 0.5f) "" else "k$key")).hashCode().toUInt()}.mp4")
         copies.acquire()   // the phone's hardware encoder: one copy at a time; the others wait for their turn
         try {
-          if (!to.isFile || to.length() == 0L) makeEditCopy(context, f, to, w, h, fps, rate)
+          if (!to.isFile || to.length() == 0L) makeEditCopy(context, f, to, w, h, fps, rate, key)
           reply(out, 200, "OK", mapOf("Content-Type" to "application/json"), "{\"path\":${org.json.JSONObject.quote(to.absolutePath)}}".toByteArray())
         } catch (e: Exception) { reply(out, 422, "Unreadable", mapOf("Content-Type" to "text/plain"), (e.message ?: "no copy").toByteArray()) }
         finally { copies.release() }

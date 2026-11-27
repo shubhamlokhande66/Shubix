@@ -11,11 +11,15 @@ import { isHidden, nap, whenVisible } from "./background";
 
 export const PREVIEW_MAX_SIDE = 960;
 export const PREVIEW_BITRATE = 2_000_000;
-const MIN_FILE_BYTES = 16 * 1024 * 1024;
+// (16 MB before 2026-11-27: a short 4K clip was played whole by the preview, and a beat Reel's cuts stuttered on phones)
+const MIN_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PROXY_FILE_BYTES = 450 * 1024 * 1024;
 const MAX_PROXY_DURATION = 300;
 const MIN_PREVIEW_BITRATE = 700_000;
 const PREVIEW_AUDIO_BITRATE = 96_000;
+/** a key frame every half second in the copies: each cut of a beat Reel starts from the key frame before it, so the player
+ * decodes at most half a second of frames to show a cut (1 s before 2026-11-27: the cuts stuttered on phones) */
+export const KEY_EVERY = 0.5;
 
 export interface PreviewProxyFacts {
   size: number;
@@ -182,7 +186,7 @@ async function playerToEncoder(file: File, plan: PreviewProxyPlan, onProgress?: 
     const dur = video.duration; if (!Number.isFinite(dur) || dur <= 0) return null;
     const mp4 = vcodec === "avc";
     const output = new mb.Output({ format: mp4 ? new mb.Mp4OutputFormat({ fastStart: "in-memory" }) : new mb.WebMOutputFormat(), target: new mb.BufferTarget() });
-    const vs = new mb.VideoSampleSource({ codec: vcodec, bitrate: plan.bitrate, keyFrameInterval: 1 });
+    const vs = new mb.VideoSampleSource({ codec: vcodec, bitrate: plan.bitrate, keyFrameInterval: KEY_EVERY });
     const fps = plan.fps || EDIT_FPS, step = 1 / fps;
     output.addVideoTrack(vs, { frameRate: fps });
     await output.start();
@@ -346,7 +350,7 @@ export async function createPreviewProxy(
             input, output,
             video: {
               width: plan.width, height: plan.height, fit: "contain",
-              codec: vcodec, quality: new mb.Quality(plan.bitrate), keyFrameInterval: 1,
+              codec: vcodec, quality: new mb.Quality(plan.bitrate), keyFrameInterval: KEY_EVERY,
               ...(plan.fps ? { frameRate: plan.fps } : {}),
             },
             audio: acodec ? { codec: acodec } : { discard: true },

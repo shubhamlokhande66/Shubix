@@ -221,6 +221,8 @@ export const engine = {
   /** the clips' smooth copies the studio made (4K / HDR / 60 fps / a changing frame rate), saved on the phone: the
    * phone's preview and export play these, so heavy footage never stutters or stalls (`name`: the clip as sent) */
   copies: () => call<{ name: string; path: string; w: number; h: number; photo?: number }[]>("copies").catch(() => []),
+  /** the clips' small preview copies, by the clip's name (null: none), waited for at most `wait` seconds */
+  previews: (wait = 180) => call<Record<string, string | null>>("previews", { wait }).catch(() => ({} as Record<string, string | null>)),
   /** Ask Shubix from the editor: the website's own AI chat on the Reel the studio holds; its plan is applied there and
    * the Reel's clips come back (null: the studio does not hold this Reel) */
   chat: async (p: ReelProject, text: string) => {

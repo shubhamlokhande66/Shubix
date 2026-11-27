@@ -10,6 +10,8 @@ export const overlaySchema = z.object({ id: z.string(), text: z.string().max(300
   x: z.number().optional(), y: z.number().optional(), emoji: z.boolean().optional(), stk: z.string().max(24).optional(), behind: z.boolean().optional(), track: z.boolean().optional(), focus: z.number().optional(),
   aiIntent: z.string().max(24).optional(), uk: z.array(z.record(z.string(), z.unknown())).max(64).optional() });
 export const clipSchema = z.object({
+  // the clip's small copy for the editor's player (the phone's, previewCopyOf): the export reads `uri`
+  preview: z.string().optional(),
   id: z.string(), uri: z.string(), name: z.string(), kind: mediaKindSchema, duration: z.number().positive(),
   sourceDuration: z.number().positive(), start: z.number().min(0), end: z.number().positive(), speed: z.number().min(0.25).max(4),
   reverse: z.boolean(), muted: z.boolean(), volume: z.number().min(0).max(2), filter: z.string(), transition: z.string(),
