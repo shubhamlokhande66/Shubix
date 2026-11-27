@@ -52,6 +52,8 @@ const tasks = createTasks(root);   // what is happening now, always in view (com
 const ac = new AbortController(), SIG = { signal: ac.signal };
 // iPhone / iPad (iPadOS says it is a Mac): Safari there gives a page much less memory, and reloads it when it runs out
 const IOS = typeof navigator !== 'undefined' && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+// a phone or a tablet (a small screen too): its decoder is slow and few, so big clips are read from their light copies
+const phoneLike = () => IOS || /Android|Mobi/i.test(navigator.userAgent) || matchMedia('(max-width:1023px)').matches;
 // Browser hints are advisory (Safari/iOS often hides deviceMemory). Prefer a smaller decoder working set
 // on iOS and low-memory Android devices; this trades a little parallel decode for fewer export OOMs.
 const DEVICE_MEMORY_GB = typeof navigator !== 'undefined' ? Number(navigator.deviceMemory) || 0 : 0;
@@ -906,10 +908,13 @@ async function pictureEnd(mb, track, first){
     if(p && p.timestamp - first > 0.3) return Math.min(end > 0 ? end : Infinity, p.timestamp - first + step); }catch(e){}
   return end;
 }
-async function clipReader(src, maxSide){
+// light: the clip's reading (motion, scenes, faces, its card's picture) may come from its light copy (960 on its long side):
+// those frames are 48 x 27 to 480 px, the same from the copy as from a 4K file, which a phone decodes many times slower.
+// Shubix AI's pictures, the subject pop and the export read the clip itself.
+async function clipReader(src, maxSide, light = false){
   try{
     const mb = await loadMediabunny();
-    const input = new mb.Input({ source: new mb.BlobSource(decFile(src)), formats: mb.ALL_FORMATS });
+    const input = new mb.Input({ source: new mb.BlobSource(light && src.lightFile && maxSide <= 960 ? src.lightFile : decFile(src)), formats: mb.ALL_FORMATS });
     const track = await input.getPrimaryVideoTrack();
     if(!track || !(await track.canDecode())){ try{ input.dispose(); }catch(e){} throw new Error('no WebCodecs decoder'); }
     const first = await track.getFirstTimestamp(), sc = Math.min(1, maxSide/Math.max(src.w, src.h));
@@ -935,7 +940,7 @@ const STILL = 0.0007;   // the same picture again (a camera's own noise moves a 
 async function scanMotion(src, onProgress, faces){
   // read the clip's frames (see clipReader) and compare small frames: how much moves, where it moves, how bright.
   // faces (a faceScanner): its frames come from this same pass, so the clip is decoded once (an iPhone)
-  const rd = await clipReader(src, faces ? 480 : 256); if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
+  const rd = await clipReader(src, faces ? 480 : 256, true); if(src.readMs) src.readMs.how = rd.fast ? 'webcodecs' : 'seek';
   const c = document.createElement('canvas'); c.width=SW; c.height=SH; const g = c.getContext('2d', {willReadFrequently:true});
   const c2 = document.createElement('canvas'); c2.width=128; c2.height=72; const g2 = c2.getContext('2d', {willReadFrequently:true});
   let prev = null; const out = [], hists = [], lums = [];
@@ -1181,7 +1186,7 @@ function faceScanner(src){
 }
 async function scanFaces(src, onProgress){
   const fs = faceScanner(src); if(!fs) return;
-  const rd = await clipReader(src, 480), ts = fs.ts;
+  const rd = await clipReader(src, 480, true), ts = fs.ts;
   let k = 0;
   try{ for await (const v of rd.frames(ts)){ const tt = ts[k++]; if(!v) continue;
     if(!(await fs.each(v, tt))) break;
@@ -1277,6 +1282,9 @@ function addVideos(files, restored = false){
   const fresh = list.filter(f => { const k = fileKey(f); if(seen.has(k)) return false; seen.add(k); return true; });
   if(fresh.length < list.length && !restored) notify('Same clip already added, removed');
   if(!fresh.length) return;
+  // a lot of video at once (over 1.5 GB, about five minutes of 4K): said once, nothing held back. Every clip is read in
+  // full, so the Reel stays as accurate; it only takes longer
+  { const gb = fresh.reduce((t, f) => t + (f.size || 0), 0) / 1024 ** 3; if(gb > 1.5 && !restored) notify('Big clips (' + gb.toFixed(1) + ' GB): reading them takes a few minutes. Keep this page open.'); }
   const jobs = fresh.map(f=>{ const j = makeCard(f); j.card.dataset.fp = fileKey(f); return j; });
   queueClips([...unreadClips(), ...jobs]);
   fresh.forEach(wipKeep);
@@ -1576,6 +1584,7 @@ async function compressHighResolutionPreview(src, dd){
   const pictured = cached && cached.blob instanceof Blob && (heavy ? cached.v === 2 && cached.edit : cached.v === 1 && cached.blob.size < src.file.size) && await hasPicture(cached.blob);
   if(pictured){
     if(cached.edit){ src.edFile = cached.blob; src.edW = cached.width || 0; src.edH = cached.height || 0; src.edAudio = !!cached.audio; }
+    else src.lightFile = cached.blob;
     src.url = URL.createObjectURL(cached.blob);
     src.previewProxy = true; src.proxySize = cached.blob.size;
     src.proxyW = cached.width || 0; src.proxyH = cached.height || 0;
@@ -1599,7 +1608,10 @@ async function compressHighResolutionPreview(src, dd){
   }
   src.proxyStatus='Compressing…'; src.proxyReason='Target preview: '+plan.width+' × '+plan.height+' · '+(plan.bitrate/1e6).toFixed(2)+' Mbps';
   updateClipHoverInfo(src);
-  bgCopy(src, () => lightCopy(src, dd, plan));   // only for a smoother preview: made behind, the clip is read now
+  // on a phone the copy comes first and the clip is read from it (clipReader's light): one decode of the big file, not
+  // a copy and a reading of it at once (ten 30 s 4K clips hung phones, 2026-11-27). A computer reads now, the copy behind
+  if(phoneLike() && typeof VideoEncoder !== 'undefined') await lightCopy(src, dd, plan);
+  else bgCopy(src, () => lightCopy(src, dd, plan));
 }
 async function lightCopy(src, dd, plan){
   previewBatchDetected++;
@@ -1612,7 +1624,7 @@ async function lightCopy(src, dd, plan){
     }, plan);
     if(src.removed) return;
     if(result && result.blob && result.blob.size<src.file.size){
-      const oldUrl=src.url; src.url=URL.createObjectURL(result.blob); swapSrc(src); src.previewProxy=true; src.proxySize=result.blob.size; src.proxyW=result.plan.width; src.proxyH=result.plan.height; src.proxyMime=result.blob.type; src.proxyStatus='Success'; src.proxyReason='Downscaled preview generated successfully.';
+      const oldUrl=src.url; src.url=URL.createObjectURL(result.blob); swapSrc(src); src.lightFile=result.blob; src.previewProxy=true; src.proxySize=result.blob.size; src.proxyW=result.plan.width; src.proxyH=result.plan.height; src.proxyMime=result.blob.type; src.proxyStatus='Success'; src.proxyReason='Downscaled preview generated successfully.';
       // Persist the compressed preview separately; export always keeps using the original File.
       await keptPut('p:', src.file, { v: 1, blob: result.blob, width: result.plan.width, height: result.plan.height, mime: result.blob.type || '' });
       try{URL.revokeObjectURL(oldUrl);}catch(e){}
@@ -1680,7 +1692,7 @@ async function readVideo(src){
     stage = 'thumbnail';
     const th = card.querySelector('.th'); th.width=320; th.height=180; const tg=th.getContext('2d');
     const r = Math.max(320/src.w, 180/src.h); let pic = v;
-    if(facts){ const rd = await clipReader(src, 640); try{ pic = await rd.at(Math.min(src.dur*0.3, 2)); } finally { rd.close(); } }
+    if(facts){ const rd = await clipReader(src, 640, true); try{ pic = await rd.at(Math.min(src.dur*0.3, 2)); } finally { rd.close(); } }
     if(pic) tg.drawImage(pic,(320-src.w*r)/2,(180-src.h*r)/2,src.w*r,src.h*r);
     if(v){ v.removeAttribute('src'); v.load(); }
     if(src.removed) return;

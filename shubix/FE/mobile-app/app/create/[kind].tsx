@@ -67,6 +67,7 @@ function CreateFlowScreen() {
   const styleNow = () => styleFromWords(wish);
   // leaving the screen: the studio drops everything (no AI keeps working), so what it held is read again
   const making = useRef(false), stage = useRef<"song" | "clips" | "ai">("song"), askAgain = useRef(false), songStopped = useRef(false), madeReel = useRef<{ id: string; sig: string; media: ImagePicker.ImagePickerAsset[]; song: Song | null; start: number; length: number; kept: { uris: string[]; clips: ProjectClip[] } } | null>(null), kept = useRef<{ uris: string[]; clips: ProjectClip[] }>({ uris: [], clips: [] }), fresh = useRef(false), heard = useRef("");
+  const longTold = useRef("");   // the clips a long reading was told for
   const read = useRef<{ key: string; clips: ProjectClip[]; sources: ProjectClip[]; names: string[] } | null>(null), draft = useRef(`draft-${Date.now()}`);
   const stop = () => { making.current = false; tasks.clear("flow"); read.current = null; heard.current = ""; fresh.current = true; engine.stop(); };
   // the popup's Cancel: the studio stops what is running, what is done stays done, and Next goes on from there
@@ -144,6 +145,10 @@ function CreateFlowScreen() {
   async function readClips(list: ImagePicker.ImagePickerAsset[], sg: Song | null = song) {
     stage.current = "clips"; making.current = true; setWorking(true);
     tasks.start("flow", "clips", words("Adding your clips"), `${words("Clip")} 1 / ${list.length}`);
+    // a lot of footage (long or many clips): said once, nothing held back. Every second is read, so the Reel stays as
+    // accurate; it only takes longer (about a quarter of the footage's length on a mid-range phone)
+    const footage = list.reduce((t, m) => t + (m.type === "video" ? (m.duration ?? 0) / 1000 : 0), 0);
+    if (footage > 300 && longTold.current !== keyOf(list)) { longTold.current = keyOf(list); tell(words("{m} min of video: reading it takes about {n} min. Keep Shubix open.", { m: Math.round(footage / 60), n: Math.max(1, Math.round(footage / 240)) })); }
     // each clip's card says how it goes (its number in the name it is read by)
     setClipState((was) => Object.fromEntries(list.map((m) => [m.uri, was[m.uri] === "ok" ? "ok" : "wait"])));
     onClipRead((name, ok, best) => { const m = list.find((x) => keptBy.current.get(x.uri)?.name === name); if (!m) return; setClipState((was) => ({ ...was, [m.uri]: ok ? "ok" : "bad" })); if (ok && best != null) setClipBest((was) => ({ ...was, [m.uri]: best })); });

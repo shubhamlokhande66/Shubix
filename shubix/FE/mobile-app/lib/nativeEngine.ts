@@ -146,16 +146,21 @@ export function createNativeEngine(io: NativeIo) {
   }
   const readBefore = new Map<string, unknown>();
   let stops = 0, read: Clip[] = [], reading = 0, copies: Copy[] = [];
-  // the clips' preview copies (previewCopyOf), by the clip's name: made one after another once the clips are read
-  let previews = new Map<string, Promise<string | null>>(), previewChain: Promise<unknown> = Promise.resolve();
-  function previewOf(name: string, path: string, w: number, h: number, dur: number) {
+  // the clips' small copies (previewCopyOf), by the clip's name: the editor's player reads them
+  let previews = new Map<string, Promise<string | null>>();
+  /** a clip's small copy, made before it is read: its motion, scenes and faces are read from it (they are read on
+   * 128 x 72 and face-sized frames, so a 960 copy gives the same readings as the 4K file, from one decode of the 4K
+   * file instead of two), and the preview plays it. null: none needed, or none made (the clip itself is read). */
+  async function smallCopy(name: string, path: string, w: number, h: number, dur: number) {
     const plan = previewCopyOf(w, h, dur);
-    if (!plan || previews.has(name)) return;
-    const job = previewChain.then(async () => {
+    if (!plan) return null;
+    const known = previews.get(name); if (known) return known;
+    const job = (async () => {
       const made = await io.fetch(url("copy", `&p=${encodeURIComponent(path)}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}&k=0.25`), { method: "POST" });
       return made.ok ? (await made.json() as { path: string }).path : null;
-    }).catch(() => null);
-    previewChain = job; previews.set(name, job);
+    })().catch(() => null);
+    previews.set(name, job);
+    return job;
   }
   const url = (path: string, q = "") => `${io.base}/${path}?k=${io.key}${q}`;
   /** a file's sound, read by the phone (SoundReader.kt); it fails when the file has none */
@@ -447,7 +452,9 @@ export function createNativeEngine(io: NativeIo) {
       const made = await io.fetch(url("copy", `${p}&w=${plan.w}&h=${plan.h}&fps=30&b=${plan.bitrate}`), { method: "POST" });
       if (made.ok) { path = (await made.json() as { path: string }).path; W = plan.w; H = plan.h; copies.push({ name: c.name, path, w: plan.w, h: plan.h }); }
     }
-    const q = `&p=${encodeURIComponent(path)}&dur=${dur}`;
+    // the reading's own small copy (smallCopy): what is read is the same picture, at the size the reading uses
+    const look = photo ? null : await smallCopy(c.name, path, W, H, dur);
+    const q = `&p=${encodeURIComponent(look ?? path)}&dur=${dur}`;
     const scan = lastLine(await (await io.fetch(url("scan", q), { method: "POST" })).text(), "{");
     let raw: { t: number; rects: unknown[] }[] = [];
     try { raw = lastLine(await (await io.fetch(url("faces", `${q}&w=${W}&h=${H}`), { method: "POST" })).text(), "["); } catch { /* no faces read: the Reel is still made */ }
@@ -458,10 +465,8 @@ export function createNativeEngine(io: NativeIo) {
     // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
     try { const s = await readSound(from); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
     readBefore.set(c.name, src);
-    if (!photo) later.push(() => previewOf(c.name, path, W, H, dur));
     return src;
   }
-  let later: (() => void)[] = [];
   async function clips(a: Args) {
     const list = a.paths as Clip[], g = stops, names = list.map((c) => c.name);
     // what was read stays read, by the clip's name: a clip added, taken out or moved never reads the others again
@@ -484,8 +489,6 @@ export function createNativeEngine(io: NativeIo) {
       io.task?.(stops !== g ? "clear" : "done", "clips", `${host.ES.sources.length} clip${host.ES.sources.length > 1 ? "s" : ""} ready`);
     } catch (e) { io.task?.("fail", "clips", e instanceof Error ? e.message : "The clip could not be read"); throw e; }
     finally { reading--; }
-    // the preview copies after the reading (the phone's encoder is one: the edit copies the reading needs go first)
-    if (stops === g) { const jobs = later; later = []; jobs.forEach((j) => j()); } else later = [];
     host.ES.sources.sort((x: { name: string }, y: { name: string }) => names.indexOf(x.name) - names.indexOf(y.name));
     read = list;
     if (stops === g) host.makeReel();
@@ -698,7 +701,7 @@ export function createNativeEngine(io: NativeIo) {
   const NOT_YET: string[] = [];
   return {
     has: (op: string) => op in ops, notYet: NOT_YET, ascii, read: () => read, host: () => host,
-    fresh: () => { stops++; read = []; copies = []; later = []; previews = new Map(); readBefore.clear(); signedIn = false; host = make(); },
+    fresh: () => { stops++; read = []; copies = []; previews = new Map(); readBefore.clear(); signedIn = false; host = make(); },
     // Undo: the website keeps a step whenever the Reel stops changing (a ticker, every 500 ms); here there is no ticker,
     // so each tool's change is kept as its step around the call (Undo did nothing on the phone: no step was ever kept)
     call: async (op: string, a: Args = {}) => {
