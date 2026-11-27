@@ -44,7 +44,7 @@ export function nativeExportGaps(p: ReelProject, layers: NativeLayerRow[]): stri
 export type NativeLayerRow = { native?: unknown; blend?: string };
 
 /** `studio`: the studio's finished sound (engine.exportMix), which replaces the clips' sound and the song, and its plan: watermark, quality, frame rate. */
-export async function exportReel(p: ReelProject, onProgress: (done: number) => void, studio?: { mix: string | null; layers?: NativeLayerRow[]; plan: { textTrack?: unknown; watermark: boolean; fps: number; bitrate: number; scale: number; stabs?: unknown[]; beats?: number[][]; follow?: (number[][] | null)[] } }) {
+export async function exportReel(p: ReelProject, onProgress: (done: number) => void, studio?: { mix: string | null; layers?: NativeLayerRow[]; plan: { look?: unknown; textTrack?: unknown; watermark: boolean; fps: number; bitrate: number; scale: number; stabs?: unknown[]; beats?: number[][]; follow?: (number[][] | null)[] } }) {
   p = { ...p, overlays: p.overlays.filter((o) => !(o as { ph?: boolean }).ph && o.text?.trim()) };   // a copied Reel's text place not filled in, an empty text: never in the video
   const mix = studio?.mix;
   if (!ShubixVideo) throw new Error("The video engine is not in this app.");
@@ -90,6 +90,8 @@ export async function exportReel(p: ReelProject, onProgress: (done: number) => v
   if (studio) for (const [i, c] of clips.entries()) clips[i] = { ...c, filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", effect: c.effect && !BEAT_FX.has(c.effect) && !isAndroidEffectSupported(c.effect) ? undefined : c.effect };
   const made = nativeSpec({ ...p, clips }, width, height);
   const spec = { ...made, output, ...(studio ? {
+    // the Reel's look (its colour grade), drawn as the website draws it (StudioTransitions.kt LookFx)
+    ...(studio.plan.look ? { look: studio.plan.look } : {}),
     watermark: studio.plan.watermark, fps: studio.plan.fps, bitrate: Math.round(studio.plan.bitrate),
     clips: withStudio(made.clips, studio, p),
     texts: made.texts.map((o, i) => (p.overlays[i] as { track?: boolean } | undefined)?.track && studio.plan.textTrack ? { ...o, trackPath: studio.plan.textTrack } : o),
@@ -177,13 +179,13 @@ function smoothPreviewOf(c: ProjectClip, uri: string, ramp: string): string | un
 }
 /** the player's spec: the export's, half size (smooth on any phone), without what the phone's engine cannot draw yet
  * (it is left out, never an error: the export still checks it); null when the engine is not in this app */
-export function previewSpec(p: ReelProject, layers: { native?: unknown }[] = []): string | null {
+export function previewSpec(p: ReelProject, layers: { native?: unknown }[] = [], look: unknown = null): string | null {
   if (!ShubixVideo || !p.clips.length) return null;
   const [w, h] = SIZE[p.settings?.aspect ?? "9:16"] ?? SIZE["9:16"], k = 540 / Math.min(w, h);
   const spec = nativeSpec({ ...p, clips: p.clips.map((c) => ({ ...c, ...fitTimes(c), uri: previewUri(c), reverse: false,
     ...(slowed(c) ? { smoothUri: smoothPreviewOf(c, previewUri(c), fitTimes(c).speedRamp?.length ? JSON.stringify(fitTimes(c).speedRamp) : "") } : {}), filter: isAndroidFilterSupported(c.filter) ? c.filter : "Original", volume: Math.min(1, c.volume ?? 1) })),
     overlays: p.overlays.filter((o) => o.text?.trim() && o.end > o.start).slice(0, 40).map((o) => ({ ...o, text: o.text.slice(0, 300), size: Math.min(120, Math.max(8, o.size ?? 36)) })) }, Math.round(w * k / 2) * 2, Math.round(h * k / 2) * 2, true);
-  return JSON.stringify({ ...spec, layers: layers.map((l) => l.native).filter(Boolean) });
+  return JSON.stringify({ ...spec, ...(look ? { look } : {}), layers: layers.map((l) => l.native).filter(Boolean) });
 }
 
 

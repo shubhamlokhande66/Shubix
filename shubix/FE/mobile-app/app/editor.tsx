@@ -65,12 +65,12 @@ const CANVAS_COLS = [["#000000", "Black"], ["#FFFFFF", "White"], ["#E85D75", "Pi
  * point of a list, e.g. a curve); the shot's values are read from the studio, each slider sends its value when let go */
 /** the editor's one player: the Reel on the phone's own video engine (modules/shubix-video, Media3), the export's
  * picture, playing, paused or on a scrubbed frame. Its time moves the playhead; a playhead moved by hand moves it. */
-function ReelPlayer({ p, layers, now, playing, sound, onTime, onEnd, onError }: { p: ReelProject; layers: { native?: unknown }[]; now: number; playing: boolean; sound: boolean; onTime: (t: number) => void; onEnd: () => void; onError: (why: string | null) => void }) {
+function ReelPlayer({ p, look, layers, now, playing, sound, onTime, onEnd, onError }: { p: ReelProject; look?: unknown; layers: { native?: unknown }[]; now: number; playing: boolean; sound: boolean; onTime: (t: number) => void; onEnd: () => void; onError: (why: string | null) => void }) {
   const ref = useRef<PreviewRef>(null), told = useRef(now), nowRef = useRef(now); nowRef.current = now;
   // a slowed shot's smooth copy made behind (Smooth slow-mo): the Reel is loaded again with it
   const [smoothN, setSmoothN] = useState(0);
   useEffect(() => smoothReady(() => setSmoothN((n) => n + 1)), []);
-  const [loaded, setLoaded] = useState(false), spec = useMemo(() => previewSpec(p, layers), [p, layers, smoothN]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [loaded, setLoaded] = useState(false), spec = useMemo(() => previewSpec(p, layers, look), [p, layers, look, smoothN]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!spec) return;
     const t = setTimeout(() => { const v = ref.current; if (!v) return; onError(null); told.current = nowRef.current; v.load(spec, nowRef.current).then(() => setLoaded(true)).catch((e) => onError(errorMessage(e))); }, loaded ? 250 : 0);
@@ -199,6 +199,9 @@ export default function EditorScreen() {
     }).catch(() => {});
   }, [tool?.key, p?.id]);
   // what Shubix AI planned for this Reel, shown in Ask Shubix (read when the Reel opens, and again after each answer)
+  // the Reel's look (its colour grade) as the studio holds it: the player draws it as the export does
+  const [reelLook, setReelLook] = useState<unknown>(null);
+  useEffect(() => { if (p?.studio && engine.holds(p.id)) void engine.look().then(setReelLook); else setReelLook(null); }, [p?.id, p?.studio, p?.settings?.look]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (p?.studio && engine.holds(p.id)) { void engine.aiPlan().then(keepPlan).catch(() => setAiPlan(p?.aiPlan)); aiHistory(); } else setAiPlan(p?.aiPlan ?? undefined); }, [p?.id, p?.studio]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!p?.studio || !engine.holds(p.id)) { setStudioLayers([]); return; }
@@ -1002,7 +1005,7 @@ export default function EditorScreen() {
         // the creator's changes after Shubix made it (this editor's Undo steps): Admin's "Kept as Shubix made it"
         void mobileApi.reelLog(p.id, { step: "export", msg: `Export started · ${p.clips.length} shots`, data: { changes: undo.current.length, opened: made !== "1", platform: "android", shots: p.clips.length } }).catch(() => undefined); }} />
       <ScrollView className="flex-1" contentContainerClassName="pb-3" showsVerticalScrollIndicator={false}>
-        <Preview n={selected} of={clips.length} playing={playing} aspect={aspect} error={playError} onToggle={() => setPlaying(!playing)}><ReelPlayer p={p} layers={studioLayers} now={now} playing={playing} sound={sound} onTime={seek} onEnd={() => { setPlaying(false); seek(0); }} onError={setPlayError} /></Preview>
+        <Preview n={selected} of={clips.length} playing={playing} aspect={aspect} error={playError} onToggle={() => setPlaying(!playing)}><ReelPlayer p={p} look={reelLook} layers={studioLayers} now={now} playing={playing} sound={sound} onTime={seek} onEnd={() => { setPlaying(false); seek(0); }} onError={setPlayError} /></Preview>
         <View className="mx-4 mt-2 gap-1">
           <Button full icon="shuffle" variant="secondary" title={words(mixing ? "Making another mix…" : "Try another mix")} disabled={mixing || clips.length < 2} onPress={() => void mixVideo()} />
           <Text className="text-center text-[11.5px] text-muted">{words("Same song and clips, arranged again · free · Undo brings this one back")}</Text>

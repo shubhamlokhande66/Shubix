@@ -341,7 +341,8 @@ class ShubixVideoModule : Module() {
     val studioLayers = (allLayers - blended.toSet()).takeIf { it.isNotEmpty() }?.let { StudioLayerRenderer(org.json.JSONArray(it), w, h, exact = !live) }
     val blendLayers = blended.map { StudioLayerRenderer(org.json.JSONArray(listOf(it)), w, h, exact = true) to BLEND_MODE.getValue(it.optString("blend")) }
     val watermark = if (!live && spec.optBoolean("watermark")) StudioWatermark(appContext.reactContext ?: throw IllegalStateException("No app"), w, h) else null
-    val held = HeldFrame()   // the last frame of the shot before a studio transition (StudioTransitions.kt)
+    val held = HeldFrame()
+    val reelLook = ReelLook.of(spec.optJSONObject("look"))   // the Reel's colour grade (LookFx), the website's   // the last frame of the shot before a studio transition (StudioTransitions.kt)
     val clips = spec.getJSONArray("clips")
     require(clips.length() > 0) { "Add at least one clip before exporting." }
     require(clips.length() <= 500) { "A Reel can contain at most 500 clips." }
@@ -440,6 +441,7 @@ class ShubixVideoModule : Module() {
       if (!live) studioStabilizer(c)?.let { video += it }
       video += Presentation.createForWidthAndHeight(w, h, if (c.optString("fit") == "contain") Presentation.LAYOUT_SCALE_TO_FIT else Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
       video += filter(c.optString("filter"))
+      if (reelLook != null && shaders?.main != null) video += LookFx(shaders.vert, shaders.main, reelLook)
       // the shot's beat effect, with the studio's own shader (StudioTransitions.kt)
       if (!live && shaders?.main != null) c.optJSONObject("beatFx")?.let { fx ->
         val beats = fx.optJSONArray("beats")

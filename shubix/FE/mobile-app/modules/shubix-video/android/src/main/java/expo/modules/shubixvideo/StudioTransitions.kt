@@ -71,7 +71,7 @@ private fun draw(p: GlProgram, tex: Int) {
 
 /** the studio's main shader, one draw (its uniforms as the website's renderer sets them; the look is the shot's own, done before this pass) */
 private fun drawMain(prog: GlProgram, texB: Int, texA: Int, texL: Int, w: Float, h: Float, a: Layer, b: Layer, hasA: Boolean, mode: Float, progress: Float, mix: Float, time: Float, flash: Float, leak: FloatArray,
-                     shp: FloatArray = FloatArray(4), shq: FloatArray = FloatArray(4), mono: Float = 0f, con: Float = 1f) {
+                     shp: FloatArray = FloatArray(4), shq: FloatArray = FloatArray(4), mono: Float = 0f, con: Float = 1f, look: ReelLook? = null) {
   prog.use()
   // Media3 binds every sampler itself: each must be named here, before bindAttributesAndUniforms
   prog.setSamplerTexIdUniform("tB", texB, 0)
@@ -92,12 +92,47 @@ private fun drawMain(prog: GlProgram, texB: Int, texA: Int, texL: Int, w: Float,
   }
   f1("hasA", if (hasA) 1f else 0f); f1("mode", mode); f1("prog", progress); f1("mixv", mix); f2("irisC", w / 2, h / 2)
   f1("time", time); f1("snap", 0f); f4("bgR", floatArrayOf(0f, 0f, 1f, 1f)); f1("bgDark", 0f); f4("frR", floatArrayOf(0f, 0f, w, h)); f1("border", 0f)
-  f1("con", con); f1("sat", 1f); f1("bri", 1f); f1("teal", 0f); f1("mono", mono); f1("vig", 0f); f1("grain", 0f); f1("warm", 0f); f1("lift", 0f)
-  f4("tsh", floatArrayOf(0.5f, 0.5f, 0.5f, 0f)); f4("thi", floatArrayOf(0.5f, 0.5f, 0.5f, 0f))
+  if (look != null) {
+    f1("con", look.con); f1("sat", look.sat); f1("bri", look.bri); f1("teal", look.teal); f1("mono", look.mono); f1("vig", look.vig); f1("grain", look.grain); f1("warm", look.warm); f1("lift", look.lift)
+    f4("tsh", look.tsh); f4("thi", look.thi)
+  } else {
+    f1("con", con); f1("sat", 1f); f1("bri", 1f); f1("teal", 0f); f1("mono", mono); f1("vig", 0f); f1("grain", 0f); f1("warm", 0f); f1("lift", 0f)
+    f4("tsh", floatArrayOf(0.5f, 0.5f, 0.5f, 0f)); f4("thi", floatArrayOf(0.5f, 0.5f, 0.5f, 0f))
+  }
   f1("flash", flash); f3("leak", leak[0], leak[1], leak[2]); f1("loopMix", 0f)
   f4("mz", FloatArray(4)); f1("mzc", 1f); f4("mg", floatArrayOf(0f, 0f, 0f, 1f)); f4("shp", shp); f4("shq", shq)
   GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
   GlUtil.checkGlError()
+}
+
+/** the Reel's look (its colour grade: Look, Shubix AI's or Copy a Reel's), as the website's S.grade (brain host.ts lookGrade) */
+internal class ReelLook(val con: Float, val sat: Float, val bri: Float, val teal: Float, val mono: Float, val vig: Float, val grain: Float, val warm: Float, val lift: Float, val tsh: FloatArray, val thi: FloatArray) {
+  companion object {
+    fun of(o: org.json.JSONObject?): ReelLook? {
+      if (o == null) return null
+      fun f(k: String, d: Double, lo: Double, hi: Double) = o.optDouble(k, d).let { if (it.isFinite()) it.coerceIn(lo, hi) else d }.toFloat()
+      fun v4(k: String) = o.optJSONArray(k)?.takeIf { it.length() == 4 }?.let { a -> FloatArray(4) { i -> a.optDouble(i, if (i < 3) 0.5 else 0.0).toFloat() } } ?: floatArrayOf(0.5f, 0.5f, 0.5f, 0f)
+      return ReelLook(f("con", 1.0, 0.3, 3.0), f("sat", 1.0, 0.0, 3.0), f("bri", 1.0, 0.3, 2.0), f("teal", 0.0, 0.0, 1.0), f("mono", 0.0, 0.0, 1.0), f("vig", 0.0, 0.0, 1.0),
+        f("grain", 0.0, 0.0, 0.5), f("warm", 0.0, -2.0, 2.0), f("lift", 0.0, 0.0, 0.5), v4("tsh"), v4("thi"))
+    }
+  }
+}
+
+/** The Reel's look over a shot: the studio's main shader with the picture alone and the website's look uniforms, so a
+ * Reel's colour (Shubix AI's look, Copy a Reel's) is the same on the phone as on the website. Before 2026-11-27 the
+ * phone drew every look neutral: only a filter picked by hand reached its export. */
+@UnstableApi
+internal class LookFx(private val vert: String, private val main: String, private val look: ReelLook) : GlEffect {
+  override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram = object : BaseGlShaderProgram(useHdr, 1) {
+    private val prog = GlProgram(vert, main)
+    private var w = 1f; private var h = 1f
+    override fun configure(inputWidth: Int, inputHeight: Int): Size { w = inputWidth.toFloat(); h = inputHeight.toFloat(); return Size(inputWidth, inputHeight) }
+    override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
+      drawMain(prog, inputTexId, inputTexId, inputTexId, w, h, Layer(floatArrayOf(0f, 0f, w, h)), Layer(floatArrayOf(0f, 0f, w, h)), false, 0f, 1f, 1f,
+        (presentationTimeUs / 1_000_000.0).toFloat(), 0f, FloatArray(3), look = look)
+    }
+    override fun release() { super.release(); prog.delete() }
+  }
 }
 
 /** A shot's beat effect, as the website's shapeAt / beatFxOf (brain/core.ts, brain/pure.ts) with the same shader: a shape that steps on the

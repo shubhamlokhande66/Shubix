@@ -602,6 +602,7 @@ export function createNativeEngine(io: NativeIo) {
     sfx: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); host.brain.sfxAdd(String(a.kind)); return { ok: true }; },
     mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; const ok = (f as (t: number) => unknown)(host.ES.pos) !== false; return { ok, state: state() }; },
     shotStyle: (a) => { const i = host.brain.segAt(host.ES.pos), e = host.ES.edit[i]; if (!e) throw new Error("There is no selected shot"); if (a.kind === "transition") e.tr = String(a.value); else if (a.kind === "effect") e.efx = String(a.value); return { ok: true, state: state() }; },
+    look: () => host.lookGrade(),
     exportOptions: async (a) => {
       const base = host.exportOptions(a) as Args, u = await myReelsRoom();
       return u ? { ...base, myReels: true, myReelsNote: `Also kept in your account, to watch, download or share anywhere · ${u.used} of ${u.limit} used` } : base;

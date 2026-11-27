@@ -96,8 +96,15 @@ export function createHost(initial, io = {}){
     const seen = new Set(); return out.filter(x => !seen.has(x.name) && seen.add(x.name));
   }
   function exportChoose(a = {}){ if(a.res && XQ[a.res]) xq.res = a.res; if(a.fps === 25 || a.fps === 30 || a.fps === 60) xq.fps = a.fps; if(a.noWatermark !== undefined) xq.nowm = !!a.noWatermark; if(a.noSong !== undefined) ES.noSong = !!a.noSong; }   // (Without the song: exportSound)
+  // the Reel's look (Look: Shubix AI's, one picked, or Copy a Reel's), as the website's renderer reads it (S.grade in
+  // engine.ts): the phone's export and player draw it with the same shader (StudioTransitions.kt LookFx)
+  function lookGrade(){
+    const G = { ...((values.GRADES || {})[ES.look] || (values.GRADES || {}).natural || {}) };
+    return { con: G.con ?? 1, sat: G.sat ?? 1, bri: G.bri ?? 1, teal: G.teal || 0, mono: G.mono || 0, grain: G.grain || 0, warm: G.warm || 0, lift: G.lift || 0,
+      vig: ES.look === 'copy' ? (G.vig || 0) : (G.vig ?? 0.22), tsh: G.tsh || [0.5, 0.5, 0.5, 0], thi: G.thi || [0.5, 0.5, 0.5, 0] };
+  }
   function exportPlan(){
-    return { watermark: !(exRule().noWatermark && xq.nowm), res: xq.res, fps: xq.fps, bitrate: XQ[xq.res].bitrate * (xq.fps > 30 ? 1.5 : 1), scale: XQ[xq.res].scale,
+    return { look: lookGrade(), watermark: !(exRule().noWatermark && xq.nowm), res: xq.res, fps: xq.fps, bitrate: XQ[xq.res].bitrate * (xq.fps > 30 ? 1.5 : 1), scale: XQ[xq.res].scale,
       beats: ES.edit.map(e => e.beatsIn || []),
       // a text that follows the person: the subject every 0.1 s of the Reel (t, x and y in the clip, the clip's size)
       textTrack: !(ES.overlays || []).some(o => o.track) || !brain.camAt ? null : (() => { const out = [], D = ES.buf ? ES.buf.duration : 0;
@@ -197,5 +204,5 @@ export function createHost(initial, io = {}){
   }
   // makeEdit, as the website: the edit, then what follows a new edit (the opening words, the start of Undo)
   function makeReel(){ if(ES.buf && ES.sources.length) brain.makeEdit(); return ES.edit; }
-  return { brain, ES, values, sec, setSong, useSection, addClip, makeReel, account, runAi, aiBusy, setCaptions, addTemplate, addTtsAtPlayhead, exportChoose, exportPlan, exportOptions, exportFix: () => lockedUsed().forEach(x => x.fix()), lockedUsed };
+  return { brain, ES, values, sec, setSong, useSection, addClip, makeReel, account, runAi, aiBusy, setCaptions, addTemplate, addTtsAtPlayhead, exportChoose, exportPlan, exportOptions, lookGrade, exportFix: () => lockedUsed().forEach(x => x.fix()), lockedUsed };
 }

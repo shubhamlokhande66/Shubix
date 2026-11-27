@@ -22,7 +22,9 @@ export type SongAnalysis = { duration: number; bpm: number; beats: number; drops
 export type EngineShot = { start: number; end: number; type: string; tr?: string; trRev?: boolean; efx?: string; sp: string; src: number; in: number; cs?: Record<string, unknown>; uk?: NonNullable<ProjectClip["keyframes"]> };
 export type EngineReel = { work: { clips: number; shots: number }; state: { edit: EngineShot[]; mode?: string } & Record<string, unknown> };
 /** the website's Export sheet: quality, frame rate, the watermark, without the song */
-export type StudioExportPlan = { watermark: boolean; res: string; fps: number; bitrate: number; scale: number; stabs: ({ t: number[]; dx: number[]; dy: number[] } | null)[]; beats: number[][]; beatCam: unknown[]; follow: (number[][] | null)[] };
+/** the Reel's look as the studio's shader takes it (brain host.ts lookGrade) */
+export type ReelLook = { con: number; sat: number; bri: number; teal: number; mono: number; grain: number; warm: number; lift: number; vig: number; tsh: number[]; thi: number[] };
+export type StudioExportPlan = { look?: ReelLook; watermark: boolean; res: string; fps: number; bitrate: number; scale: number; stabs: ({ t: number[]; dx: number[]; dy: number[] } | null)[]; beats: number[][]; beatCam: unknown[]; follow: (number[][] | null)[] };
 export type ExportChoice = { res?: "720" | "1080" | "4k"; fps?: 25 | 30 | 60; noWatermark?: boolean; noSong?: boolean; myReels?: boolean; fixLocked?: boolean };
 export type ExportOptions = { res: Record<"720" | "1080" | "4k", { locked: boolean; off: boolean }>; fps60Locked: boolean; watermarkOff: boolean;
   size: string; fileName: string; myReels: boolean; myReelsNote: string; locked: { name: string; need: string }[] };
@@ -194,6 +196,8 @@ export const engine = {
   saveToMyReels: (uri: string, name: string) => call("saveToMyReels", { path: pathOf(uri), name }),
   /** the website's Export sheet with these choices: what the plan and the phone allow, the size, the file name, My Reels */
   exportOptions: (o: ExportChoice = {}) => call<ExportOptions>("exportOptions", o),
+  /** the Reel's look now (its colour grade), for the editor's player; null: the studio does not hold this Reel */
+  look: () => call<ReelLook>("look").catch(() => null),
   /** the Reel's picture at `t` exactly as the studio makes it (null: it could not) */
   frame: (t: number) => call<{ src: string }>("frame", { t }).then((r) => r.src || null).catch(() => null),
   /** Proceed after a Cancel: the song goes on from where it stopped */
