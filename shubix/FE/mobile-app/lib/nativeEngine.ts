@@ -465,7 +465,9 @@ export function createNativeEngine(io: NativeIo) {
     // a last picture repeated to the end: its footage ends where it stops moving (video-engine clipUse.ts)
     const still = photo ? dur : stillEnd(scan.samples, dur);
     if (still < dur) { dur = still; scan.samples = scan.samples.filter((s: { t: number }) => s.t < still - 1e-6); }
-    const src = host.addClip({ name: c.name, path, soundPath: from, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface" });
+    const src = host.addClip({ name: c.name, path, soundPath: from, dur, w: W, h: H, samples: scan.samples, scenes: scan.scenes, faces: host.brain.trackFaces(raw), faceHow: "blazeface",
+      // its frame rate as exported (an edit copy is 30 fps): Smooth slow-mo is for footage whose own pictures do not fill a slow part
+      facts: { fps: path !== from ? 30 : facts.fps ?? 30 }, edFile: false });
     // reactions in the clip's own sound (cheers, laughs: video-engine reactions.ts), read once with the clip
     try { const s = await readSound(from); src.reacts = reactionsOf(s.mono, s.sampleRate); } catch { src.reacts = []; }
     readBefore.set(c.name, src);

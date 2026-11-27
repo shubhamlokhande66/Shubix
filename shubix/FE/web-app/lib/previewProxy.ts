@@ -8,6 +8,7 @@
  *    the export all read it, so every Reel plays without lag.
  */
 import { isHidden, nap, whenVisible } from "./background";
+import { i420Of, REC709 } from "./videoColor";
 
 export const PREVIEW_MAX_SIDE = 960;
 export const PREVIEW_BITRATE = 2_000_000;
@@ -199,7 +200,8 @@ async function playerToEncoder(file: File, plan: PreviewProxyPlan, onProgress?: 
     // every 1/30 s slot up to this frame's time gets this picture (an even pace whatever the source's)
     const emit = (upTo: number) => {
       while (slot * step <= upTo + 1e-6 && slot * step < dur) {
-        const sample = new mb.VideoSample(canvas, { timestamp: slot * step, duration: step });
+        // Rec. 709 limited range made here (lib/videoColor.ts): the export reads this copy, so its colours stay the clip's
+        const sample = new mb.VideoSample(i420Of(g, canvas.width, canvas.height), { format: "I420", codedWidth: canvas.width, codedHeight: canvas.height, timestamp: slot * step, duration: step, colorSpace: REC709 });
         chain = chain.then(() => vs.add(sample)).catch(e => { failed = e; }).finally(() => sample.close());
         slot++;
       }
