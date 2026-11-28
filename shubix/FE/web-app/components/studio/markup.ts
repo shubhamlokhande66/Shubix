@@ -334,8 +334,8 @@ export const STUDIO_HTML = `
   </section>
   </div>
 
-  <aside class="fprev" id="fprev" aria-label="Reel preview">
-    <div class="fprevh"><b>Reel Preview</b><span class="fslot" id="faspslot"></span></div>
+  <aside class="fprev" id="fprev" aria-label="Reel format and Generate Reel">
+    <div class="fprevh"><b>Reel format</b><span class="fslot" id="faspslot"></span></div>
     <div class="fprevbox" id="fprevbox"><span class="fplay">${IC.play}</span><small id="fprevnote">Your Reel appears here</small></div>
     <p class="m-0 text-center text-[12.5px] font-semibold text-muted" id="fcredit" hidden></p>
     <button type="button" class="${Button.primaryLarge} fgen" id="fgen" disabled><span class="fspin hidden size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>${IC.spark}<span id="fgent">Generate Reel</span>${IC.arrow}</button>

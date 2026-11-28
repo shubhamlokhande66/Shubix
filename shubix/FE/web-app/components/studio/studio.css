@@ -601,6 +601,7 @@
 .brs .fready small{color:var(--muted);font-size:13px}
 
 /* the Reel Preview (computers) */
+.brs .fprevbox{display:none !important}   /* (the preview card is gone: format, then Generate Reel) */
 .brs .fprev{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-content:start;min-width:0}
 .brs .fprevh{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
 /* the Reel's shape: under the title, as wide as the card (it never leaves it) */

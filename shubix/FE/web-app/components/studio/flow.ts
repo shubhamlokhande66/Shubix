@@ -154,7 +154,9 @@ export function initFlow(root: HTMLElement): () => void {
       if (!phone() && $("aspect").parentElement !== $("faspslot")) $("faspslot").append($("aspect"));
       if (phone() && $("aspect").parentElement === $("faspslot")) homes.asp.append($("aspect"));
       // the made Reel plays in the preview card (the engine's own canvas and play button, moved here until Generate)
-      const inCard = !phone() && made() && !choiceWait;
+      // no Reel preview beside the steps any more (2026-11-28, the owner): the edit made while the clips are read looked like a
+      // finished Reel before anything was chosen; the Reel is seen once Generate Reel opens it
+      const inCard = false;
       if (inCard && pvbox.parentElement !== $("fprevbox")) $("fprevbox").append(pvbox);
       if (!inCard && pvbox.parentElement === $("fprevbox")) homes.pv.insertBefore(pvbox, homes.pvNext);
     } else {
