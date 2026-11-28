@@ -1,7 +1,7 @@
 // The engine's edit core: how a Reel's shots are chosen and placed. Moved from components/studio/engine.ts, with its state in
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
-import { coverMove, tiltMove, REF_FX, REF_TRX, refTrOf } from '@mobile/video-engine';
+import { coverMove, tiltMove, styleKindOrder, styleFxShots, REF_FX, REF_TRX, refTrOf } from '@mobile/video-engine';
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds, useOf } from './pure';
 import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords, wasteShare } from '@mobile/video-engine';
@@ -1205,12 +1205,15 @@ function copyStyle(){
       if(ES.plan[i-1] && ES.plan[i-1].tr === EH.REF_TR[k] && k !== 'hard') continue; ES.plan[i].tr = EH.REF_TR[k]; free.delete(i); c--; }
     for(const i of order){ if(!c) break; if(free.has(i)){ ES.plan[i].tr = EH.REF_TR[k]; free.delete(i); c--; } } };
   const hot = [...idx].sort((a,b)=>energy(b)-energy(a)), calm = [...idx].sort((a,b)=>energy(a)-energy(b));
-  ['flash','zoom','whip','glitch','spin','blur'].forEach(k=>place(k, hot)); ['dissolve','fade','iris','diamond','heart','star','wipe','bars'].forEach(k=>place(k, calm));
+  // every kind the style has (styleKindOrder: the strong ones on the strongest shots), its newer kinds too
+  styleKindOrder(kinds).forEach(({ k, hot: h }) => { if(EH.REF_TR[k]) place(k, h ? hot : calm); });
   // zooms inside shots: on that share of shots, the longest first
   const longI = [...ES.plan.keys()].filter(i=>ES.plan[i].end-ES.plan[i].start >= 0.9), zn = Math.round(Math.min(1, R.zoomShare)*longI.length);
   longI.sort((a,b)=>(ES.plan[b].end-ES.plan[b].start)-(ES.plan[a].end-ES.plan[a].start)).slice(0, zn).forEach(i=>{ ES.plan[i].efx = (ES.plan[i].end-ES.plan[i].start) > 1.2 ? 'pan' : 'punch-soft'; });
   ES.copyBudget = {}; Object.entries(want).forEach(([k,v])=>{ if(k!=='hard') ES.copyBudget[EH.REF_TR[k]] = v; });
   copyShots();
+  // a learned style's effects inside shots (its Reels' RGB splits, mirrors, strobes, light leaks), on its share of shots
+  if(R.learned) styleFxShots(ES.plan, R.fx, k => EH.isLocked('fx', k)).forEach(([i, k]) => { ES.plan[i].efx = k; });
 }
 function copyShots(){
   if(!EH.copyExact()) return;

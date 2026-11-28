@@ -6,6 +6,36 @@
 export const REF_TRX = ["slideleft", "slideright", "zoomout", "burn", "flashblur", "stretch", "zoomblur", "doors", "wave", "panels", "hpanels", "vpanels"];
 /** effects inside a shot: RGB split, mirror, strobe */
 export const REF_FX = ["rgbpulse", "mirror", "strobe", "leak"];
+/** A style's transition kinds placed on the song's strongest shots (a drop, a hit) when its shares are laid out (copyStyle);
+ * every other kind goes on the calm ones. The first six were always there; the rest came with the trending Reels. */
+export const REF_HOT_KINDS = ["flash", "zoom", "whip", "glitch", "spin", "blur", "flashblur", "stretch", "zoomblur", "zoomout", "slideleft", "slideright", "wave", "burn"];
+/** The order a style's transition kinds are laid out in (copyStyle): the strong ones first, then the calm ones, each
+ * kind the style has, so none of its learned kinds is left out (before 2026-11-28 only 14 were placed) */
+const CALM_FIRST = ["dissolve", "fade", "iris", "diamond", "heart", "star", "wipe", "bars"];
+const calmRank = (k: string) => { const i = CALM_FIRST.indexOf(k); return i < 0 ? CALM_FIRST.length : i; };
+export function styleKindOrder(kinds: string[]): Array<{ k: string; hot: boolean }> {
+  const ks = kinds.filter((k) => k !== "hard");
+  return [...ks.filter((k) => REF_HOT_KINDS.includes(k)).sort((a, b) => REF_HOT_KINDS.indexOf(a) - REF_HOT_KINDS.indexOf(b)).map((k) => ({ k, hot: true })),
+    ...ks.filter((k) => !REF_HOT_KINDS.includes(k)).sort((a, b) => calmRank(a) - calmRank(b) || (a < b ? -1 : a > b ? 1 : 0)).map((k) => ({ k, hot: false }))];
+}
+/** A learned style's effects inside shots (its Reels' share of shots with an RGB split, mirror, strobe or light leak): on
+ * that share of the new Reel's shots that have no effect yet, the strong shots first for the beat ones (RGB split,
+ * strobe), the long ones for the others; never on the opening shot, never two shots in a row. Returns [shot, effect]. */
+export function styleFxShots(plan: Array<{ start: number; end: number; efx?: string; type?: string }>, fx: Record<string, number> | null | undefined, locked: (k: string) => boolean = () => false): Array<[number, string]> {
+  const n = plan.length - 1; if (n < 2 || !fx) return [];
+  const used = new Set<number>(), out: Array<[number, string]> = [];
+  const free = (i: number) => (!plan[i].efx || plan[i].efx === "none") && !used.has(i) && !used.has(i - 1) && !used.has(i + 1) && plan[i].end - plan[i].start >= 0.6;
+  const energy = (i: number) => (plan[i].type === "drop" ? 3 : plan[i].type === "hit" ? 2 : plan[i].type === "break" ? -1 : 0);
+  for (const k of REF_FX) {
+    const share = Math.max(0, Math.min(1, Number(fx[k]) || 0)); let want = Math.round(share * n);
+    if (!want || locked(k)) continue;
+    const order = plan.map((_, i) => i).slice(1).sort(k === "rgbpulse" || k === "strobe"
+      ? (a, b) => energy(b) - energy(a) || (plan[b].end - plan[b].start) - (plan[a].end - plan[a].start)
+      : (a, b) => (plan[b].end - plan[b].start) - (plan[a].end - plan[a].start));
+    for (const i of order) { if (!want) break; if (!free(i)) continue; used.add(i); out.push([i, k]); want--; }
+  }
+  return out;
+}
 
 /** the studio's transition for a shot of the copied Reel: the one seen by its look when the plan has it, else its kind's */
 export function refTrOf(m: { tr?: string; trx?: string }, kinds: Record<string, string>, may: (k: string) => boolean): string {
