@@ -9286,6 +9286,8 @@ async function resumeOffer(){
   if(qs.get('from') === 'clips'){ try{ sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){} return; }
   if(!id || qs.get('p')) return;
   const p = await idb('meta', 'readonly', st => st.get(id)).catch(() => null); if(!p) return;
+  // a new Reel already begun on this page (its song or clips added while this was looked up): not asked over it
+  if(song || sources.length || (proj && proj.id !== id)) return;
   // what is waiting, in plain words: its name, its clips and length, when it was saved
   const n = (p.state && Array.isArray(p.state.clips)) ? p.state.clips.length : 0, mins = Math.max(0, Math.round((Date.now() - (p.updated || Date.now()))/60000));
   const ago = mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : mins < 1440 ? Math.round(mins/60) + ' h ago' : new Date(p.updated).toLocaleDateString([], { day: 'numeric', month: 'short' });

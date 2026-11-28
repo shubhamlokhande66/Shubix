@@ -73,7 +73,7 @@ export function initFlow(root: HTMLElement): () => void {
   let autoGo = q.get("go") === "1" || askBack, signInOk = false;
   // ✕ on Make Reel's popup (or off to Pricing): nothing was chosen, so the preview waits for the choice and does not show
   // the edit made while reading (it looked as if the Reel was made, 2026-11-28)
-  let choiceWait = false;
+  let choiceWait = askBack;   // (back from Pricing: nothing chosen yet either)
   // Shubix makes the Reel by itself: once the song and the clips are read (and the edit is made behind the screen), a
   // short countdown, then Generate as if pressed (Shubix AI's price, sign-in and the other questions still come). A tap
   // anywhere in the studio during it waits: the creator is adding or changing something, and presses Generate when done.
@@ -805,5 +805,8 @@ export function initFlow(root: HTMLElement): () => void {
   // this page's first screen (a reload starts the flow again: the song and clips were not kept)
   mark(false);
   apply();
+  // go=1 / back from Pricing: nothing else may come to look again once the Reel is back (the last reading ended before
+  // it was ready, 2026-11-28 on qa: the popup never opened), so it is looked at each second for up to 3 minutes
+  if (autoGo) { const t0 = Date.now(), tick = setInterval(() => { if (!autoGo || Date.now() - t0 > 180_000) clearInterval(tick); else apply(); }, 1000); ac.signal.addEventListener("abort", () => clearInterval(tick)); }
   return () => { ac.abort(); mo.disconnect(); ro.disconnect(); refMo.disconnect(); place(false); };
 }
