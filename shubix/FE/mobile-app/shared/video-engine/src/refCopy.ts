@@ -16,6 +16,13 @@ export function refTrOf(m: { tr?: string; trx?: string }, kinds: Record<string, 
 
 /** a copied camera move (scale, sideways and up/down as parts of the frame, degrees), kept over the whole frame: a move that
  * would uncover an edge (a zoom out under full size, a slide, a turn) is enlarged, and made smaller when that needs over 1.6x */
+/** A shot of the Reel copied held tilted (refReader tiltOf): its camera keys turned by that angle after coverMove, so
+ * the corners show as in the Reel; with no move, the turn alone over the shot */
+export function tiltMove<K extends { t: number; s: number; x: number; y: number; r: number }>(keys: K[], tilt: number, len: number, make: (t: number) => K): K[] {
+  const d = Math.max(-45, Math.min(45, tilt));
+  if (!Number.isFinite(d) || Math.abs(d) < 1) return keys;
+  return keys.length ? keys.map((k) => ({ ...k, r: k.r + d })) : [make(0), make(len)].map((k) => ({ ...k, r: d }));
+}
 export function coverMove<K extends { s: number; x: number; y: number; r: number }>(keys: K[]): K[] {
   const need = (k: { x: number; y: number; r: number }) => { const a = (Math.abs(k.r) * Math.PI) / 180; return (Math.cos(a) + Math.sin(a) * 1.78) * (1 + 2 * Math.max(Math.abs(k.x), Math.abs(k.y))); };
   for (let m = 1; ; m -= 0.1) {

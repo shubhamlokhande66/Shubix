@@ -97,6 +97,35 @@ function satOfPics(ps: (Pic | null)[]){
   return n ? s/n : null;
 }
 // a frame of a wave warp: its rows slid sideways by amounts that swing back and forth down the picture (a zigzag)
+// a shot held tilted (the picture turned a few degrees, the frame's corners showing what is behind it): each corner of the
+// frame an empty triangle, its long side down the frame at the top left and bottom right and along it at the other two
+// when the picture is turned clockwise (the other way round anticlockwise); the angle is the triangles' short / long side.
+// Degrees, clockwise positive (as the studio's turn), or null
+function tiltOf(g: Any): number | null {
+  const Y = g.Y, W = g.FW, H = Math.floor(Y.length / Math.max(1, W)); if(!W || W < 24 || H < 24) return null;
+  const at = (x: number, y: number) => Y[y*W + x];
+  const corner = (cx: number, cy: number, dx: number, dy: number) => {
+    const c = at(cx, cy), same = (v: number) => Math.abs(v - c) < 0.05;
+    let h = 0; while(h < W-1 && same(at(cx + dx*h, cy))) h++;
+    let v = 0; while(v < H-1 && same(at(cx, cy + dy*v))) v++;
+    if(h < 2 || v < 2 || h >= W*0.9 || v >= H*0.9) return null;
+    // a sharp edge where each run ends, and the inside of the triangle is the background too
+    if(Math.abs(at(cx + dx*h, cy) - c) < 0.06 || Math.abs(at(cx, cy + dy*v) - c) < 0.06) return null;
+    if(!same(at(cx + dx*Math.floor(h/4), cy + dy*Math.floor(v/4)))) return null;
+    return { h, v };
+  };
+  const tl = corner(0, 0, 1, 1), tr = corner(W-1, 0, -1, 1), br = corner(W-1, H-1, -1, -1), bl = corner(0, H-1, 1, -1);
+  // three corners at least (the picture can be as dark as what is behind it at one), each the way round of the others
+  const ks = [tl, tr, br, bl], down = [true, false, true, false], seen = ks.filter(Boolean).length;
+  if(seen < 3) return null;
+  const cw = ks.every((k, i) => !k || (down[i] ? k.v >= 2*k.h : k.h >= 2*k.v));
+  const ccw = ks.every((k, i) => !k || (down[i] ? k.h >= 2*k.v : k.v >= 2*k.h));
+  if(!cw && !ccw) return null;
+  const deg = ks.filter((k): k is { h: number; v: number } => !!k).map(k => Math.atan(Math.min(k.h, k.v) / Math.max(k.h, k.v)) * 180 / Math.PI);
+  if(Math.max(...deg) > 1.6 * Math.min(...deg)) return null;
+  const a = deg.reduce((p, q) => p + q, 0) / deg.length;
+  return a >= 3 && a <= 40 ? (cw ? a : -a) : null;
+}
 function waveOf(odd: Any[], A: Any, B: Any){
   const W = A.FW, H = Math.floor(A.Y.length / Math.max(1, W)); if(!W || W < 16 || H < 12) return 0;
   const zig = (F: Any, P: Any) => { const sh: number[] = [];
@@ -325,7 +354,10 @@ export async function readReel(io: ReelIo){
     sh.forEach((x,i)=>{ const mine = zi.map((z,k)=>[z,k] as [number[], number]).filter(([z])=>z[0]===i), gr = mine.map(([,k])=>zf[k] ? greyOf(zf[k] as Pic) : null);
       let move: Any = null;
       if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g!.Y), mine.map(([z])=>z[1]), gr[0]!.FW, gr[0]!.FH);
-      shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick, sat: satOfPics(mine.map(([,k]) => zf[k] as Pic | null)) });
+      // held tilted: most of its frames turned by about the same angle
+      const tl = gr.map(g => g ? tiltOf(g) : null).filter((t): t is number => t !== null).sort((p, q) => p - q);
+      const tilt = tl.length >= 2 && tl.length * 2 >= gr.length && tl[tl.length-1] - tl[0] < 3 ? Math.round(tl[tl.length >> 1] * 2) / 2 : null;
+      shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick, sat: satOfPics(mine.map(([,k]) => zf[k] as Pic | null)), tilt });
       const lk = lf[i]; if(lk) looks.push(lk);
       // the learning log: an effect in the shot the styles do not learn yet (the studio has each of these)
       if(!x.flick){ const cv = mine.map(([,k]) => zf[k]).filter(Boolean), found: string[][] = [];
@@ -370,6 +402,8 @@ export async function readReel(io: ReelIo){
     if(i && cuts[i-1] && cuts[i-1].zb) mm.trx = 'zoomblur';
     // a black-and-white shot in a Reel in colour (the studio's per-shot B&W, cs.sat -1)
     if(s.mono) mm.mono = true;
+    // a shot held tilted, its corners showing (degrees, clockwise positive)
+    if(s.tilt !== null && s.tilt !== undefined && !s.flick) mm.tilt = s.tilt;
     // panels: the shot a build opens (it starts within the build or just after it)
     if(i && !s.flick){ const pb = refPanels.find(b => s.a >= b.t0 - 0.2 && s.a <= b.t1 + 0.6); if(pb && pb.kind !== 'boxes') mm.trx = pb.kind; }
     { const f = fxOdd.find(x => Math.abs(x.at - s.a) < 0.02 && REF_FX.includes(x.ours)); if(f && !s.flick) mm.fx = f.ours; }
