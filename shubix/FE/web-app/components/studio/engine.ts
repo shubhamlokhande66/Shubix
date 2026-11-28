@@ -8118,7 +8118,8 @@ function copyPlan(){
 }
 // the reference's mix of transitions and effects, placed where they suit (energetic ones on drops and hits, soft ones
 // on calm, long shots), counted so the shares match
-const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur' };
+const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur',
+  burn:'burn', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
 let copyBudget = null;
 function copyStyle(){
   const R = refProfile, n = plan.length - 1; if(n < 1) return;
@@ -8366,6 +8367,8 @@ function fingerprintOf(R){
   const L = R.look || null, look = L ? Object.fromEntries(['mean','std','sat','warm','p5','p95','vig','grain','split'].filter(k => Number.isFinite(L[k])).map(k => [k, clip(L[k], k === 'warm' || k === 'vig' || k === 'split' ? -1 : 0, k === 'sat' ? 2 : 1)])) : null;
   return { dur: clip(R.dur, 1, 600), bpm: clip(R.bpm || 0, 0, 300), medianBeats: clip(R.medianBeats || 0, 0, 64), medianSec: clip(R.medianSec || 0, 0, 60), hookBeats: clip(R.hookBeats || 0, 0, 64), hookSec: clip(R.hookSec || 0, 0, 60),
     onBeat: clip(R.onBeat || 0, 0, 1), energy: ['steady','rising','falling'].includes(R.energy) ? R.energy : 'steady', zoomShare: clip(R.zoomShare || 0, 0, 1), trans: tr, look,
+    // the effects in its shots (share of shots), and a Reel of one take: it teaches its look, moves and speed, not a pace
+    fx: Object.fromEntries(Object.entries(R.fx || {}).filter(([k]) => REF_FX.includes(k)).map(([k, v]) => [k, clip(v, 0, 1)])), ...((R.cuts || []).length < 2 ? { oneTake: true } : {}),
     shotBeats: (R.shotBeats || []).slice(0, 300).map(x => clip(x, 0, 64)), shotSec: (R.shotSec || []).slice(0, 300).map(x => clip(x, 0, 60)),
     moments: cleanMoments(R.moments, 200) };
 }
@@ -8451,10 +8454,13 @@ async function teachMany(files, cat, shared, say){
         const read = () => analyzeReference(f, (p, what) => { say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length); titleProgress('learn', 'Learning Reels', (i + p)/files.length); });
         // the browser took the video decoder back while the page was hidden: the Reel is read again, not counted as bad
         const R = await read().catch(err => { if(!isReclaimed(err)) throw err; return read(); });
-        if(!R.cuts || R.cuts.length < 2) throw new Error('too few cuts to learn from');
+        // a Reel of one take (no cut, or one) still teaches its look, its camera move and its speed (2026-11-28: 8 of 48 were
+        // "too few cuts" and taught nothing); only a very short one is left out
+        if(!R.cuts || (R.cuts.length < 2 && !(R.dur >= 3 && (R.moments || []).length))) throw new Error('too short to learn from');
         say(head + 'saving', (i + 1)/files.length);
         await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, category: cat, shared, fp: fingerprintOf(R) }) });
-        const known = {}; R.cuts.forEach(c => { if(!(c.kind === 'hard' && R.unread.cuts.some(o => Math.abs(o.at - c.t) < 0.02))) known[c.kind] = (known[c.kind] || 0) + 1; });
+        // a cut known by its look (a light leak, a zoom out) counts under the studio's name for it
+        const known = {}; R.cuts.forEach((c, k) => { if(!(c.kind === 'hard' && R.unread.cuts.some(o => Math.abs(o.at - c.t) < 0.02))){ const m = (R.moments || [])[k + 1], n = (m && m.trx) || c.kind; known[n] = (known[n] || 0) + 1; } });
         await log({ name, ok: true, cuts: R.cuts.length, known, unread: R.unread });
         ok++; done.add(name); cutsN += R.cuts.length; oddN += R.unread.cuts.length; fxN += R.unread.fx.length;
       }catch(err){ console.warn('not learned from', f.name, err); bad++; await log({ name, ok: false, reason: String(err && err.message || err).slice(0, 200) }); }

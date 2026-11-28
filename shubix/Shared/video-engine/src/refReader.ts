@@ -16,7 +16,9 @@ type Any = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export const CUT_K = 7;   // frames each side of a cut that are looked at (a fade's dark middle and its clean ends both fit)
 export const REF_KINDS: Record<string, string> = { hard: "hard cuts", dissolve: "dissolves", fade: "fades", flash: "flashes", whip: "whip pans", zoom: "zoom-throughs", glitch: "glitches", spin: "spins",
-  iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions" };
+  iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions",
+  // known by their look (refCopy.ts REF_TRX), the studio's own by these names: learned and copied like the others (2026-11-28)
+  burn: "light leaks", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
 
 // colour statistics of a w x h frame's pixels, plus a 96 x 96 crop at full size for grain
 export function lookStats(d: ArrayLike<number>, w: number, h: number, cd?: ArrayLike<number> | null): Look {
@@ -340,12 +342,20 @@ export async function readReel(io: ReelIo){
       if(dm.hits && dm.hits.length) mm.hit = dm.hits.slice().sort((x: Any,y: Any)=>y.p-x.p)[0].k;
       if(drops.some((d: number)=>Math.abs(d - s.a) < 0.15)) mm.drop = true; }
     return mm; });
-  return { dur, moments, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
+  // the transition mix by what the copy makes: a cut seen by its look (a light leak, a zoom out, a panel build) counts as
+  // that, not as a hard cut, so a learned style keeps it (before 2026-11-28 the Learning log had them "not known")
+  for(const k of Object.keys(trans)) delete trans[k];
+  cuts.forEach((c, i) => { const m = moments[i + 1], k = (m && m.trx) || c.kind; trans[k] = (trans[k] || 0) + 1; });
+  Object.keys(trans).forEach(k=>{ trans[k] /= cuts.length; });
+  // the effects in its shots (RGB split, mirror, strobe): the share of shots with each
+  const fx: Record<string, number> = {}; moments.forEach(m => { if(m.fx) fx[m.fx] = (fx[m.fx] || 0) + 1 / moments.length; });
+  return { dur, moments, fx, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
     hookBeats: shotBeats[0] || 0, hookSec: shotSec[0] || 0, onBeat, energy, trans,
     zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
     look, bpm: P ? 60/P : 0,
     // photo boxes over its shots (boxes.ts): the copy gets them on its own long shots
     boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1 })),
     // the learning log: what this reader could not learn (a transition it does not know; an effect in a shot)
-    unread: { cuts: cuts.filter(c => c.odd).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd } };
+    // (one the studio has and copies is known: only what it lacks is left here)
+    unread: { cuts: cuts.filter(c => c.odd && !REF_TRX.includes(c.odd.ours)).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd.filter((x: Any) => !REF_FX.includes(x.ours)) } };
 }

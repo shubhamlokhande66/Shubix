@@ -1263,6 +1263,8 @@ function fingerprintOf(R){
   const L = R.look || null, look = L ? Object.fromEntries(['mean','std','sat','warm','p5','p95','vig','grain','split'].filter(k => Number.isFinite(L[k])).map(k => [k, EH.clip(L[k], k === 'warm' || k === 'vig' || k === 'split' ? -1 : 0, k === 'sat' ? 2 : 1)])) : null;
   return { dur: EH.clip(R.dur, 1, 600), bpm: EH.clip(R.bpm || 0, 0, 300), medianBeats: EH.clip(R.medianBeats || 0, 0, 64), medianSec: EH.clip(R.medianSec || 0, 0, 60), hookBeats: EH.clip(R.hookBeats || 0, 0, 64), hookSec: EH.clip(R.hookSec || 0, 0, 60),
     onBeat: EH.clip(R.onBeat || 0, 0, 1), energy: ['steady','rising','falling'].includes(R.energy) ? R.energy : 'steady', zoomShare: EH.clip(R.zoomShare || 0, 0, 1), trans: tr, look,
+    // the effects in its shots (share of shots), and a Reel of one take (the website's fingerprintOf)
+    fx: Object.fromEntries(Object.entries(R.fx || {}).filter(([k]) => REF_FX.includes(k)).map(([k, v]) => [k, EH.clip(v, 0, 1)])), ...((R.cuts || []).length < 2 ? { oneTake: true } : {}),
     shotBeats: (R.shotBeats || []).slice(0, 300).map(x => EH.clip(x, 0, 64)), shotSec: (R.shotSec || []).slice(0, 300).map(x => EH.clip(x, 0, 60)),
     moments: cleanMoments(R.moments, 200) };
 }

@@ -14,7 +14,11 @@ import SEEDS from "./seed-styles.json";
  * predicts a new Reel of its kind is measured by leaving each Reel out in turn. */
 
 export const CATEGORIES = ["wedding", "travel", "festival", "dance", "talking", "product", "food", "fitness", "vlog", "birthday", "car", "shop", "event", "other"] as const;
-export const KINDS = ["hard", "flash", "fade", "whip", "zoom", "dissolve", "glitch", "spin", "iris", "diamond", "heart", "star", "wipe", "bars", "blur"] as const;
+export const KINDS = ["hard", "flash", "fade", "whip", "zoom", "dissolve", "glitch", "spin", "iris", "diamond", "heart", "star", "wipe", "bars", "blur",
+  // known by their look, the studio's own by these names (video-engine refCopy.ts REF_TRX), learned since 2026-11-28
+  "burn", "zoomout", "slideleft", "slideright", "panels", "hpanels", "vpanels"] as const;
+/** the effects in a shot that are learned (refCopy.ts REF_FX) */
+export const FX = ["rgbpulse", "mirror", "strobe"] as const;
 const FIELDS = ["tr", "efx", "sp"] as const;
 const num = (a: number, b: number) => z.number().finite().min(a).max(b);
 export const Look = z.object({ mean: num(0, 1), std: num(0, 1), sat: num(0, 2), warm: num(-1, 1), p5: num(0, 1), p95: num(0, 1), vig: num(-1, 1), grain: num(0, 1), split: num(-1, 1) }).partial();
@@ -25,6 +29,8 @@ export const Fingerprint = z.object({
   shotBeats: z.array(num(0, 64)).max(300).default([]), shotSec: z.array(num(0, 60)).max(300).default([]),
   /** shot by shot: the transition into it, its zoom and the music under it, so the AI can copy what it does where */
   moments: z.array(RefMoment).max(200).default([]),
+  /** the share of its shots with each effect; a Reel of one take (it teaches its look and effects, never a pace) */
+  fx: z.partialRecord(z.enum(FX), num(0, 1)).optional(), oneTake: z.boolean().optional(),
 });
 export type Fingerprint = z.infer<typeof Fingerprint>;
 export const SaveIn = z.object({ name: z.string().trim().min(1).max(120), category: z.enum(CATEGORIES), shared: z.boolean().default(false), fp: Fingerprint });
@@ -43,8 +49,10 @@ const norm = (t: Record<string, number>) => { const s = Object.values(t).reduce(
 
 /** what Reels of one kind have in common: typical numbers (medians), the average transition mix and look, and the
  * rhythm (shot-by-shot beats) of the most typical Reel among them, so the pattern is a real one */
-export function learn(fps: Fingerprint[]): Fingerprint | null {
-  if (!fps.length) return null;
+export function learn(all: Fingerprint[]): Fingerprint | null {
+  if (!all.length) return null;
+  // the pace, the transitions and the rhythm from Reels with cuts; a Reel of one take adds its look and effects only
+  const cut = all.filter((f) => !f.oneTake), fps = cut.length ? cut : all;
   const m = (k: keyof Fingerprint) => median(fps.map((f) => Number(f[k])));
   // a Reel without a steady beat has 0 here (it is paced in seconds): it does not pull the others' beats down
   const mb = (k: "medianBeats" | "hookBeats" | "bpm") => { const v = fps.map((f) => Number(f[k])).filter((x) => x > 0); return v.length * 2 >= fps.length ? median(v) : 0; };
@@ -53,7 +61,7 @@ export function learn(fps: Fingerprint[]): Fingerprint | null {
   const trans: Record<string, number> = {}, tk = [...new Set(fps.flatMap((f) => Object.keys(f.trans)))];
   for (const k of tk) { const v = fps.map((f) => Number(f.trans[k as keyof typeof f.trans] ?? 0)); trans[k] = fps.length >= 3 ? median(v) : mean(v); }
   if (!Object.values(trans).some((v) => v > 0)) for (const f of fps) for (const [k, v] of Object.entries(f.trans)) trans[k] = (trans[k] ?? 0) + v / fps.length;
-  const looks = fps.map((f) => f.look).filter(Boolean) as z.infer<typeof Look>[];
+  const looks = all.map((f) => f.look).filter(Boolean) as z.infer<typeof Look>[];
   // each colour number averaged over the Reels that have it
   const lookKeys = [...new Set(looks.flatMap((l) => Object.keys(l)))] as (keyof z.infer<typeof Look>)[];
   const look = looks.length ? Object.fromEntries(lookKeys.map((k) => [k, +mean(looks.filter((l) => Number.isFinite(l[k])).map((l) => Number(l[k]))).toFixed(4)])) : null;
@@ -65,7 +73,8 @@ export function learn(fps: Fingerprint[]): Fingerprint | null {
   return {
     dur: m("dur"), bpm: mb("bpm"), medianBeats: beatsPace, medianSec: m("medianSec"), hookBeats: beatsPace ? mb("hookBeats") : 0, hookSec: m("hookSec"), onBeat: m("onBeat"),
     energy: energies.reduce((a, e) => (fps.filter((f) => f.energy === e).length > fps.filter((f) => f.energy === a).length ? e : a), "steady" as Fingerprint["energy"]),
-    zoomShare: m("zoomShare"), trans: norm(trans) as Fingerprint["trans"], look: look as Fingerprint["look"], shotBeats: typical.shotBeats, shotSec: typical.shotSec, moments: typical.moments ?? [],
+    zoomShare: m("zoomShare"), trans: norm(trans) as Fingerprint["trans"],
+    fx: Object.fromEntries(FX.map((k) => [k, +mean(all.map((f) => Number(f.fx?.[k] ?? 0))).toFixed(3)]).filter(([, v]) => (v as number) > 0)), look: look as Fingerprint["look"], shotBeats: typical.shotBeats, shotSec: typical.shotSec, moments: typical.moments ?? [],
   };
 }
 /** the style served and measured: what the Reels share (learn), pulled toward the default when they differ a lot */
