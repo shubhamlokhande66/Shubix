@@ -462,7 +462,7 @@ export function initFlow(root: HTMLElement): () => void {
       if (stopped().song || stopped().clips || !!stop || (!reading && !songComing && !goes)) wantGen = false;
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
-    if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
+    if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; root.classList.remove("askwait"); setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     // Stop pressed in the popup: the Reel is not made by itself after it (a clip removed then, the rest read, counted down
     // and opened the popup again: QA 2026-11-18); Generate makes it
     if (!autoOff && (stopped().song || stopped().clips)) autoStop(true);
@@ -807,6 +807,18 @@ export function initFlow(root: HTMLElement): () => void {
   apply();
   // go=1 / back from Pricing: nothing else may come to look again once the Reel is back (the last reading ended before
   // it was ready, 2026-11-28 on qa: the popup never opened), so it is looked at each second for up to 3 minutes
-  if (autoGo) { const t0 = Date.now(), tick = setInterval(() => { if (!autoGo || Date.now() - t0 > 180_000) clearInterval(tick); else apply(); }, 1000); ac.signal.addEventListener("abort", () => clearInterval(tick)); }
+  if (autoGo) {
+    // back from Pricing: a loader over the page until the popup opens (the page looked done for 2-3 s and was clicked)
+    if (askBack) { root.classList.add("askwait"); setText($("openh"), "Getting your Reel back…"); setText($("openstep"), "Your song and clips, then how to make it"); }
+    const t0 = Date.now(), tick = setInterval(() => {
+      if (!autoGo || Date.now() - t0 > 180_000) { clearInterval(tick); root.classList.remove("askwait"); }
+      else {
+        // it could not open, or another question came first (too few clips…): the loader does not cover it
+        const pop = root.querySelector<HTMLElement>("#cconf");
+        if (has("openfail") || (pop && pop.getBoundingClientRect().height > 0)) root.classList.remove("askwait");
+        if (askBack && !has("opening")) { setText($("openh"), "Getting your Reel back…"); setText($("openstep"), "Your song and clips, then how to make it"); } apply(); }
+    }, 1000);
+    ac.signal.addEventListener("abort", () => clearInterval(tick));
+  }
   return () => { ac.abort(); mo.disconnect(); ro.disconnect(); refMo.disconnect(); place(false); };
 }

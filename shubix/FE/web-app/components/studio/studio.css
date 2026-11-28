@@ -1332,6 +1332,10 @@
 .brs .openload small{font-size:13.5px;color:var(--muted);max-width:420px}
 .brs .openload #openback{display:none;margin-top:6px}
 .brs.openfail .openspin{display:none}
+/* back from Pricing: the whole screen says the Reel is coming back until Make Reel's popup opens (2-3 s of a page that
+   looked done and could be clicked, 2026-11-28) */
+.brs.askwait .openload{display:grid;justify-items:center;align-content:center;gap:10px;position:fixed;inset:0;z-index:80;min-height:0;padding:40px 20px;text-align:center;
+  background:color-mix(in srgb,var(--paper,var(--bg,#fff)) 88%,transparent);backdrop-filter:blur(6px)}
 .brs.openfail .openload #openback{display:inline-flex}
 .brs.openfail .openload small{color:var(--ink)}
 
