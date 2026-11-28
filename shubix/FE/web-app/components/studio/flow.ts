@@ -68,7 +68,9 @@ export function initFlow(root: HTMLElement): () => void {
   // back from signing in (?go=1): Generate is pressed by itself once the saved Reel is read again; signInOk: the account
   // check before Generate is done
   // go=1, or ask=1 (back from Pricing, its link or the browser's Back): Make Reel's popup again once the Reel is back
-  let autoGo = q.get("go") === "1" || (q.get("ask") === "1" && q.has("p")), signInOk = false;
+  // askBack: nothing was chosen for this Reel yet (the edit made while reading was saved with it): the popup, not that edit
+  let askBack = q.get("ask") === "1" && q.has("p");
+  let autoGo = q.get("go") === "1" || askBack, signInOk = false;
   // ✕ on Make Reel's popup (or off to Pricing): nothing was chosen, so the preview waits for the choice and does not show
   // the edit made while reading (it looked as if the Reel was made, 2026-11-28)
   let choiceWait = false;
@@ -91,7 +93,8 @@ export function initFlow(root: HTMLElement): () => void {
   // signInNeed: known to be signed out, so Make Reel opens sign-in at once (no question first)
   let signInNeed = false;
   if (!inEngine) void needsSignIn().then((need) => { if (!need) signInOk = true; else signInNeed = true; }).catch(() => {});
-  const setAddress = (url: string) => { if (!inEngine) history.replaceState(history.state, "", url); };
+  // (not once the page is leaving for Pricing: its address is the saved Reel's for the browser's Back, data-leaving)
+  const setAddress = (url: string) => { if (!inEngine && !root.dataset.leaving) history.replaceState(history.state, "", url); };
   // a tool open on the phones' Reel (Edit Options) is a screen of its own too: Back closes it
   let toolMarked = "";
   const mark = (push: boolean) => {
@@ -600,7 +603,8 @@ export function initFlow(root: HTMLElement): () => void {
         const enough = (await st?.askShort?.()) ?? "go";
         if (enough === "stop") { apply(); return; }
         if (enough === "again") { wantGen = true; apply(); return; }
-        const change = st?.changeGate ? await st.changeGate() : "go";   // changed since the Reel was made: a new Reel, or the old one
+        const change = askBack ? "go" : st?.changeGate ? await st.changeGate() : "go";   // changed since the Reel was made: a new Reel, or the old one
+        askBack = false;
         if (change === "stay") return;
         if (change === "old") return st?.keepOldReel?.();
         const r = change === "same" ? "skip" : st?.upsell ? await st.upsell() : "skip";   // (nothing changed: the same Reel, no new credits)

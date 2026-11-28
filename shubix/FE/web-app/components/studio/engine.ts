@@ -85,7 +85,9 @@ life({ path: location.pathname + location.search, stage: 'open' });
 window.addEventListener('pagehide', lifeEnd, SIG);
 ac.signal.addEventListener('abort', lifeEnd);
 // (not on the phone app's hidden engine page, app/engine: the phone itself starts it again and says so)
-if(lifeBefore && Date.now() - lifeBefore.at < 10*60e3 && location.pathname !== '/engine'){
+// (gone to Pricing on purpose and back: no crash, whatever the note says)
+let toPricingBefore = false; try{ toPricingBefore = sessionStorage.getItem('brs-to-pricing') === '1'; sessionStorage.removeItem('brs-to-pricing'); }catch(e){}
+if(lifeBefore && !toPricingBefore && Date.now() - lifeBefore.at < 10*60e3 && location.pathname !== '/engine'){
   try{ window.__shubixReport && window.__shubixReport('crash', 'The phone reloaded the studio at "' + (lifeBefore.stage || '?') + '"' + (lifeBefore.saving ? ' while saving' : '') + (IOS ? ' (iPhone)' : ''), JSON.stringify(lifeBefore)); }catch(e){}
   queueMicrotask(() => {
     if(ac.signal.aborted) return;
@@ -2464,8 +2466,11 @@ async function toPricing(where){
   const u = new URL('/pricing' + where, location.origin); u.searchParams.set('back', back);
   // the browser's own Back comes here too: this page's address is the saved Reel's (it was the empty steps, so Back lost
   // the Reel and offered an old draft, 2026-11-28); a page kept in the browser's memory is loaded again from it
+  root.dataset.leaving = '1';   // the steps do not write their own address over it any more (flow.ts setAddress)
   try{ history.replaceState(history.state, '', back); }catch(e){}
   try{ sessionStorage.setItem('brs-to-pricing', '1'); }catch(e){}
+  // left on purpose: not a page the phone reloaded (it said "ran short of memory" on Back from Pricing, 2026-11-28)
+  lifeEnd();
   leavingOk = true; location.assign(u.pathname + u.search + u.hash);
 }
 const pricingLink = label => { const a = document.createElement('a'); a.href = '/pricing'; a.className = `${Button.primary} up`; a.textContent = label; a.addEventListener('click', e => { e.preventDefault(); void toPricing(''); }, SIG); return a; };
@@ -2569,6 +2574,7 @@ async function askNotDone(){
   return 'stay';
 }
 async function upsell(){
+  keepSaved = false;   // a Reel opened from its draft is being made now (back from Pricing): Shubix AI may edit it
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
   // the plan not known yet (nobody was signed in when the studio opened, or its answer is still coming): asked now,
   // so a Free account always gets its choice
@@ -9270,7 +9276,7 @@ window.addEventListener('beforeunload', e => {
   if((song || sources.length) && !restoring){ try{ const sig = JSON.stringify(stateOf()); if(sig !== lastSig){ e.preventDefault(); e.returnValue = ''; } }catch(err){} }
 });
 // back from Pricing with the browser's Back, the page kept in its memory: loaded again, from the saved Reel's address
-window.addEventListener('pageshow', e => { let gone = false; try{ gone = sessionStorage.getItem('brs-to-pricing') === '1'; sessionStorage.removeItem('brs-to-pricing'); }catch(err){} if(e.persisted && gone) location.reload(); });
+window.addEventListener('pageshow', e => { if(e.persisted && root.dataset.leaving) location.reload(); });
 // the page was reloaded in the middle of the Create steps: the Reel so far is a draft on this phone; offer it back
 async function resumeOffer(){
   let id = ''; try{ id = sessionStorage.getItem('brs-resume:' + location.pathname) || ''; }catch(e){}
