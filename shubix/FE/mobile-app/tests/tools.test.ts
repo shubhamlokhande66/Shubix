@@ -124,7 +124,10 @@ describe("texts, templates, sounds, beat markers, music", () => {
 
 describe("what a Reel gets by itself, with no Shubix AI", () => {
   it("opening words in its first seconds, once: deleted, they do not come back", async () => {
-    const { ES, brain } = await made();
+    const { ES, brain, call } = await made();
+    // None by default (2026-11-28): Auto chosen, as on Make Reel
+    expect(ES.overlays.filter((o) => (o as { auto?: boolean }).auto)).toHaveLength(0);
+    await call("choose", { text: "auto" });
     const auto = ES.overlays.filter((o) => (o as { auto?: boolean }).auto);
     expect(auto.length).toBeGreaterThan(0);
     expect(Math.min(...auto.map((o) => o.t0 ?? 9))).toBeLessThan(0.1);

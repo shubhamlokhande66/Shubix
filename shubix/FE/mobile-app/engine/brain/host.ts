@@ -16,6 +16,8 @@ export function soundOf(channels, sampleRate){
 
 export function createHost(initial, io = {}){
   const brain = brainFromCopy(initial), { ES, values } = brain, analyse = io.analyse;
+  // Opening text: None unless chosen (the website's default too, 2026-11-28); Make Reel's choice sets it (nativeEngine)
+  if(ES.hookNone === undefined) ES.hookNone = true;
   if(io.getCtx) values.getCtx = io.getCtx;
   // the subject pop: the phone reads a frame, finds its subject and cuts it out (SubjectPop.kt)
   if(io.popMask && io.popCut) Object.assign(values, { popMask: io.popMask, popCut: io.popCut });

@@ -289,7 +289,7 @@ export const STUDIO_HTML = `
       <small class="text-[12px] text-muted" id="crev" hidden>Drag a clip to move it (on a phone, hold it first)</small></div>
     <!-- Shubix's opening words on a Reel with no text (autoHook, engine.ts): Auto, or None for a creator who wants no text -->
     <div class="row seqrow" id="hookrow"><span class="label">Opening text</span>
-      <div class="${Segmented.normal}" id="htext" role="group" aria-label="Opening text"><button type="button" data-h="auto" aria-pressed="true">Auto</button><button type="button" data-h="none" aria-pressed="false">None</button></div>
+      <div class="${Segmented.normal}" id="htext" role="group" aria-label="Opening text"><button type="button" data-h="auto" aria-pressed="false">Auto</button><button type="button" data-h="none" aria-pressed="true">None</button></div>
       <span class="fname">Auto: a short line in the first 2 seconds when your Reel has no text</span></div>
     <div class="row items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2" id="corder" hidden><span class="flex-1 text-[13px] font-semibold">Tap your clips in the order they should play: 1, 2, 3…</span><button type="button" class="${Button.small}" id="corderskip">Keep as is</button></div>
     <span class="flabel fcliplabel">Selected Clips</span>

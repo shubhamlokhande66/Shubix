@@ -4,6 +4,7 @@ import { googleAccount } from "./accounts";
 import { getAccess } from "./core/access";
 import { settings } from "./core/config";
 import { AppError } from "./core/errors";
+import { currentUser } from "./core/auth";
 
 /** "Continue with Google" for the website (OAuth 2.0 code flow, run by the server). The browser leaves for Google and
  * comes back to /api/auth/google/callback; the page it was on (`next`) and a friend's invite (`ref`) wait in a short
@@ -41,7 +42,12 @@ export function claimsOk(c: Claims, clientId: string, now = Date.now() / 1000) {
 export async function callback(req: Request, fetcher: typeof fetch = fetch) {
   const q = new URL(req.url).searchParams, [state, packed = ""] = cookieOf(req).split(".");
   const saved = unpack(packed), next = safeNext(saved.n);
-  if (!state || q.get("state") !== state) return failed(next, "google_state");
+  // Google's answer a second time (a phone loads the address twice, or Back): the first one signed this person in and used
+  // the one-time check, so this one had none and showed "Google sign-in failed" over a sign-in that worked; then the page
+  // went on by itself and the Google tab stood still (2026-11-28, the phone website). Signed in already: on, no error
+  // (to /signed-in when the page asked for is not known: it tells the studio's tab and closes)
+  if ((!state || q.get("state") !== state) && currentUser()) return go(`${base()}${saved.n ? next : "/signed-in"}`);
+  if (!state || q.get("state") !== state) { console.warn("google sign-in: state", { cookie: !!state, ua: (req.headers.get("user-agent") ?? "").slice(0, 80) }); return failed(next, "google_state"); }
   if (q.get("error") || !q.get("code")) return failed(next, "google_cancelled");
   try {
     const r = await fetcher("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },

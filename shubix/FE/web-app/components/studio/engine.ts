@@ -2152,7 +2152,8 @@ $('aspect').addEventListener('click', e=>{ const b=e.target.closest('button'); i
 
 /* =============== STEP 3: AUTO-EDIT =============== */
 let edit = [], seed = 1, autoHookUsed = false, autoHookOff = false;   // autoFinish: the opening words
-let hookNone = false; try{ hookNone = localStorage.getItem('shubix.openText') === 'none'; }catch(e){}   // Opening text: None
+// Opening text: None unless the person chose Auto (2026-11-28, the owner: no words over a Reel by default)
+let hookNone = true; try{ hookNone = localStorage.getItem('shubix.openText') !== 'auto'; }catch(e){}
 function rng(){ seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; }
 // Window statistics in O(log n): prefix sums over the clip's samples and faces (built once per clip). The edit scores
 // thousands of windows, so a plain loop here froze the page on long videos.
@@ -3985,7 +3986,11 @@ async function directorRun(key){
 async function aiCheck(){
   try{
     const r = await fetch('/api/studio/rank-shots', ac ? { signal: ac.signal } : undefined); if(!r.ok) return;
-    aiInfo = await r.json(); aiLocked = false; if(!aiInfo || !aiInfo.available){ aiOn = false; return; }
+    aiInfo = await r.json(); aiLocked = false;
+    // a plan without Shubix AI (Free) is known first, also when the AI itself is off (local, or down for a moment): Make Reel
+    // still asks Shubix AI or the Free edit (it went straight to the Free edit with no popup, 2026-11-28)
+    if(aiInfo && aiInfo.planAi === false){ aiOn = false; aiLocked = true; aiStat(IN_APP ? 'Edited on your phone' : 'Edited on your phone · Shubix AI is in the Editor and Pro plans'); return; }
+    if(!aiInfo || !aiInfo.available){ aiOn = false; return; }
     // a plan without Shubix AI (Free): the phone edits; the chat and the plans say how to get it
     if(aiInfo.planAi === false){ aiOn = false; aiLocked = true; aiStat(IN_APP ? 'Edited on your phone' : 'Edited on your phone · Shubix AI is in the Editor and Pro plans'); return; }
     if(aiOn) return;

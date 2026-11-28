@@ -7,6 +7,7 @@ type Ov = { text: string; size: number; emoji?: boolean; x: number; y: number; y
 async function reel(face?: { x: number; y: number; s: number }) {
   const w = world(4, 7, { face });
   await w.e.call("song", { path: "/s.mp3", name: "s.mp3" }); await w.e.call("clips", { paths: w.paths }); await w.e.call("ready");
+  await w.e.call("choose", { text: "auto" });   // opening words: None by default (2026-11-28), Auto chosen
   const ES = (w.e.host() as unknown as { ES: { overlays: Ov[] } }).ES;
   await w.e.call("state");   // what the app is given: the texts are placed by then
   return ES.overlays.filter((o) => o.auto || o.aiIntent);

@@ -15,13 +15,16 @@ const autos = (h: Host) => (h.ES.overlays as { auto?: boolean }[]).filter((o) =>
 
 describe("Opening text", () => {
   it("Auto: the Reel opens on Shubix's words", async () => {
-    expect(autos(await reel())).toBeGreaterThan(0);
+    expect(autos(await reel("auto"))).toBeGreaterThan(0);
+  });
+  it("nothing chosen: None, no opening words (the default, 2026-11-28)", async () => {
+    expect(autos(await reel())).toBe(0);
   });
   it("None: no opening words", async () => {
     expect(autos(await reel("none"))).toBe(0);
   });
   it("None chosen after the Reel is made: the words go; Auto again: they come back", async () => {
-    const h = await reel();
+    const h = await reel("auto");
     expect(autos(h)).toBeGreaterThan(0);
     await h.choose("none");
     expect(autos(h)).toBe(0);

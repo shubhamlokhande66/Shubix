@@ -171,7 +171,7 @@ function CreateFlowScreen() {
           if (length) await engine.choose({ length });
           if (start) await engine.part(start);
         }
-        await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: styleNow() || "auto", template: params.templateId ?? "" });
+        await engine.choose({ order: settings.order, text: settings.text ?? "none", aspect: settings.aspect, mode: styleNow() || "auto", template: params.templateId ?? "" });
         // each clip numbered once (phones name many clips the same): the ones the studio kept, in its order
         names = (await engine.clips(list.map((m) => { const k = keptBy.current.get(m.uri)!; return { uri: k.clip.uri, name: k.name }; }))).names;
         if (!making.current) return false;
@@ -338,7 +338,7 @@ function CreateFlowScreen() {
       } else if (engineOn && now.current.music) {
         stage.current = "ai"; making.current = true; setStep("analyse"); tasks.unlock();   // (the cards stop playing: another step)
         tasks.start("flow", "ai", words("Shubix at work"), words("Getting your Reel ready…"));
-        await engine.choose({ order: settings.order, text: settings.text ?? "auto", aspect: settings.aspect, mode: style || "auto" }); // (the length and the part are set already)
+        await engine.choose({ order: settings.order, text: settings.text ?? "none", aspect: settings.aspect, mode: style || "auto" }); // (the length and the part are set already)
         if (again) await engine.newReel();
         const went = await engine.ai();
         if (!went && again && making.current) { making.current = false; tasks.clear("flow"); setStep("clips"); return void keepOldReel(old); }   // Shubix AI's question closed: the old Reel

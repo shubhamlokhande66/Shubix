@@ -351,8 +351,8 @@ export function FlowClips({ kind, pick, onTab, media, states, bests, onAdd, onRe
         </Row>
       )}
       {kind !== "talking" && (
-        <Row label={words("Opening text")} note={words(settings.text === "none" ? "No text unless you add one" : "A short line in the first 2 seconds when your Reel has no text")}>
-          <Segmented small value={settings.text ?? "auto"} onChange={(text) => onSettings({ text })} options={[{ value: "auto" as const, label: words("Auto") }, { value: "none" as const, label: words("None") }]} />
+        <Row label={words("Opening text")} note={words((settings.text ?? "none") === "none" ? "No text unless you add one" : "A short line in the first 2 seconds when your Reel has no text")}>
+          <Segmented small value={settings.text ?? "none"} onChange={(text) => onSettings({ text })} options={[{ value: "auto" as const, label: words("Auto") }, { value: "none" as const, label: words("None") }]} />
         </Row>
       )}
       <Row label={words("Format")}><Segmented small value={settings.aspect} onChange={(aspect) => onSettings({ aspect })} options={(["9:16", "4:5", "1:1", "16:9", "3:4", "4:3", "2:1", "2.35:1"] as Aspect[]).map((a) => ({ value: a, label: a === "9:16" ? words("9:16 Reel") : a }))} /></Row>

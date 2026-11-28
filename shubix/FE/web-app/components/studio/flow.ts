@@ -69,8 +69,12 @@ export function initFlow(root: HTMLElement): () => void {
   // check before Generate is done
   // go=1, or ask=1 (back from Pricing, its link or the browser's Back): Make Reel's popup again once the Reel is back
   // askBack: nothing was chosen for this Reel yet (the edit made while reading was saved with it): the popup, not that edit
-  let askBack = q.get("ask") === "1" && q.has("p");
-  let autoGo = q.get("go") === "1" || askBack, signInOk = false;
+  // (kept on the page's root until used: a second start of this flow on the same page, React's development double start,
+  // found the address already cleaned, so the popup never came and the loader stayed, 2026-11-28 on localhost)
+  let askBack = (q.get("ask") === "1" && q.has("p")) || root.dataset.askBack === "1";
+  let autoGo = q.get("go") === "1" || askBack || root.dataset.autoGo === "1", signInOk = false;
+  if (askBack) root.dataset.askBack = "1";
+  if (autoGo) root.dataset.autoGo = "1";
   // ✕ on Make Reel's popup (or off to Pricing): nothing was chosen, so the preview waits for the choice and does not show
   // the edit made while reading (it looked as if the Reel was made, 2026-11-28)
   let choiceWait = askBack;   // (back from Pricing: nothing chosen yet either)
@@ -151,8 +155,8 @@ export function initFlow(root: HTMLElement): () => void {
     setFlag($("flenslot"), "hidden", !ask || $("lenrow").hidden);
     if (on) {
       if ($("clipsnd").parentElement !== $("fsndslot")) $("fsndslot").append($("clipsnd"));
-      if (!phone() && $("aspect").parentElement !== $("faspslot")) $("faspslot").append($("aspect"));
-      if (phone() && $("aspect").parentElement === $("faspslot")) homes.asp.append($("aspect"));
+      // (the format is chosen in the editor: no Reel format beside the steps on computers either, 2026-11-28)
+      if ($("aspect").parentElement === $("faspslot")) homes.asp.append($("aspect"));
       // the made Reel plays in the preview card (the engine's own canvas and play button, moved here until Generate)
       // no Reel preview beside the steps any more (2026-11-28, the owner): the edit made while the clips are read looked like a
       // finished Reel before anything was chosen; the Reel is seen once Generate Reel opens it
@@ -464,7 +468,7 @@ export function initFlow(root: HTMLElement): () => void {
       if (stopped().song || stopped().clips || !!stop || (!reading && !songComing && !goes)) wantGen = false;
       else if (ready && !busy && working.size === 0 && !aiLater) { aiLater = true; setTimeout(() => { aiLater = false; wantGen = false; const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     }
-    if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; root.classList.remove("askwait"); setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
+    if (autoGo && ready && !busy && working.size === 0 && !has("opening")) { autoGo = false; delete root.dataset.autoGo; delete root.dataset.askBack; root.classList.remove("askwait"); setTimeout(() => { const g = $<HTMLButtonElement>("fgen"); g.disabled = false; g.click(); }, 0); }
     // Stop pressed in the popup: the Reel is not made by itself after it (a clip removed then, the rest read, counted down
     // and opened the popup again: QA 2026-11-18); Generate makes it
     if (!autoOff && (stopped().song || stopped().clips)) autoStop(true);
@@ -605,8 +609,10 @@ export function initFlow(root: HTMLElement): () => void {
         const enough = (await st?.askShort?.()) ?? "go";
         if (enough === "stop") { apply(); return; }
         if (enough === "again") { wantGen = true; apply(); return; }
-        const change = askBack ? "go" : st?.changeGate ? await st.changeGate() : "go";   // changed since the Reel was made: a new Reel, or the old one
-        askBack = false;
+        // nothing chosen for this Reel yet (back from Pricing, or its popup closed with ✕): asked again, never "the same Reel"
+        // (the edit made while reading was saved with it and counted as made: ✕, then Make Reel opened the editor, 2026-11-28)
+        const change = askBack || choiceWait ? "go" : st?.changeGate ? await st.changeGate() : "go";   // changed since the Reel was made: a new Reel, or the old one
+        askBack = false; delete root.dataset.askBack;
         if (change === "stay") return;
         if (change === "old") return st?.keepOldReel?.();
         const r = change === "same" ? "skip" : st?.upsell ? await st.upsell() : "skip";   // (nothing changed: the same Reel, no new credits)
@@ -822,5 +828,5 @@ export function initFlow(root: HTMLElement): () => void {
     }, 1000);
     ac.signal.addEventListener("abort", () => clearInterval(tick));
   }
-  return () => { ac.abort(); mo.disconnect(); ro.disconnect(); refMo.disconnect(); place(false); };
+  return () => { root.classList.remove("askwait"); ac.abort(); mo.disconnect(); ro.disconnect(); refMo.disconnect(); place(false); };
 }
