@@ -26,10 +26,12 @@ class SongOptions(val beats: List<Double>? = null, val forceBeats: List<Double>?
 
 class JudgeResult(val accent: Double, val steady: Double, val score: Double)
 class BeatJudge(val own: JudgeResult, val ai: JudgeResult, var alt: Double? = null)
+class BeatAccent(val t: Double, val strength: Double, val level: String)
+class DrumHit(val t: Double, val band: String, val strength: Double)
 
 class SongResult(
   val period: Double, val phase: Double, val hopSec: Double, val rmsF: FloatArray, val onEnv: DoubleArray, val onFps: Double, val onOff: Double,
-  val hitsRaw: List<Double>, val hitsStr: List<Double>, val pfArr: FloatArray, val beats: List<Double>, val cuts: List<Double>, val cutType: List<String>,
+  val hitsRaw: List<Double>, val hitsStr: List<Double>, val pfArr: FloatArray, val beats: List<Double>, val beatAccents: List<BeatAccent>, val drumHits: List<DrumHit>, val cuts: List<Double>, val cutType: List<String>,
   val cutFx: List<String>, val peaks: List<Double>, val peakS: List<Double>, val barOff: Double, val beatSource: String, val beatJudge: BeatJudge?,
 )
 
@@ -37,7 +39,10 @@ class SongResult(
 fun SongResult.toJson(): JSONObject {
   fun judge(j: JudgeResult) = JSONObject().put("accent", j.accent).put("steady", j.steady).put("score", j.score)
   val out = JSONObject().put("period", period).put("phase", phase).put("hopSec", hopSec).put("onFps", onFps).put("onOff", onOff).put("barOff", barOff).put("beatSource", beatSource)
-    .put("beats", JSONArray(beats)).put("cuts", JSONArray(cuts)).put("cutType", JSONArray(cutType)).put("cutFx", JSONArray(cutFx)).put("peaks", JSONArray(peaks)).put("peakS", JSONArray(peakS))
+    .put("beats", JSONArray(beats))
+    .put("beatAccents", JSONArray(beatAccents.map { JSONObject().put("t", it.t).put("strength", it.strength).put("level", it.level) }))
+    .put("drumHits", JSONArray(drumHits.map { JSONObject().put("t", it.t).put("band", it.band).put("strength", it.strength) }))
+    .put("cuts", JSONArray(cuts)).put("cutType", JSONArray(cutType)).put("cutFx", JSONArray(cutFx)).put("peaks", JSONArray(peaks)).put("peakS", JSONArray(peakS))
     .put("hitsRaw", JSONArray(hitsRaw)).put("hitsStr", JSONArray(hitsStr)).put("rmsF", JSONArray(rmsF.map { it.toDouble() })).put("pfArr", JSONArray(pfArr.map { it.toDouble() })).put("onEnv", JSONArray(onEnv.toList()))
   out.put("beatJudge", beatJudge?.let { j -> JSONObject().put("own", judge(j.own)).put("ai", judge(j.ai)).also { o -> j.alt?.let { a -> o.put("alt", a) } } } ?: JSONObject.NULL)
   return out
@@ -310,8 +315,26 @@ fun songAnalysis(mono: FloatArray, sampleRate: Int, opts: SongOptions = SongOpti
   for (f in 0 until frames) { var s = 0.0; val o = f * H; var i = 0; while (i < N) { val j = o + i; val v = if (j < len) mono[j].toDouble() else 0.0; s += v * v; i += 2 }; rmsF[f] = sqrt(s / (N / 2)).toFloat() }
   val fps = sr / H
   val bodyEnv = localMean(fBody); val kickEnv = localMean(fKick)
-  val trk = trackBeats(env, bodyEnv, fps, kickEnv)
+  val midEnv = localMean(fMid); val topEnv = localMean(fTop)
   val half = (N / 2) / sr
+  // Separate attacks by frequency band. These are transients, not extra beats:
+  // low = kick, mid = snare/clap, top = hi-hat/cymbal.
+  val drumHits = ArrayList<DrumHit>()
+  fun bandPeaks(a: DoubleArray, band: String) {
+    val sorted = a.filter { it > 0 }.sorted()
+    if (sorted.size < 4) return
+    fun q(p: Double) = sorted[min(sorted.size - 1, floor((sorted.size - 1) * p).toInt())]
+    val scale = max(q(0.995), 1e-9); val threshold = max(max(q(0.5) * 3, scale * 0.18), 1e-9)
+    val gap = max(1, rnd(0.05 * fps)); var last = -gap
+    for (i in 2 until a.size - 2) {
+      val v = a[i]
+      if (v < threshold || v < a[i - 1] || v <= a[i + 1] || v <= a[i - 2] || v <= a[i + 2] || i - last < gap) continue
+      drumHits += DrumHit(i / fps + half, band, min(1.0, v / scale)); last = i
+    }
+  }
+  bandPeaks(kickEnv, "kick"); bandPeaks(midEnv, "snare"); bandPeaks(topEnv, "hihat")
+  drumHits.sortBy { it.t }
+  val trk = trackBeats(env, bodyEnv, fps, kickEnv)
   var own: List<Double> = trk.beats.map { it / fps + half }; var ownPeriod = trk.period / fps
   var beatSource = "own"; var beatJudge: BeatJudge? = null
   val force = opts.forceBeats?.takeIf { it.size >= 4 }; val theirs = opts.beats?.takeIf { it.size >= 8 }
@@ -346,7 +369,17 @@ fun songAnalysis(mono: FloatArray, sampleRate: Int, opts: SongOptions = SongOpti
     if (pickAi) { ownPeriod = median2(gaps(theirs)); own = theirs.toList(); beatSource = "ai" }
   }
   val beatsDP = if (force != null) own.toList() else trimNoPulse(refineBeats(own, ownPeriod, mono, sr)) { t -> val f = rnd((t - half) * fps); var m = 0.0; for (j in f - 3..f + 3) if (j in 0 until frames && env[j] > m) m = env[j]; m }
+  val beats = beatsDP.filter { it >= 0 && it < duration - 0.02 }
   val period = ownPeriod; val phase = beatsDP.firstOrNull() ?: 0.0; val hopSec = H / sr
+  val accentValues = beats.map { t ->
+    fun bandAt(a: DoubleArray): Double { val f = rnd((t - half) * fps); var m = 0.0; for (j in f - 2..f + 3) if (j in a.indices && a[j] > m) m = a[j]; return m }
+    bandAt(kickEnv) + bandAt(midEnv) * 0.9 + bandAt(topEnv) * 0.25
+  }
+  val accentSorted = accentValues.sorted(); val accentScale = accentSorted.getOrElse(floor(accentSorted.size * 0.9).toInt()) { 1.0 }.let { if (it > 0) it else 1.0 }
+  val beatAccents = beats.mapIndexed { i, t ->
+    val strength = min(1.0, accentValues[i] / max(1e-9, accentScale))
+    BeatAccent(t, strength, if (strength >= 0.65) "strong" else if (strength >= 0.3) "medium" else "weak")
+  }
   fun detrend(a: DoubleArray): DoubleArray {
     val o = localMean(a); val s = o.sortedArray(); val p98 = s.getOrElse(floor(s.size * 0.98).toInt()) { 1.0 }.orOne()
     for (i in 0 until frames) o[i] /= p98
@@ -372,7 +405,6 @@ fun songAnalysis(mono: FloatArray, sampleRate: Int, opts: SongOptions = SongOpti
   }
   fun drumness(t: Double): Double { val c = rnd((t - onOff) * onFps); var m = 0.0; for (j in c - 2..c + 4) if (j in pfArr.indices && pfArr[j] > m) m = pfArr[j].toDouble(); return m }
   // the cuts
-  val beats = beatsDP.filter { it >= 0 && it < duration - 0.02 }
   val first = beats.firstOrNull() ?: 0.0
   val hop = rnd(0.005 * sr); val wn = rnd(0.02 * sr)
   val nF = max(1, floor((len - wn).toDouble() / hop).toInt() + 1); val L = DoubleArray(nF); val lt = DoubleArray(nF)
@@ -454,5 +486,5 @@ fun songAnalysis(mono: FloatArray, sampleRate: Int, opts: SongOptions = SongOpti
     val ty = cutType[k]; val length = (if (k + 1 < cuts.size) cuts[k + 1] else duration) - cuts[k]
     if (ty == "drop") "Best shot · flash + zoom-in" else if (ty == "break") "Slow-mo / freeze / text" else if (length < 0.3) "Fast cut · shake" else if (ty == "hit") "Zoom punch" else if (length > 1.6) "Long shot · smooth pan" else "Hard cut"
   }
-  return SongResult(period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, 0.0, beatSource, beatJudge)
+  return SongResult(period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, beatAccents, drumHits, cuts, cutType, cutFx, peaks, peakS, 0.0, beatSource, beatJudge)
 }

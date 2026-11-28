@@ -150,7 +150,7 @@ export function createHost(initial, io = {}){
   values.useSection = () => useSection();   // (a Talking Reel back to a Beat Reel: setKind, talk.ts)
 
   function applyAnalysis(r){
-    Object.assign(ES, { period: r.period, hopSec: r.hopSec, rmsF: r.rmsF, onFps: r.onFps, onOff: r.onOff, hitsRaw: r.hitsRaw, hitsStr: r.hitsStr, pfArr: r.pfArr, beats: r.beats, cuts: r.cuts, cutType: r.cutType, cutFx: r.cutFx, peaks: r.peaks, peakS: r.peakS, downbeats: r.downbeats || [] });
+    Object.assign(ES, { period: r.period, hopSec: r.hopSec, rmsF: r.rmsF, onFps: r.onFps, onOff: r.onOff, hitsRaw: r.hitsRaw, hitsStr: r.hitsStr, pfArr: r.pfArr, beats: r.beats, beatAccents: r.beatAccents || [], drumHits: r.drumHits || [], cuts: r.cuts, cutType: r.cutType, cutFx: r.cutFx, peaks: r.peaks, peakS: r.peakS, downbeats: r.downbeats || [] });
     Object.assign(values, { phase: r.phase, onEnv: r.onEnv, barOff: r.barOff });
     ES.songPartsRel = r.parts || [];
     brain.buildPlan();

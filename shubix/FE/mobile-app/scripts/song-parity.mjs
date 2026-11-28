@@ -25,6 +25,15 @@ for (const name of readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) =
     if (worst > tol) fails.push(`${k}[${at}]: ${a[at]} / ${b[at]}`);
   }
   for (const k of ["cutType", "cutFx"]) if (JSON.stringify(js[k]) !== JSON.stringify(kt[k])) fails.push(`${k} differ`);
+  for (const k of ["beatAccents", "drumHits"]) {
+    const a = js[k] || [], b = kt[k] || [];
+    if (a.length !== b.length) { fails.push(`${k}: ${a.length} values / ${b.length}`); continue; }
+    for (let i = 0; i < a.length; i++) {
+      if (k === "beatAccents") {
+        if (!near(a[i].t, b[i].t, 1e-3) || !near(a[i].strength, b[i].strength, 1e-3) || a[i].level !== b[i].level) { fails.push(`beatAccents[${i}] differ`); break; }
+      } else if (!near(a[i].t, b[i].t, 1e-3) || !near(a[i].strength, b[i].strength, 1e-3) || a[i].band !== b[i].band) { fails.push(`drumHits[${i}] differ`); break; }
+    }
+  }
   if (o.beats && JSON.stringify(!!js.beatJudge) !== JSON.stringify(!!kt.beatJudge)) fails.push("beatJudge");
   console.log(`${fails.length ? "FAIL" : "PASS"}  ${name}  ${(mono.length / o.sr).toFixed(0)} s  ${js.beats.length} beats  ${js.cuts.length} cuts  ${js.beatSource}  js ${jsMs} ms  kotlin ${kt.ms} ms`);
   for (const f of fails.slice(0, 8)) console.log("      " + f.slice(0, 150));

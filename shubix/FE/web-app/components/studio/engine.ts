@@ -209,7 +209,7 @@ let period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, be
 let onEnv=null, onFps=0, onOff=0, hitsRaw=[];
 let cutFx = [], pfArr = null;
 const DRUM_MIN = 0.7;
-let beats = [], cuts = [], cutType = [], peaks = [], peakS = [], downbeats = [];   // downbeats: each bar's "1"
+let beats = [], beatAccents = [], drumHits = [], cuts = [], cutType = [], peaks = [], peakS = [], downbeats = [];   // downbeats: each bar's "1"
 let userMarks = [];   // beats the creator tapped in (song time): cuts can land on them like on the song's own beats
 function withMarks(b, dur){ if(!userMarks.length) return b; const out = b.slice();
   for(const m of userMarks){ const t = m - secStart; if(t > 0.05 && t < dur - 0.05 && !out.some(x => Math.abs(x - t) < 0.08)) out.push(t); }
@@ -522,8 +522,37 @@ async function loadMusic(file, cached = null){
   try{ whole = await decodeAnyAudio(file); }
   catch(e){ if(token !== musicToken) return; songBusy(false); console.warn('song not readable', e); rlog('song', 'Song could not be read: ' + String(e && e.message || e), { name }, 'error'); tasks.fail('song', 'This file has no sound we can read. Try an MP3, M4A or WAV.'); $('s1st').textContent = 'Could not read the sound of this file. Use MP3, M4A, WAV or a video with sound. (Songs in the Apple Music app are protected and cannot be opened by websites.)'; return; }
   if(token !== musicToken) return;
+  // A plain average can cancel the kick/snare almost completely when a stereo file has
+  // one channel polarity-inverted (common in phone/edited audio). Pick the strongest
+  // channel as the reference, align only clearly anti-correlated channels, then mix.
   let m = new Float32Array(whole.length);
-  { const ch = whole.numberOfChannels; for(let c=0;c<ch;c++){ const d = whole.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ch; } }
+  let phaseAlignedChannels = 0;
+  {
+    const ch = whole.numberOfChannels, channels = Array.from({ length: ch }, (_, c) => whole.getChannelData(c));
+    if(ch === 1) m.set(channels[0]);
+    else {
+      let ref = 0, refEnergy = -1;
+      for(let c=0;c<ch;c++){
+        let e=0; const d=channels[c], stride=Math.max(1,Math.floor(d.length/12000));
+        for(let i=0;i<d.length;i+=stride) e += d[i]*d[i];
+        if(e>refEnergy){ refEnergy=e; ref=c; }
+      }
+      const base=channels[ref], stride=Math.max(1,Math.floor(base.length/12000));
+      const signs = channels.map((d,c)=>{
+        if(c===ref) return 1;
+        let dot=0, aa=0, bb=0;
+        for(let i=0;i<base.length;i+=stride){ dot+=base[i]*d[i]; aa+=base[i]*base[i]; bb+=d[i]*d[i]; }
+        const corr=dot/Math.sqrt(Math.max(1e-20,aa*bb));
+        if(corr < -0.6) phaseAlignedChannels++;
+        return corr < -0.6 ? -1 : 1;
+      });
+      const scale=1/ch;
+      for(let c=0;c<ch;c++){
+        const d=channels[c], sign=signs[c];
+        for(let i=0;i<m.length;i++) m[i] += sign*d[i]*scale;
+      }
+    }
+  }
   { const cut = noInstaCard(whole, m); if(cut){ whole = cut.buf; m = cut.mono;
     if(cached && cached.r && (cached.r.beats || []).some(b => b > cut.end)) cached = null; } }   // beats kept from before the card was cut off: found again
   song = { buf: whole, mono: m, r: null, name, file, key: name + '|' + whole.duration.toFixed(2) };
@@ -538,8 +567,10 @@ async function loadMusic(file, cached = null){
   if(token !== musicToken) return;   // another song was chosen meanwhile
   song.r = r; song.source = r.beatSource || 'own';
   rlog('beats', 'Song analysed · ' + (60/r.period).toFixed(1) + ' BPM · ' + (r.beats || []).length + ' beats · ' + (r.cuts || []).length + ' cut points', {
-    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
-    downbeats: (r.downbeats || []).length, parts: r.parts || [], beats: (r.beats || []).slice(0, 200).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
+    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, phaseAlignedChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
+    beatIntervalsMs: (r.beats || []).slice(1).map((b, i) => +((b - r.beats[i]) * 1000).toFixed(1)),
+    beatAccents: r.beatAccents || [], drumHits: r.drumHits || [],
+    downbeats: (r.downbeats || []).length, beatJudge: r.beatJudge || null, parts: r.parts || [], beats: (r.beats || []).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
   await useSection(token);
   if(token !== musicToken) return;
   songBusy(false); $('s1st').textContent = 'Ready'; $('s1').classList.add('done'); $('s2').classList.remove('locked'); $('lenrow').hidden = kind === 'talk';
@@ -595,9 +626,17 @@ function snapToBeat(t){ const bt = song.r.beats || []; if(bt.length < 8) return 
  * The edit's drops and breaks come only from here, so every Reel cuts where the song changes and nowhere else. */
 function songParts(mono, sr, beats){
   if(!beats || beats.length < 16) return [];
-  let n = beats.length; const p = (beats[n-1]-beats[0])/(n-1), dur = mono.length/sr;
-  // a quiet intro or ending has no beats found: its pulse goes on, on the same grid
-  { const g = beats.slice(); for(let t=g[0]-p; t>=0; t-=p) g.unshift(t); for(let t=g[g.length-1]+p; t<dur-p; t+=p) g.push(t); beats = g; n = g.length; }
+  let n = beats.length; const dur = mono.length/sr;
+  // Preserve the tracker's local beat spacing. A single song-wide average drifts away from the
+  // real grid when tempo changes; only extrapolate the untracked intro/outro from nearby beats.
+  const median = xs => { const a=xs.filter(x=>x>0).sort((x,y)=>x-y); return a.length ? a[a.length>>1] : 0.5; };
+  const startPeriod = median(beats.slice(1, Math.min(beats.length, 6)).map((t,i)=>t-beats[i]));
+  const endPeriod = median(beats.slice(-5).slice(1).map((t,i)=>t-beats[beats.length-5+i]));
+  const g = beats.slice();
+  if(startPeriod>0) for(let t=g[0]-startPeriod; t>=0; t-=startPeriod) g.unshift(t);
+  if(endPeriod>0) for(let t=g[g.length-1]+endPeriod; t<dur-endPeriod; t+=endPeriod) g.push(t);
+  beats = g; n = g.length;
+  const p = median(beats.slice(1).map((t,i)=>t-beats[i]));
   // per beat: loudness and low end (kick + bass), in dB
   let lp = 0; const a = Math.exp(-2*Math.PI*150/sr), low = new Float32Array(mono.length);
   for(let i=0;i<mono.length;i++){ lp = (1-a)*mono[i] + a*lp; low[i] = lp; }
@@ -807,10 +846,16 @@ function playPart(from, base){
   cv.addEventListener('pointerup', end, SIG); cv.addEventListener('pointercancel', end, SIG); }
 let beatInfo = { source: 'own', note: '' };
 function applyAnalysis(r){
-  ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff } = r); downbeats = r.downbeats || [];
+  ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, beatAccents, drumHits, cuts, cutType, cutFx, peaks, peakS, barOff } = r); downbeats = r.downbeats || [];
   songPartsRel = r.parts || [];
   buildPlan(); drawMusic();
-  $('mbpm').textContent = (60/period).toFixed(0);
+  $('mbpm').textContent = (60/period).toFixed(1);
+  $('mbeatcount').textContent = beats.length;
+  $('mdrumcount').textContent = drumHits.length;
+  $('beatdetails').hidden = !beats.length;
+  $('beatlist').textContent = (beatAccents.length ? beatAccents.map(b => b.t.toFixed(3) + 's ' + b.level) : beats.map(b => b.toFixed(3) + 's')).join(' · ');
+  $('drumcounts').textContent = 'Kick ' + drumHits.filter(h=>h.band==='kick').length + ' · Snare ' + drumHits.filter(h=>h.band==='snare').length + ' · Hi-hat ' + drumHits.filter(h=>h.band==='hihat').length;
+  $('drumlist').textContent = drumHits.slice(0,250).map(h => h.band + ' ' + h.t.toFixed(3) + 's (' + h.strength.toFixed(2) + ')').join(' · ') + (drumHits.length > 250 ? ' · …' : '');
   $('mclips').textContent = plan.length; $('mdrop').textContent = plan.filter(s=>s.type==='drop').length; $('mbreak').textContent = plan.filter(s=>s.type==='break').length;
 }
 // Second opinion on the beats: Beat This! (a neural network trained on thousands of hand-annotated songs) runs on this
@@ -9347,7 +9392,7 @@ async function pickRecent(fp){
 listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && (IN_APP || planNow !== 'free') && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
-root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, finishSet, brandSave, get brandLayers(){ return layers.filter(L => L.brand || L.finish).map(L => ({ kind: (lmedia[L.m] || {}).kind, role: L.role, finish: L.finish, t0: L.t0, t1: L.t1 })); }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
+root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, finishSet, brandSave, get brandLayers(){ return layers.filter(L => L.brand || L.finish).map(L => ({ kind: (lmedia[L.m] || {}).kind, role: L.role, finish: L.finish, t0: L.t0, t1: L.t1 })); }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get beatAccents(){ return beatAccents; }, get drumHits(){ return drumHits; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
   snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry,
   // Make Reel waits for Shubix's plan and nothing is running (flow.ts): its next step is tried again, then it is said (Retry / Close)
   aiKick: () => { if(sources.some(s => !s.ai && !s.aiFailed && !s.removed)) aiRun(); else if(buf && sources.length && !recording){ paceMaybe(); directorMaybe(); } }, aiStalled: () => { dirFailedKey = dirKey(); aiDown(); }, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
