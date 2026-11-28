@@ -40,7 +40,7 @@ export default async function CreatePage({ params, searchParams }: { params: Pro
     }
     redirect(`/editor?${target.toString()}`);
   }
-  const studio = <FastStudio kind={FLOW.has(kind as Kind) ? (kind as "music" | "talking" | "photo" | "copy") : undefined} />;
+  const studio = <FastStudio kind={FLOW.has(kind as Kind) ? (kind as "music" | "talking" | "photo" | "copy") : undefined} opening={typeof q.p === "string" && !!q.p} />;
   // Copy a Reel and a template open on their plan (lib/plan-locks.ts "page:…"); a saved Reel always opens
   const lock = kind === "copy" ? "page:copy" : kind === "edit" && q.tpl && !q.p ? "page:templates" : "";
   // a template has its own plan too (Admin → Templates)

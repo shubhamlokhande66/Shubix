@@ -578,6 +578,10 @@ async function loadMusic(file, cached = null){
   songBusy(false); $('s1st').textContent = 'Ready'; $('s1').classList.add('done'); $('s2').classList.remove('locked'); $('lenrow').hidden = kind === 'talk';
   tasks.done('song', 'Song ready' + (sources.length ? '' : ' · now add your clips'));
   if(cached && cached.aiDone && r === cached.r){ $('s1st').textContent = 'Ready · beats as checked before'; rememberSong(file, r, true); }
+  // a saved Reel opened again with its own edit (Back from Pricing, My Reels): its cuts are set, no beat check over it.
+  // The check's tracker took ~90 s to start, its popup over the editor all that time, and it then moved the saved cuts
+  // to its beats (2026-11-28). A new Reel made from this song checks them.
+  else if(keepSaved){ rememberSong(file, r, false); beatsLater = token; }
   else { rememberSong(file, r, false); checkBeatsWithAi(token); }
   if(capsOn) loadCaptions();
 }
@@ -863,7 +867,7 @@ function applyAnalysis(r){
 // Second opinion on the beats: Beat This! (a neural network trained on thousands of hand-annotated songs) runs on this
 // device in the background; the analysis then keeps whichever beats land on stronger hits with a steadier pulse (each
 // tracker misses different songs) and the edit follows. The page stays usable; the first edit never waits for it.
-let beatsBusy = false, beatsFor = -1;
+let beatsBusy = false, beatsFor = -1, beatsLater = -1;   // beatsLater: the song of a saved Reel, checked when a Reel is made from it again
 // An iPhone that reloaded while Shubix checked the beats (out of memory) does not run it again for a week: the page's own
 // beats are good, and the person must be able to make the Reel at all
 const AI_BEATS_OFF = 'brs-ai-beats-off';
@@ -877,14 +881,23 @@ async function checkBeatsWithAi(token){
   try{ await checkBeatsInner(token); } finally { beatsBusy = false; if(lifeNote.stage === 'checking beats') life({ stage: 'song ready' }); }
 }
 async function checkBeatsInner(token){
-  const sr = song.buf.sampleRate, m = song.mono, base = 'Ready';
+  const base = 'Ready';
   const say = t => { if(token === musicToken) $('s1st').textContent = t; };
   say(base + ' · Shubix is checking the beats on this phone…');
   let beatStage = '';
-  if(token === musicToken) tasks.start('beats', 'ai', 'Checking the beats', 'Shubix listens to your song on this phone');
+  // its card (the popup) only while the Reel is being set up or made: over a Reel in the editor it is quiet (the check
+  // goes on behind it; it covered the editor for up to 90 s while the tracker started, 2026-11-28)
+  const card = () => token === musicToken && !root.classList.contains('made');
+  const quiet = () => { if(!card() && tasks.has('beats')) tasks.clear('beats'); };
+  if(card()) tasks.start('beats', 'ai', 'Checking the beats', 'Shubix listens to your song on this phone');
+  const quietT = setInterval(quiet, 1000);   // (the tracker says nothing while it starts: the Reel made meanwhile, its card goes)
+  try{ return await checkBeatsRun(token, say, base, card, quiet, () => beatStage, v => { beatStage = v; }); } finally { clearInterval(quietT); }
+}
+async function checkBeatsRun(token, say, base, card, quiet, getStage, setStage){
+  const sr = song.buf.sampleRate, m = song.mono;
   let bt;
-  try{ bt = await aiBeats(m, sr, (stage, p) => { say(base + (stage === 'download' ? ' · getting the Shubix beat tracker (once) ' : ' · Shubix beat check ') + Math.round(p*100) + '%'); if(token !== musicToken) return;
-      if(stage !== beatStage){ beatStage = stage; tasks.start('beats', 'ai', stage === 'download' ? 'Getting the Shubix beat tracker' : 'Checking the beats', stage === 'download' ? 'Only the first time · kept on this phone' : 'Shubix listens to your song on this phone'); }
+  try{ bt = await aiBeats(m, sr, (stage, p) => { say(base + (stage === 'download' ? ' · getting the Shubix beat tracker (once) ' : ' · Shubix beat check ') + Math.round(p*100) + '%'); if(token !== musicToken) return; if(!card()){ quiet(); return; }
+      if(stage !== getStage()){ setStage(stage); tasks.start('beats', 'ai', stage === 'download' ? 'Getting the Shubix beat tracker' : 'Checking the beats', stage === 'download' ? 'Only the first time · kept on this phone' : 'Shubix listens to your song on this phone'); }
       tasks.update('beats', p, stage === 'download' && p >= 1 ? 'Downloaded · starting Shubix' : undefined); }); }
   catch(err){ beatInfo = { source: 'own', note: String(err && err.message || err) }; say(base); tasks.clear('beats'); console.info('on-device beat tracker not used:', beatInfo.note); rlog('beats', 'On-device beat check (Beat This!) not used: ' + beatInfo.note, null, 'warn'); return; }
   if(token !== musicToken) return;
@@ -901,7 +914,7 @@ async function checkBeatsInner(token){
   await useSection(token);
   if(token !== musicToken) return;
   say(base + (r.beatSource === 'ai' ? ' · beats confirmed by Shubix on this phone (Beat This!)' : ' · beats double-checked: Shubix agrees or fits less well, kept'));
-  if(token === musicToken) tasks.done('beats', 'Beats checked');
+  if(card()) tasks.done('beats', 'Beats checked'); else quiet();
   if(sources.length && was) showMsg('Beats fine-tuned: your edit now follows them. Tap Preview to see it.');
 }
 $('mpick').onclick = () => $('mfile').click();
@@ -2461,7 +2474,9 @@ async function aiSell(low, cost, bal){
 async function toPricing(where){
   if(IN_APP) return;
   let id = ''; try{ id = await saveNow(); }catch(e){}
-  const inSteps = location.pathname.startsWith('/create') && location.pathname !== '/create/edit';
+  // (the steps on screen, not only their address: a phone shows the editor at /create/music too, and Back from Pricing
+  // went to the clips instead of the editor, 2026-11-28)
+  const inSteps = location.pathname.startsWith('/create') && location.pathname !== '/create/edit' && root.classList.contains('fopen');
   // back in the steps: the Reel's clips again and its Make Reel popup (ask=1), as it was left
   const back = id ? (inSteps ? location.pathname : '/editor') + '?p=' + encodeURIComponent(id) + (inSteps ? '&step=clips&ask=1' : '') : location.pathname + location.search;
   const u = new URL('/pricing' + where, location.origin); u.searchParams.set('back', back);
@@ -2576,6 +2591,7 @@ async function askNotDone(){
 }
 async function upsell(){
   keepSaved = false;   // a Reel opened from its draft is being made now (back from Pricing): Shubix AI may edit it
+  if(beatsLater === musicToken && song && song.r){ beatsLater = -1; void checkBeatsWithAi(musicToken); }
   aiHeld = false; tasks.unlock(); dirFailedKey = ''; paceFailedKey = '';
   // the plan not known yet (nobody was signed in when the studio opened, or its answer is still coming): asked now,
   // so a Free account always gets its choice
@@ -4496,8 +4512,7 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
-    // a Reel copied to the frame: the reader times a transition by its middle, so the copy's middle lands there (half a lead)
-    if(e.trByRef && copyTimed()) L = L/2;
+    // (a Reel copied: the reader gives a transition where its new shot is fully in, as the studio plans one: the whole lead)
     L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }
@@ -7901,6 +7916,7 @@ function lockBar(){
 }
 setInterval(lockBar, 1000);
 $('lockbarp').addEventListener('click', e => { e.preventDefault(); void toPricing(''); }, SIG);
+$('xwmpro').addEventListener('click', e => { e.preventDefault(); void toPricing('?feature=watermark'); }, SIG);   // (the export sheet's PRO tag)
 // the export's question when the Reel uses crowned items: upgrade, or take them out and export
 function planGate(list){
   return new Promise(res => {
@@ -7913,6 +7929,8 @@ function planGate(list){
     const ul = d.querySelector('.gl'); for(const x of list.slice(0, 8)){ const li = document.createElement('li'); li.textContent = x.name + ' · ' + PLAN_NAME[x.need]; ul.appendChild(li); }
     const [no, fix] = d.querySelectorAll('button'), done = v => { d.remove(); res(v); };
     no.onclick = () => done(false); fix.onclick = () => { list.forEach(x => x.fix()); done(true); }; d.onclick = e => { if(e.target === d) done(false); };
+    // Upgrade Now: Pricing with the Reel saved, Back opens it again (a plain link lost it, 2026-11-28)
+    d.querySelector('a').addEventListener('click', e => { e.preventDefault(); done(false); void toPricing('?feature=export'); });
     root.appendChild(d); fix.focus();
   });
 }
@@ -8127,7 +8145,7 @@ async function analyzeReference(file, onP){
     await scanMotion(ps, p => onP(0.05 + 0.35*p, 'finding its cuts'));
     const fs = await frameSource(file, player, w, h, dur);
     let read;
-    try{ read = await readReel({ dur, small: async ts => (await fs.small(ts)).map(c => c ? picOf(c) : null), looks: fs.looks, scenes: ps.scenes, samples: ps.samples,
+    try{ read = await readReel({ dur, trDur: k => TR_DUR[k === 'fade' ? 'dip' : k] || 0, small: async ts => (await fs.small(ts)).map(c => c ? picOf(c) : null), looks: fs.looks, scenes: ps.scenes, samples: ps.samples,
       rb, rr, rmap, describeCut, onP }); }
     finally { fs.close(); }
     if(v){ v.removeAttribute('src'); v.load(); }
@@ -8310,11 +8328,20 @@ function showCopyMatch(){
 // them exactly as the reference was measured, correct the grade, measure again. The edit's crops, zooms and effects are
 // part of what is measured, so the result lands on the reference's numbers, not just near them.
 let copyLookKey = '', copyLookBusy = false;
-async function renderedLook(){
+// the reference's looks with their moments, inside this edit's length (at most 16, spread): the copy is measured at the
+// same moments, so the same picture is compared (null: an older reading, or too few)
+function copyLookPoints(R){
+  if(!edit.length || !R || !R.lookAt || R.lookAt.length < 3) return null;
+  const len = edit[edit.length-1].end - edit[0].start, ok = R.lookAt.filter(p => p.t > 0.05 && p.t < len - 0.05);
+  if(ok.length < 3) return null;
+  const n = Math.min(16, ok.length); return Array.from({ length: n }, (_, i) => ok[Math.floor(i*ok.length/n)]);
+}
+async function renderedLook(pts){
   if(!edit.length) return null;
   const sv = showSafe, h = hookText, res = []; showSafe = false; hookText = '';
   try{
-    for(const f of [0.06, 0.15, 0.24, 0.33, 0.42, 0.51, 0.6, 0.69, 0.78, 0.87, 0.95]){
+    if(pts) for(const p of pts){ const t = edit[0].start + p.t; await prepare(segAt(t), t); drawFrame(t); res.push(lookOfImage(out, out.width, out.height)); }
+    else for(const f of [0.06, 0.15, 0.24, 0.33, 0.42, 0.51, 0.6, 0.69, 0.78, 0.87, 0.95]){
       const e = edit[Math.min(edit.length-1, Math.floor(f*edit.length))], L = e.end - e.start, t = e.start + Math.min(L - 0.03, Math.max(0.75, 0.9*L));   // after the shot's own flash / leak
       await prepare(segAt(t), t); drawFrame(t); res.push(lookOfImage(out, out.width, out.height));
     }
@@ -8323,7 +8350,7 @@ async function renderedLook(){
 }
 async function copyLook(){
   const R = refProfile; if(!R || !R.look || copyLookBusy || look !== 'copy') return;
-  const T = R.look, cl = (x,a,b)=>Math.min(b, Math.max(a, x)), mono = T.sat < 0.05 ? 1 : 0;
+  const pts = copyLookPoints(R), T = pts ? avgLook(pts.map(p => p.look)) : R.look, cl = (x,a,b)=>Math.min(b, Math.max(a, x)), mono = T.sat < 0.05 ? 1 : 0;
   const key = R.name + '|' + R.dur + '|' + sources.map(fpOf).join(';') + '|' + aspect;
   if(key === copyLookKey && GRADES.copy) return;
   const G = { con:1, sat:1, bri:1, warm:0, teal:0, mono, lift:0, vig:0, grain:0 };
@@ -8332,7 +8359,7 @@ async function copyLook(){
   copyLookBusy = true;
   try{
     for(let pass=0; pass<4; pass++){
-      const O = await renderedLook(); if(!O) break;
+      const O = await renderedLook(pts); if(!O) break;
       const k = pass === 0 ? 1 : 0.85;
       G.con = cl(G.con * Math.pow(T.std/Math.max(0.02, O.std), k), 0.7, 2.0);
       if(!mono) G.sat = cl(G.sat * Math.pow(T.sat/Math.max(0.02, O.sat), k), 0.35, 3);
@@ -8346,7 +8373,7 @@ async function copyLook(){
     }
     copyLookKey = key;
     // how close the look came: brightness, contrast, colour and warmth, each within 0.15 of the reference = 100%
-    { const O = await renderedLook(); if(O) copyLookScore = ['mean','std','sat','warm'].reduce((q,k)=>q + Math.max(0, 1 - Math.abs((O[k]||0) - (T[k]||0))/0.15), 0)/4; showCopyMatch(); }
+    { const O = await renderedLook(pts); if(O) copyLookScore = ['mean','std','sat','warm'].reduce((q,k)=>q + Math.max(0, 1 - Math.abs((O[k]||0) - (T[k]||0))/0.15), 0)/4; showCopyMatch(); }
   } finally { copyLookBusy = false; }
   LOOKS.copy = { name: 'Copied', filter: 'contrast(' + G.con.toFixed(2) + ') saturate(' + (mono ? 0 : G.sat).toFixed(2) + ') brightness(' + G.bri.toFixed(2) + ')', grain: G.grain };
   if(!playing && !recording) captureLoop();
@@ -9278,7 +9305,11 @@ let touchedAt = 0;
 window.addEventListener('beforeunload', e => {
   if(leavingOk) return;   // the person chose to leave (Keep old Reel, Discard Reel): nothing to warn about
   if(pending || exporting || recording){ e.preventDefault(); e.returnValue = ''; return; }
-  if((song || sources.length) && !restoring){ try{ const sig = JSON.stringify(stateOf()); if(sig !== lastSig){ e.preventDefault(); e.returnValue = ''; } }catch(err){} }
+  if((song || sources.length) && !restoring){ try{ const sig = JSON.stringify(stateOf()); if(sig !== lastSig){ e.preventDefault(); e.returnValue = ''; return; } }catch(err){} }
+  // left normally (nothing to ask): the crash note goes now. pagehide did not always come (Chrome, a new address typed
+  // in the editor), so the next page said "Your phone ran short of memory" on a computer (2026-11-28). A page the phone
+  // kills gets no beforeunload, so a real crash still leaves the note; the next step's life() writes it again if one stays.
+  try{ sessionStorage.removeItem(LIFE_KEY); }catch(err){}
 });
 // back from Pricing with the browser's Back, the page kept in its memory: loaded again, from the saved Reel's address
 window.addEventListener('pageshow', e => { if(e.persisted && root.dataset.leaving) location.reload(); });
@@ -9474,6 +9505,8 @@ root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ re
   exportFix: () => { lockedUsed().forEach(x => x.fix()); renderEDL(true); renderOvList(); sheetPaint(); }, caption: () => captionOf(),
   copies: () => sources.map((s, i) => ({ i, name: s.name, blob: s.edFile || null, w: s.edW || 0, h: s.edH || 0 })) };   // read by tests
 // the preview stops (the page or the screen is left); an export going on is never stopped by it
+// the editor's plan tools (views.ts): Pricing the same way as Make Reel's, the Reel saved and Back opens it again (2026-11-28)
+root.__studio.toPricing = where => toPricing(where);
 root.__studio.stopPreview = () => { if(!recording && !exporting && !exportBusy && (playing || starting)) stopAll(); };
 // another page of the website (a link, Back): nothing of the Reel goes on playing there
 { const off = () => root.__studio.stopPreview(); addEventListener('pagehide', off, SIG); }

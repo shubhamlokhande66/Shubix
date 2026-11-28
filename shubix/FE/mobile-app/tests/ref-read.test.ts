@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readReel, type Pic } from "@mobile/video-engine";
 import { createNativeEngine } from "../lib/nativeEngine";
+import { TR_DUR } from "@mobile/core/lib/shaders";
 
 // Copy a Reel on the phone: the Reel picked is read by the same reader as on the website (video-engine refReader.ts).
 // The phone's file server is played here by ffmpeg: /frames gives the frame at or after each time asked (as
@@ -50,7 +51,7 @@ describe.skipIf(!have)("Copy a Reel on the phone reads the Reel as the website d
     const ES = (e.host() as unknown as { ES: { refProfile: Record<string, unknown> & { moments: unknown[]; cuts: unknown[] }; mode: string; look: string } }).ES;
     expect(asked).toBeGreaterThan(30 * (dur - 1));   // every frame was read
     // the website: the frame showing at each time
-    const web = await readReel({ dur, small: async (ts) => ts.map((t): Pic | null => { const i = Math.floor(t * 30); return i < small.length ? { width: 64, height: 114, data: small[i] } : null; }),
+    const web = await readReel({ dur, trDur: (k: string) => TR_DUR[k === "fade" ? "dip" : k] || 0, small: async (ts) => ts.map((t): Pic | null => { const i = Math.floor(t * 30); return i < small.length ? { width: 64, height: 114, data: small[i] } : null; }),
       looks: async (ts) => ts.map(() => null), scenes: [], samples: [], rb: null, rr: null, rmap: null, describeCut: () => ({}), onP: () => {} });
     expect(ES.refProfile.cuts).toEqual(web.cuts);
     expect(ES.refProfile.moments.map((m) => { const { mo: _m, br: _b, ...rest } = m as Record<string, unknown>; return rest; })).toEqual(web.moments);

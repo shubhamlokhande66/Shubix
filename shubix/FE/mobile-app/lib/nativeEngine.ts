@@ -1,5 +1,6 @@
 import { safeMessage } from "@mobile/utils";
 import { createHost, soundOf } from "../engine/brain/host";
+import { TR_DUR } from "@mobile/core/lib/shaders";
 import initial from "../engine/brain/initial-state.json";
 import { goodSecs, limitStereo, srcPos, windowStats } from "../engine/brain/pure";
 import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, lookStats, onsetCurve, reactionsOf, readReel, stillEnd, type ExportExpect, type Pic } from "@mobile/video-engine";
@@ -427,7 +428,7 @@ export function createNativeEngine(io: NativeIo) {
       const scan = lastLine(await (await io.fetch(url("scan", `&p=${encodeURIComponent(path)}&dur=${dur}`), { method: "POST" })).text(), "{") as { samples: unknown[]; scenes: unknown[] };
       if (stops !== g) throw new Error("Stopped");
       const SW = 64, SH = Math.max(8, Math.round(64 * h / w)), LW = Math.min(w, 1080), LH = Math.max(2, Math.round(LW * h / w));
-      const read = await readReel({ dur, small: (ts) => { if (stops !== g) throw new Error("Stopped"); return framesOf(path, SW, SH, fps, ts); },
+      const read = await readReel({ dur, trDur: (k: string) => TR_DUR[k === "fade" ? "dip" : k] || 0, small: (ts) => { if (stops !== g) throw new Error("Stopped"); return framesOf(path, SW, SH, fps, ts); },
         looks: async (ts) => { const out = []; for (const t of ts) { const [p] = await framesOf(path, LW, LH, fps, [t]); out.push(p ? lookOfPic(p) : null); } return out; },
         scenes: scan.scenes || [], samples: scan.samples || [], rb, rr, rmap, describeCut: describeCut as never, onP: say });
       if (stops !== g) throw new Error("Stopped");

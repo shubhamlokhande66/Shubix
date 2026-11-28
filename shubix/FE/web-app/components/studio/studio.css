@@ -601,7 +601,8 @@
 .brs .fready small{color:var(--muted);font-size:13px}
 
 /* the Reel Preview (computers) */
-.brs .fprevbox,.brs .fprevh{display:none !important}   /* (the preview card is gone: format, then Generate Reel) */
+.brs .fprevbox,.brs .fprevh{display:none !important}
+.brs.fopen #s2 .row:has(#aspect){display:none}   /* the format is chosen in the editor (its top bar), on every screen: not among the clips (2026-11-28) */   /* (the preview card is gone: format, then Generate Reel) */
 .brs .fprev{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-content:start;min-width:0}
 .brs .fprevh{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
 /* the Reel's shape: under the title, as wide as the card (it never leaves it) */
@@ -3536,8 +3537,11 @@ html:has(.brs .cconf:not([hidden])) body,html:has(.brs .xsheet:not([hidden])) bo
   .brs.made:not(.fopen) .create {
     display: grid !important;
     grid-template-columns: 64px minmax(0, 1fr) !important;
-    grid-template-areas: "tools workbench" "timeline timeline" !important;
+    grid-template-areas: "tools workbench" "lockbar lockbar" "timeline timeline" !important;
   }
+  /* the "not in your plan" notice: its own row under the preview, the editor's full width (it fell into the 64 px tool
+     column, a word a line, 2026-11-28) */
+  .brs.made:not(.fopen) .create > #lockbar { grid-area: lockbar !important; margin: 10px 0 0 !important; }
   .brs.made.v-one:not(.fopen) .tools {
     grid-area: tools !important;
     display: flex !important;

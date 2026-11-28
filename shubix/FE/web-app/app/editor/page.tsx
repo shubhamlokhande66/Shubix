@@ -13,7 +13,7 @@ export default async function EditorPage({ searchParams }: { searchParams: Promi
   const id = typeof q.p === "string" ? q.p : "";
   const templateId = !id && typeof q.tpl === "string" ? q.tpl : "";
   const liveSession = q.session === "1";
-  if (id || liveSession) return <FastStudio />;
+  if (id || liveSession) return <FastStudio opening={!!id} />;
   if (templateId) return <PlanGate item="page:templates"><TemplateGate id={templateId}><FastStudio /></TemplateGate></PlanGate>;
   return <EditorPreview />;
 }

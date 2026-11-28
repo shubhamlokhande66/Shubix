@@ -38,7 +38,9 @@ function loadScript(src: string): Promise<void> {
 /** `kind`: the Create flow's page (/create/music|talking|photo|copy) is drawn in its flow from the very first paint, so the
  * studio's home never shows before it (components/studio/flow.ts takes over once the studio has started). */
 /** `engine`: the phone app's hidden engine page (app/engine): the phone works the studio through components/studio/bridge.ts. */
-export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking" | "photo" | "copy"; engine?: boolean } = {}) {
+/** `opening`: a saved Reel is opened (?p=…): "Opening your Reel…" from the server's first paint, not a blank page while
+ * the studio's code loads (Back from Pricing showed nothing for 2-3 s, 2026-11-28); the studio takes it off when it is open. */
+export function FastStudio({ kind, engine = false, opening = false }: { kind?: "music" | "talking" | "photo" | "copy"; engine?: boolean; opening?: boolean } = {}) {
   const root = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const { admin, required } = useAdmin();
@@ -137,7 +139,7 @@ export function FastStudio({ kind, engine = false }: { kind?: "music" | "talking
   return (
     <>
       {failed && <ErrorBanner title={text("studio.failed")} message={failed} onRetry={() => location.reload()} />}
-      <div ref={root} className={kind ? "brs fopen" : "brs"} data-fstep={kind ? "intro" : undefined} data-fkind={kind} dangerouslySetInnerHTML={{ __html: STUDIO_HTML }} />
+      <div ref={root} className={(kind ? "brs fopen" : "brs") + (opening ? " opening" : "")} data-fstep={kind ? "intro" : undefined} data-fkind={kind} dangerouslySetInnerHTML={{ __html: STUDIO_HTML }} />
     </>
   );
 }

@@ -28,8 +28,7 @@ function landTransitions(list){
     let L = Math.min(d, 0.45*(pv.end - pv.start)); const back = (e.in || 0) >= L*r;
     if(!back) L = Math.min(L, after/r);
     if(!(L >= 1/30)) continue;
-    // a Reel copied to the frame: the reader times a transition by its middle, so the copy's middle lands there (half a lead)
-    if(e.trByRef && EH.copyTimed()) L = L/2;
+    // (a Reel copied: the reader gives a transition where its new shot is fully in, as the studio plans one: the whole lead)
     L = +L.toFixed(3); pv.end -= L; e.start -= L; if(back) e.in = +Math.max(0, e.in - L*r).toFixed(3); e.sp = leadSpeed(e.sp, L); e.trLead = L;
     for(const x of [pv, e]){ x.kf = keyframesFor(x); x.beatsIn = ES.beats.filter(b=>b>x.start+0.12 && b<x.end-0.05).map(b=>b-x.start); }
   }

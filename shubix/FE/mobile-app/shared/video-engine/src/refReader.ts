@@ -203,7 +203,7 @@ function colourGrid(p: Pic): Float32Array {
 }
 export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>, dur: number, onP?: (p: number) => void){
   const FPS = 30, ts: number[] = []; for(let t=0.5/FPS; t<dur-0.02; t+=1/FPS) ts.push(+t.toFixed(4));
-  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), cd = new Float32Array(n), last: Float32Array[] = [], cel: Float32Array[] = new Array(n); let pY: Float32Array | null = null, pH: Float32Array | null = null, pC: Float32Array | null = null;
+  const n = ts.length, e5 = new Float32Array(n), r5 = new Float32Array(n).fill(1), d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), cd = new Float32Array(n), last: Float32Array[] = [], cel: Float32Array[] = new Array(n); let pY: Float32Array | null = null, pH: Float32Array | null = null, pC: Float32Array | null = null;
   for(let k=0;k<n;k+=150){
     const cv = await small(ts.slice(k, k+150));
     cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; pC = null; last.length = 0; return; }
@@ -215,6 +215,8 @@ export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>
       pY = g.Y; pH = H; sh[i] = sharpOfY(g.Y, g.FW);
       { const o = new Float32Array(16*28), cn = new Float32Array(16*28), FH = g.Y.length/g.FW; for(let q=0;q<g.Y.length;q++){ const c = Math.min(27, (((q/g.FW)|0)*28/FH)|0)*16 + Math.min(15, ((q%g.FW)*16/g.FW)|0); o[c] += g.Y[q]; cn[c]++; } for(let c=0;c<o.length;c++) o[c] /= Math.max(1, cn[c]); cel[i] = o; }
       last.push(g.Y); if(last.length > 17) last.shift();
+      // a blend: the frame 5 back is the mix of the frames 10 back and now (a dissolve); a move is not a mix of its ends
+      if(last.length >= 11 && i >= 10){ const A = last[last.length-11], M = last[last.length-6], B = g.Y; if(A.length === B.length && M.length === B.length){ let e=0, r=0; for(let q=0;q<B.length;q++){ e += Math.abs(B[q]-A[q]); r += Math.abs(M[q] - (A[q]+B[q])/2); } e /= B.length; r /= B.length; e5[i-5] = e; r5[i-5] = r/Math.max(1e-4, e); } }
       if(last.length === 17 && i >= 8){ let s3=0; for(let q=0;q<g.Y.length;q++) s3 += Math.abs(g.Y[q]-last[0][q]); far[i-8] = s3/g.Y.length; } });
     if(onP) onP(Math.min(1, (k+150)/n));
   }
@@ -239,8 +241,17 @@ export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>
     const nc: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nc.push(cd[j]); nc.sort((x,y)=>x-y);
     const locC = nc.length ? (nc[(nc.length-1)>>1] + nc[nc.length>>1])/2 : 0;
     if(cd[i] > 0.05 && cd[i] > 3*locC + 0.01 && cd[i] >= cd[i-1] && cd[i] >= cd[i+1] && !cuts.some(c => Math.abs(c - t) < 2.5/FPS)) cuts.push(t); }
+  // a dissolve between two pictures alike (the same clip later on: its brightness and colours do not jump, so the scene
+  // reading misses it, 2026-11-28): a clear dip of the blend measure, the change between its ends real, the motion
+  // around it no blend; its middle (the copy starts it half its length before)
+  const dissolves: number[] = [];
+  for(let i=12;i<n-12;i++){ const t = i/FPS; if(e5[i] < 0.02 || r5[i] > 0.42 || inF(t)) continue;
+    let low = true; for(let j=i-4;j<=i+4;j++) if(j !== i && r5[j] < r5[i]) { low = false; break; } if(!low) continue;
+    const around: number[] = []; for(let j=i-22;j<=i+22;j++) if(j >= 0 && j < n && Math.abs(j-i) >= 9 && e5[j] > 0) around.push(r5[j]);
+    if(around.length < 8) continue; around.sort((x,y)=>x-y); const base = around[around.length>>1];
+    if(r5[i] < 0.62*base && !cuts.some(c => Math.abs(c - t) < 0.3) && !dissolves.some(c => Math.abs(c - t) < 0.3)) dissolves.push(t); }
   const blank = new Float32Array(16*28);
-  return { cuts, flicker, blurs: blurCuts(sh, far, FPS), panels: panelRuns(i => cel[i] || blank, n, 16, 28, FPS) };
+  return { cuts, flicker, dissolves, blurs: blurCuts(sh, far, FPS), panels: panelRuns(i => cel[i] || blank, n, 16, 28, FPS) };
 }
 // A reference shot's speed, read from how much its picture moves over time (a speed ramp is the same footage moving 3x
 // faster or slower): five speeds (start, 1/4, middle, 3/4, end) when the shot clearly speeds up or slows down, and a
@@ -277,12 +288,14 @@ export interface ReelIo {
   /** its song read (songAnalysis), the beats, its sound map; describeCut (soundmap.ts, a copy on each side) */
   rb: number[] | null; rr: Any; rmap: Any; describeCut: (map: Any, a: number, b: number, o: Any) => Any;
   onP: (p: number, what: string) => void;
+  /** how long the studio plays a transition of this kind (0: unknown): a cut seen at its middle starts half of it earlier */
+  trDur?: (kind: string) => number;
 }
 
 /** Everything read from the Reel's pictures and sound: its cuts, shots and moments, as the copy uses them */
 export async function readReel(io: ReelIo){
   const { small, scenes, samples, rb, rr, rmap, onP } = io, dur = io.dur;
-  let refPanels: Any[] = []; const fxOdd: Any[] = [], shots: Any[] = [], looks: Look[] = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)
+  let refPanels: Any[] = []; const fxOdd: Any[] = [], shots: Any[] = [], looks: Look[] = [], lookAt: { t: number; look: Look }[] = [];   // fxOdd: effects in a shot this reader does not learn (the learning log)
   let cuts: Any[] = [];
   try{
     // black bars (letterbox): the rows that stay dark in every one of 12 frames
@@ -299,6 +312,12 @@ export async function readReel(io: ReelIo){
       if(t <= 0.15 || t >= dur - 0.15 || inFl(t)) continue;
       const near = found.findIndex(c => Math.abs(c.t - t) < (sc.kind === 'cut' ? 0.1 : 0.2));
       if(near < 0) found.push({ t, hint: sc.kind }); else if(sc.kind !== 'cut') found[near] = { t, hint: sc.kind, exact: found[near].exact }; }
+    // a dissolve between two pictures alike, found by its blend
+    // (not in the last 0.8 s: a Reel's ending blends with no new shot after it; one the scene reading only guessed, a
+    // sharp "cut" it drops later, gives way to the dissolve its blend proves)
+    for(const t of fc.dissolves || []){ if(t <= 0.15 || t >= dur - 0.8 || inFl(t)) continue;
+      const k = found.findIndex(c => Math.abs(c.t - t) < 0.3);
+      if(k < 0) found.push({ t, hint: 'dissolve' }); else if(!found[k].exact && found[k].hint === 'cut') found[k] = { t, hint: 'dissolve' }; }
     // a shot that goes soft into another shot (a blur-through): no frame of it jumps
     for(const t of fc.blurs) if(t > 0.15 && t < dur - 0.15 && !inFl(t) && !found.some(c => Math.abs(c.t - t) < 0.3)) found.push({ t, hint: 'cut' });
     // a flicker is one shot of its own (from its first to its last jump): cuts at both of its ends
@@ -359,6 +378,12 @@ export async function readReel(io: ReelIo){
     // unless both are clean one-frame jumps (a strobe of hard cuts)
     for(let i=cuts.length-1;i>0;i--){ const a = cuts[i-1], b = cuts[i];
       if(b.t - a.t < 0.2 && !a.one && !b.one && !(a.exact && b.exact) && !a.flick && !b.flick && !a.flickEnd && !b.flickEnd){ if(b.kind === 'hard' && a.kind !== 'hard') b.kind = a.kind; else if(b.kind === 'hard' && !a.one) b.kind = 'whip'; cuts.splice(i-1, 1); } }
+    // a transition is seen at its middle (a dissolve's blend, a whip's jump); the studio plans a cut where the new shot is
+    // fully in (on its beat) and starts the transition its length before (landTransitions). So the cut is given at its
+    // end, half its length after the middle: given at the middle, a dissolve counted 3.5 beats for 4 and every later cut
+    // of the copy came 0.5 s early (2026-11-28). A flash, a glitch and a fade-in peak on their first frame: as seen.
+    if(io.trDur) for(const c of cuts){ if(['hard', 'flash', 'glitch', 'fadein'].includes(c.kind) || c.flick || c.flickEnd) continue; const L = io.trDur(c.kind); if(L > 0) c.t = Math.min(dur - 0.05, c.t + L/2); }
+    cuts.sort((x, y) => x.t - y.t);
     cuts.forEach(c=>{ if(c.kind === 'zoom' && (c.blurDip ?? 1) < 0.65) c.zb = true; delete c.one; delete c.flick; delete c.flickEnd; delete c.exact; delete c.blurDip; });   // a soft zoom: zoom blur   // (c.after stays: the black end)
     // shots: a zoom inside them (two frames) and the colour look (the middle frame)
     onP(0.85, 'reading its look');
@@ -370,6 +395,9 @@ export async function readReel(io: ReelIo){
     sh.forEach((x,i)=>{ const L = x.b - x.a, m = Math.min(0.25, Math.max(0.18, 0.15*L)), n = !x.flick && L - 2*m >= 0.24 ? Math.max(3, Math.min(9, Math.round((L-2*m)/0.12)+1)) : 0;
       for(let k=0;k<n;k++){ const t = x.a + m + (L-2*m)*k/(n-1); zt.push(t); zi.push([i, (t - x.a)/L]); } lt.push(!x.flick && i % lookEvery === 0 ? x.a + 0.5*L : null); });
     const zf = await small(zt), lq = lt.filter(t => t !== null) as number[], lr = lq.length ? await io.looks(lq) : [], lf: (Look | null)[] = []; { let q = 0; lt.forEach((t,i)=>{ lf[i] = t === null ? null : lr[q++]; }); }
+    // each look with its moment: the copy measures its own edit at these moments, so the same picture is compared and
+    // not a darker or busier one (that was read as colour: a vignette and +0.17 contrast the original never had)
+    lt.forEach((t, i) => { const l = lf[i]; if(t !== null && l) lookAt.push({ t: +t.toFixed(3), look: l }); });
     sh.forEach((x,i)=>{ const mine = zi.map((z,k)=>[z,k] as [number[], number]).filter(([z])=>z[0]===i), gr = mine.map(([,k])=>zf[k] ? greyOf(zf[k] as Pic) : null);
       let move: Any = null;
       if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g!.Y), mine.map(([z])=>z[1]), gr[0]!.FW, gr[0]!.FH);
@@ -448,7 +476,7 @@ export async function readReel(io: ReelIo){
   return { dur, moments, fx, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
     hookBeats: shotBeats[0] || 0, hookSec: shotSec[0] || 0, onBeat, energy, trans,
     zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
-    look, bpm: P ? 60/P : 0,
+    look, lookAt, bpm: P ? 60/P : 0,
     // photo boxes over its shots (boxes.ts): the copy gets them on its own long shots
     boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1, n: b.n })),
     // the learning log: what this reader could not learn (a transition it does not know; an effect in a shot)

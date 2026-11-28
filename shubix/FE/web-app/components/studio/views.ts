@@ -24,6 +24,7 @@ type Studio = {
   kfTarget: () => { what: string; a: number; b: number } | null;
   section: { start: number; len: number; whole: number; auto: boolean };
   segAt: (t: number) => number; kfSeek: (t: number) => Promise<void>;
+  toPricing?: (where: string) => Promise<void>;
 };
 
 export function savedView(): StudioView {
@@ -50,6 +51,8 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
   const ac = new AbortController(), sig = { signal: ac.signal };
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => root.querySelector<T>("#" + id)!;
   const S = () => (root as unknown as { __studio?: Studio }).__studio;
+  // a plan tool on a lower plan: Pricing, the Reel saved first and Back opening it where it was (the editor, not the clips)
+  const toPricing = (feature: string) => { const st = S(); if (st && st.toPricing) void st.toPricing("?feature=" + encodeURIComponent(feature)); else location.assign("/pricing?feature=" + encodeURIComponent(feature)); };
   const kf = $<HTMLDetailsElement>("kfbox");
   const view: StudioView = savedView();
   let tool = "";
@@ -62,7 +65,7 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
   let editing = !!q;
   const reviewNow = () => made() && !root.classList.contains("fopen") && !editing;
   // Edit (the full editor) is a plan's tool too ("studio:edit", Pro unless the administrator sets another): on a lower plan it opens the plans
-  const setEditing = (on: boolean) => { if (on && locked("edit")) { location.assign("/pricing?feature=edit"); return; } editing = on; if (!on && !wide()) tool = ""; apply(); if (on) requestAnimationFrame(() => $("lanes").scrollIntoView({ block: "nearest" })); };
+  const setEditing = (on: boolean) => { if (on && locked("edit")) { toPricing("edit"); return; } editing = on; if (!on && !wide()) tool = ""; apply(); if (on) requestAnimationFrame(() => $("lanes").scrollIntoView({ block: "nearest" })); };
 
   const made = () => !$("s3").classList.contains("locked");
   // computers keep a tool open beside the preview (the shot first); phones show the Reel, a tool opens over it
@@ -185,7 +188,7 @@ export function initViews(root: HTMLElement, onView: (v: StudioView) => void) {
     if (b) {
       const k = b.dataset.tool!;
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- plain DOM code, the pricing page is a full load
-      if (locked(k)) { location.assign("/pricing?feature=" + encodeURIComponent(k)); return; } // a Pro tool on a free plan
+      if (locked(k)) { toPricing(k); return; } // a Pro tool on a free plan
       if (k === "stickers") { tool = "text"; apply(); $("ovsticker")?.click(); return; }
       if (k === "filters") { tool = "look"; apply(); return; }
       // Shots, as on the phone: the clip under the playhead, selected (its tools are in the bar), not a panel of the same tools
