@@ -46,7 +46,8 @@ const speedKey = sp => (Object.keys(SPEED_KEYS).find(k=>SPEED_KEYS[k]===sp.label
 const lyOf = () => ES.layers.map(L => { const c = JSON.parse(JSON.stringify({ ...L, fc: undefined })); return c; });
 const refKeyOf = f => f ? f.name + '|' + f.size + '|' + (f.lastModified || 0) : '';
 const copyTimed = () => ES.mode === 'copy' && !!ES.refProfile && !ES.refProfile.learned && !!ES.refProfile.key && !!ES.song && !!ES.song.file && refKeyOf(ES.song.file) === ES.refProfile.key && (ES.refProfile.moments || []).some(m => m.at !== undefined);
-const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur' };
+const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur',
+  burn:'burn', zoomblur:'zoomblur', doors:'doors', wave:'wave', flashblur:'flashblur', stretch:'stretch', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
 const copyExact = () => ES.mode === 'copy' && !!ES.refProfile && (ES.refProfile.moments || []).length >= 2;
 const AI_CS = c => { const o = {}, n = (k, a, b) => { const v = Number(c[k]); if(Number.isFinite(v) && v) o[k] = Math.min(b, Math.max(a, v)); };
   if([90,180,270].includes(c.rot)) o.rot = c.rot; for(const k of ['fh','fv','fit','enh']) if(c[k] === true) o[k] = true;

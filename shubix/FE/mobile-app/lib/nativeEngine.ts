@@ -1,7 +1,7 @@
 import { safeMessage } from "@mobile/utils";
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
-import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
+import { goodSecs, limitStereo, srcPos, windowStats } from "../engine/brain/pure";
 import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, lookStats, onsetCurve, reactionsOf, readReel, stillEnd, type ExportExpect, type Pic } from "@mobile/video-engine";
 import { describeCut, soundMap } from "../engine/components/studio/soundmap";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
@@ -65,8 +65,27 @@ export function editCopyOf(f: ClipFacts) {
 export function pcmOf(raw: ArrayBuffer) {
   const top = new DataView(raw, 0, 8), sampleRate = top.getInt32(0, true), count = top.getInt32(4, true), all = new Float32Array(raw, 8), n = Math.floor(all.length / count);
   const channels = Array.from({ length: count }, () => new Float32Array(n)), mono = new Float32Array(n);
-  for (let k = 0; k < count; k++) { const d = channels[k]; for (let i = 0; i < n; i++) { d[i] = all[i * count + k]; mono[i] += d[i] / count; } }
-  return { sampleRate, channels, mono };
+  for (let i = 0; i < n; i++) for (let k = 0; k < count; k++) channels[k][i] = all[i * count + k];
+  // Keep the original stereo channels for playback, but prevent an inverted channel from
+  // cancelling kick/snare when the analysis signal is mixed to mono.
+  let ref = 0, energy = -1;
+  const stride = Math.max(1, Math.floor(n / 12000));
+  for (let k = 0; k < count; k++) {
+    let e = 0; for (let i = 0; i < n; i += stride) e += channels[k][i] * channels[k][i];
+    if (e > energy) { energy = e; ref = k; }
+  }
+  const base = channels[ref];
+  const signs = channels.map((d, k) => {
+    if (k === ref) return 1;
+    let dot = 0, aa = 0, bb = 0;
+    for (let i = 0; i < n; i += stride) { dot += base[i] * d[i]; aa += base[i] * base[i]; bb += d[i] * d[i]; }
+    return dot / Math.sqrt(Math.max(1e-20, aa * bb)) < -0.6 ? -1 : 1;
+  });
+  for (let k = 0; k < count; k++) {
+    const d = channels[k], sign = signs[k];
+    for (let i = 0; i < n; i++) mono[i] += sign * d[i] / count;
+  }
+  return { sampleRate, channels, mono, phaseAlignedChannels: signs.filter(x => x < 0).length };
 }
 
 /** the file server's answer of lines: progress, then the one that starts with `first` */
@@ -115,7 +134,7 @@ export function createNativeEngine(io: NativeIo) {
   const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, speechProbs, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
   // My brand (the app keeps it: lib/engine.ts): every new Reel's host gets it
   let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
-  const make = () => { const h = make0(); h.ES.brand = brand; return h; };
+  const make = () => { const h = make0(); h.ES.brand = brand; (h.values as Record<string, unknown>).copyLookSoon = () => { void copyAfterEdit(h); }; return h; };
   let host = make(), signedIn = false;
   /** Shubix AI did not edit this Reel: the reason, in Ask Shubix's history (it was silent before) */
   function aiWhyOff() {
@@ -281,6 +300,42 @@ export function createNativeEngine(io: NativeIo) {
     }
     return out;
   }
+  /** Copy a Reel, once the new Reel has its edit (the brain's copyLookSoon): (1) its colour look, as the website's copyLook
+   * makes it (core.ts), from the clips' own frames, since there is no canvas here to draw the Reel on: the grade that takes
+   * the clips' brightness, contrast, colour and warmth to the copied Reel's (the website's first pass, the same rules);
+   * (2) its photo boxes, where and how many it had (boxes.ts boxShotsAt). */
+  let copyRun = 0;
+  async function copyAfterEdit(h: ReturnType<typeof make0>) {
+    const ES = h.ES as Record<string, any>, V = h.values as Record<string, any>, R = ES.refProfile;   // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!R || ES.mode !== "copy" || !ES.edit?.length) return;
+    const run = ++copyRun, live = () => run === copyRun && host === h && ES.refProfile === R;
+    try {
+      const key = `${R.name}|${R.dur}|` + ES.edit.map((e: { src: number; in: number }) => `${e.src}:${(+e.in).toFixed(2)}`).join(";");
+      if (R.look && ES.look === "copy" && V.GRADES && key !== ES.copyLookKey) {
+        const n = ES.edit.length, looks: Record<string, number>[] = [];
+        for (const f of [0.08, 0.25, 0.42, 0.58, 0.75, 0.92]) {
+          const e = ES.edit[Math.min(n - 1, Math.floor(f * n))], src = ES.sources[e.src];
+          if (!src || !src.path || !src.w || !src.h) continue;
+          const w = 240, hh = Math.max(2, Math.round(w * src.h / src.w / 2) * 2);
+          try { const [p] = await framesOf(src.path, w, hh, src.fps || 30, [srcPos(e, 0.5 * (e.end - e.start))]); if (p) looks.push(lookOfPic(p) as unknown as Record<string, number>); } catch { /* a photo or a clip it cannot read: the others */ }
+          if (!live()) return;
+        }
+        if (looks.length >= 2) {
+          const T = R.look as Record<string, number>, O: Record<string, number> = {};
+          for (const k of ["mean", "std", "sat", "warm", "vig", "p5", "grain", "split"]) O[k] = looks.reduce((q, l) => q + (+l[k] || 0), 0) / looks.length;
+          const cl = (x: number, a: number, b: number) => Math.min(b, Math.max(a, Number.isFinite(x) ? x : (a + b) / 2)), mono = T.sat < 0.05 ? 1 : 0;
+          V.GRADES.copy = { con: cl(T.std / Math.max(0.02, O.std), 0.7, 2), sat: mono ? 1 : cl(T.sat / Math.max(0.02, O.sat), 0.35, 3), bri: cl(T.mean / Math.max(0.03, O.mean), 0.6, 1.4),
+            warm: mono ? 0 : cl((T.warm - O.warm) / 0.11, -1.6, 1.6), teal: mono ? 0 : cl((T.split - O.split - 0.1) / 0.3, 0, 0.8), mono,
+            lift: cl(T.p5 - O.p5, 0, 0.15), vig: cl((T.vig - O.vig) * 1.4, 0, 0.9), grain: cl((T.grain - O.grain) * 3, 0, 0.15) };
+          ES.copyLookKey = key; ES.copyLookScore = null;
+        }
+      }
+      // its photo boxes, once a Reel (a new reference clears them)
+      if ((R.boxes || []).length && !R.boxesDone && !(ES.layers || []).some((L: { boxes?: string }) => L.boxes) && typeof (h as Record<string, any>).brain?.photoBoxes === "function") {   // eslint-disable-line @typescript-eslint/no-explicit-any
+        R.boxesDone = true; await (h as Record<string, any>).brain.photoBoxes(0, "ref", R.boxes);   // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+    } catch (e) { console.warn("copy after edit", e); }
+  }
   /** a frame's colour look, as the website reads it (lookOfImage): a 96-wide copy for colours, a 96 x 96 crop at full size for grain */
   function lookOfPic(p: Pic) {
     const cw = 96, ch = Math.max(2, Math.round(96 * p.height / p.width)), small = new Uint8Array(cw * ch * 4), crop = new Uint8Array(96 * 96 * 4);
@@ -336,8 +391,9 @@ export function createNativeEngine(io: NativeIo) {
     const timing = (x: { t0: number; t1: number }) => { const whole = x.t0 <= 0.05 && x.t1 >= R.dur - 0.05, t0 = whole ? 0 : Math.max(0, Math.min(L - 0.5, x.t0 * k));
       return { all: whole, t0, t1: whole ? L : Math.min(L, Math.max(t0 + 0.5, x.t1 * k)), ref: true }; };
     ES.overlays = ES.overlays.filter((o: { ref?: boolean }) => !o.ref);   // an earlier reference's texts go
-    // only the format is copied, never the other Reel's words: each place waits for the creator's own (ph: left out of the video)
-    for (const x of D.texts || []) ES.overlays.push({ id: ++ES.ovSeq, text: "YOUR TEXT", emoji: false, style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false), ...timing(x), ph: true });
+    // its texts as on the Reel, their words too (the server leaves out Instagram's marks and @names: never a watermark);
+    // "Copy its texts" off (the creator's choice, as the website's): none of them
+    for (const x of ES.refWords === false ? [] : D.texts || []) ES.overlays.push({ id: ++ES.ovSeq, text: x.text || "YOUR TEXT", emoji: false, style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false), ...timing(x), ...(x.text ? {} : { ph: true }) });
     for (const x of D.stickers || []) ES.overlays.push({ id: ++ES.ovSeq, text: x.emoji, emoji: true, x: x.x, y: x.y, size: sizeOf(x.h, true), ...timing(x) });
     if (D.captions) { if (D.captions.style) ES.textStyle = D.captions.style; if (D.captions.color) ES.ACCENT = D.captions.color;
       if (!ES.capsOn) void host.setCaptions(true, undefined, undefined).catch(() => { ES.capsOn = false; }); }
@@ -386,7 +442,7 @@ export function createNativeEngine(io: NativeIo) {
       return { cuts: read.cuts.length, shots: read.moments.length, bpm: Math.round(read.bpm), trans: read.trans };
     } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", safeMessage(e instanceof Error ? e.message : "", "We could not read that Reel. Please try another video.")); throw e; }
   }
-  const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, drops: n("drop"), breaks: n("break") }; };
+  const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; beatAccents?: { t: number; strength: number; level: string }[]; drumHits?: { t: number; band: string; strength: number }[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, beatTimes: r.beats, beatAccents: r.beatAccents || [], drumHits: r.drumHits || [], drops: n("drop"), breaks: n("break") }; };
 
   /** My Reels with room left for this person (read at most once a minute); null: not offered */
   let room: { used: number; limit: number } | null = null, roomAt = 0;
@@ -602,6 +658,8 @@ export function createNativeEngine(io: NativeIo) {
     sfx: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); host.brain.sfxAdd(String(a.kind)); return { ok: true }; },
     mark: (a) => { host.ES.pos = Math.max(0, Number(a.time) || 0); const f = ({ add: host.brain.addMark, del: host.brain.delMark, clear: host.brain.clearMarks } as Record<string, () => void>)[String(a.op)]; if (!f) return { ok: false }; const ok = (f as (t: number) => unknown)(host.ES.pos) !== false; return { ok, state: state() }; },
     shotStyle: (a) => { const i = host.brain.segAt(host.ES.pos), e = host.ES.edit[i]; if (!e) throw new Error("There is no selected shot"); if (a.kind === "transition") e.tr = String(a.value); else if (a.kind === "effect") e.efx = String(a.value); return { ok: true, state: state() }; },
+    look: () => host.lookGrade(),
+    refWords: (a) => { host.ES.refWords = !!a.on; return { ok: true }; },
     exportOptions: async (a) => {
       const base = host.exportOptions(a) as Args, u = await myReelsRoom();
       return u ? { ...base, myReels: true, myReelsNote: `Also kept in your account, to watch, download or share anywhere · ${u.used} of ${u.limit} used` } : base;

@@ -12,6 +12,10 @@
     <intent>
       <action android:name="android.intent.action.TTS_SERVICE" />
     </intent>
+    <!-- and its speech recognizer (Ask Shubix by voice) -->
+    <intent>
+      <action android:name="android.speech.RecognitionService" />
+    </intent>
   </queries>
   <!-- the large heap (about 512 MB instead of 256 MB): a song's sound (75 MB for 4 min) and the file server's answers pass
        through the app's Java memory, both ends in this process; at 256 MB the app closed by itself (OutOfMemoryError,

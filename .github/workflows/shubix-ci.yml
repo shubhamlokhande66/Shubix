@@ -14,6 +14,10 @@ on:
         description: "studio-e2e: only the run whose name starts with this (A or B); empty for all"
         type: string
         default: ""
+      roundtrip:
+        description: "studio-e2e: also give each exported Reel to Copy a Reel and score the copy against the real edit"
+        type: boolean
+        default: false
 
 concurrency:
   group: shubix-ci-${{ github.event.pull_request.number || github.ref }}
@@ -128,7 +132,7 @@ jobs:
   studio-e2e:
     if: inputs.what != 'checks'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 150
     defaults:
       run:
         working-directory: shubix
@@ -167,10 +171,16 @@ jobs:
           BASE: http://localhost:3001
           CHANNEL: chrome
           ONLY: ${{ inputs.only }}
+          ROUNDTRIP: ${{ inputs.roundtrip && '1' || '' }}
+          SHOTS_IN_LOG: ${{ inputs.roundtrip && '0' || '1' }}
         run: |
           (pnpm start > "$RUNNER_TEMP/web.log" 2>&1 &)
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3001/studio && break; sleep 2; done
           PLAYWRIGHT="$RUNNER_TEMP/pw/node_modules/playwright-core" MEDIA="$RUNNER_TEMP/media" OUT="$RUNNER_TEMP/e2e" node scripts/studio-e2e/run.cjs
+      - name: Copy a Reel's scores (roundtrip)
+        if: always() && inputs.roundtrip
+        working-directory: shubix/FE/web-app/scripts/studio-e2e
+        run: node roundtrip-summary.cjs "$RUNNER_TEMP/e2e"
       - name: Measure the exported Reels
         if: always()
         working-directory: shubix/FE/web-app/scripts/studio-e2e

@@ -1,5 +1,8 @@
-import { useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, PermissionsAndroid, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { safeMessage } from "@mobile/utils";
+import { ShubixVideo } from "../../modules/shubix-video";
 import { useThumb } from "../../lib/thumbs";
 import { router } from "expo-router";
 import { useStudioText } from "@mobile/hooks";
@@ -9,6 +12,10 @@ import { choicesFor, commandsFor } from "@mobile/core/lib/chatCommands";
 
 // when it was said or done: the time today, the date and time before today
 const when = (at: number) => { const d = new Date(at); return (d.toDateString() === new Date().toDateString() ? "" : d.toLocaleDateString([], { day: "numeric", month: "short" }) + ", ") + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
+
+// Ask Shubix by voice: the languages the phone hears (the chip beside the mic switches them; kept on this phone)
+const VOICE_LANGS: [string, string][] = [["hi-IN", "हिं"], ["mr-IN", "मरा"], ["en-IN", "EN"]];
+const VOICE_KEY = "shubix.voiceLang";
 
 // the ideas under the box (the website's askchips): what is shown, and what it says
 const IDEAS: [string, string][] = [["Fast & energetic", "Fast cuts on every beat, high energy"], ["Calm & cinematic", "Make it calm and cinematic, slower cuts"], ["Zoom on the drop", "Zoom in on the drop and add camera moves on the beats"], ["Slow-mo ending", "Slow motion on the best moment at the end"]];
@@ -31,6 +38,26 @@ export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, revi
   const words = useStudioText(), look = useColors();
   const [older, setOlder] = useState(false), [open, setOpen] = useState(false), [said, setSaid] = useState(""), [own, setOwn] = useState<ChatLine[]>([]), [busy, setBusy] = useState(false), [shots, setShots] = useState(false);
   const log = kept ?? own, setLog = onLog ?? setOwn;
+  // Ask Shubix by voice (the 🎤): what is said becomes the message, as if typed; the phone hears it, no credits for that
+  const [hearing, setHearing] = useState(false), [vlang, setVlang] = useState("hi-IN"), canHear = !!ShubixVideo?.listen;
+  useEffect(() => { AsyncStorage.getItem(VOICE_KEY).then((v) => { if (v && VOICE_LANGS.some(([k]) => k === v)) setVlang(v); }).catch(() => {}); }, []);
+  const nextLang = () => { const i = VOICE_LANGS.findIndex(([k]) => k === vlang), k = VOICE_LANGS[(i + 1) % VOICE_LANGS.length][0]; setVlang(k); AsyncStorage.setItem(VOICE_KEY, k).catch(() => {}); };
+  const tell = (text: string) => setLog((l) => [...l, { at: Date.now(), me: false, text }]);
+  async function hear() {
+    if (busy) return;
+    if (hearing) { void ShubixVideo?.stopListening?.(); return; }   // tapped again: done speaking
+    if (!ShubixVideo?.listen) return;
+    if (Platform.OS === "android") {
+      const ok = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO).catch(() => null);
+      if (ok !== PermissionsAndroid.RESULTS.GRANTED) { tell(words("Shubix needs the microphone to hear you. Allow it in the phone's settings.")); return; }
+    }
+    let text = "";
+    setHearing(true);
+    try { text = (await ShubixVideo.listen(vlang)).trim(); }
+    catch (e) { tell(safeMessage(e instanceof Error ? e.message : "", words("Voice typing did not work. Please try again."))); return; }
+    finally { setHearing(false); }
+    if (text) await ask(text); else tell(words("I didn't hear anything. Tap the mic and speak."));
+  }
   async function ask(text: string) {
     text = text.trim().slice(0, 300);
     if (!text || busy || /^\/\S*$/.test(text)) return;   // a command not chosen yet: its list is open
@@ -100,7 +127,11 @@ export function AskShubix({ onAsk, plan, planned, log: kept, onLog, status, revi
             ) : null;
           })()}
           <View className="flex-row items-center gap-2 rounded-2xl border border-border bg-surface-2 pl-3.5 pr-1.5">
-            <TextInput value={said} onChangeText={setSaid} onSubmitEditing={() => void ask(said)} returnKeyType="send" maxLength={300} placeholder={words("e.g. Fast cuts, or type / for commands")} placeholderTextColor={look.muted} className="h-11 flex-1 text-[14px] text-foreground" />
+            <TextInput value={said} onChangeText={setSaid} onSubmitEditing={() => void ask(said)} returnKeyType="send" maxLength={300} placeholder={hearing ? words("Listening… speak now") : words("e.g. Fast cuts, or type / for commands")} placeholderTextColor={look.muted} className="h-11 flex-1 text-[14px] text-foreground" />
+            {canHear ? <>
+              <Pressable onPress={nextLang} disabled={hearing} accessibilityRole="button" accessibilityLabel={words("Voice language")} className="h-7 items-center justify-center rounded-full border border-border px-2"><Text className="text-[11px] font-semibold text-muted">{VOICE_LANGS.find(([k]) => k === vlang)?.[1]}</Text></Pressable>
+              <Pressable onPress={() => void hear()} disabled={busy} accessibilityRole="button" accessibilityLabel={words(hearing ? "Stop listening" : "Speak to Shubix")} accessibilityState={{ busy: hearing }} className={`h-9 w-9 items-center justify-center rounded-full ${hearing ? "bg-red-500" : "border border-border"} ${busy ? "opacity-40" : ""}`}><Icon name="mic" size={17} color={hearing ? "#ffffff" : "foreground"} /></Pressable>
+            </> : null}
             <Pressable onPress={() => void ask(said)} disabled={!said.trim() || busy} accessibilityLabel={words("Ask Shubix")} className={`h-9 w-9 items-center justify-center overflow-hidden rounded-full ${!said.trim() || busy ? "opacity-40" : ""}`}><Gold /><Icon name="arrow" size={17} color="onAccent" /></Pressable>
           </View>
           <View className="flex-row flex-wrap items-center gap-1.5">

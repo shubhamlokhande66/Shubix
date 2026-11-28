@@ -56,7 +56,7 @@ export type BudgetRule = "hook" | "mood" | "shot-budget" | "flashy-transitions" 
 export type BudgetResult = { shots: BudgetShot[]; changes: BudgetChange[]; heroes: number[] };
 
 /** transitions that stand out (light, blur, glitch, a turn): the ones counted against the flashy limits */
-export const FLASHY_TRANSITIONS = new Set(["flash", "whip", "zoom", "glitch", "spin", "zoomblur", "dipwhite", "chroma",
+export const FLASHY_TRANSITIONS = new Set(["flash", "whip", "zoom", "glitch", "spin", "zoomblur", "flashblur", "dipwhite", "chroma",
   "shake", "pixelate", "burn", "ripple", "dropin", "cube", "cubeup", "flip3d", "swing", "rotatein", "squeeze", "flip", "tiles", "noise", "hpanels", "vpanels"]);
 /** effects inside a shot that hit hard */
 export const STRONG_EFFECTS = new Set(["shake", "zoomburst", "hook", "snap", "strobe", "rgbpulse", "glitchfx", "chromatic",
@@ -65,7 +65,7 @@ export const STRONG_EFFECTS = new Set(["shake", "zoomburst", "hook", "snap", "st
 export const STRONG_KEYS = new Set(["flash", "shake"]);
 const KEY_RANK: Record<string, number> = { flash: 4, shake: 3, punch: 2, pulse: 1 };
 /** what a calm, sad or devotional Reel does not use where its song is quiet */
-const CALM_BANNED_TR = new Set(["flash", "whip", "glitch", "chroma", "shake", "zoomblur", "dipwhite", "spin", "pixelate", "noise", "tiles"]);
+const CALM_BANNED_TR = new Set(["flash", "whip", "glitch", "chroma", "shake", "zoomblur", "flashblur", "dipwhite", "spin", "pixelate", "noise", "tiles"]);
 const CALM_BANNED_FX = new Set(["shake", "zoomburst", "hook", "strobe", "rgbpulse", "glitchfx", "chromatic", "snap", "negative"]);
 const CALM_MOOD = /devotion|bhakti|bhajan|aarti|prayer|spiritual|sad|heartbreak|grief|calm|peace|serene|soothing|emotional|melanchol|nostalg|lofi|lo-fi/i;
 

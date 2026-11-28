@@ -238,10 +238,19 @@ export const STUDIO_HTML = `
     <div class="stats">
       <span>Length <b id="mdur">—</b></span>
       <span><b id="mbpm">—</b> BPM</span>
+      <span>Beats <b id="mbeatcount">—</b></span>
+      <span>Drum hits <b id="mdrumcount">—</b></span>
       <span>Shots <b id="mclips">—</b></span>
       <span>Drops <b id="mdrop">—</b></span>
       <span>Breaks <b id="mbreak">—</b></span>
     </div>
+    <details id="beatdetails" class="mt-2 rounded-xl border border-border bg-surface-2 p-3">
+      <summary class="cursor-pointer text-[13px] font-semibold">Beat timestamps & drum hits</summary>
+      <p class="mt-2 text-[11px] text-muted">Beat times (seconds)</p>
+      <p id="beatlist" class="max-h-24 overflow-auto break-words font-mono text-[11px] leading-5"></p>
+      <p id="drumcounts" class="mt-2 text-[11px] text-muted"></p>
+      <p class="mt-1 max-h-24 overflow-auto break-words font-mono text-[11px] leading-5" id="drumlist"></p>
+    </details>
     <div class="fsugg" id="fsugg">${IC.spark}<span><b>Suggested Part</b><small>We found the best part of the song, with strong beats. Drag on the waveform to choose another.</small></span></div>
     <div class="legend">
       <span><i style="background:var(--drop)"></i>Drop: best shot</span>
@@ -456,7 +465,7 @@ export const STUDIO_HTML = `
               <button data-m="copy" aria-pressed="false" title="Upload a Reel you like: its pace, transitions, effects and colours are matched on your clips">Match a Reel's Style</button>
             </div>
             <input id="reffile" type="file" accept="video/*,.mov,.mp4,.m4v" hidden>
-            <div class="refbox" id="refbox" hidden><span class="fname" id="refinfo"></span> <button class="${Button.secondary}" id="refchange" type="button">Change Reel</button><span class="fname refmatch" id="refmatch" hidden></span>
+            <div class="refbox" id="refbox" hidden><span class="fname" id="refinfo"></span> <button class="${Button.secondary}" id="refchange" type="button">Change Reel</button><label class="fname" title="On: its texts with their words, as on the Reel (never its watermark or @name). Off: no texts from it"><input type="checkbox" id="refwords" checked> Copy its texts</label><span class="fname refmatch" id="refmatch" hidden></span>
               <div class="row" id="stsaverow" hidden><select id="stcat" aria-label="Kind of Reel"><option value="wedding">Wedding</option><option value="travel">Travel</option><option value="festival">Festival</option><option value="dance">Dance</option><option value="talking">Talking</option><option value="product">Product</option><option value="food">Food</option><option value="fitness">Fitness</option><option value="vlog">Vlog</option><option value="birthday">Birthday</option><option value="car">Car &amp; bike</option><option value="shop">Shop &amp; opening</option><option value="event">Event &amp; party</option><option value="other">Other</option></select><label class="tog"><input type="checkbox" id="stshare"> Share (helps everyone's styles)</label><button class="${Button.small}" id="stsave" type="button">Save to my styles</button><span class="fname" id="ststat"></span></div></div>
             <div class="row learnrow" id="learnrow" hidden><span class="label">Learned style</span><select id="lcat" aria-label="Kind of Reel"></select><div class="${Segmented.normal}" id="lscope"><button data-s="mine" aria-pressed="false">Mine</button><button data-s="all" aria-pressed="true">With shared</button></div><button class="${Button.small}" id="luse" type="button">Use</button><label class="tog"><input type="checkbox" id="lauto"> Use for my next Reels</label><span class="fname" id="linfo"></span>
               <details class="stdetails" id="teach"><summary>Teach Shubix from many Reels</summary><span class="fname">Pick Reels made by real editors: each is read on this phone (the video never leaves it), and what they have in common becomes the learned style of that kind.</span>
@@ -681,7 +690,7 @@ export const STUDIO_HTML = `
     <p class="xsh-l">Quality</p>
     <div class="${Segmented.wide} grid! grid-flow-col auto-cols-fr gap-2.5 border-0! bg-transparent! p-0! overflow-visible [&>button]:grid! [&>button]:place-items-center [&>button]:content-center [&>button]:gap-0.5 [&>button]:min-h-[76px] [&>button]:rounded-[14px]! [&>button]:border! [&>button]:border-border [&>button]:bg-surface-2 [&>button]:text-[15px] [&>button]:font-semibold [&>button]:text-foreground [&>button[aria-pressed=true]]:border-accent! [&>button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-2))] [&>button]:after:text-[11.5px] [&>button]:after:font-medium [&>button]:after:text-muted [&>button]:after:block [&>button:disabled]:opacity-40" id="xres" role="group" aria-label="Quality"><button type="button" data-r="720">720p</button><button type="button" data-r="1080" aria-pressed="true">1080p</button><button type="button" data-r="4k">4K</button></div>
     <p class="xsh-l">Frame rate</p>
-    <div class="${Segmented.wide} grid! grid-flow-col auto-cols-fr gap-2.5 border-0! bg-transparent! p-0! overflow-visible [&>button]:grid! [&>button]:place-items-center [&>button]:content-center [&>button]:gap-0.5 [&>button]:min-h-[76px] [&>button]:rounded-[14px]! [&>button]:border! [&>button]:border-border [&>button]:bg-surface-2 [&>button]:text-[15px] [&>button]:font-semibold [&>button]:text-foreground [&>button[aria-pressed=true]]:border-accent! [&>button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-2))] [&>button]:after:text-[11.5px] [&>button]:after:font-medium [&>button]:after:text-muted [&>button]:after:block [&>button:disabled]:opacity-40" id="xfps" role="group" aria-label="Frame rate"><button type="button" data-f="30" aria-pressed="true">30 fps</button><button type="button" data-f="60">60 fps</button></div>
+    <div class="${Segmented.wide} grid! grid-flow-col auto-cols-fr gap-2.5 border-0! bg-transparent! p-0! overflow-visible [&>button]:grid! [&>button]:place-items-center [&>button]:content-center [&>button]:gap-0.5 [&>button]:min-h-[76px] [&>button]:rounded-[14px]! [&>button]:border! [&>button]:border-border [&>button]:bg-surface-2 [&>button]:text-[15px] [&>button]:font-semibold [&>button]:text-foreground [&>button[aria-pressed=true]]:border-accent! [&>button[aria-pressed=true]]:bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-2))] [&>button]:after:text-[11.5px] [&>button]:after:font-medium [&>button]:after:text-muted [&>button]:after:block [&>button:disabled]:opacity-40" id="xfps" role="group" aria-label="Frame rate"><button type="button" data-f="25">25 fps</button><button type="button" data-f="30" aria-pressed="true">30 fps</button><button type="button" data-f="60">60 fps</button></div>
     <p class="xsh-size" id="xsize"></p>
     <p class="xsh-size">File name: <b id="xfname"></b></p>
     <label class="xtog"><span class="xti">${I('<path d="M4 7h16M4 12h10M4 17h7"/><path d="M15 15l5 5M20 15l-5 5"/>')}</span><span class="xtt">Remove Watermark <a class="xpro" id="xwmpro" href="/pricing" title="Paid plans can remove the watermark">Pro</a></span><input type="checkbox" id="xwm" role="switch"><i aria-hidden="true"></i></label>
@@ -716,6 +725,8 @@ export const STUDIO_HTML = `
   <form class="chatform" id="chatform">
     <div class="chatfield">
       <textarea id="chatin" rows="1" maxlength="300" placeholder="Describe a change, or type / for commands"></textarea>
+      <button type="button" class="${Button.icon} h-9 min-w-9 px-1.5 text-[11px] font-semibold" id="chatlang" aria-label="Voice language" hidden>हिं</button>
+      <button type="button" class="${Button.iconBordered} size-9" id="chatmic" aria-label="Speak to Shubix" aria-pressed="false" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4"/></svg></button>
       <button type="submit" class="${Button.iconPrimary} size-9" id="chatsend" aria-label="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
     <small class="chathint">Enter to send · Shift + Enter for a new line</small>

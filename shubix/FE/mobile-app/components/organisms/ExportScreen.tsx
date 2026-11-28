@@ -129,7 +129,7 @@ export function ExportScreen({ reel, onClose }: { reel: ReelProject | null; onCl
               {label("Quality")}
               <View className="flex-row flex-wrap gap-2">{RES.filter(([r]) => !allowed?.res[r].off).map(([r, name]) => <Chip key={r} label={name + pro(allowed?.res[r].locked)} on={choice.res === r} onPress={() => set({ res: r })} />)}</View>
               {label("Frame rate")}
-              <View className="flex-row flex-wrap gap-2">{([30, 60] as const).map((f) => <Chip key={f} label={`${f} fps${f === 60 ? pro(allowed?.fps60Locked) : ""}`} on={choice.fps === f} onPress={() => set({ fps: f })} />)}</View>
+              <View className="flex-row flex-wrap gap-2">{([25, 30, 60] as const).map((f) => <Chip key={f} label={`${f} fps${f === 60 ? pro(allowed?.fps60Locked) : ""}`} on={choice.fps === f} onPress={() => set({ fps: f })} />)}</View>
               {!!allowed?.size && <Text className="px-1 text-[12.5px] text-muted">{allowed.size}</Text>}
               {!!allowed?.fileName && <Text className="px-1 text-[12.5px] text-muted">{words("File name")}: <Text className="font-semibold text-foreground">{allowed.fileName}</Text></Text>}
               {toggle(words("Remove Watermark"), allowed && !allowed.watermarkOff ? words("Paid plans can remove the watermark") : "", choice.noWatermark, (v) => set({ noWatermark: v }), !!allowed && !allowed.watermarkOff)}

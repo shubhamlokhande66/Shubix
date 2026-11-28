@@ -17,13 +17,15 @@ import { createNativeEngine } from "./nativeEngine";
  * come from the website, so changing or deploying the website does not change the phone. It needs the app's own build (not Expo Go). */
 export const SITE_URL = (process.env.EXPO_PUBLIC_SITE_URL || "http://localhost:3001").replace(/\/$/, "");
 export type AiPlan = { story: string; lines: string[] };
-export type SongAnalysis = { duration: number; bpm: number; beats: number; drops: number; breaks: number };
+export type SongAnalysis = { duration: number; bpm: number; beats: number; beatTimes: number[]; beatAccents: { t: number; strength: number; level: "strong" | "medium" | "weak" }[]; drumHits: { t: number; band: "kick" | "snare" | "hihat"; strength: number }[]; drops: number; breaks: number };
 /** a shot of the Reel as the studio made it (its state(): the clip, where in it, the transition into it, its effect, its speed) */
 export type EngineShot = { start: number; end: number; type: string; tr?: string; trRev?: boolean; efx?: string; sp: string; src: number; in: number; cs?: Record<string, unknown>; uk?: NonNullable<ProjectClip["keyframes"]> };
 export type EngineReel = { work: { clips: number; shots: number }; state: { edit: EngineShot[]; mode?: string } & Record<string, unknown> };
 /** the website's Export sheet: quality, frame rate, the watermark, without the song */
-export type StudioExportPlan = { watermark: boolean; res: string; fps: number; bitrate: number; scale: number; stabs: ({ t: number[]; dx: number[]; dy: number[] } | null)[]; beats: number[][]; beatCam: unknown[]; follow: (number[][] | null)[] };
-export type ExportChoice = { res?: "720" | "1080" | "4k"; fps?: 30 | 60; noWatermark?: boolean; noSong?: boolean; myReels?: boolean; fixLocked?: boolean };
+/** the Reel's look as the studio's shader takes it (brain host.ts lookGrade) */
+export type ReelLook = { con: number; sat: number; bri: number; teal: number; mono: number; grain: number; warm: number; lift: number; vig: number; tsh: number[]; thi: number[] };
+export type StudioExportPlan = { look?: ReelLook; watermark: boolean; res: string; fps: number; bitrate: number; scale: number; stabs: ({ t: number[]; dx: number[]; dy: number[] } | null)[]; beats: number[][]; beatCam: unknown[]; follow: (number[][] | null)[] };
+export type ExportChoice = { res?: "720" | "1080" | "4k"; fps?: 25 | 30 | 60; noWatermark?: boolean; noSong?: boolean; myReels?: boolean; fixLocked?: boolean };
 export type ExportOptions = { res: Record<"720" | "1080" | "4k", { locked: boolean; off: boolean }>; fps60Locked: boolean; watermarkOff: boolean;
   size: string; fileName: string; myReels: boolean; myReelsNote: string; locked: { name: string; need: string }[] };
 
@@ -98,6 +100,8 @@ export const engine = {
   /** the song: the website analyses it (beats, drops, breaks) and checks its beats */
   song: (uri: string, name: string) => call<SongAnalysis>("song", { path: pathOf(uri), name }),
   /** Copy a Reel: the Reel to match is read (its cuts, transitions, moves and look: video-engine refReader.ts, as the website) */
+  /** Copy a Reel's "Copy its texts": on, its texts with their words; off, none of them */
+  refWords: (on: boolean) => call("refWords", { on }).catch(() => undefined),
   ref: (uri: string, name: string) => call<{ cuts: number; shots: number; bpm: number; trans: Record<string, number> }>("ref", { path: pathOf(uri), name }),
   /** the Reel's choices, as the website's buttons: length (0 = the whole song), clip order, format, style */
   choose: (c: { length?: number; order?: "mix" | "order"; text?: "auto" | "none"; aspect?: string; mode?: "auto" | "smooth" | "fast"; template?: string }) => call<{ start: number }>("choose", c),
@@ -194,6 +198,8 @@ export const engine = {
   saveToMyReels: (uri: string, name: string) => call("saveToMyReels", { path: pathOf(uri), name }),
   /** the website's Export sheet with these choices: what the plan and the phone allow, the size, the file name, My Reels */
   exportOptions: (o: ExportChoice = {}) => call<ExportOptions>("exportOptions", o),
+  /** the Reel's look now (its colour grade), for the editor's player; null: the studio does not hold this Reel */
+  look: () => call<ReelLook>("look").catch(() => null),
   /** the Reel's picture at `t` exactly as the studio makes it (null: it could not) */
   frame: (t: number) => call<{ src: string }>("frame", { t }).then((r) => r.src || null).catch(() => null),
   /** Proceed after a Cancel: the song goes on from where it stopped */

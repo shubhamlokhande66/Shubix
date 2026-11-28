@@ -58,9 +58,28 @@ export function boxCrop(w: number, h: number, aspect = BOX_ASPECT) {
 }
 
 /** The layers' places and times for one shot (without their pictures): the k-th box's slot, start and look */
-export function boxLayers(s: Shot, period: number) {
-  const { t0s, t1 } = boxTimes(s, period);
-  return BOX_SLOTS.map((p, k) => ({ x: p.x, y: p.y, s: BOX_W, t0: t0s[k], t1, fin: 0, fout: 0.08, bump: BOX_BUMP, edge: BOX_EDGE }));
+export function boxLayers(s: Shot, period: number, n = BOX_SLOTS.length) {
+  const slots = boxSlots(n), { t0s, t1 } = boxTimes(s, period, slots.length);
+  return slots.map((p, k) => ({ x: p.x, y: p.y, s: BOX_W, t0: t0s[k], t1, fin: 0, fout: 0.08, bump: BOX_BUMP, edge: BOX_EDGE }));
+}
+/** n of the five places (3 to 5), spread over the frame: three are two above and one below in the middle */
+export function boxSlots(n: number) {
+  const k = Math.max(3, Math.min(BOX_SLOTS.length, Math.round(n) || BOX_SLOTS.length));
+  return (k === 3 ? [0, 1, 3] : k === 4 ? [0, 1, 2, 4] : [0, 1, 2, 3, 4]).map((i) => BOX_SLOTS[i]);
+}
+/** A copied Reel's photo boxes (refReader `boxes`: when they popped in, how many): on the new Reel's shot showing at that
+ * moment, or the nearest shot long enough for them (0.9 s, or 2 beats); as many boxes as it had (3 to 5), one set a shot */
+export function boxShotsAt(shots: Shot[], runs: Array<{ t0: number; n?: number }>, period: number, from = 0): Array<{ i: number; n: number }> {
+  const beat = period > 0 ? period : 0.5, ok = (j: number) => j >= from && shots[j].end - shots[j].start >= Math.max(0.9, 2 * beat);
+  const out: Array<{ i: number; n: number }> = [];
+  for (const r of runs) {
+    if (!Number.isFinite(r.t0)) continue;
+    let i = shots.findIndex((s) => r.t0 < s.end);
+    if (i < 0 || !ok(i)) { let bd = Infinity; i = -1; shots.forEach((s, j) => { const d = Math.abs((s.start + s.end) / 2 - r.t0); if (ok(j) && d < bd) { bd = d; i = j; } }); }
+    if (i < 0 || out.some((o) => o.i === i)) continue;
+    out.push({ i, n: boxSlots(r.n ?? BOX_SLOTS.length).length });
+  }
+  return out.sort((a, b) => a.i - b.i);
 }
 
 /** A layer's pop-in at `t`: its size share (0.55 → a little over 1 → 1, an overshoot as a creator's pop) and opacity */

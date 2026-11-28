@@ -8,6 +8,9 @@ type Engine = {
    * (Smooth slow-mo, SmoothCopy.kt); `ramp` its speed ramp as JSON ("" none). "" back: nothing in it is slowed */
   smoothCopy?(uri: string, start: number, end: number, speed: number, ramp: string, fps: number, side: number): Promise<string>;
   cancel(): Promise<void>;
+  /** Ask Shubix by voice: what the person said, as text, in `lang` (hi-IN, mr-IN, en-IN); "" when nothing was heard */
+  listen?(lang: string): Promise<string>;
+  stopListening?(): Promise<void>;
   /** why Android closed the app after `since` (ms): JSON [{ at, reason, description, pss, rss, trace }] */
   lastExits?(since: number): string;
   keepAwake?(on: boolean, title: string): void;

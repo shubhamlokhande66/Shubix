@@ -1,7 +1,7 @@
 // The engine's edit core: how a Reel's shots are chosen and placed. Moved from components/studio/engine.ts, with its state in
 // one object (ES) and what is the app's own behind hooks (EH).
 // @ts-nocheck
-import { coverMove, REF_FX, REF_TRX, refTrOf } from '@mobile/video-engine';
+import { coverMove, tiltMove, styleKindOrder, styleFxShots, REF_FX, REF_TRX, refTrOf } from '@mobile/video-engine';
 import { endWell, crossesScene, fmt, TAIL, windowStats, srcPosF, srcPos, aiBonus, moveWords, rampSpeed, velocitySpeed, curveSpeed, blackEnds, useOf } from './pure';
 import { ONE_TAKE, frameTone, pictureOf, pictureWords, EDIT_REVIEW_LIMITS } from '@mobile/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, toneOf, reactionBonus, shotWords, wasteShare } from '@mobile/video-engine';
@@ -613,7 +613,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
     if(REF_TRX.includes(m.trx)) o.trx = m.trx; if(REF_FX.includes(m.fx)) o.fx = m.fx;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
-    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
+    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1); if(m.mono) o.mono = true; if(Number.isFinite(+m.tilt) && m.tilt !== null) o.tilt = c(+m.tilt, -45, 45);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
       if(['lin','inOut','outCubic','outExpo','outBack'].includes(m.ease)) o.ease = m.ease; }
     return o; });
@@ -1205,12 +1205,15 @@ function copyStyle(){
       if(ES.plan[i-1] && ES.plan[i-1].tr === EH.REF_TR[k] && k !== 'hard') continue; ES.plan[i].tr = EH.REF_TR[k]; free.delete(i); c--; }
     for(const i of order){ if(!c) break; if(free.has(i)){ ES.plan[i].tr = EH.REF_TR[k]; free.delete(i); c--; } } };
   const hot = [...idx].sort((a,b)=>energy(b)-energy(a)), calm = [...idx].sort((a,b)=>energy(a)-energy(b));
-  ['flash','zoom','whip','glitch','spin','blur'].forEach(k=>place(k, hot)); ['dissolve','fade','iris','diamond','heart','star','wipe','bars'].forEach(k=>place(k, calm));
+  // every kind the style has (styleKindOrder: the strong ones on the strongest shots), its newer kinds too
+  styleKindOrder(kinds).forEach(({ k, hot: h }) => { if(EH.REF_TR[k]) place(k, h ? hot : calm); });
   // zooms inside shots: on that share of shots, the longest first
   const longI = [...ES.plan.keys()].filter(i=>ES.plan[i].end-ES.plan[i].start >= 0.9), zn = Math.round(Math.min(1, R.zoomShare)*longI.length);
   longI.sort((a,b)=>(ES.plan[b].end-ES.plan[b].start)-(ES.plan[a].end-ES.plan[a].start)).slice(0, zn).forEach(i=>{ ES.plan[i].efx = (ES.plan[i].end-ES.plan[i].start) > 1.2 ? 'pan' : 'punch-soft'; });
   ES.copyBudget = {}; Object.entries(want).forEach(([k,v])=>{ if(k!=='hard') ES.copyBudget[EH.REF_TR[k]] = v; });
   copyShots();
+  // a learned style's effects inside shots (its Reels' RGB splits, mirrors, strobes, light leaks), on its share of shots
+  if(R.learned) styleFxShots(ES.plan, R.fx, k => EH.isLocked('fx', k)).forEach(([i, k]) => { ES.plan[i].efx = k; });
 }
 function copyShots(){
   if(!EH.copyExact()) return;
@@ -1228,6 +1231,10 @@ function copyShots(){
     if(m.shake && !s.ak.length) s.efx = 'shake';
     // an effect read in the shot itself (RGB split, mirror, strobe): the studio's own, when the plan has it
     if(REF_FX.includes(m.fx) && !EH.isLocked('fx', m.fx)) s.efx = m.fx;
+    // a black-and-white shot of the Reel: this one too (the per-shot B&W of the finish, cs.sat -1)
+    if(m.mono) s.cs = { ...(s.cs || {}), sat: -1 };
+    // a shot held tilted, its corners showing: the same turn
+    if(Number.isFinite(m.tilt) && !s.efx.startsWith('shake')) s.ak = tiltMove(s.ak, m.tilt, len, t => ({ t, s: 1, x: 0, y: 0, r: 0, o: 1, ez: 'lin' }));
     // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
     const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
     if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
@@ -1263,6 +1270,8 @@ function fingerprintOf(R){
   const L = R.look || null, look = L ? Object.fromEntries(['mean','std','sat','warm','p5','p95','vig','grain','split'].filter(k => Number.isFinite(L[k])).map(k => [k, EH.clip(L[k], k === 'warm' || k === 'vig' || k === 'split' ? -1 : 0, k === 'sat' ? 2 : 1)])) : null;
   return { dur: EH.clip(R.dur, 1, 600), bpm: EH.clip(R.bpm || 0, 0, 300), medianBeats: EH.clip(R.medianBeats || 0, 0, 64), medianSec: EH.clip(R.medianSec || 0, 0, 60), hookBeats: EH.clip(R.hookBeats || 0, 0, 64), hookSec: EH.clip(R.hookSec || 0, 0, 60),
     onBeat: EH.clip(R.onBeat || 0, 0, 1), energy: ['steady','rising','falling'].includes(R.energy) ? R.energy : 'steady', zoomShare: EH.clip(R.zoomShare || 0, 0, 1), trans: tr, look,
+    // the effects in its shots (share of shots), and a Reel of one take (the website's fingerprintOf)
+    fx: Object.fromEntries(Object.entries(R.fx || {}).filter(([k]) => REF_FX.includes(k)).map(([k, v]) => [k, EH.clip(v, 0, 1)])), ...((R.cuts || []).length < 2 ? { oneTake: true } : {}),
     shotBeats: (R.shotBeats || []).slice(0, 300).map(x => EH.clip(x, 0, 64)), shotSec: (R.shotSec || []).slice(0, 300).map(x => EH.clip(x, 0, 60)),
     moments: cleanMoments(R.moments, 200) };
 }

@@ -16,7 +16,9 @@ type Any = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export const CUT_K = 7;   // frames each side of a cut that are looked at (a fade's dark middle and its clean ends both fit)
 export const REF_KINDS: Record<string, string> = { hard: "hard cuts", dissolve: "dissolves", fade: "fades", flash: "flashes", whip: "whip pans", zoom: "zoom-throughs", glitch: "glitches", spin: "spins",
-  iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions" };
+  iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions",
+  // known by their look (refCopy.ts REF_TRX), the studio's own by these names: learned and copied like the others (2026-11-28)
+  burn: "light leaks", zoomblur: "zoom blurs", doors: "curtain reveals", wave: "wave warps", flashblur: "flash blurs", stretch: "stretch smears", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
 
 // colour statistics of a w x h frame's pixels, plus a 96 x 96 crop at full size for grain
 export function lookStats(d: ArrayLike<number>, w: number, h: number, cd?: ArrayLike<number> | null): Look {
@@ -79,6 +81,60 @@ export function rgbShiftOf(pic: Pic | null){
 // Learning (Teach Shubix from many Reels): a transition this reader does not know. Read as a hard cut, yet not a clean
 // one-frame jump: two or more frames in its middle are neither shot, nor a mix of the two (a dissolve). What it looks like
 // goes to the learning log (Admin -> My trends), with the studio's own transition it seems to be when there is one (ours).
+// a frame of a doors / curtain opening: its middle columns are the new shot, its two sides the old one (or black)
+function doorsOf(odd: Any[], A: Any, B: Any){
+  const W = A.FW, H = Math.floor(A.Y.length / Math.max(1, W)); if(!W || !H) return 0;
+  const band = (F: Any, P: Any, x0: number, x1: number) => { let s = 0, n = 0; for(let y=0;y<H;y++) for(let x=x0;x<x1;x++){ s += Math.abs(F.Y[y*W+x] - P.Y[y*W+x]); n++; } return n ? s/n : 1; };
+  const c0 = Math.floor(W*0.4), c1 = Math.ceil(W*0.6), e = Math.max(1, Math.floor(W*0.12));
+  return odd.filter(F => { const mB = band(F, B, c0, c1), mA = band(F, A, c0, c1);
+    const sides = [[0, e], [W - e, W]].map(([a, b]) => { const dA = band(F, A, a, b), dB = band(F, B, a, b); let dark = 0, n = 0; for(let y=0;y<H;y++) for(let x=a;x<b;x++){ dark += F.Y[y*W+x]; n++; } return dA < 0.6*dB || dark/n < 0.06; });
+    return mB < 0.6*mA && sides.every(Boolean); }).length;
+}
+/** how coloured some small frames are (0 grey .. 1), null: none */
+function satOfPics(ps: (Pic | null)[]){
+  let s = 0, n = 0;
+  for(const p of ps){ if(!p) continue; const d = p.data; for(let i=0;i+3<d.length;i+=16){ const mx = Math.max(d[i], d[i+1], d[i+2]), mn = Math.min(d[i], d[i+1], d[i+2]); if(mx > 20){ s += (mx - mn)/mx; n++; } } }
+  return n ? s/n : null;
+}
+// a frame of a wave warp: its rows slid sideways by amounts that swing back and forth down the picture (a zigzag)
+// a shot held tilted (the picture turned a few degrees, the frame's corners showing what is behind it): each corner of the
+// frame an empty triangle, its long side down the frame at the top left and bottom right and along it at the other two
+// when the picture is turned clockwise (the other way round anticlockwise); the angle is the triangles' short / long side.
+// Degrees, clockwise positive (as the studio's turn), or null
+function tiltOf(g: Any): number | null {
+  const Y = g.Y, W = g.FW, H = Math.floor(Y.length / Math.max(1, W)); if(!W || W < 24 || H < 24) return null;
+  const at = (x: number, y: number) => Y[y*W + x];
+  const corner = (cx: number, cy: number, dx: number, dy: number) => {
+    const c = at(cx, cy), same = (v: number) => Math.abs(v - c) < 0.05;
+    let h = 0; while(h < W-1 && same(at(cx + dx*h, cy))) h++;
+    let v = 0; while(v < H-1 && same(at(cx, cy + dy*v))) v++;
+    if(h < 2 || v < 2 || h >= W*0.9 || v >= H*0.9) return null;
+    // a sharp edge where each run ends, and the inside of the triangle is the background too
+    if(Math.abs(at(cx + dx*h, cy) - c) < 0.06 || Math.abs(at(cx, cy + dy*v) - c) < 0.06) return null;
+    if(!same(at(cx + dx*Math.floor(h/4), cy + dy*Math.floor(v/4)))) return null;
+    return { h, v };
+  };
+  const tl = corner(0, 0, 1, 1), tr = corner(W-1, 0, -1, 1), br = corner(W-1, H-1, -1, -1), bl = corner(0, H-1, 1, -1);
+  // three corners at least (the picture can be as dark as what is behind it at one), each the way round of the others
+  const ks = [tl, tr, br, bl], down = [true, false, true, false], seen = ks.filter(Boolean).length;
+  if(seen < 3) return null;
+  const cw = ks.every((k, i) => !k || (down[i] ? k.v >= 2*k.h : k.h >= 2*k.v));
+  const ccw = ks.every((k, i) => !k || (down[i] ? k.h >= 2*k.v : k.v >= 2*k.h));
+  if(!cw && !ccw) return null;
+  const deg = ks.filter((k): k is { h: number; v: number } => !!k).map(k => Math.atan(Math.min(k.h, k.v) / Math.max(k.h, k.v)) * 180 / Math.PI);
+  if(Math.max(...deg) > 1.6 * Math.min(...deg)) return null;
+  const a = deg.reduce((p, q) => p + q, 0) / deg.length;
+  return a >= 3 && a <= 40 ? (cw ? a : -a) : null;
+}
+function waveOf(odd: Any[], A: Any, B: Any){
+  const W = A.FW, H = Math.floor(A.Y.length / Math.max(1, W)); if(!W || W < 16 || H < 12) return 0;
+  const zig = (F: Any, P: Any) => { const sh: number[] = [];
+    for(let y=0;y<H;y+=2){ let best = 0, bd = Infinity; for(let s=-4;s<=4;s++){ let d = 0; for(let x=4;x<W-4;x++) d += Math.abs(F.Y[y*W+x] - P.Y[y*W+x+s]); if(d < bd){ bd = d; best = s; } } sh.push(best); }
+    let flips = 0; for(let k=2;k<sh.length;k++) if((sh[k]-sh[k-1])*(sh[k-1]-sh[k-2]) < 0) flips++;
+    return Math.max(...sh) - Math.min(...sh) >= 4 && flips >= 3; };
+  return odd.filter(F => zig(F, A) || zig(F, B)).length;
+}
+const streak = (fs: Any[]) => { const a = fs.map(f => f.aniso).filter(x => x !== undefined); return a.length >= 2 && a.filter((x: number) => x < 0.3 || x > 3.3).length * 2 >= a.length; };   // sideways (low) or up-down (high)
 export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   if(c.kind !== 'hard' || c.one || c.flick || c.flickEnd) return null;
   const A = at(-CUT_K), B = at(CUT_K); if(!A || !B) return null;
@@ -93,8 +149,14 @@ export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   const side = dxs.length >= 2 && dxs.every(x => Math.sign(x) === Math.sign(dxs[0])) && Math.abs(avg(dxs)) >= 4 ? (avg(dxs) > 0 ? 'right' : 'left') : '';
   const zoom = scs.length >= 2 ? (avg(scs) < 0.97 ? 'out' : avg(scs) > 1.03 ? 'in' : '') : '';
   let guess = 'not known', ours: string | null = null;
-  if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
+  if(doorsOf(odd, A, B) >= 2){ guess = 'curtain / doors open'; ours = 'doors'; }
+  else if(waveOf(odd, A, B) >= 2){ guess = 'wave warp'; ours = 'wave'; }
+  else if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
   else if(zoom === 'out'){ guess = 'zoom out'; ours = 'zoomout'; }
+  // blur all one way (aniso low: streaks, not a soft focus): the picture smears into the next shot, blown out to white
+  // or not (seen in trending Reels, 2026-11-28 study); a brighter frame without the streaks is a light leak
+  else if(streak(odd) && light > 0.15){ guess = 'flash blur'; ours = 'flashblur'; }
+  else if(streak(odd) && soft){ guess = 'stretch smear'; ours = 'stretch'; }
   else if(light > 0.15){ guess = 'light leak / film burn'; ours = 'burn'; }
   const sig = [odd.length + ' frames', light > 0.1 ? 'brighter' : light < -0.1 ? 'darker' : 'same light', side ? 'moves ' + side : 'no sideways move',
     zoom ? 'zoom ' + zoom : 'no zoom', soft ? 'soft' : 'sharp'].join(', ');
@@ -131,12 +193,23 @@ export function cutKind(fr: Any, hint: string){
 // every frame). The clip reading (scanMotion) samples a clip and wants a cut to stand out from the change around it: an
 // edit cut on every eighth note, stutters of a tenth of a second or the same shot coming back a moment later slipped
 // through it (a 29 s car Reel with 61 cuts and a 3 s flicker read as 21 cuts, none in its first 10 s).
+/** A frame's colours as a 4 x 4 grid of average U and V (0..1 scale, every other pixel read) */
+function colourGrid(p: Pic): Float32Array {
+  const W = p.width, H = p.height, D = p.data, out = new Float32Array(32), cnt = new Float32Array(16);
+  for(let y=0;y<H;y+=2) for(let x=0;x<W;x+=2){ const o = (y*W + x)*4, r = D[o]/255, g = D[o+1]/255, b = D[o+2]/255, Y = 0.299*r + 0.587*g + 0.114*b;
+    const c = Math.min(3, (y*4/H)|0)*4 + Math.min(3, (x*4/W)|0); out[c*2] += (b - Y)*0.565; out[c*2+1] += (r - Y)*0.713; cnt[c]++; }
+  for(let c=0;c<16;c++){ out[c*2] /= Math.max(1, cnt[c]); out[c*2+1] /= Math.max(1, cnt[c]); }
+  return out;
+}
 export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>, dur: number, onP?: (p: number) => void){
   const FPS = 30, ts: number[] = []; for(let t=0.5/FPS; t<dur-0.02; t+=1/FPS) ts.push(+t.toFixed(4));
-  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), last: Float32Array[] = [], cel: Float32Array[] = new Array(n); let pY: Float32Array | null = null, pH: Float32Array | null = null;
+  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), cd = new Float32Array(n), last: Float32Array[] = [], cel: Float32Array[] = new Array(n); let pY: Float32Array | null = null, pH: Float32Array | null = null, pC: Float32Array | null = null;
   for(let k=0;k<n;k+=150){
     const cv = await small(ts.slice(k, k+150));
-    cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; last.length = 0; return; }
+    cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; pC = null; last.length = 0; return; }
+      // its colours, a 4 x 4 grid of their average (U, V): a cut between two shots as bright as each other but of another
+      // colour moves these and not the brightness (an orange shot, then a green one: the cut was missed, 2026-11-28)
+      { const C = colourGrid(c); if(pC && pC.length === C.length){ let s4 = 0; for(let q=0;q<C.length;q++) s4 += Math.abs(C[q] - pC[q]); cd[i] = s4/(C.length/2); } pC = C; }
       const g = greyOf(c), H = new Float32Array(16); for(let q=0;q<g.Y.length;q++) H[Math.min(15, (g.Y[q]*16)|0)] += 1/g.Y.length;
       if(pY && pH && pY.length === g.Y.length){ let s2=0; for(let q=0;q<g.Y.length;q++) s2 += Math.abs(g.Y[q]-pY[q]); d[i] = s2/g.Y.length; let h2=0; for(let q=0;q<16;q++) h2 += Math.abs(H[q]-pH[q]); hd[i] = h2/2; }
       pY = g.Y; pH = H; sh[i] = sharpOfY(g.Y, g.FW);
@@ -157,7 +230,11 @@ export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>
   for(let i=3;i<n-1;i++){ const t = i/FPS; if(inF(t)) continue;
     const nb: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nb.push(d[j]); nb.sort((x,y)=>x-y);
     const loc = nb.length ? (nb[(nb.length-1)>>1] + nb[nb.length>>1])/2 : 0;
-    if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)) cuts.push(t); }
+    if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)){ cuts.push(t); continue; }
+    // a colour cut: the colours jump far above their change around it (a pan or a light change moves them over many frames)
+    const nc: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nc.push(cd[j]); nc.sort((x,y)=>x-y);
+    const locC = nc.length ? (nc[(nc.length-1)>>1] + nc[nc.length>>1])/2 : 0;
+    if(cd[i] > 0.05 && cd[i] > 3*locC + 0.01 && cd[i] >= cd[i-1] && cd[i] >= cd[i+1] && !cuts.some(c => Math.abs(c - t) < 2.5/FPS)) cuts.push(t); }
   const blank = new Float32Array(16*28);
   return { cuts, flicker, blurs: blurCuts(sh, far, FPS), panels: panelRuns(i => cel[i] || blank, n, 16, 28, FPS) };
 }
@@ -278,7 +355,7 @@ export async function readReel(io: ReelIo){
     // unless both are clean one-frame jumps (a strobe of hard cuts)
     for(let i=cuts.length-1;i>0;i--){ const a = cuts[i-1], b = cuts[i];
       if(b.t - a.t < 0.2 && !a.one && !b.one && !(a.exact && b.exact) && !a.flick && !b.flick && !a.flickEnd && !b.flickEnd){ if(b.kind === 'hard' && a.kind !== 'hard') b.kind = a.kind; else if(b.kind === 'hard' && !a.one) b.kind = 'whip'; cuts.splice(i-1, 1); } }
-    cuts.forEach(c=>{ delete c.one; delete c.flick; delete c.flickEnd; delete c.exact; delete c.blurDip; });   // (c.after stays: the black end)
+    cuts.forEach(c=>{ if(c.kind === 'zoom' && (c.blurDip ?? 1) < 0.65) c.zb = true; delete c.one; delete c.flick; delete c.flickEnd; delete c.exact; delete c.blurDip; });   // a soft zoom: zoom blur   // (c.after stays: the black end)
     // shots: a zoom inside them (two frames) and the colour look (the middle frame)
     onP(0.85, 'reading its look');
     const bounds = [0, ...cuts.map(c=>c.t), dur], sh: Any[] = [];
@@ -292,7 +369,10 @@ export async function readReel(io: ReelIo){
     sh.forEach((x,i)=>{ const mine = zi.map((z,k)=>[z,k] as [number[], number]).filter(([z])=>z[0]===i), gr = mine.map(([,k])=>zf[k] ? greyOf(zf[k] as Pic) : null);
       let move: Any = null;
       if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g!.Y), mine.map(([z])=>z[1]), gr[0]!.FW, gr[0]!.FH);
-      shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick });
+      // held tilted: most of its frames turned by about the same angle
+      const tl = gr.map(g => g ? tiltOf(g) : null).filter((t): t is number => t !== null).sort((p, q) => p - q);
+      const tilt = tl.length >= 2 && tl.length * 2 >= gr.length && tl[tl.length-1] - tl[0] < 3 ? Math.round(tl[tl.length >> 1] * 2) / 2 : null;
+      shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick, sat: satOfPics(mine.map(([,k]) => zf[k] as Pic | null)), tilt });
       const lk = lf[i]; if(lk) looks.push(lk);
       // the learning log: an effect in the shot the styles do not learn yet (the studio has each of these)
       if(!x.flick){ const cv = mine.map(([,k]) => zf[k]).filter(Boolean), found: string[][] = [];
@@ -301,6 +381,12 @@ export async function readReel(io: ReelIo){
         if(gr.filter(g => g && sym(g) < 0.015).length >= 2) found.push(['mirror', 'mirror']);
         const bs = (samples || []).filter(q => q.t >= x.a + 0.07 && q.t < x.b - 0.07).map(q => q.b);
         if(bs.length >= 6){ const md = [...bs].sort((p,q)=>p-q)[bs.length>>1]; if(bs.filter(b => b > md + 0.25).length >= 2) found.push(['strobe / flash pulses', 'strobe']); }
+        // a light leak passing over the shot: some of its frames clearly brighter AND warmer than the rest, not all of them
+        // (a strobe is several sharp white spikes; a shot that is simply warm is its look)
+        if(!found.some(f => f[1] === 'strobe') && cv.length >= 3){
+          const br = cv.map((p: Any) => { const d = p.data; let s3 = 0, n3 = 0; for(let q=0;q+3<d.length;q+=16){ s3 += d[q] + d[q+1] + d[q+2]; n3++; } return n3 ? s3/n3/765 : 0; }), wm = cv.map((p: Any) => warmOf(p.data));
+          const mid = (a: number[]) => [...a].sort((p,q)=>p-q)[a.length>>1], mb = mid(br), mw = mid(wm), hot = br.map((b2: number, k: number) => b2 > mb + 0.12 && wm[k] > mw + 0.05).filter(Boolean).length;
+          if(hot >= 1 && hot * 2 <= cv.length) found.push(['light leak in the shot', 'leak']); }
         found.forEach(([guess, ours]) => fxOdd.push({ at: +x.a.toFixed(2), guess, ours })); } });
   } finally { refBars = null; }
   // pace
@@ -320,11 +406,19 @@ export async function readReel(io: ReelIo){
   const smp = samples || [], shotStat = shots.map(s => { let m = 0, b = 0, n = 0;
     for(const q of smp){ if(q.t >= s.a + 0.07 && q.t < s.b - 0.07){ m += q.m; b += q.b; n++; } } return n ? { m: m/n, b: b/n } : null; });
   const mMax = Math.max(1e-6, ...shotStat.map(x => x ? x.m : 0));
+  // black-and-white shots in a Reel in colour (most shots coloured, this one grey); a Reel all in grey is its look's
+  { const ss = shots.map(s => s.sat).filter((x: Any) => x !== null).sort((a: number, b: number) => a - b), md = ss.length ? ss[ss.length >> 1] : 0;
+    if(md > 0.12) shots.forEach(s => { if(s.sat !== null && s.sat < 0.04 && !s.flick) s.mono = true; }); }
   const moments = shots.slice(0, 200).map((s,i)=>{
     const mm: Any = { beats: shotBeats[i] || 0, sec: +shotSec[i].toFixed(3), at: +s.a.toFixed(3), tr: i ? (cuts[i-1] ? cuts[i-1].kind : 'hard') : 'start', zoom: s.zoom > 1.03 ? 'in' : s.zoom < 0.97 ? 'out' : 'none' };
     if(s.flick) mm.flick = true;
     // a transition or an effect the reader knows only by its look, one the studio has: copied too (refCopy.ts)
     if(i && cuts[i-1] && cuts[i-1].odd && REF_TRX.includes(cuts[i-1].odd.ours)) mm.trx = cuts[i-1].odd.ours;
+    if(i && cuts[i-1] && cuts[i-1].zb) mm.trx = 'zoomblur';
+    // a black-and-white shot in a Reel in colour (the studio's per-shot B&W, cs.sat -1)
+    if(s.mono) mm.mono = true;
+    // a shot held tilted, its corners showing (degrees, clockwise positive)
+    if(s.tilt !== null && s.tilt !== undefined && !s.flick) mm.tilt = s.tilt;
     // panels: the shot a build opens (it starts within the build or just after it)
     if(i && !s.flick){ const pb = refPanels.find(b => s.a >= b.t0 - 0.2 && s.a <= b.t1 + 0.6); if(pb && pb.kind !== 'boxes') mm.trx = pb.kind; }
     { const f = fxOdd.find(x => Math.abs(x.at - s.a) < 0.02 && REF_FX.includes(x.ours)); if(f && !s.flick) mm.fx = f.ours; }
@@ -340,12 +434,20 @@ export async function readReel(io: ReelIo){
       if(dm.hits && dm.hits.length) mm.hit = dm.hits.slice().sort((x: Any,y: Any)=>y.p-x.p)[0].k;
       if(drops.some((d: number)=>Math.abs(d - s.a) < 0.15)) mm.drop = true; }
     return mm; });
-  return { dur, moments, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
+  // the transition mix by what the copy makes: a cut seen by its look (a light leak, a zoom out, a panel build) counts as
+  // that, not as a hard cut, so a learned style keeps it (before 2026-11-28 the Learning log had them "not known")
+  for(const k of Object.keys(trans)) delete trans[k];
+  cuts.forEach((c, i) => { const m = moments[i + 1], k = (m && m.trx) || c.kind; trans[k] = (trans[k] || 0) + 1; });
+  Object.keys(trans).forEach(k=>{ trans[k] /= cuts.length; });
+  // the effects in its shots (RGB split, mirror, strobe): the share of shots with each
+  const fx: Record<string, number> = {}; moments.forEach(m => { if(m.fx) fx[m.fx] = (fx[m.fx] || 0) + 1 / moments.length; });
+  return { dur, moments, fx, cuts: cuts.map(c=>({t:+c.t.toFixed(3), kind:c.kind})), shotSec, shotBeats, medianBeats: med(shotBeats), medianSec: med(shotSec),
     hookBeats: shotBeats[0] || 0, hookSec: shotSec[0] || 0, onBeat, energy, trans,
     zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
     look, bpm: P ? 60/P : 0,
     // photo boxes over its shots (boxes.ts): the copy gets them on its own long shots
-    boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1 })),
+    boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1, n: b.n })),
     // the learning log: what this reader could not learn (a transition it does not know; an effect in a shot)
-    unread: { cuts: cuts.filter(c => c.odd).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd } };
+    // (one the studio has and copies is known: only what it lacks is left here)
+    unread: { cuts: cuts.filter(c => c.odd && !REF_TRX.includes(c.odd.ours)).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd.filter((x: Any) => !REF_FX.includes(x.ours)) } };
 }

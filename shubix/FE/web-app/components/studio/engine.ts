@@ -19,7 +19,7 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { boxShots, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { boxShots, boxShotsAt, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, tiltMove, styleKindOrder, styleFxShots, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { i420Of, REC709 } from '@/lib/videoColor';
@@ -209,7 +209,7 @@ let period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, be
 let onEnv=null, onFps=0, onOff=0, hitsRaw=[];
 let cutFx = [], pfArr = null;
 const DRUM_MIN = 0.7;
-let beats = [], cuts = [], cutType = [], peaks = [], peakS = [], downbeats = [];   // downbeats: each bar's "1"
+let beats = [], beatAccents = [], drumHits = [], cuts = [], cutType = [], peaks = [], peakS = [], downbeats = [];   // downbeats: each bar's "1"
 let userMarks = [];   // beats the creator tapped in (song time): cuts can land on them like on the song's own beats
 function withMarks(b, dur){ if(!userMarks.length) return b; const out = b.slice();
   for(const m of userMarks){ const t = m - secStart; if(t > 0.05 && t < dur - 0.05 && !out.some(x => Math.abs(x - t) < 0.08)) out.push(t); }
@@ -522,8 +522,37 @@ async function loadMusic(file, cached = null){
   try{ whole = await decodeAnyAudio(file); }
   catch(e){ if(token !== musicToken) return; songBusy(false); console.warn('song not readable', e); rlog('song', 'Song could not be read: ' + String(e && e.message || e), { name }, 'error'); tasks.fail('song', 'This file has no sound we can read. Try an MP3, M4A or WAV.'); $('s1st').textContent = 'Could not read the sound of this file. Use MP3, M4A, WAV or a video with sound. (Songs in the Apple Music app are protected and cannot be opened by websites.)'; return; }
   if(token !== musicToken) return;
+  // A plain average can cancel the kick/snare almost completely when a stereo file has
+  // one channel polarity-inverted (common in phone/edited audio). Pick the strongest
+  // channel as the reference, align only clearly anti-correlated channels, then mix.
   let m = new Float32Array(whole.length);
-  { const ch = whole.numberOfChannels; for(let c=0;c<ch;c++){ const d = whole.getChannelData(c); for(let i=0;i<m.length;i++) m[i] += d[i]/ch; } }
+  let phaseAlignedChannels = 0;
+  {
+    const ch = whole.numberOfChannels, channels = Array.from({ length: ch }, (_, c) => whole.getChannelData(c));
+    if(ch === 1) m.set(channels[0]);
+    else {
+      let ref = 0, refEnergy = -1;
+      for(let c=0;c<ch;c++){
+        let e=0; const d=channels[c], stride=Math.max(1,Math.floor(d.length/12000));
+        for(let i=0;i<d.length;i+=stride) e += d[i]*d[i];
+        if(e>refEnergy){ refEnergy=e; ref=c; }
+      }
+      const base=channels[ref], stride=Math.max(1,Math.floor(base.length/12000));
+      const signs = channels.map((d,c)=>{
+        if(c===ref) return 1;
+        let dot=0, aa=0, bb=0;
+        for(let i=0;i<base.length;i+=stride){ dot+=base[i]*d[i]; aa+=base[i]*base[i]; bb+=d[i]*d[i]; }
+        const corr=dot/Math.sqrt(Math.max(1e-20,aa*bb));
+        if(corr < -0.6) phaseAlignedChannels++;
+        return corr < -0.6 ? -1 : 1;
+      });
+      const scale=1/ch;
+      for(let c=0;c<ch;c++){
+        const d=channels[c], sign=signs[c];
+        for(let i=0;i<m.length;i++) m[i] += sign*d[i]*scale;
+      }
+    }
+  }
   { const cut = noInstaCard(whole, m); if(cut){ whole = cut.buf; m = cut.mono;
     if(cached && cached.r && (cached.r.beats || []).some(b => b > cut.end)) cached = null; } }   // beats kept from before the card was cut off: found again
   song = { buf: whole, mono: m, r: null, name, file, key: name + '|' + whole.duration.toFixed(2) };
@@ -538,8 +567,10 @@ async function loadMusic(file, cached = null){
   if(token !== musicToken) return;   // another song was chosen meanwhile
   song.r = r; song.source = r.beatSource || 'own';
   rlog('beats', 'Song analysed · ' + (60/r.period).toFixed(1) + ' BPM · ' + (r.beats || []).length + ' beats · ' + (r.cuts || []).length + ' cut points', {
-    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
-    downbeats: (r.downbeats || []).length, parts: r.parts || [], beats: (r.beats || []).slice(0, 200).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
+    seconds: +whole.duration.toFixed(2), sampleRate: whole.sampleRate, channels: whole.numberOfChannels, phaseAlignedChannels, bpm: +(60/r.period).toFixed(2), beatSource: r.beatSource || 'own', reused: r === (cached && cached.r),
+    beatIntervalsMs: (r.beats || []).slice(1).map((b, i) => +((b - r.beats[i]) * 1000).toFixed(1)),
+    beatAccents: r.beatAccents || [], drumHits: r.drumHits || [],
+    downbeats: (r.downbeats || []).length, beatJudge: r.beatJudge || null, parts: r.parts || [], beats: (r.beats || []).map(b => +b.toFixed(3)), cuts: (r.cuts || []).slice(0, 120).map((c, i) => ({ t: +c.toFixed(3), type: r.cutType && r.cutType[i], fx: r.cutFx && r.cutFx[i] })) }, 'info', performance.now() - songT0);
   await useSection(token);
   if(token !== musicToken) return;
   songBusy(false); $('s1st').textContent = 'Ready'; $('s1').classList.add('done'); $('s2').classList.remove('locked'); $('lenrow').hidden = kind === 'talk';
@@ -595,9 +626,17 @@ function snapToBeat(t){ const bt = song.r.beats || []; if(bt.length < 8) return 
  * The edit's drops and breaks come only from here, so every Reel cuts where the song changes and nowhere else. */
 function songParts(mono, sr, beats){
   if(!beats || beats.length < 16) return [];
-  let n = beats.length; const p = (beats[n-1]-beats[0])/(n-1), dur = mono.length/sr;
-  // a quiet intro or ending has no beats found: its pulse goes on, on the same grid
-  { const g = beats.slice(); for(let t=g[0]-p; t>=0; t-=p) g.unshift(t); for(let t=g[g.length-1]+p; t<dur-p; t+=p) g.push(t); beats = g; n = g.length; }
+  let n = beats.length; const dur = mono.length/sr;
+  // Preserve the tracker's local beat spacing. A single song-wide average drifts away from the
+  // real grid when tempo changes; only extrapolate the untracked intro/outro from nearby beats.
+  const median = xs => { const a=xs.filter(x=>x>0).sort((x,y)=>x-y); return a.length ? a[a.length>>1] : 0.5; };
+  const startPeriod = median(beats.slice(1, Math.min(beats.length, 6)).map((t,i)=>t-beats[i]));
+  const endPeriod = median(beats.slice(-5).slice(1).map((t,i)=>t-beats[beats.length-5+i]));
+  const g = beats.slice();
+  if(startPeriod>0) for(let t=g[0]-startPeriod; t>=0; t-=startPeriod) g.unshift(t);
+  if(endPeriod>0) for(let t=g[g.length-1]+endPeriod; t<dur-endPeriod; t+=endPeriod) g.push(t);
+  beats = g; n = g.length;
+  const p = median(beats.slice(1).map((t,i)=>t-beats[i]));
   // per beat: loudness and low end (kick + bass), in dB
   let lp = 0; const a = Math.exp(-2*Math.PI*150/sr), low = new Float32Array(mono.length);
   for(let i=0;i<mono.length;i++){ lp = (1-a)*mono[i] + a*lp; low[i] = lp; }
@@ -807,10 +846,16 @@ function playPart(from, base){
   cv.addEventListener('pointerup', end, SIG); cv.addEventListener('pointercancel', end, SIG); }
 let beatInfo = { source: 'own', note: '' };
 function applyAnalysis(r){
-  ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff } = r); downbeats = r.downbeats || [];
+  ({ period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, beatAccents, drumHits, cuts, cutType, cutFx, peaks, peakS, barOff } = r); downbeats = r.downbeats || [];
   songPartsRel = r.parts || [];
   buildPlan(); drawMusic();
-  $('mbpm').textContent = (60/period).toFixed(0);
+  $('mbpm').textContent = (60/period).toFixed(1);
+  $('mbeatcount').textContent = beats.length;
+  $('mdrumcount').textContent = drumHits.length;
+  $('beatdetails').hidden = !beats.length;
+  $('beatlist').textContent = (beatAccents.length ? beatAccents.map(b => b.t.toFixed(3) + 's ' + b.level) : beats.map(b => b.toFixed(3) + 's')).join(' · ');
+  $('drumcounts').textContent = 'Kick ' + drumHits.filter(h=>h.band==='kick').length + ' · Snare ' + drumHits.filter(h=>h.band==='snare').length + ' · Hi-hat ' + drumHits.filter(h=>h.band==='hihat').length;
+  $('drumlist').textContent = drumHits.slice(0,250).map(h => h.band + ' ' + h.t.toFixed(3) + 's (' + h.strength.toFixed(2) + ')').join(' · ') + (drumHits.length > 250 ? ' · …' : '');
   $('mclips').textContent = plan.length; $('mdrop').textContent = plan.filter(s=>s.type==='drop').length; $('mbreak').textContent = plan.filter(s=>s.type==='break').length;
 }
 // Second opinion on the beats: Beat This! (a neural network trained on thousands of hand-annotated songs) runs on this
@@ -2236,7 +2281,7 @@ const TR_NAME = {hard:'Hard cut', fadein:'Fade-in', flash:'Exposure flash', whip
   slideleft:'Push left', slideright:'Push right', slideup:'Push up', slidedown:'Push down', swipeup:'Swipe up (feed scroll)', zoomout:'Zoom out', blur:'Blur through', flip:'Card flip',
   luma:'Light fade (by brightness)', pixelate:'Pixelate', clock:'Clock wipe', doors:'Doors open', ripple:'Ripple', burn:'Film burn', dropin:'Drop in (bounce)',
   stripes:'Stripes', blinds:'Blinds', checker:'Checkerboard', dots:'Dots', noise:'Noise dissolve', splith:'Split open', wave:'Wave wipe', dipwhite:'Dip to white', chroma:'Colour split', tiles:'Random tiles', panels:'Panels build', hpanels:'Row panels', vpanels:'Column panels', window:'Sliding window',
-  zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
+  zoomblur:'Zoom blur', flashblur:'Flash blur', stretch:'Stretch smear', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
   cube:'3D cube', cubeup:'3D cube (up)', flip3d:'3D card flip', swing:'3D door swing'};
 const FX_NAME = {jump:'Punch-in (jump cut)', 'punch-soft':'Soft zoom', 'pan-soft':'Ken Burns (soft)', snap:'Photo snap (freeze + flash)', hook:'Hook zoom + RGB', none:'—', pan:'Ken Burns + beat bounce', zoomburst:'Zoom burst + RGB', drift:'Slow drift + vignette', punch:'Zoom punch', tilt:'Tilt punch', shake:'Shake', bounce:'Beat bounce',
   boxgrow:'Shape: box grows on the beat', grid:'Shape: grid opens on the beat', strips:'Shape: strips on the beat', circle:'Shape: circle pulse', heartbeat:'Shape: heart pulse', starbeat:'Shape: star pulse',
@@ -3226,6 +3271,37 @@ $('chatform').addEventListener('submit', e => { e.preventDefault(); chatSend($('
 $('chatin').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); chatSend($('chatin').value); } }, SIG);
 // the message box grows with what is written (up to a few lines)
 const chatFit = () => { const t = $('chatin'); t.style.height = 'auto'; t.style.height = Math.min(120, t.scrollHeight) + 'px'; };
+// Ask Shubix by voice (the 🎤 beside the box): the browser hears it (Chrome sends the sound to its speech service; a
+// browser without one shows no mic) and the words go in as if typed. The chip beside it: Hindi, Marathi or English.
+const VOICE_LANGS = [['hi-IN', 'हिं'], ['mr-IN', 'मरा'], ['en-IN', 'EN']];
+{ const SR = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $('chatmic'), lb = $('chatlang');
+  if(SR && mic && lb){
+    let lang = 'hi-IN', rec = null;
+    try{ const v = localStorage.getItem('shubix-voice-lang'); if(VOICE_LANGS.some(([k]) => k === v)) lang = v; }catch(e){}
+    const show = () => { lb.textContent = (VOICE_LANGS.find(([k]) => k === lang) || VOICE_LANGS[0])[1]; };
+    mic.hidden = false; lb.hidden = false; show();
+    lb.addEventListener('click', () => { if(rec) return; const i = VOICE_LANGS.findIndex(([k]) => k === lang); lang = VOICE_LANGS[(i + 1) % VOICE_LANGS.length][0];
+      try{ localStorage.setItem('shubix-voice-lang', lang); }catch(e){} show(); }, SIG);
+    mic.addEventListener('click', () => {
+      if(rec){ rec.stop(); return; }   // tapped again: done speaking
+      if(chatWaiting) return;
+      const r = new SR(), box = $('chatin'), before = box.placeholder; rec = r;
+      r.lang = lang; r.interimResults = true; r.maxAlternatives = 1; r.continuous = false;
+      let heard = '', failed = '';
+      mic.setAttribute('aria-pressed', 'true'); mic.classList.add('bg-red-500', 'text-white'); box.placeholder = 'Listening… speak now';
+      r.onresult = e => { let t = ''; for(const x of e.results) t += x[0].transcript; box.value = t; chatFit(); heard = t; };
+      r.onerror = e => { failed = e.error || 'error'; };
+      r.onend = () => {
+        rec = null; mic.setAttribute('aria-pressed', 'false'); mic.classList.remove('bg-red-500', 'text-white'); box.placeholder = before;
+        const t = (heard || '').trim();
+        if(failed === 'not-allowed' || failed === 'service-not-allowed'){ chatSay('ai', 'Shubix needs the microphone to hear you. Allow it for this site in the browser (the icon left of the address).'); return; }
+        if(!t){ chatSay('ai', failed && failed !== 'no-speech' && failed !== 'aborted' ? (failed === 'network' ? 'Voice typing needs the internet. Please try again.' : 'Voice typing did not work. Please try again.') : "I didn't hear anything. Tap the mic and speak."); return; }
+        chatSend(t);
+      };
+      try{ r.start(); }catch(e){ failed = 'error'; r.onend(); }
+    }, SIG);
+  }
+}
 $('chatin').addEventListener('input', chatFit, SIG);
 $('chatchips').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; if(b.dataset.slash){ const t = $('chatin'); t.value = '/'; t.focus(); t.dispatchEvent(new Event('input')); return; } chatSend(b.dataset.say); }, SIG);
 // Ask Shubix's commands (Shared/core chatCommands.ts): "/" lists them, a command its choices, a choice writes its sentence
@@ -3725,7 +3801,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
     if(REF_TRX.includes(m.trx)) o.trx = m.trx; if(REF_FX.includes(m.fx)) o.fx = m.fx;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
-    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
+    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1); if(m.mono) o.mono = true; if(Number.isFinite(+m.tilt) && m.tilt !== null) o.tilt = c(+m.tilt, -45, 45);
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
       if(['lin','inOut','outCubic','outExpo','outBack'].includes(m.ease)) o.ease = m.ease; }
     return o; });
@@ -5526,15 +5602,16 @@ const isPop = L => !!(L && L.pop);
  * words ("photo boxes", "5 boxes on it") or /effect; Android: engine/brain/core.ts photoBoxes, the same. ---- */
 const isBox = L => !!(L && L.boxes);
 let boxBusy = false;
-async function photoBoxes(from = 1, by = 'mine'){
+async function photoBoxes(from = 1, by = 'mine', at = null){   // at: a copied Reel's box moments (where and how many)
   if(!edit.length || kind === 'talk' || boxBusy) return null;
-  const gen = editGen, shots = boxShots(edit, period, 3, from);
+  const gen = editGen, where = at && at.length ? boxShotsAt(edit, at, period, from) : boxShots(edit, period, 3, from).map(i => ({ i, n: 5 }));
+  const shots = where.map(w => w.i), many = new Map(where.map(w => [w.i, w.n]));
   if(!shots.length) return { shots: [] };
   boxBusy = true;
   try{
     const made = [], pics = new Map();
     for(const i of shots){
-      const srcs = boxSources(edit, i), plan = boxLayers(edit[i], period);
+      const srcs = boxSources(edit, i, many.get(i)), plan = boxLayers(edit[i], period, many.get(i));
       for(let k = 0; k < plan.length; k++){
         const q = srcs[k]; if(!q) continue;
         const key = q.shot + ':' + q.local.toFixed(2);
@@ -6600,7 +6677,7 @@ function drawFrame2D(t){
         if(p<0.5){ drawShot(og, pe, pl); og.fillStyle=`rgba(0,0,0,${EASE.inOut(p*2)})`; og.fillRect(0,0,W,H); }
         else { drawShot(og, e, local); og.fillStyle=`rgba(0,0,0,${1-EASE.inOut((p-0.5)*2)})`; og.fillRect(0,0,W,H); }
         break;
-      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing': case 'panels': case 'hpanels': case 'vpanels': case 'window':   // the 2D renderer: a dissolve
+      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flashblur': case 'stretch': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing': case 'panels': case 'hpanels': case 'vpanels': case 'window':   // the 2D renderer: a dissolve
       case 'dissolve': drawShot(og, pe, pl, {noFx:true}); drawShot(og, e, local, {alpha:EASE.inOut(p)}); break;
       case 'fadein': drawShot(og, e, local, {alpha:q}); break;
       case 'flash': {   // exposure flash: picture blows out to white, then settles
@@ -7056,6 +7133,11 @@ function drawFrameGL(t){
       case 'dropin': S.A = layerOf(pe, pl, {noFx:true}); S.B = layerOf(e, local, {dy:-(1 - EASE.outBack(p))*H}); S.mode = 3; break;
       case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles':
         S.mode = {stripes:17, blinds:18, checker:19, dots:20, noise:21, splith:22, wave:23, dipwhite:24, chroma:25, tiles:26}[e.tr]; S.prog = EASE.inOut(p); break;
+      // seen in trending Reels (2026-11-28 study): the picture blows out to white with a strong sideways smear, on the beat
+      case 'flashblur': { const b = 0.14*W*Math.sin(Math.PI*p); S.A = layerOf(pe, pl, {db:[b,0], noFx:true}); S.B = layerOf(e, local, {db:[b,0]});
+        S.A.expo += 1.6*p; S.B.expo += 1.6*(1-q); S.mode = 1; S.mix = EASE.inOut(p); S.flash = Math.max(S.flash||0, 0.55*Math.sin(Math.PI*p)); break; }
+      // the picture smears up and down into the next shot
+      case 'stretch': { const b = 0.16*H*Math.sin(Math.PI*p); S.A = layerOf(pe, pl, {db:[0,b], dy:-0.06*H*p, noFx:true}); S.B = layerOf(e, local, {db:[0,b], dy:0.06*H*(1-q)}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'zoomblur': S.A = layerOf(pe, pl, {scale:1+1.2*p*p, zb:2.5*p, noFx:true}); S.B = layerOf(e, local, {scale:1+0.8*(1-q)*(1-q), zb:2.5*(1-q)}); S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'shake': { const j = Math.sin(Math.PI*p)*0.05*W, sx = Math.sin(p*90)*j, sy = Math.cos(p*70)*j; S.A = layerOf(pe, pl, {dx:sx, dy:sy, noFx:true}); S.B = layerOf(e, local, {dx:-sx, dy:-sy}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'squeeze': { const k = EASE.inOut(p), a = layerOf(pe, pl, {noFx:true}), [ax, ay, aw, ah] = a.rect, [bx, by, bw, bh] = S.B.rect;
@@ -7762,7 +7844,7 @@ async function runExport(toCloud){
 // bitrates for 30 fps (60 fps gets half as much again); 4K is offered only where this browser can encode it
 const XQ = { '720': { scale: 2/3, bitrate: 6e6, label: '720p' }, '1080': { scale: 1, bitrate: 12e6, label: '1080p' }, '4k': { scale: 2, bitrate: 35e6, label: '4K' } };
 const xq = { res: '1080', fps: 30, nowm: false, my: true };
-try{ const v = JSON.parse(localStorage.getItem('studio-export') || 'null'); if(v && XQ[v.res]) xq.res = v.res; if(v && (v.fps === 30 || v.fps === 60)) xq.fps = v.fps; if(v && typeof v.nowm === 'boolean') xq.nowm = v.nowm; if(v && typeof v.my === 'boolean') xq.my = v.my; }catch(e){}
+try{ const v = JSON.parse(localStorage.getItem('studio-export') || 'null'); if(v && XQ[v.res]) xq.res = v.res; if(v && (v.fps === 25 || v.fps === 30 || v.fps === 60)) xq.fps = v.fps; if(v && typeof v.nowm === 'boolean') xq.nowm = v.nowm; if(v && typeof v.my === 'boolean') xq.my = v.my; }catch(e){}
 wmOff = false;   // set from the person's plan when the sheet opens (sheetOpen)
 let can4k = null, cloudInfo = null, cloudAt = 0;
 function exportDims(){ const [W0,H0] = SIZES[aspect], k = XQ[xq.res].scale; return [Math.round(W0*k/2)*2, Math.round(H0*k/2)*2]; }
@@ -8118,7 +8200,8 @@ function copyPlan(){
 }
 // the reference's mix of transitions and effects, placed where they suit (energetic ones on drops and hits, soft ones
 // on calm, long shots), counted so the shares match
-const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur' };
+const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur',
+  burn:'burn', zoomblur:'zoomblur', doors:'doors', wave:'wave', flashblur:'flashblur', stretch:'stretch', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
 let copyBudget = null;
 function copyStyle(){
   const R = refProfile, n = plan.length - 1; if(n < 1) return;
@@ -8132,12 +8215,15 @@ function copyStyle(){
       if(plan[i-1] && plan[i-1].tr === REF_TR[k] && k !== 'hard') continue; plan[i].tr = REF_TR[k]; free.delete(i); c--; }
     for(const i of order){ if(!c) break; if(free.has(i)){ plan[i].tr = REF_TR[k]; free.delete(i); c--; } } };
   const hot = [...idx].sort((a,b)=>energy(b)-energy(a)), calm = [...idx].sort((a,b)=>energy(a)-energy(b));
-  ['flash','zoom','whip','glitch','spin','blur'].forEach(k=>place(k, hot)); ['dissolve','fade','iris','diamond','heart','star','wipe','bars'].forEach(k=>place(k, calm));
+  // every kind the style has (styleKindOrder: the strong ones on the strongest shots), its newer kinds too
+  styleKindOrder(kinds).forEach(({ k, hot: h }) => { if(REF_TR[k]) place(k, h ? hot : calm); });
   // zooms inside shots: on that share of shots, the longest first
   const longI = [...plan.keys()].filter(i=>plan[i].end-plan[i].start >= 0.9), zn = Math.round(Math.min(1, R.zoomShare)*longI.length);
   longI.sort((a,b)=>(plan[b].end-plan[b].start)-(plan[a].end-plan[a].start)).slice(0, zn).forEach(i=>{ plan[i].efx = (plan[i].end-plan[i].start) > 1.2 ? 'pan' : 'punch-soft'; });
   copyBudget = {}; Object.entries(want).forEach(([k,v])=>{ if(k!=='hard') copyBudget[REF_TR[k]] = v; });
   copyShots();
+  // a learned style's effects inside shots (its Reels' RGB splits, mirrors, strobes, light leaks), on its share of shots
+  if(R.learned) styleFxShots(plan, R.fx, k => isLocked('fx', k)).forEach(([i, k]) => { plan[i].efx = k; });
 }
 // The exact copy: each shot does what the reference's shot at the same place did (copyPlan's s.ref), measured shot by
 // shot: the transition into it, its camera move (zoom, position, turn and its ease, as keyframes), a shake, a zoom.
@@ -8161,6 +8247,10 @@ function copyShots(){
     if(m.shake && !s.ak.length) s.efx = 'shake';
     // an effect read in the shot itself (RGB split, mirror, strobe): the studio's own, when the plan has it
     if(REF_FX.includes(m.fx) && !isLocked('fx', m.fx)) s.efx = m.fx;
+    // a black-and-white shot of the Reel: this one too (the per-shot B&W of the finish, cs.sat -1)
+    if(m.mono) s.cs = { ...(s.cs || {}), sat: -1 };
+    // a shot held tilted, its corners showing: the same turn
+    if(Number.isFinite(m.tilt) && !s.efx.startsWith('shake')) s.ak = tiltMove(s.ak, m.tilt, len, t => ({ t, s: 1, x: 0, y: 0, r: 0, o: 1, ez: 'lin' }));
     // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
     const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
     if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }
@@ -8312,7 +8402,7 @@ function refBoxesSoon(R){
   if(!R || !(R.boxes || []).length || R.boxesDone) return;
   refBoxesSoon.h = setTimeout(async () => { if(refProfile !== R || R.boxesDone || mode !== 'copy') return;
     if(!edit.length || pending || !reelLen() || layers.some(L => L.boxes)){ if(!layers.some(L => L.boxes)) refBoxesSoon(R); return; }
-    R.boxesDone = true; await photoBoxes(0, 'ref'); }, 800);
+    R.boxesDone = true; await photoBoxes(0, 'ref', R.boxes); }, 800);
 }
 // once the new Reel has its edit (song part and clips in)
 function refLookApplySoon(R){
@@ -8321,6 +8411,11 @@ function refLookApplySoon(R){
     if(!edit.length || pending || !reelLen()){ refLookApplySoon(R); return; }
     refLookApply(R); }, 600);
 }
+// "Copy its texts" (Copy a Reel): on unless the creator turned it off; changed after the copy, its texts come or go at once
+function refWordsOn(){ try{ return localStorage.getItem('shubix-ref-words') !== '0'; } catch(e){ return true; } }
+{ const b = $('refwords'); if(b){ b.checked = refWordsOn();
+  b.addEventListener('change', () => { try{ localStorage.setItem('shubix-ref-words', b.checked ? '1' : '0'); } catch(e){}
+    if(refProfile && refProfile.designDone && mode === 'copy'){ refProfile.designDone = false; refLookApply(refProfile); } }); } }
 function refLookApply(R){
   const D = R.design, L = reelLen(); if(!D || !L) return;
   R.designDone = true;
@@ -8329,12 +8424,13 @@ function refLookApply(R){
   const sizeOf = (hf, emoji) => clip(emoji ? hf*R.h/(base*0.16) : hf*R.h/0.75/(base*0.075), 0.4, 2.6);
   const timing = (ov, x) => { const whole = x.t0 <= 0.05 && x.t1 >= R.dur - 0.05; ov.all = whole; ov.t0 = whole ? 0 : Math.max(0, Math.min(L - 0.5, x.t0*k)); ov.t1 = whole ? L : Math.min(L, Math.max(ov.t0 + 0.5, x.t1*k)); ov.ref = true; };
   overlays = overlays.filter(o => !o.ref);   // an earlier reference's texts go
-  // only the format is copied, never the other Reel's words: each text's place, style, colour, entrance and time wait for
-  // the creator's own words (ph: shown while editing, left out of the video until something is written)
-  for(const x of D.texts || []){ const ov = addOverlay({ text: 'YOUR TEXT', style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false) }); ov.ph = true; timing(ov, x); }
+  // its texts as on the Reel, their words too (the server leaves out Instagram's marks and @names: never a watermark);
+  // "Copy its texts" off (2026-11-27, the creator's choice, kept): none of them
+  const words = refWordsOn();
+  for(const x of words ? D.texts || [] : []){ const ov = addOverlay({ text: x.text || 'YOUR TEXT', style: x.style, color: x.color, anim: x.anim, x: x.x, y: x.y, size: sizeOf(x.h, false) }); if(!x.text) ov.ph = true; timing(ov, x); }
   for(const x of D.stickers || []){ const ov = addOverlay({ text: x.emoji, emoji: true, x: x.x, y: x.y, size: sizeOf(x.h, true) }); timing(ov, x); }
   const said = [];
-  if(D.texts && D.texts.length) said.push(D.texts.length + ' text place' + (D.texts.length > 1 ? 's' : ''));
+  if(words && D.texts && D.texts.length) said.push(D.texts.length + ' text' + (D.texts.length > 1 ? 's' : ''));
   if(D.stickers && D.stickers.length) said.push(D.stickers.length + ' sticker' + (D.stickers.length > 1 ? 's' : ''));
   if(D.captions){ press('tstyle', 't', D.captions.style); ACCENT = D.captions.color || ACCENT;
     if(!capsOn && !$('capwrap').hidden){ $('caps').checked = true; capsOn = true; $('caprow').hidden = false; loadCaptions(); }
@@ -8360,6 +8456,8 @@ function fingerprintOf(R){
   const L = R.look || null, look = L ? Object.fromEntries(['mean','std','sat','warm','p5','p95','vig','grain','split'].filter(k => Number.isFinite(L[k])).map(k => [k, clip(L[k], k === 'warm' || k === 'vig' || k === 'split' ? -1 : 0, k === 'sat' ? 2 : 1)])) : null;
   return { dur: clip(R.dur, 1, 600), bpm: clip(R.bpm || 0, 0, 300), medianBeats: clip(R.medianBeats || 0, 0, 64), medianSec: clip(R.medianSec || 0, 0, 60), hookBeats: clip(R.hookBeats || 0, 0, 64), hookSec: clip(R.hookSec || 0, 0, 60),
     onBeat: clip(R.onBeat || 0, 0, 1), energy: ['steady','rising','falling'].includes(R.energy) ? R.energy : 'steady', zoomShare: clip(R.zoomShare || 0, 0, 1), trans: tr, look,
+    // the effects in its shots (share of shots), and a Reel of one take: it teaches its look, moves and speed, not a pace
+    fx: Object.fromEntries(Object.entries(R.fx || {}).filter(([k]) => REF_FX.includes(k)).map(([k, v]) => [k, clip(v, 0, 1)])), ...((R.cuts || []).length < 2 ? { oneTake: true } : {}),
     shotBeats: (R.shotBeats || []).slice(0, 300).map(x => clip(x, 0, 64)), shotSec: (R.shotSec || []).slice(0, 300).map(x => clip(x, 0, 60)),
     moments: cleanMoments(R.moments, 200) };
 }
@@ -8445,10 +8543,13 @@ async function teachMany(files, cat, shared, say){
         const read = () => analyzeReference(f, (p, what) => { say(head + what + ' ' + Math.round(p*100) + '%', (i + p)/files.length); titleProgress('learn', 'Learning Reels', (i + p)/files.length); });
         // the browser took the video decoder back while the page was hidden: the Reel is read again, not counted as bad
         const R = await read().catch(err => { if(!isReclaimed(err)) throw err; return read(); });
-        if(!R.cuts || R.cuts.length < 2) throw new Error('too few cuts to learn from');
+        // a Reel of one take (no cut, or one) still teaches its look, its camera move and its speed (2026-11-28: 8 of 48 were
+        // "too few cuts" and taught nothing); only a very short one is left out
+        if(!R.cuts || (R.cuts.length < 2 && !(R.dur >= 3 && (R.moments || []).length))) throw new Error('too short to learn from');
         say(head + 'saving', (i + 1)/files.length);
         await api('/api/studio/styles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, category: cat, shared, fp: fingerprintOf(R) }) });
-        const known = {}; R.cuts.forEach(c => { if(!(c.kind === 'hard' && R.unread.cuts.some(o => Math.abs(o.at - c.t) < 0.02))) known[c.kind] = (known[c.kind] || 0) + 1; });
+        // a cut known by its look (a light leak, a zoom out) counts under the studio's name for it
+        const known = {}; R.cuts.forEach((c, k) => { if(!(c.kind === 'hard' && R.unread.cuts.some(o => Math.abs(o.at - c.t) < 0.02))){ const m = (R.moments || [])[k + 1], n = (m && m.trx) || c.kind; known[n] = (known[n] || 0) + 1; } });
         await log({ name, ok: true, cuts: R.cuts.length, known, unread: R.unread });
         ok++; done.add(name); cutsN += R.cuts.length; oddN += R.unread.cuts.length; fxN += R.unread.fx.length;
       }catch(err){ console.warn('not learned from', f.name, err); bad++; await log({ name, ok: false, reason: String(err && err.message || err).slice(0, 200) }); }
@@ -9335,7 +9436,7 @@ async function pickRecent(fp){
 listRecent();
 
 const aiPrice = () => ({ on: !!aiOn && !aiLocked, cost: aiCostOf('reel'), balance: aiBal(), low: !!aiOn && !aiLocked && (IN_APP || planNow !== 'free') && !!aiCostOf('reel') && aiBal() !== null && aiBal() < aiCostOf('reel') && lowAsked !== reelIdNow() });
-root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, finishSet, brandSave, get brandLayers(){ return layers.filter(L => L.brand || L.finish).map(L => ({ kind: (lmedia[L.m] || {}).kind, role: L.role, finish: L.finish, t0: L.t0, t1: L.t1 })); }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
+root.__studio = { aiPrice, askShort, askLow: () => aiGate(true), get songR(){ return song && song.r; }, get now(){ return playing ? Math.max(0, curTime()) : (pos || 0); }, get playing(){ return playing; }, get dur(){ return buf ? buf.duration : 0; }, get songName(){ return song && song.name ? song.name.replace(/\.[^.]+$/, '') : ''; }, get title(){ return reelTitle; }, get hook(){ return hookText; }, get capsOn(){ return capsOn; }, segAt, drawTimeline, state: () => stateOf(), get pos(){ return pos; }, get playing(){ return playing; }, kfSet, kfTarget: () => kfTarget(), kfSeek, uAt, emph: emphAt, get capLines(){ return capLines; }, get editGen(){ return editGen; }, get vo(){ return vo; }, get base(){ return { buf: baseBuf, norm: baseNorm }; }, get overlays(){ return overlays; }, setOverlays: setOverlaysFromNative, get bg(){ return { mode: bgMode, mask: !!bgMask, err: bgErr }; }, get faceHow(){ return sources.map(s => s.faceHow); }, seek: t => { pos = t; const i = segAt(t); return prepare(i, t).then(()=>drawFrame(t)); }, get talk(){ return talk; }, get audio(){ return buf; }, get kind(){ return kind; }, get section(){ return { start: secStart, len: buf ? buf.duration : 0, auto: sec.auto, whole: song ? song.buf.duration : 0, words: capWords }; }, get wakeLockHeld(){ return !!wakeLock; }, get layers(){ return layers; }, subjectPop, finishSet, brandSave, get brandLayers(){ return layers.filter(L => L.brand || L.finish).map(L => ({ kind: (lmedia[L.m] || {}).kind, role: L.role, finish: L.finish, t0: L.t0, t1: L.t1 })); }, loseGL: () => GL && GL.gl.getExtension('WEBGL_lose_context'), renderedLook, get capLines(){ return capLines; }, faceYOnScreen, get edit(){ return edit; }, setEdit: list => restoreEdit(list), get plan(){ return plan; }, sources, gl: !!GL, get beats(){ return beats; }, get beatAccents(){ return beatAccents; }, get drumHits(){ return drumHits; }, get parts(){ return songPartsRel; }, get mode(){ return mode; }, get recipe(){ return recipeNow().name; }, planNow: () => adaptPlan().map(x => +x.start.toFixed(2)), get beatInfo(){ return beatInfo; }, get ref(){ return refProfile; }, fingerprint: () => refProfile ? fingerprintOf(refProfile) : null, copyMatch, get grade(){ return GRADES[look]; },
   snap: histSnap, unsnap: snapRestore, upsell, changeGate, keepOldReel, askNotDone, aiRetry,
   // Make Reel waits for Shubix's plan and nothing is running (flow.ts): its next step is tried again, then it is said (Retry / Close)
   aiKick: () => { if(sources.some(s => !s.ai && !s.aiFailed && !s.removed)) aiRun(); else if(buf && sources.length && !recording){ paceMaybe(); directorMaybe(); } }, aiStalled: () => { dirFailedKey = dirKey(); aiDown(); }, cancelled: () => ({ song: songCancelled, clips: clipsStopped }), guard: on => tasks.setGuard(on ? flowGuard : null), projId: () => proj ? proj.id : '', saveNow, shotOp, shotMove: shotReorder, shotRoll, ovSelect: i => { ovSel = overlays[i] ? i : -1; renderOvList(); redraw(); }, ovRefresh: () => { renderOvList(); redraw(); }, get ovSel(){ return ovSel; }, shotCs, shotSet, shotSlip, shotTrim, shotRipple, shotReverse, addMark, clearMarks, setTlZoom, sfxAdd, sfxEvents, ensureMix, setLook: k => { const b = $('look').querySelector('[data-l="' + k + '"]'); if(b) b.click(); return look; }, get marks(){ return userMarks; }, autoExport, extractAudio, autoSound, storyRun, setPart: t => { remakeOk(); sec.start = Math.max(0, +t || 0); sec.auto = false; return useSection(); }, saveLast: () => lastVideo && saveFile(lastVideo, lastName || 'reel.mp4'),
