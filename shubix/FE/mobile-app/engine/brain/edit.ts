@@ -613,7 +613,7 @@ function cleanMoments(list, max = 40){   // max: 40 for the AI's request, 200 in
     if(['kick','dhol','snare','hat'].includes(m.hit)) o.hit = m.hit;
     if(REF_TRX.includes(m.trx)) o.trx = m.trx; if(REF_FX.includes(m.fx)) o.fx = m.fx;
     if(m.drop) o.drop = true; if(m.shake) o.shake = true; if(m.flick) o.flick = true; if(m.black) o.black = true; if(Number.isFinite(+m.at)) o.at = c(m.at, 0, 600); if(m.freeze !== undefined && m.freeze !== null) o.freeze = c(m.freeze, 0, 1);
-    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1);
+    if(Array.isArray(m.spd) && m.spd.length === 5) o.spd = m.spd.map(v => c(v, 0.2, 4)); if(m.frz !== undefined) o.frz = c(m.frz, 0, 1); if(m.mono) o.mono = true;
     if(Array.isArray(m.move) && m.move.length >= 2){ o.move = m.move.slice(0, 5).map(k => ({ f: c(k.f, 0, 1), s: c(k.s, 0.4, 2.5), x: c(k.x, -0.6, 0.6), y: c(k.y, -0.6, 0.6), r: c(k.r, -60, 60) }));
       if(['lin','inOut','outCubic','outExpo','outBack'].includes(m.ease)) o.ease = m.ease; }
     return o; });
@@ -1228,6 +1228,8 @@ function copyShots(){
     if(m.shake && !s.ak.length) s.efx = 'shake';
     // an effect read in the shot itself (RGB split, mirror, strobe): the studio's own, when the plan has it
     if(REF_FX.includes(m.fx) && !EH.isLocked('fx', m.fx)) s.efx = m.fx;
+    // a black-and-white shot of the Reel: this one too (the per-shot B&W of the finish, cs.sat -1)
+    if(m.mono) s.cs = { ...(s.cs || {}), sat: -1 };
     // its speed: the reference's ramp (five speeds over the shot) or its freeze (plays, then the picture stops), as a curve
     const cv = Array.isArray(m.spd) && m.spd.length === 5 && len >= 0.6 ? m.spd : m.frz !== undefined && len >= 0.6 ? [0, 0.25, 0.5, 0.75, 1].map(f => f < m.frz ? 1 : 0.2) : null;
     if(cv){ const curve = { a: cv[0], b: cv[1], c: cv[2], d: cv[3], e: cv[4] }; s.cs = { ...(s.cs || {}), curve }; s.sp = curveSpeed(len, curve); s.spByRef = true; }

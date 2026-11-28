@@ -181,7 +181,7 @@ class ShubixVideoModule : Module() {
       kotlin.concurrent.thread(isDaemon = true, name = "shubix-smooth") {
         try {
           require(end > start && speed.isFinite() && speed > 0.0) { "Nothing to make smooth." }
-          val len = end - start, rate = speed.coerceIn(0.25, 4.0)
+          val len = end - start; val rate = speed.coerceIn(0.25, 4.0)
           val slices = (if (ramp.isNotBlank()) speedRampSlices(org.json.JSONArray(ramp), len, rate) else emptyList())
             .ifEmpty { listOf(RampSlice(0.0, len, rate)) }
           if (slices.none { it.speed < 0.985 }) { promise.resolve(""); return@thread }

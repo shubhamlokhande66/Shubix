@@ -18,7 +18,7 @@ export const CUT_K = 7;   // frames each side of a cut that are looked at (a fad
 export const REF_KINDS: Record<string, string> = { hard: "hard cuts", dissolve: "dissolves", fade: "fades", flash: "flashes", whip: "whip pans", zoom: "zoom-throughs", glitch: "glitches", spin: "spins",
   iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions",
   // known by their look (refCopy.ts REF_TRX), the studio's own by these names: learned and copied like the others (2026-11-28)
-  burn: "light leaks", flashblur: "flash blurs", stretch: "stretch smears", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
+  burn: "light leaks", zoomblur: "zoom blurs", doors: "curtain reveals", flashblur: "flash blurs", stretch: "stretch smears", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
 
 // colour statistics of a w x h frame's pixels, plus a 96 x 96 crop at full size for grain
 export function lookStats(d: ArrayLike<number>, w: number, h: number, cd?: ArrayLike<number> | null): Look {
@@ -81,6 +81,21 @@ export function rgbShiftOf(pic: Pic | null){
 // Learning (Teach Shubix from many Reels): a transition this reader does not know. Read as a hard cut, yet not a clean
 // one-frame jump: two or more frames in its middle are neither shot, nor a mix of the two (a dissolve). What it looks like
 // goes to the learning log (Admin -> My trends), with the studio's own transition it seems to be when there is one (ours).
+// a frame of a doors / curtain opening: its middle columns are the new shot, its two sides the old one (or black)
+function doorsOf(odd: Any[], A: Any, B: Any){
+  const W = A.FW, H = Math.floor(A.Y.length / Math.max(1, W)); if(!W || !H) return 0;
+  const band = (F: Any, P: Any, x0: number, x1: number) => { let s = 0, n = 0; for(let y=0;y<H;y++) for(let x=x0;x<x1;x++){ s += Math.abs(F.Y[y*W+x] - P.Y[y*W+x]); n++; } return n ? s/n : 1; };
+  const c0 = Math.floor(W*0.4), c1 = Math.ceil(W*0.6), e = Math.max(1, Math.floor(W*0.12));
+  return odd.filter(F => { const mB = band(F, B, c0, c1), mA = band(F, A, c0, c1);
+    const sides = [[0, e], [W - e, W]].map(([a, b]) => { const dA = band(F, A, a, b), dB = band(F, B, a, b); let dark = 0, n = 0; for(let y=0;y<H;y++) for(let x=a;x<b;x++){ dark += F.Y[y*W+x]; n++; } return dA < 0.6*dB || dark/n < 0.06; });
+    return mB < 0.6*mA && sides.every(Boolean); }).length;
+}
+/** how coloured some small frames are (0 grey .. 1), null: none */
+function satOfPics(ps: (Pic | null)[]){
+  let s = 0, n = 0;
+  for(const p of ps){ if(!p) continue; const d = p.data; for(let i=0;i+3<d.length;i+=16){ const mx = Math.max(d[i], d[i+1], d[i+2]), mn = Math.min(d[i], d[i+1], d[i+2]); if(mx > 20){ s += (mx - mn)/mx; n++; } } }
+  return n ? s/n : null;
+}
 const streak = (fs: Any[]) => { const a = fs.map(f => f.aniso).filter(x => x !== undefined); return a.length >= 2 && a.filter((x: number) => x < 0.3 || x > 3.3).length * 2 >= a.length; };   // sideways (low) or up-down (high)
 export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   if(c.kind !== 'hard' || c.one || c.flick || c.flickEnd) return null;
@@ -96,7 +111,8 @@ export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   const side = dxs.length >= 2 && dxs.every(x => Math.sign(x) === Math.sign(dxs[0])) && Math.abs(avg(dxs)) >= 4 ? (avg(dxs) > 0 ? 'right' : 'left') : '';
   const zoom = scs.length >= 2 ? (avg(scs) < 0.97 ? 'out' : avg(scs) > 1.03 ? 'in' : '') : '';
   let guess = 'not known', ours: string | null = null;
-  if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
+  if(doorsOf(odd, A, B) >= 2){ guess = 'curtain / doors open'; ours = 'doors'; }
+  else if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
   else if(zoom === 'out'){ guess = 'zoom out'; ours = 'zoomout'; }
   // blur all one way (aniso low: streaks, not a soft focus): the picture smears into the next shot, blown out to white
   // or not (seen in trending Reels, 2026-11-28 study); a brighter frame without the streaks is a light leak
@@ -285,7 +301,7 @@ export async function readReel(io: ReelIo){
     // unless both are clean one-frame jumps (a strobe of hard cuts)
     for(let i=cuts.length-1;i>0;i--){ const a = cuts[i-1], b = cuts[i];
       if(b.t - a.t < 0.2 && !a.one && !b.one && !(a.exact && b.exact) && !a.flick && !b.flick && !a.flickEnd && !b.flickEnd){ if(b.kind === 'hard' && a.kind !== 'hard') b.kind = a.kind; else if(b.kind === 'hard' && !a.one) b.kind = 'whip'; cuts.splice(i-1, 1); } }
-    cuts.forEach(c=>{ delete c.one; delete c.flick; delete c.flickEnd; delete c.exact; delete c.blurDip; });   // (c.after stays: the black end)
+    cuts.forEach(c=>{ if(c.kind === 'zoom' && (c.blurDip ?? 1) < 0.65) c.zb = true; delete c.one; delete c.flick; delete c.flickEnd; delete c.exact; delete c.blurDip; });   // a soft zoom: zoom blur   // (c.after stays: the black end)
     // shots: a zoom inside them (two frames) and the colour look (the middle frame)
     onP(0.85, 'reading its look');
     const bounds = [0, ...cuts.map(c=>c.t), dur], sh: Any[] = [];
@@ -299,7 +315,7 @@ export async function readReel(io: ReelIo){
     sh.forEach((x,i)=>{ const mine = zi.map((z,k)=>[z,k] as [number[], number]).filter(([z])=>z[0]===i), gr = mine.map(([,k])=>zf[k] ? greyOf(zf[k] as Pic) : null);
       let move: Any = null;
       if(gr.length >= 3 && gr.every(Boolean)) move = shotMove(gr.map(g=>g!.Y), mine.map(([z])=>z[1]), gr[0]!.FW, gr[0]!.FH);
-      shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick });
+      shots.push({ a: x.a, b: x.b, zoom: move ? (move.zoom === 'in' ? 1.06 : move.zoom === 'out' ? 0.94 : 1) : 1, move, flick: x.flick, sat: satOfPics(mine.map(([,k]) => zf[k] as Pic | null)) });
       const lk = lf[i]; if(lk) looks.push(lk);
       // the learning log: an effect in the shot the styles do not learn yet (the studio has each of these)
       if(!x.flick){ const cv = mine.map(([,k]) => zf[k]).filter(Boolean), found: string[][] = [];
@@ -327,11 +343,17 @@ export async function readReel(io: ReelIo){
   const smp = samples || [], shotStat = shots.map(s => { let m = 0, b = 0, n = 0;
     for(const q of smp){ if(q.t >= s.a + 0.07 && q.t < s.b - 0.07){ m += q.m; b += q.b; n++; } } return n ? { m: m/n, b: b/n } : null; });
   const mMax = Math.max(1e-6, ...shotStat.map(x => x ? x.m : 0));
+  // black-and-white shots in a Reel in colour (most shots coloured, this one grey); a Reel all in grey is its look's
+  { const ss = shots.map(s => s.sat).filter((x: Any) => x !== null).sort((a: number, b: number) => a - b), md = ss.length ? ss[ss.length >> 1] : 0;
+    if(md > 0.12) shots.forEach(s => { if(s.sat !== null && s.sat < 0.04 && !s.flick) s.mono = true; }); }
   const moments = shots.slice(0, 200).map((s,i)=>{
     const mm: Any = { beats: shotBeats[i] || 0, sec: +shotSec[i].toFixed(3), at: +s.a.toFixed(3), tr: i ? (cuts[i-1] ? cuts[i-1].kind : 'hard') : 'start', zoom: s.zoom > 1.03 ? 'in' : s.zoom < 0.97 ? 'out' : 'none' };
     if(s.flick) mm.flick = true;
     // a transition or an effect the reader knows only by its look, one the studio has: copied too (refCopy.ts)
     if(i && cuts[i-1] && cuts[i-1].odd && REF_TRX.includes(cuts[i-1].odd.ours)) mm.trx = cuts[i-1].odd.ours;
+    if(i && cuts[i-1] && cuts[i-1].zb) mm.trx = 'zoomblur';
+    // a black-and-white shot in a Reel in colour (the studio's per-shot B&W, cs.sat -1)
+    if(s.mono) mm.mono = true;
     // panels: the shot a build opens (it starts within the build or just after it)
     if(i && !s.flick){ const pb = refPanels.find(b => s.a >= b.t0 - 0.2 && s.a <= b.t1 + 0.6); if(pb && pb.kind !== 'boxes') mm.trx = pb.kind; }
     { const f = fxOdd.find(x => Math.abs(x.at - s.a) < 0.02 && REF_FX.includes(x.ours)); if(f && !s.flick) mm.fx = f.ours; }

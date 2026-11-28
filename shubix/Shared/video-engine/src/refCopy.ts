@@ -3,7 +3,7 @@
  * were read and only written to the learning log; now the copied shot gets them.
  */
 /** transitions: a push to a side, a zoom out, a light leak / film burn */
-export const REF_TRX = ["slideleft", "slideright", "zoomout", "burn", "flashblur", "stretch", "panels", "hpanels", "vpanels"];
+export const REF_TRX = ["slideleft", "slideright", "zoomout", "burn", "flashblur", "stretch", "zoomblur", "doors", "panels", "hpanels", "vpanels"];
 /** effects inside a shot: RGB split, mirror, strobe */
 export const REF_FX = ["rgbpulse", "mirror", "strobe"];
 
