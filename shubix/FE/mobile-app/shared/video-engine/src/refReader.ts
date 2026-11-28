@@ -231,6 +231,10 @@ export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>
     const nb: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nb.push(d[j]); nb.sort((x,y)=>x-y);
     const loc = nb.length ? (nb[(nb.length-1)>>1] + nb[nb.length>>1])/2 : 0;
     if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)){ cuts.push(t); continue; }
+    // a jump cut: one frame jumps far above both frames next to it and the motion around it, though little of the picture
+    // changes (the same clip later on, the same colours and light: 0.03-0.04 against 0.007 around it). A move, a pan or
+    // shake changes over several frames, never on one frame alone (5 of 14 cuts were missed, 2026-11-28)
+    if(d[i] > 0.022 && d[i] > 3*loc + 0.004 && d[i] > 3*Math.max(d[i-1], d[i+1]) && !cuts.some(c => Math.abs(c - t) < 2.5/FPS)){ cuts.push(t); continue; }
     // a colour cut: the colours jump far above their change around it (a pan or a light change moves them over many frames)
     const nc: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nc.push(cd[j]); nc.sort((x,y)=>x-y);
     const locC = nc.length ? (nc[(nc.length-1)>>1] + nc[nc.length>>1])/2 : 0;
