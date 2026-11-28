@@ -16,9 +16,9 @@ import SEEDS from "./seed-styles.json";
 export const CATEGORIES = ["wedding", "travel", "festival", "dance", "talking", "product", "food", "fitness", "vlog", "birthday", "car", "shop", "event", "other"] as const;
 export const KINDS = ["hard", "flash", "fade", "whip", "zoom", "dissolve", "glitch", "spin", "iris", "diamond", "heart", "star", "wipe", "bars", "blur",
   // known by their look, the studio's own by these names (video-engine refCopy.ts REF_TRX), learned since 2026-11-28
-  "burn", "flashblur", "stretch", "zoomblur", "doors", "zoomout", "slideleft", "slideright", "panels", "hpanels", "vpanels"] as const;
+  "burn", "flashblur", "stretch", "zoomblur", "doors", "wave", "zoomout", "slideleft", "slideright", "panels", "hpanels", "vpanels"] as const;
 /** the effects in a shot that are learned (refCopy.ts REF_FX) */
-export const FX = ["rgbpulse", "mirror", "strobe"] as const;
+export const FX = ["rgbpulse", "mirror", "strobe", "leak"] as const;
 const FIELDS = ["tr", "efx", "sp"] as const;
 const num = (a: number, b: number) => z.number().finite().min(a).max(b);
 export const Look = z.object({ mean: num(0, 1), std: num(0, 1), sat: num(0, 2), warm: num(-1, 1), p5: num(0, 1), p95: num(0, 1), vig: num(-1, 1), grain: num(0, 1), split: num(-1, 1) }).partial();

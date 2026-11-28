@@ -71,7 +71,7 @@ export const RefMoment = z.object({
   spd: z.array(z.number().min(0.2).max(4)).length(5).optional(), frz: z.number().min(0).max(1).optional(),
   /** a black-and-white shot in a Reel in colour */
   mono: z.boolean().optional(),
-  trx: z.enum(["slideleft", "slideright", "zoomout", "burn", "flashblur", "stretch", "zoomblur", "doors", "panels", "hpanels", "vpanels"]).optional(), fx: z.enum(["rgbpulse", "mirror", "strobe"]).optional(),
+  trx: z.enum(["slideleft", "slideright", "zoomout", "burn", "flashblur", "stretch", "zoomblur", "doors", "wave", "panels", "hpanels", "vpanels"]).optional(), fx: z.enum(["rgbpulse", "mirror", "strobe", "leak"]).optional(),
 });
 export const Reference = z.object({
   name: word(80), medianBeats: z.number().min(0).max(64), hookBeats: z.number().min(0).max(64), onBeat: lvl,

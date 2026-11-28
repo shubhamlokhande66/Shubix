@@ -8169,7 +8169,7 @@ function copyPlan(){
 // the reference's mix of transitions and effects, placed where they suit (energetic ones on drops and hits, soft ones
 // on calm, long shots), counted so the shares match
 const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur',
-  burn:'burn', zoomblur:'zoomblur', doors:'doors', flashblur:'flashblur', stretch:'stretch', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
+  burn:'burn', zoomblur:'zoomblur', doors:'doors', wave:'wave', flashblur:'flashblur', stretch:'stretch', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
 let copyBudget = null;
 function copyStyle(){
   const R = refProfile, n = plan.length - 1; if(n < 1) return;

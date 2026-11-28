@@ -18,7 +18,7 @@ export const CUT_K = 7;   // frames each side of a cut that are looked at (a fad
 export const REF_KINDS: Record<string, string> = { hard: "hard cuts", dissolve: "dissolves", fade: "fades", flash: "flashes", whip: "whip pans", zoom: "zoom-throughs", glitch: "glitches", spin: "spins",
   iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions",
   // known by their look (refCopy.ts REF_TRX), the studio's own by these names: learned and copied like the others (2026-11-28)
-  burn: "light leaks", zoomblur: "zoom blurs", doors: "curtain reveals", flashblur: "flash blurs", stretch: "stretch smears", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
+  burn: "light leaks", zoomblur: "zoom blurs", doors: "curtain reveals", wave: "wave warps", flashblur: "flash blurs", stretch: "stretch smears", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
 
 // colour statistics of a w x h frame's pixels, plus a 96 x 96 crop at full size for grain
 export function lookStats(d: ArrayLike<number>, w: number, h: number, cd?: ArrayLike<number> | null): Look {
@@ -96,6 +96,15 @@ function satOfPics(ps: (Pic | null)[]){
   for(const p of ps){ if(!p) continue; const d = p.data; for(let i=0;i+3<d.length;i+=16){ const mx = Math.max(d[i], d[i+1], d[i+2]), mn = Math.min(d[i], d[i+1], d[i+2]); if(mx > 20){ s += (mx - mn)/mx; n++; } } }
   return n ? s/n : null;
 }
+// a frame of a wave warp: its rows slid sideways by amounts that swing back and forth down the picture (a zigzag)
+function waveOf(odd: Any[], A: Any, B: Any){
+  const W = A.FW, H = Math.floor(A.Y.length / Math.max(1, W)); if(!W || W < 16 || H < 12) return 0;
+  const zig = (F: Any, P: Any) => { const sh: number[] = [];
+    for(let y=0;y<H;y+=2){ let best = 0, bd = Infinity; for(let s=-4;s<=4;s++){ let d = 0; for(let x=4;x<W-4;x++) d += Math.abs(F.Y[y*W+x] - P.Y[y*W+x+s]); if(d < bd){ bd = d; best = s; } } sh.push(best); }
+    let flips = 0; for(let k=2;k<sh.length;k++) if((sh[k]-sh[k-1])*(sh[k-1]-sh[k-2]) < 0) flips++;
+    return Math.max(...sh) - Math.min(...sh) >= 4 && flips >= 3; };
+  return odd.filter(F => zig(F, A) || zig(F, B)).length;
+}
 const streak = (fs: Any[]) => { const a = fs.map(f => f.aniso).filter(x => x !== undefined); return a.length >= 2 && a.filter((x: number) => x < 0.3 || x > 3.3).length * 2 >= a.length; };   // sideways (low) or up-down (high)
 export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   if(c.kind !== 'hard' || c.one || c.flick || c.flickEnd) return null;
@@ -112,6 +121,7 @@ export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   const zoom = scs.length >= 2 ? (avg(scs) < 0.97 ? 'out' : avg(scs) > 1.03 ? 'in' : '') : '';
   let guess = 'not known', ours: string | null = null;
   if(doorsOf(odd, A, B) >= 2){ guess = 'curtain / doors open'; ours = 'doors'; }
+  else if(waveOf(odd, A, B) >= 2){ guess = 'wave warp'; ours = 'wave'; }
   else if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
   else if(zoom === 'out'){ guess = 'zoom out'; ours = 'zoomout'; }
   // blur all one way (aniso low: streaks, not a soft focus): the picture smears into the next shot, blown out to white
@@ -324,6 +334,12 @@ export async function readReel(io: ReelIo){
         if(gr.filter(g => g && sym(g) < 0.015).length >= 2) found.push(['mirror', 'mirror']);
         const bs = (samples || []).filter(q => q.t >= x.a + 0.07 && q.t < x.b - 0.07).map(q => q.b);
         if(bs.length >= 6){ const md = [...bs].sort((p,q)=>p-q)[bs.length>>1]; if(bs.filter(b => b > md + 0.25).length >= 2) found.push(['strobe / flash pulses', 'strobe']); }
+        // a light leak passing over the shot: some of its frames clearly brighter AND warmer than the rest, not all of them
+        // (a strobe is several sharp white spikes; a shot that is simply warm is its look)
+        if(!found.some(f => f[1] === 'strobe') && cv.length >= 3){
+          const br = cv.map((p: Any) => { const d = p.data; let s3 = 0, n3 = 0; for(let q=0;q+3<d.length;q+=16){ s3 += d[q] + d[q+1] + d[q+2]; n3++; } return n3 ? s3/n3/765 : 0; }), wm = cv.map((p: Any) => warmOf(p.data));
+          const mid = (a: number[]) => [...a].sort((p,q)=>p-q)[a.length>>1], mb = mid(br), mw = mid(wm), hot = br.map((b2: number, k: number) => b2 > mb + 0.12 && wm[k] > mw + 0.05).filter(Boolean).length;
+          if(hot >= 1 && hot * 2 <= cv.length) found.push(['light leak in the shot', 'leak']); }
         found.forEach(([guess, ours]) => fxOdd.push({ at: +x.a.toFixed(2), guess, ours })); } });
   } finally { refBars = null; }
   // pace
