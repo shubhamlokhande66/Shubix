@@ -431,7 +431,7 @@ export async function readReel(io: ReelIo){
     zoomShare: shots.filter(s=>s.b-s.a >= 0.9 && (s.zoom >= 1.05 || s.zoom <= 0.95)).length/Math.max(1, shots.filter(s=>s.b-s.a >= 0.9).length),   // of the shots long enough to judge
     look, bpm: P ? 60/P : 0,
     // photo boxes over its shots (boxes.ts): the copy gets them on its own long shots
-    boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1 })),
+    boxes: refPanels.filter(b => b.kind === 'boxes').map(b => ({ t0: b.t0, t1: b.t1, n: b.n })),
     // the learning log: what this reader could not learn (a transition it does not know; an effect in a shot)
     // (one the studio has and copies is known: only what it lacks is left here)
     unread: { cuts: cuts.filter(c => c.odd && !REF_TRX.includes(c.odd.ours)).map(c => ({ at: +c.t.toFixed(2), ...c.odd })), fx: fxOdd.filter((x: Any) => !REF_FX.includes(x.ours)) } };

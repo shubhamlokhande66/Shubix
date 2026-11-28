@@ -1,7 +1,7 @@
 import { safeMessage } from "@mobile/utils";
 import { createHost, soundOf } from "../engine/brain/host";
 import initial from "../engine/brain/initial-state.json";
-import { goodSecs, limitStereo, windowStats } from "../engine/brain/pure";
+import { goodSecs, limitStereo, srcPos, windowStats } from "../engine/brain/pure";
 import { bestMoment, checkExportedReel, clipAdvice, instaCardStart, lookStats, onsetCurve, reactionsOf, readReel, stillEnd, type ExportExpect, type Pic } from "@mobile/video-engine";
 import { describeCut, soundMap } from "../engine/components/studio/soundmap";
 import { TTS_VOICES, voiceLanguage } from "../engine/lib/tts/voices";
@@ -134,7 +134,7 @@ export function createNativeEngine(io: NativeIo) {
   const make0 = () => createHost(JSON.stringify(initial), { analyse: (m: Float32Array, sr: number, opts: Args) => analyse(m, sr, opts), getCtx, apiFetch, aiFrames, readSound, speechProbs, popMask, popCut, ask: (q: Parameters<NonNullable<NativeIo["ask"]>>[0]) => io.ask ? io.ask(q) : Promise.resolve(null), stat: io.stat, spent: io.spent, tell: io.tell, task: io.task, voices: TTS_VOICES, speak });
   // My brand (the app keeps it: lib/engine.ts): every new Reel's host gets it
   let brand: { handle: string; logoPath: string | null; logoW?: number; logoH?: number; mark: boolean; end: boolean } | null = null;
-  const make = () => { const h = make0(); h.ES.brand = brand; return h; };
+  const make = () => { const h = make0(); h.ES.brand = brand; (h.values as Record<string, unknown>).copyLookSoon = () => { void copyAfterEdit(h); }; return h; };
   let host = make(), signedIn = false;
   /** Shubix AI did not edit this Reel: the reason, in Ask Shubix's history (it was silent before) */
   function aiWhyOff() {
@@ -299,6 +299,42 @@ export function createNativeEngine(io: NativeIo) {
       for (const [, i] of part) { if (o >= b.length) break; const got = b[o++] === 1; if (got) { if (o + size > b.length) break; out[i] = { width: w, height: h, data: b.subarray(o, o + size) }; o += size; } }
     }
     return out;
+  }
+  /** Copy a Reel, once the new Reel has its edit (the brain's copyLookSoon): (1) its colour look, as the website's copyLook
+   * makes it (core.ts), from the clips' own frames, since there is no canvas here to draw the Reel on: the grade that takes
+   * the clips' brightness, contrast, colour and warmth to the copied Reel's (the website's first pass, the same rules);
+   * (2) its photo boxes, where and how many it had (boxes.ts boxShotsAt). */
+  let copyRun = 0;
+  async function copyAfterEdit(h: ReturnType<typeof make0>) {
+    const ES = h.ES as Record<string, any>, V = h.values as Record<string, any>, R = ES.refProfile;   // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!R || ES.mode !== "copy" || !ES.edit?.length) return;
+    const run = ++copyRun, live = () => run === copyRun && host === h && ES.refProfile === R;
+    try {
+      const key = `${R.name}|${R.dur}|` + ES.edit.map((e: { src: number; in: number }) => `${e.src}:${(+e.in).toFixed(2)}`).join(";");
+      if (R.look && ES.look === "copy" && V.GRADES && key !== ES.copyLookKey) {
+        const n = ES.edit.length, looks: Record<string, number>[] = [];
+        for (const f of [0.08, 0.25, 0.42, 0.58, 0.75, 0.92]) {
+          const e = ES.edit[Math.min(n - 1, Math.floor(f * n))], src = ES.sources[e.src];
+          if (!src || !src.path || !src.w || !src.h) continue;
+          const w = 240, hh = Math.max(2, Math.round(w * src.h / src.w / 2) * 2);
+          try { const [p] = await framesOf(src.path, w, hh, src.fps || 30, [srcPos(e, 0.5 * (e.end - e.start))]); if (p) looks.push(lookOfPic(p) as unknown as Record<string, number>); } catch { /* a photo or a clip it cannot read: the others */ }
+          if (!live()) return;
+        }
+        if (looks.length >= 2) {
+          const T = R.look as Record<string, number>, O: Record<string, number> = {};
+          for (const k of ["mean", "std", "sat", "warm", "vig", "p5", "grain", "split"]) O[k] = looks.reduce((q, l) => q + (+l[k] || 0), 0) / looks.length;
+          const cl = (x: number, a: number, b: number) => Math.min(b, Math.max(a, Number.isFinite(x) ? x : (a + b) / 2)), mono = T.sat < 0.05 ? 1 : 0;
+          V.GRADES.copy = { con: cl(T.std / Math.max(0.02, O.std), 0.7, 2), sat: mono ? 1 : cl(T.sat / Math.max(0.02, O.sat), 0.35, 3), bri: cl(T.mean / Math.max(0.03, O.mean), 0.6, 1.4),
+            warm: mono ? 0 : cl((T.warm - O.warm) / 0.11, -1.6, 1.6), teal: mono ? 0 : cl((T.split - O.split - 0.1) / 0.3, 0, 0.8), mono,
+            lift: cl(T.p5 - O.p5, 0, 0.15), vig: cl((T.vig - O.vig) * 1.4, 0, 0.9), grain: cl((T.grain - O.grain) * 3, 0, 0.15) };
+          ES.copyLookKey = key; ES.copyLookScore = null;
+        }
+      }
+      // its photo boxes, once a Reel (a new reference clears them)
+      if ((R.boxes || []).length && !R.boxesDone && !(ES.layers || []).some((L: { boxes?: string }) => L.boxes) && typeof (h as Record<string, any>).brain?.photoBoxes === "function") {   // eslint-disable-line @typescript-eslint/no-explicit-any
+        R.boxesDone = true; await (h as Record<string, any>).brain.photoBoxes(0, "ref", R.boxes);   // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+    } catch (e) { console.warn("copy after edit", e); }
   }
   /** a frame's colour look, as the website reads it (lookOfImage): a 96-wide copy for colours, a 96 x 96 crop at full size for grain */
   function lookOfPic(p: Pic) {

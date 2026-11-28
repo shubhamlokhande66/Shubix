@@ -19,7 +19,7 @@ import { compareMoments, applyCompared, keepOneComparison } from '@shubix/video-
 import { findRetakes, wordsWithout } from '@shubix/video-engine';
 import { clipUse, wasteShare, absorbRepeats } from '@shubix/video-engine';
 import { storyRoles, storyBonus, teaserCut, teaserWorth, teaserFree, flowBonus, reactionBonus, reactionsOf, clipAdvice, adviceLine, boxFit, boxWords } from '@shubix/video-engine';
-import { boxShots, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, tiltMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
+import { boxShots, boxShotsAt, boxSources, boxCrop, boxLayers, bumpAt, BOX_ASPECT, instaCardStart, coverMove, tiltMove, REF_FX, REF_TRX, refTrOf, popScore, popAlpha, popShots, popWindow, popLayer, popAt, popSteady, POP_SIDE, handleOf, endCardTime, MARK, END_LOGO, barsBand, tintPulses, tintAt, bwShots, pictureOf, pictureWords, fitLook } from '@shubix/video-engine';
 import { showablePhoto } from '@/lib/heic';
 import { smallFrames, frameAt } from '@/lib/smallFrames';
 import { i420Of, REC709 } from '@/lib/videoColor';
@@ -5571,15 +5571,16 @@ const isPop = L => !!(L && L.pop);
  * words ("photo boxes", "5 boxes on it") or /effect; Android: engine/brain/core.ts photoBoxes, the same. ---- */
 const isBox = L => !!(L && L.boxes);
 let boxBusy = false;
-async function photoBoxes(from = 1, by = 'mine'){
+async function photoBoxes(from = 1, by = 'mine', at = null){   // at: a copied Reel's box moments (where and how many)
   if(!edit.length || kind === 'talk' || boxBusy) return null;
-  const gen = editGen, shots = boxShots(edit, period, 3, from);
+  const gen = editGen, where = at && at.length ? boxShotsAt(edit, at, period, from) : boxShots(edit, period, 3, from).map(i => ({ i, n: 5 }));
+  const shots = where.map(w => w.i), many = new Map(where.map(w => [w.i, w.n]));
   if(!shots.length) return { shots: [] };
   boxBusy = true;
   try{
     const made = [], pics = new Map();
     for(const i of shots){
-      const srcs = boxSources(edit, i), plan = boxLayers(edit[i], period);
+      const srcs = boxSources(edit, i, many.get(i)), plan = boxLayers(edit[i], period, many.get(i));
       for(let k = 0; k < plan.length; k++){
         const q = srcs[k]; if(!q) continue;
         const key = q.shot + ':' + q.local.toFixed(2);
@@ -8367,7 +8368,7 @@ function refBoxesSoon(R){
   if(!R || !(R.boxes || []).length || R.boxesDone) return;
   refBoxesSoon.h = setTimeout(async () => { if(refProfile !== R || R.boxesDone || mode !== 'copy') return;
     if(!edit.length || pending || !reelLen() || layers.some(L => L.boxes)){ if(!layers.some(L => L.boxes)) refBoxesSoon(R); return; }
-    R.boxesDone = true; await photoBoxes(0, 'ref'); }, 800);
+    R.boxesDone = true; await photoBoxes(0, 'ref', R.boxes); }, 800);
 }
 // once the new Reel has its edit (song part and clips in)
 function refLookApplySoon(R){

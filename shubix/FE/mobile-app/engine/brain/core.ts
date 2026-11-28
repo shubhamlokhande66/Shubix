@@ -6,7 +6,7 @@ import { srcPos, whatClip, velocitySpeed, rampSpeed, keyframesFor, crossesScene,
 import { parseDirectorVisualIntent } from '../components/studio/visualIntent';
 import { TR_DUR } from '@mobile/core/lib/shaders';
 import { autoHook } from '@mobile/core/lib/text-templates';
-import { boxShots, boxSources, boxCrop, boxLayers, BOX_ASPECT, POP_SIDE, popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate, pictureOf, fitLook } from '@mobile/video-engine';
+import { boxShots, boxShotsAt, boxSources, boxCrop, boxLayers, BOX_ASPECT, POP_SIDE, popScore, popAlpha, popShots, popWindow, popLayer, popSteady, handleOf, endCardTime, MARK, END_LOGO, tintPulses, bwShots, clearOfFaces, textBoxEstimate, pictureOf, fitLook } from '@mobile/video-engine';
 
 import { budgetEffects, budgetLiftFrom } from '@mobile/video-engine';
 
@@ -716,15 +716,16 @@ async function subjectPop(auto = false){
  * tall boxes pop in one after another on the beat, each a picture from the Reel's other clips in a white frame. The
  * pictures: the phone's frame of that clip (popcut with nothing cut away: the whole box kept). ---- */
 const isBox = L => !!(L && L.boxes);
-async function photoBoxes(from = 1, by = 'mine'){
+async function photoBoxes(from = 1, by = 'mine', at = null){   // at: a copied Reel's box moments (where and how many)
   if(!ES.edit.length || ES.kind === 'talk' || ES.boxBusy || !EH.popCut) return null;
-  const gen = ES.editGen, shots = boxShots(ES.edit, ES.period, 3, from);
+  const gen = ES.editGen, where = at && at.length ? boxShotsAt(ES.edit, at, ES.period, from) : boxShots(ES.edit, ES.period, 3, from).map(i => ({ i, n: 5 }));
+  const shots = where.map(w => w.i), many = new Map(where.map(w => [w.i, w.n]));
   if(!shots.length) return { shots: [] };
   ES.boxBusy = true;
   try{
     const made = [], pics = new Map(), whole = new Uint8Array(POP_SIDE*POP_SIDE).fill(255);
     for(const i of shots){
-      const srcs = boxSources(ES.edit, i), plan = boxLayers(ES.edit[i], ES.period);
+      const srcs = boxSources(ES.edit, i, many.get(i)), plan = boxLayers(ES.edit[i], ES.period, many.get(i));
       for(let k = 0; k < plan.length; k++){
         const q = srcs[k]; if(!q) continue;
         const e = ES.edit[q.shot], src = ES.sources[e.src]; if(!src) continue;
