@@ -14,6 +14,10 @@ on:
         description: "studio-e2e: only the run whose name starts with this (A or B); empty for all"
         type: string
         default: ""
+      roundtrip:
+        description: "studio-e2e: also give each exported Reel to Copy a Reel and score the copy against the real edit"
+        type: boolean
+        default: false
 
 concurrency:
   group: shubix-ci-${{ github.event.pull_request.number || github.ref }}
@@ -167,6 +171,7 @@ jobs:
           BASE: http://localhost:3001
           CHANNEL: chrome
           ONLY: ${{ inputs.only }}
+          ROUNDTRIP: ${{ inputs.roundtrip && '1' || '' }}
         run: |
           (pnpm start > "$RUNNER_TEMP/web.log" 2>&1 &)
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3001/studio && break; sleep 2; done
