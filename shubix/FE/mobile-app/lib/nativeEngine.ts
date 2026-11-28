@@ -65,8 +65,27 @@ export function editCopyOf(f: ClipFacts) {
 export function pcmOf(raw: ArrayBuffer) {
   const top = new DataView(raw, 0, 8), sampleRate = top.getInt32(0, true), count = top.getInt32(4, true), all = new Float32Array(raw, 8), n = Math.floor(all.length / count);
   const channels = Array.from({ length: count }, () => new Float32Array(n)), mono = new Float32Array(n);
-  for (let k = 0; k < count; k++) { const d = channels[k]; for (let i = 0; i < n; i++) { d[i] = all[i * count + k]; mono[i] += d[i] / count; } }
-  return { sampleRate, channels, mono };
+  for (let i = 0; i < n; i++) for (let k = 0; k < count; k++) channels[k][i] = all[i * count + k];
+  // Keep the original stereo channels for playback, but prevent an inverted channel from
+  // cancelling kick/snare when the analysis signal is mixed to mono.
+  let ref = 0, energy = -1;
+  const stride = Math.max(1, Math.floor(n / 12000));
+  for (let k = 0; k < count; k++) {
+    let e = 0; for (let i = 0; i < n; i += stride) e += channels[k][i] * channels[k][i];
+    if (e > energy) { energy = e; ref = k; }
+  }
+  const base = channels[ref];
+  const signs = channels.map((d, k) => {
+    if (k === ref) return 1;
+    let dot = 0, aa = 0, bb = 0;
+    for (let i = 0; i < n; i += stride) { dot += base[i] * d[i]; aa += base[i] * base[i]; bb += d[i] * d[i]; }
+    return dot / Math.sqrt(Math.max(1e-20, aa * bb)) < -0.6 ? -1 : 1;
+  });
+  for (let k = 0; k < count; k++) {
+    const d = channels[k], sign = signs[k];
+    for (let i = 0; i < n; i++) mono[i] += sign * d[i] / count;
+  }
+  return { sampleRate, channels, mono, phaseAlignedChannels: signs.filter(x => x < 0).length };
 }
 
 /** the file server's answer of lines: progress, then the one that starts with `first` */
@@ -387,7 +406,7 @@ export function createNativeEngine(io: NativeIo) {
       return { cuts: read.cuts.length, shots: read.moments.length, bpm: Math.round(read.bpm), trans: read.trans };
     } catch (e) { io.task?.(stops !== g ? "clear" : "fail", "ref", safeMessage(e instanceof Error ? e.message : "", "We could not read that Reel. Please try another video.")); throw e; }
   }
-  const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, drops: n("drop"), breaks: n("break") }; };
+  const facts = () => { const r = host.ES.song.r as { period: number; beats: number[]; beatAccents?: { t: number; strength: number; level: string }[]; drumHits?: { t: number; band: string; strength: number }[]; cutType: string[] }, n = (k: string) => r.cutType.filter((t) => t === k).length; return { duration: host.ES.buf.duration, bpm: Math.round(60 / r.period), beats: r.beats.length, beatTimes: r.beats, beatAccents: r.beatAccents || [], drumHits: r.drumHits || [], drops: n("drop"), breaks: n("break") }; };
 
   /** My Reels with room left for this person (read at most once a minute); null: not offered */
   let room: { used: number; limit: number } | null = null, roomAt = 0;

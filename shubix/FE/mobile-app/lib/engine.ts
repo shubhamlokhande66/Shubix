@@ -17,7 +17,7 @@ import { createNativeEngine } from "./nativeEngine";
  * come from the website, so changing or deploying the website does not change the phone. It needs the app's own build (not Expo Go). */
 export const SITE_URL = (process.env.EXPO_PUBLIC_SITE_URL || "http://localhost:3001").replace(/\/$/, "");
 export type AiPlan = { story: string; lines: string[] };
-export type SongAnalysis = { duration: number; bpm: number; beats: number; drops: number; breaks: number };
+export type SongAnalysis = { duration: number; bpm: number; beats: number; beatTimes: number[]; beatAccents: { t: number; strength: number; level: "strong" | "medium" | "weak" }[]; drumHits: { t: number; band: "kick" | "snare" | "hihat"; strength: number }[]; drops: number; breaks: number };
 /** a shot of the Reel as the studio made it (its state(): the clip, where in it, the transition into it, its effect, its speed) */
 export type EngineShot = { start: number; end: number; type: string; tr?: string; trRev?: boolean; efx?: string; sp: string; src: number; in: number; cs?: Record<string, unknown>; uk?: NonNullable<ProjectClip["keyframes"]> };
 export type EngineReel = { work: { clips: number; shots: number }; state: { edit: EngineShot[]; mode?: string } & Record<string, unknown> };

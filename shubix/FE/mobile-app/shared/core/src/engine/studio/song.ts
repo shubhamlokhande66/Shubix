@@ -30,7 +30,8 @@ export function songAnalysis(monoIn, sampleRate, opts){
   const buf = { sampleRate, length: monoIn.length, duration: monoIn.length/sampleRate, numberOfChannels: 1, getChannelData: () => monoIn };
   let mono = null, period = 0, phase = 0, hopSec = 0, rmsF = null, hitsStr = [], barOff = 0, beatLvl = [];
   let onEnv = null, onFps = 0, onOff = 0, hitsRaw = [], cutFx = [], pfArr = null;
-  let beats = [], beatsDP = [], cuts = [], cutType = [], peaks = [], peakS = [], beatSource = 'own', beatJudge = null;
+  let beats = [], beatsDP = [], beatAccents = [], drumHits = [], cuts = [], cutType = [], peaks = [], peakS = [], beatSource = 'own', beatJudge = null;
+  let beatAccentAt = () => 0;
   let downbeats = [], barLen = 4, drive = 1;
 /* ---------- FFT ---------- */
 function makeFFT(n){
@@ -269,6 +270,28 @@ function analyse(){
   const midEnv = new Float64Array(frames);
   { const cm = new Float64Array(frames+1); for(let i=0;i<frames;i++) cm[i+1]=cm[i]+fMid[i];
     for(let i=0;i<frames;i++){ const a=Math.max(0,i-W), b=Math.min(frames,i+W+1); midEnv[i]=Math.max(0, fMid[i]-(cm[b]-cm[a])/(b-a)); } }
+  const topEnv = new Float64Array(frames);
+  { const ct = new Float64Array(frames+1); for(let i=0;i<frames;i++) ct[i+1]=ct[i]+fTop[i];
+    for(let i=0;i<frames;i++){ const a=Math.max(0,i-W), b=Math.min(frames,i+W+1); topEnv[i]=Math.max(0, fTop[i]-(ct[b]-ct[a])/(b-a)); } }
+  // Band-specific attacks are kept separate from the beat grid: low = kick/bass drum,
+  // mid = snare/clap body, top = hi-hat/cymbal. A transient between beats remains a hit,
+  // not an extra beat.
+  drumHits = [];
+  const bandPeaks = (a, band) => {
+    const sorted = Array.from(a).filter(v=>v>0).sort((x,y)=>x-y);
+    if(sorted.length < 4) return;
+    const q = p => sorted[Math.min(sorted.length-1, Math.floor((sorted.length-1)*p))];
+    // Percussive attacks occupy only a small fraction of frames; the 95th percentile can
+    // still be background on sparse tracks. Use the upper tail as the reference level.
+    const scale = Math.max(q(0.995), 1e-9), threshold = Math.max(q(0.5)*3, scale*0.18, 1e-9);
+    const gap = Math.max(1, Math.round(0.05*fps)); let last = -gap;
+    for(let i=2;i<a.length-2;i++){
+      const v=a[i]; if(v<threshold || v<a[i-1] || v<=a[i+1] || v<=a[i-2] || v<=a[i+2] || i-last<gap) continue;
+      drumHits.push({ t:+(i/fps+(N/2)/sr).toFixed(3), band, strength:+Math.min(1,v/scale).toFixed(3) }); last=i;
+    }
+  };
+  bandPeaks(kickEnv, 'kick'); bandPeaks(midEnv, 'snare'); bandPeaks(topEnv, 'hihat');
+  drumHits.sort((a,b)=>a.t-b.t);
   const trk = trackBeats(env, bodyEnv, fps, kickEnv, midEnv);
   let own = trk.beats.map(f => f/fps + (N/2)/sr), ownPeriod = trk.period/fps;
   beatSource = 'own';
@@ -318,6 +341,10 @@ function analyse(){
   const acc = new Float64Array(frames); for(let i=0;i<frames;i++) acc[i]=e1[i]+e2[i]+0.5*e3[i];
   onEnv = acc; onFps = fps; onOff = (N/2)/sr; detectHits();
   findDownbeats(fKick, fLow, fps);
+  beatAccentAt = t => {
+    const at = a => { const f=Math.round((t-(N/2)/sr)*fps); let m=0; for(let j=f-2;j<=f+3;j++) if(j>=0&&j<a.length&&a[j]>m) m=a[j]; return m; };
+    return at(kickEnv) + at(midEnv)*0.9 + at(topEnv)*0.25;
+  };
   // how much of the song really has a beat (drums at the beat): a calm song (a bhajan, a slow Diwali song) is cut less
   { let on = 0; for(const t of beatsDP) if(drumness(t) >= DRUM_MIN) on++; drive = beatsDP.length ? on/beatsDP.length : 0; }
   rebuild();
@@ -471,5 +498,12 @@ function rebuild(){
 
 
   analyse();
-  return { period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, cuts, cutType, cutFx, peaks, peakS, barOff, beatSource, beatJudge, downbeats, barLen, drive };
+  // Use the final beat list (after free-time trimming and any creator markers) so every
+  // timestamp has exactly one matching strength label.
+  {
+    const accentValues = beats.map(t => beatAccentAt(t));
+    const sorted = accentValues.slice().sort((a,b)=>a-b), scale = sorted[Math.floor(sorted.length*0.9)] || 1;
+    beatAccents = beats.map((t,i) => { const strength=Math.min(1,accentValues[i]/Math.max(1e-9,scale)); return { t:+t.toFixed(3), strength:+strength.toFixed(3), level:strength>=0.65?'strong':strength>=0.3?'medium':'weak' }; });
+  }
+  return { period, phase, hopSec, rmsF, onEnv, onFps, onOff, hitsRaw, hitsStr, pfArr, beats, beatAccents, drumHits, cuts, cutType, cutFx, peaks, peakS, barOff, beatSource, beatJudge, downbeats, barLen, drive };
 }

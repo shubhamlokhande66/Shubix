@@ -186,6 +186,7 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
   const [drag, setDrag] = useState<number | null>(null), from = drag ?? start, box = useRef({ width: 1, grab: 0, moved: false, x0: 0 });
   const left = duration ? from / duration : 0, used = duration ? len / duration : 1, heard = duration ? status.currentTime / duration : 0;
   const [custom, setCustom] = useState(!LENGTHS.includes(length)), [typed, setTyped] = useState(LENGTHS.includes(length) ? 45 : length);
+  const [showTiming, setShowTiming] = useState(false);
   useEffect(() => () => { try { player.pause(); } catch { /* already gone */ } }, [player]);
   const playFrom = (t: number) => { void player.seekTo(t); player.play(); };
   // the typed length, kept between 5 s and 3 min (as the website's), applied when the box is left
@@ -224,10 +225,25 @@ export function FlowAdjust({ song, music, length, start, onLength, onStart, lock
       </View>
       {length > 0 && <Text className="text-[12px] text-muted">{words("Drag on the waveform to choose the part yourself.")}</Text>}
       <View className="flex-row flex-wrap gap-x-5 gap-y-2">
-        {([["Length", clock(music?.duration ?? duration)], ["BPM", music ? String(music.bpm) : "—"], ["Drops", music ? String(music.drops) : "—"], ["Breaks", music ? String(music.breaks) : "—"]] as const).map(([k, v]) => (
+        {([["Length", clock(music?.duration ?? duration)], ["BPM", music ? String(music.bpm) : "—"], ["Beats", music ? String(music.beatTimes.length) : "—"], ["Drum hits", music ? String(music.drumHits.length) : "—"], ["Drops", music ? String(music.drops) : "—"], ["Breaks", music ? String(music.breaks) : "—"]] as const).map(([k, v]) => (
           <Text key={k} className="text-[14px] text-muted">{words(k)} <Text className="font-mono font-semibold text-foreground">{v}</Text></Text>
         ))}
       </View>
+      {music?.beatTimes?.length ? <View className="gap-2 rounded-xl border border-border bg-surface-2 p-3">
+        <Pressable onPress={() => setShowTiming((v) => !v)} className="flex-row items-center justify-between">
+          <Text className="text-[13px] font-semibold text-foreground">{words("Beat timestamps")} ({music.beatTimes.length})</Text>
+          <Text className="text-[12px] text-accent">{words(showTiming ? "Hide" : "View")}</Text>
+        </Pressable>
+        {showTiming && <>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <Text className="font-mono text-[11px] leading-5 text-muted">{music.beatTimes.map((t, i) => t.toFixed(3) + "s " + (music.beatAccents[i]?.level ?? "beat")).join("  ·  ")}</Text>
+          </ScrollView>
+          <Text className="text-[12px] text-muted">{words("Kick")}: {music.drumHits.filter((h) => h.band === "kick").length}  ·  {words("Snare")}: {music.drumHits.filter((h) => h.band === "snare").length}  ·  {words("Hi-hat")}: {music.drumHits.filter((h) => h.band === "hihat").length}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
+            <Text className="font-mono text-[11px] leading-5 text-muted">{music.drumHits.slice(0, 60).map((h) => h.band + " " + h.t.toFixed(3) + "s").join("  ·  ")}</Text>
+          </ScrollView>
+        </>}
+      </View> : null}
       <View className="gap-2.5">
         <Label>{words("Reel length")}</Label>
         {/* "Make the Reel as long as my clips": the clips decide, these are off */}
