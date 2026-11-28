@@ -49,7 +49,7 @@ describe("native audio downmix", () => {
 describe("the studio with no page", () => {
   it("makes a Reel from a song and clips", async () => {
     const { e } = engine();
-    const song = await e.call("song", { path: "/s.mp3", name: "s.mp3" }) as { beats: number; bpm: number };
+    const song = await e.call("song", { path: "/s.mp3", name: "s.mp3" }) as { beats: number; bpm: number; beatTimes: number[]; beatAccents: { level: string }[]; drumHits: { band: string }[] };
     expect(song.beats).toBeGreaterThan(20);
     expect(song.beatTimes).toHaveLength(song.beats);
     expect(song.beatTimes.every((t) => t >= 0 && t < 30)).toBe(true);

@@ -26,7 +26,8 @@ export function MoreMenu({ items, label: givenLabel, trigger, triggerClass, head
     const place = () => {
       const r = btn.current!.getBoundingClientRect(), h = menu.current?.offsetHeight ?? items.length * 44 + (header ? 76 : 12);
       const up = r.bottom + GAP + h > window.innerHeight - EDGE && r.top - GAP - h > EDGE; // no room below: open upwards
-      const left = Math.min(Math.max(EDGE, r.right - WIDTH), window.innerWidth - WIDTH - EDGE);
+      const w = menu.current?.offsetWidth || WIDTH;   // with a header the menu is as wide as it needs (the whole email on one line)
+      const left = Math.min(Math.max(EDGE, r.right - w), window.innerWidth - w - EDGE);
       setPos({ top: up ? r.top - GAP - h : r.bottom + GAP, left, up });
     };
     place();
@@ -83,7 +84,7 @@ export function MoreMenu({ items, label: givenLabel, trigger, triggerClass, head
             role="menu"
             aria-label={label}
             className="fixed z-[95] flex flex-col rounded-2xl border border-border bg-surface p-1.5 text-foreground shadow-[0_20px_44px_-18px_rgba(0,0,0,.7)]"
-            style={{ width: WIDTH, top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+            style={{ ...(header ? { minWidth: WIDTH, maxWidth: `calc(100vw - ${2 * EDGE}px)` } : { width: WIDTH }), top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
           >
             {header}
             {items.map((it) => {

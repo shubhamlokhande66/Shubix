@@ -31,10 +31,12 @@ export function noteLast(page: string) {
 export function lastPage(): string {
   try { return safeNext(sessionStorage.getItem(LAST)); } catch { return "/"; }
 }
-/** Signed out: Home, loaded whole (nothing of the account stays in the page); people look around without an account too. */
+/** Signed out: the same page, loaded whole (nothing of the account stays in the page). A page open to everyone stays
+ * (the studio, Pricing…); a page that needs an account goes to the sign-in page, then back to it (the app shell does
+ * that for a page loaded without an account). Before 2026-11-28 it was always Home. */
 export function afterSignOut() {
   try { localStorage.removeItem("brs-plan"); } catch { /* private mode */ }   // the plan the studio remembers is that account's
-  window.location.assign("/");
+  window.location.assign(safeNext(window.location.pathname + window.location.search));
 }
 /** Sign in, then back here: the studio saves its Reel first and passes its own address. */
 export function signInThen(next: string) {

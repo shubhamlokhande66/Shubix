@@ -67,7 +67,11 @@ export function initFlow(root: HTMLElement): () => void {
   let checking = false, wantGen = false, aiLater = false; // Generate pressed: the popup shows what is left, and it goes on by itself
   // back from signing in (?go=1): Generate is pressed by itself once the saved Reel is read again; signInOk: the account
   // check before Generate is done
-  let autoGo = q.get("go") === "1", signInOk = false;
+  // go=1, or ask=1 (back from Pricing, its link or the browser's Back): Make Reel's popup again once the Reel is back
+  let autoGo = q.get("go") === "1" || (q.get("ask") === "1" && q.has("p")), signInOk = false;
+  // ✕ on Make Reel's popup (or off to Pricing): nothing was chosen, so the preview waits for the choice and does not show
+  // the edit made while reading (it looked as if the Reel was made, 2026-11-28)
+  let choiceWait = false;
   // Shubix makes the Reel by itself: once the song and the clips are read (and the edit is made behind the screen), a
   // short countdown, then Generate as if pressed (Shubix AI's price, sign-in and the other questions still come). A tap
   // anywhere in the studio during it waits: the creator is adding or changing something, and presses Generate when done.
@@ -147,7 +151,7 @@ export function initFlow(root: HTMLElement): () => void {
       if (!phone() && $("aspect").parentElement !== $("faspslot")) $("faspslot").append($("aspect"));
       if (phone() && $("aspect").parentElement === $("faspslot")) homes.asp.append($("aspect"));
       // the made Reel plays in the preview card (the engine's own canvas and play button, moved here until Generate)
-      const inCard = !phone() && made();
+      const inCard = !phone() && made() && !choiceWait;
       if (inCard && pvbox.parentElement !== $("fprevbox")) $("fprevbox").append(pvbox);
       if (!inCard && pvbox.parentElement === $("fprevbox")) homes.pv.insertBefore(pvbox, homes.pvNext);
     } else {
@@ -377,6 +381,7 @@ export function initFlow(root: HTMLElement): () => void {
       let moved = false;
       if (slug && /^\/(editor|create\/edit)$/.test(u.pathname)) { u.pathname = `/create/${slug}`; u.searchParams.delete("p"); u.searchParams.delete("session"); moved = true; }
       if ((u.searchParams.get("step") ?? "") !== want) { if (want) u.searchParams.set("step", want); else u.searchParams.delete("step"); moved = true; }
+      if (u.searchParams.has("ask")) { u.searchParams.delete("ask"); moved = true; }   // (asked once: a reload does not ask again)
       if (moved) setAddress(u.pathname + u.search + u.hash);
     }
     setClass(root, "flive", true); for (const id of ["fhead", "fintro"]) setClass($(id), "invisible", false); // the kind's own words are in: the flow can be seen
@@ -444,8 +449,8 @@ export function initFlow(root: HTMLElement): () => void {
     setText($("freadyt"), aiDone ? "Your Reel is ready!" : aiGo ? "Shubix is editing your Reel…" : "Ready to create your Reel!");
     setText($("freadys"), aiDone ? (openWait ? "Opening your Reel…" : "Press Generate Reel to open it again.") : aiGo ? "Every clip, every beat: it takes a moment." : ready ? "Press Generate Reel to start Shubix." : copy && !refName && !songOk() ? "Pick the Reel to match, then add your clips."
       : copy && songComing ? "Taking the song from the Reel you match…" : !songOk() ? "Add your song, then your clips." : "Add your clips, then press Generate.");
-    setText($("fprevnote"), aiDone ? "Your Reel is ready" : "Your Reel appears here");
-    setClass($("fprevbox"), "ready", made());
+    setText($("fprevnote"), aiDone ? "Your Reel is ready" : choiceWait ? "Waiting for your choice: press Generate Reel" : "Your Reel appears here");
+    setClass($("fprevbox"), "ready", made() && !choiceWait);
     paintAi();
     // the phones' analysing screen: the Reel opens once it is made
     if (step === "analyse" && made() && !aiWorking()) { revealed = true; mark(false); setTimeout(apply, 350); }   // Back from the Reel: the clips
@@ -600,8 +605,8 @@ export function initFlow(root: HTMLElement): () => void {
         if (change === "old") return st?.keepOldReel?.();
         const r = change === "same" ? "skip" : st?.upsell ? await st.upsell() : "skip";   // (nothing changed: the same Reel, no new credits)
         if (r === "close" && change === "new") return st?.keepOldReel?.();
-        if (r === "upgrade" || r === "close") return;
-        aiGo = true; openWait = true; apply();
+        if (r === "upgrade" || r === "close") { choiceWait = true; apply(); return; }
+        choiceWait = false; aiGo = true; openWait = true; apply();
         // the popup shows the work on every screen size; the Reel opens once Shubix is done
         await new Promise((ok) => setTimeout(ok, 400)); apply();
         // the AI's Reel, not the first one: as long as work goes on (50 clips may take minutes; a fixed 3 minutes closed the

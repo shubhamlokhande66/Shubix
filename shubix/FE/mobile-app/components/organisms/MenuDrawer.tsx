@@ -29,7 +29,8 @@ export function MenuDrawer({ open, onClose, pathname }: { open: boolean; onClose
   const text = useText(), { me } = useApi(), insets = useSafeAreaInsets();
   // administrators: the website's admin dashboard, in the phone's browser (once per sign-in, kept 10 minutes)
   const adminQ = useQuery({ queryKey: ["native-admin", me?.user?.id], queryFn: mobileApi.adminSession, enabled: !!me?.user, staleTime: 600_000, retry: false });
-  const signOut = useSignOut(() => { onClose(); router.replace("/login"); });
+  // signed out: the same page when it is open to everyone; one that needs an account goes to the sign-in and back (AppFrame)
+  const signOut = useSignOut(() => { onClose(); });
   const width = Math.min(useWindowDimensions().width * 0.88, 360);
   const shown = useRef(new Animated.Value(0)).current, [mounted, setMounted] = useState(open);
   useEffect(() => {

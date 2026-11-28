@@ -2459,8 +2459,13 @@ async function toPricing(where){
   if(IN_APP) return;
   let id = ''; try{ id = await saveNow(); }catch(e){}
   const inSteps = location.pathname.startsWith('/create') && location.pathname !== '/create/edit';
-  const back = id ? (inSteps ? location.pathname : '/editor') + '?p=' + encodeURIComponent(id) + (inSteps ? '&step=clips' : '') : location.pathname + location.search;
+  // back in the steps: the Reel's clips again and its Make Reel popup (ask=1), as it was left
+  const back = id ? (inSteps ? location.pathname : '/editor') + '?p=' + encodeURIComponent(id) + (inSteps ? '&step=clips&ask=1' : '') : location.pathname + location.search;
   const u = new URL('/pricing' + where, location.origin); u.searchParams.set('back', back);
+  // the browser's own Back comes here too: this page's address is the saved Reel's (it was the empty steps, so Back lost
+  // the Reel and offered an old draft, 2026-11-28); a page kept in the browser's memory is loaded again from it
+  try{ history.replaceState(history.state, '', back); }catch(e){}
+  try{ sessionStorage.setItem('brs-to-pricing', '1'); }catch(e){}
   leavingOk = true; location.assign(u.pathname + u.search + u.hash);
 }
 const pricingLink = label => { const a = document.createElement('a'); a.href = '/pricing'; a.className = `${Button.primary} up`; a.textContent = label; a.addEventListener('click', e => { e.preventDefault(); void toPricing(''); }, SIG); return a; };
@@ -9264,6 +9269,8 @@ window.addEventListener('beforeunload', e => {
   if(pending || exporting || recording){ e.preventDefault(); e.returnValue = ''; return; }
   if((song || sources.length) && !restoring){ try{ const sig = JSON.stringify(stateOf()); if(sig !== lastSig){ e.preventDefault(); e.returnValue = ''; } }catch(err){} }
 });
+// back from Pricing with the browser's Back, the page kept in its memory: loaded again, from the saved Reel's address
+window.addEventListener('pageshow', e => { let gone = false; try{ gone = sessionStorage.getItem('brs-to-pricing') === '1'; sessionStorage.removeItem('brs-to-pricing'); }catch(err){} if(e.persisted && gone) location.reload(); });
 // the page was reloaded in the middle of the Create steps: the Reel so far is a draft on this phone; offer it back
 async function resumeOffer(){
   let id = ''; try{ id = sessionStorage.getItem('brs-resume:' + location.pathname) || ''; }catch(e){}
@@ -9278,7 +9285,9 @@ async function resumeOffer(){
   const ago = mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : mins < 1440 ? Math.round(mins/60) + ' h ago' : new Date(p.updated).toLocaleDateString([], { day: 'numeric', month: 'short' });
   const v = await askCredits({ title: 'Pick up where you left off?', text: '“' + (p.name || 'Your Reel') + '” is saved on this device with its song, clips and edits.',
     list: [n ? n + (n === 1 ? ' clip' : ' clips') + (p.dur ? ' · ' + fmt(p.dur).replace(/\.\d+$/, '') : '') : '', 'Saved ' + ago].filter(Boolean), bal: null, ok: 'Continue editing', no: 'Start a new Reel' });
-  if(v === true) location.assign('/editor?p=' + encodeURIComponent(id));
+  // Continue: where it was left: the editor for a made Reel, its steps (the clips) for one not made yet
+  const made = !!(p.state && Array.isArray(p.state.edit) && p.state.edit.length);
+  if(v === true){ leavingOk = true; location.assign(made ? '/editor?p=' + encodeURIComponent(id) : location.pathname + '?p=' + encodeURIComponent(id) + '&step=clips'); }
   else try{ sessionStorage.removeItem('brs-resume:' + location.pathname); }catch(e){}
 }
 const press = (seg, attr, val) => { const b = $(seg).querySelector(`[data-${attr}="${val}"]`); if(b && b.getAttribute('aria-pressed') !== 'true') b.click(); };

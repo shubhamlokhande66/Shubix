@@ -15,9 +15,9 @@ const LEGAL = [["/terms", "legal.terms"], ["/privacy", "legal.privacy"], ["/cont
 /** Sign in, or create an account (the website's app/login/page.tsx on a phone): the dark studio band (the logo, the
  * three-line title, the soundtrack's bars), then the form sheet: the two tabs, the card with the fields (each says what
  * is wrong once left), the button that waits until the form is right, and the links. Logic: @mobile/hooks useAuthForm. */
-export function SignInForm({ initial = "signin", back = false }: { initial?: "signin" | "signup"; back?: boolean }) {
+export function SignInForm({ initial = "signin", back = false, next }: { initial?: "signin" | "signup"; back?: boolean; next?: string }) {
   // back: sent here by a screen (Make Reel signed out): signed in, back to it; a new account first enters its code
-  const f = useAuthForm((signedUp) => signedUp ? router.replace(back ? { pathname: "/verify", params: { back: "1" } } : "/verify") : back && router.canGoBack() ? router.back() : router.replace("/"));
+  const f = useAuthForm((signedUp) => signedUp ? router.replace(back ? { pathname: "/verify", params: { back: "1" } } : "/verify") : back && router.canGoBack() ? router.back() : router.replace((next ?? "/") as never));   // next: the page that needed an account (signed out on it)
   const { t: text, signin } = f, insets = useSafeAreaInsets();
   useEffect(() => { if (initial !== "signin") f.setMode(initial); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const tab = (mode: "signin" | "signup", label: string) => (

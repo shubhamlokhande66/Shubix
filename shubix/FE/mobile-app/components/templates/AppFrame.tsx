@@ -51,7 +51,8 @@ export function AppFrame({ children }: { children: ReactNode }) {
   useEffect(() => { if (me === null) void tokenStore.get().then((t) => setNoToken(!t)); }, [me]);
   useEffect(() => { setSlow(false); if (!unknown) return; const t = setTimeout(() => setSlow(true), 40_000); return () => clearTimeout(t); }, [unknown]);
   useEffect(() => setMenu(false), [pathname]); // a new page: the menu closes
-  useEffect(() => { if (signedOut && !open) router.replace("/login"); }, [signedOut, open]);
+  // a page that needs an account: the sign-in, then back to it (signed out on it, 2026-11-28)
+  useEffect(() => { if (signedOut && !open) router.replace({ pathname: "/login", params: { next: pathname } } as never); }, [signedOut, open]); // eslint-disable-line react-hooks/exhaustive-deps
   // the email's code not entered yet: nothing opens but the code screen (the server refuses the rest too)
   const needsCode = me?.user?.emailVerified === false && !open;
   useEffect(() => { if (needsCode) router.replace("/verify"); }, [needsCode]);

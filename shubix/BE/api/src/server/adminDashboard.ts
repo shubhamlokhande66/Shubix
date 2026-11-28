@@ -101,7 +101,7 @@ export async function overview() {
 
 /** Every account with its logins, purchases, credits and Reels (a studio of up to a few thousand people). */
 export async function listUsers() {
-  const [list, paid, ws, used, made, online, pricing] = await Promise.all([
+  const [list, paid, ws, used, made, online, pricing, aiMade, exported] = await Promise.all([
     (await col("users")).find({}, { projection: { email: 1, createdAt: 1, lastLoginAt: 1, lastSeenAt: 1, loginCount: 1 } }).sort({ createdAt: -1 }).limit(5000).toArray(),
     (await col("payments")).aggregate([{ $match: { status: "paid" } }, { $group: { _id: "$userId", rupees: { $sum: "$amount" }, n: { $sum: 1 }, last: { $max: "$paidAt" } } }]).toArray(),
     (await col("wallets")).find({}).toArray(),
@@ -109,17 +109,23 @@ export async function listUsers() {
     (await col("studio_reels")).aggregate([{ $match: { status: "ready" } }, { $group: { _id: `$${OWNER}`, n: { $sum: 1 } } }]).toArray(),
     (await col("presence")).distinct("uid", { at: { $gte: new Date(Date.now() - ONLINE_MS) }, uid: { $ne: null } }),
     getPricing(),
+    // Reels are made on the phone or in the browser and kept there (local-first); only those saved online are in
+    // studio_reels. So the Reels a person made are also counted from their Shubix AI Reels (each one charge, kept for good)
+    // and their exports (the Reel log, last 30 days). (2026-11-28: 10 credits used and "0 Reels")
+    (await col("credit_ledger")).aggregate([{ $match: { ref: { $regex: "^studio_ai:" }, delta: { $lt: 0 }, refunded: { $ne: true } } }, { $group: { _id: "$userId", n: { $sum: 1 } } }]).toArray(),
+    (await mainDb()).collection("reel_logs").aggregate([{ $match: { step: "export", msg: { $regex: "^Export started" }, userId: { $ne: null } } }, { $group: { _id: { u: "$userId", r: "$reelId" } } }, { $group: { _id: "$_id.u", n: { $sum: 1 } } }]).toArray(),
   ]);
   const admins = new Set(await adminEmails()); // the administrators: marked, and they cannot be deleted here
   const by = <T extends Doc>(rows: T[]) => new Map(rows.map((r) => [String(r._id), r]));
-  const P = by(paid), W = by(ws), U = by(used), M = by(made), on = new Set(online.map(String)), names = new Map(pricing.plans.map((p) => [p.id, p.name]));
+  const P = by(paid), W = by(ws), U = by(used), M = by(made), A = by(aiMade), X = by(exported), on = new Set(online.map(String)), names = new Map(pricing.plans.map((p) => [p.id, p.name]));
   return list.map((u) => {
     const id = String(u._id), w = W.get(id), pay = P.get(id);
     return {
       id, email: String(u.email), admin: admins.has(String(u.email).toLowerCase()), createdAt: u.createdAt ?? null, lastLoginAt: u.lastLoginAt ?? null, lastSeenAt: u.lastSeenAt ?? null, logins: Number(u.loginCount ?? 0), online: on.has(id),
       plan: String(w?.plan ?? "free"), planName: names.get(String(w?.plan ?? "free")) ?? String(w?.plan ?? "Free"), planEnds: w?.planEnds ?? null,
       credits: w ? Number(w.monthly ?? 0) + Number(w.extra ?? 0) : null, creditsUsed: -Number(U.get(id)?.credits ?? 0),
-      spent: Number(pay?.rupees ?? 0) / 100, purchases: Number(pay?.n ?? 0), lastPurchase: pay?.last ?? null, reels: Number(M.get(id)?.n ?? 0),
+      spent: Number(pay?.rupees ?? 0) / 100, purchases: Number(pay?.n ?? 0), lastPurchase: pay?.last ?? null, // the Reels made: at least the most of the three counts (a Reel can be in more than one: an AI Reel exported and saved)
+      reels: Math.max(Number(M.get(id)?.n ?? 0), Number(A.get(id)?.n ?? 0), Number(X.get(id)?.n ?? 0)), reelsOnline: Number(M.get(id)?.n ?? 0),
     };
   });
 }
