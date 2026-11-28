@@ -58,6 +58,8 @@ import java.io.File
 @UnstableApi
 class ShubixVideoModule : Module() {
   private val main = Handler(Looper.getMainLooper())
+  /** Ask Shubix by voice: the phone's speech recognizer while it listens (one at a time, on the main thread) */
+  private var hearing: android.speech.SpeechRecognizer? = null
   private class ActiveExport(val promise: Promise) {
     var transformer: Transformer? = null
     var settled: Boolean = false
@@ -113,6 +115,54 @@ class ShubixVideoModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("ShubixVideo")
     Events("onProgress")
+
+    // Ask Shubix by voice: the phone's own speech recognizer (Hindi, Marathi, English: `lang` as hi-IN), its words back as
+    // text for the chat; "" when nothing was heard. The microphone permission is asked by the app first.
+    AsyncFunction("listen") { lang: String, promise: Promise ->
+      val ctx = appContext.reactContext ?: throw IllegalStateException("No app")
+      main.post {
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(ctx)) { promise.reject("E_LISTEN", "Voice typing is not available on this phone.", null); return@post }
+        hearing?.let { old -> try { old.cancel(); old.destroy() } catch (_: Throwable) {} }
+        val sr = android.speech.SpeechRecognizer.createSpeechRecognizer(ctx)
+        hearing = sr
+        var done = false
+        fun finish(text: String?, err: String?) {
+          if (done) return
+          done = true
+          try { sr.destroy() } catch (_: Throwable) {}
+          if (hearing === sr) hearing = null
+          if (err != null) promise.reject("E_LISTEN", err, null) else promise.resolve(text ?: "")
+        }
+        sr.setRecognitionListener(object : android.speech.RecognitionListener {
+          override fun onReadyForSpeech(params: android.os.Bundle?) {}
+          override fun onBeginningOfSpeech() {}
+          override fun onRmsChanged(rmsdB: Float) {}
+          override fun onBufferReceived(buffer: ByteArray?) {}
+          override fun onEndOfSpeech() {}
+          override fun onError(error: Int) {
+            val quiet = error == android.speech.SpeechRecognizer.ERROR_NO_MATCH || error == android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == android.speech.SpeechRecognizer.ERROR_CLIENT
+            if (quiet) finish("", null)
+            else if (error == android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) finish(null, "Shubix needs the microphone to hear you. Allow it in the phone's settings.")
+            else if (error == android.speech.SpeechRecognizer.ERROR_NETWORK || error == android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT) finish(null, "Voice typing needs the internet on this phone. Please try again.")
+            else finish(null, "Voice typing did not work. Please try again.")
+          }
+          override fun onResults(results: android.os.Bundle?) {
+            finish(results?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull(), null)
+          }
+          override fun onPartialResults(partialResults: android.os.Bundle?) {}
+          override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+        })
+        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, lang.ifBlank { "hi-IN" })
+        intent.putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        try { sr.startListening(intent) } catch (e: Throwable) { finish(null, "Voice typing did not work. Please try again.") }
+      }
+    }
+    // stop listening: what was said so far comes back from `listen`
+    AsyncFunction("stopListening") {
+      main.post { try { hearing?.stopListening() } catch (_: Throwable) {} }
+    }
 
     AsyncFunction("exportReel") { specJson: String, promise: Promise ->
       main.post {

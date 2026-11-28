@@ -725,6 +725,8 @@ export const STUDIO_HTML = `
   <form class="chatform" id="chatform">
     <div class="chatfield">
       <textarea id="chatin" rows="1" maxlength="300" placeholder="Describe a change, or type / for commands"></textarea>
+      <button type="button" class="${Button.icon} h-9 min-w-9 px-1.5 text-[11px] font-semibold" id="chatlang" aria-label="Voice language" hidden>हिं</button>
+      <button type="button" class="${Button.iconBordered} size-9" id="chatmic" aria-label="Speak to Shubix" aria-pressed="false" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4"/></svg></button>
       <button type="submit" class="${Button.iconPrimary} size-9" id="chatsend" aria-label="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
     <small class="chathint">Enter to send · Shift + Enter for a new line</small>

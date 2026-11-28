@@ -3271,6 +3271,37 @@ $('chatform').addEventListener('submit', e => { e.preventDefault(); chatSend($('
 $('chatin').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); chatSend($('chatin').value); } }, SIG);
 // the message box grows with what is written (up to a few lines)
 const chatFit = () => { const t = $('chatin'); t.style.height = 'auto'; t.style.height = Math.min(120, t.scrollHeight) + 'px'; };
+// Ask Shubix by voice (the 🎤 beside the box): the browser hears it (Chrome sends the sound to its speech service; a
+// browser without one shows no mic) and the words go in as if typed. The chip beside it: Hindi, Marathi or English.
+const VOICE_LANGS = [['hi-IN', 'हिं'], ['mr-IN', 'मरा'], ['en-IN', 'EN']];
+{ const SR = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $('chatmic'), lb = $('chatlang');
+  if(SR && mic && lb){
+    let lang = 'hi-IN', rec = null;
+    try{ const v = localStorage.getItem('shubix-voice-lang'); if(VOICE_LANGS.some(([k]) => k === v)) lang = v; }catch(e){}
+    const show = () => { lb.textContent = (VOICE_LANGS.find(([k]) => k === lang) || VOICE_LANGS[0])[1]; };
+    mic.hidden = false; lb.hidden = false; show();
+    lb.addEventListener('click', () => { if(rec) return; const i = VOICE_LANGS.findIndex(([k]) => k === lang); lang = VOICE_LANGS[(i + 1) % VOICE_LANGS.length][0];
+      try{ localStorage.setItem('shubix-voice-lang', lang); }catch(e){} show(); }, SIG);
+    mic.addEventListener('click', () => {
+      if(rec){ rec.stop(); return; }   // tapped again: done speaking
+      if(chatWaiting) return;
+      const r = new SR(), box = $('chatin'), before = box.placeholder; rec = r;
+      r.lang = lang; r.interimResults = true; r.maxAlternatives = 1; r.continuous = false;
+      let heard = '', failed = '';
+      mic.setAttribute('aria-pressed', 'true'); mic.classList.add('bg-red-500', 'text-white'); box.placeholder = 'Listening… speak now';
+      r.onresult = e => { let t = ''; for(const x of e.results) t += x[0].transcript; box.value = t; chatFit(); heard = t; };
+      r.onerror = e => { failed = e.error || 'error'; };
+      r.onend = () => {
+        rec = null; mic.setAttribute('aria-pressed', 'false'); mic.classList.remove('bg-red-500', 'text-white'); box.placeholder = before;
+        const t = (heard || '').trim();
+        if(failed === 'not-allowed' || failed === 'service-not-allowed'){ chatSay('ai', 'Shubix needs the microphone to hear you. Allow it for this site in the browser (the icon left of the address).'); return; }
+        if(!t){ chatSay('ai', failed && failed !== 'no-speech' && failed !== 'aborted' ? (failed === 'network' ? 'Voice typing needs the internet. Please try again.' : 'Voice typing did not work. Please try again.') : "I didn't hear anything. Tap the mic and speak."); return; }
+        chatSend(t);
+      };
+      try{ r.start(); }catch(e){ failed = 'error'; r.onend(); }
+    }, SIG);
+  }
+}
 $('chatin').addEventListener('input', chatFit, SIG);
 $('chatchips').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; if(b.dataset.slash){ const t = $('chatin'); t.value = '/'; t.focus(); t.dispatchEvent(new Event('input')); return; } chatSend(b.dataset.say); }, SIG);
 // Ask Shubix's commands (Shared/core chatCommands.ts): "/" lists them, a command its choices, a choice writes its sentence
