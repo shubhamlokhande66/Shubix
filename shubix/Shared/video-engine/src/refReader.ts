@@ -193,12 +193,23 @@ export function cutKind(fr: Any, hint: string){
 // every frame). The clip reading (scanMotion) samples a clip and wants a cut to stand out from the change around it: an
 // edit cut on every eighth note, stutters of a tenth of a second or the same shot coming back a moment later slipped
 // through it (a 29 s car Reel with 61 cuts and a 3 s flicker read as 21 cuts, none in its first 10 s).
+/** A frame's colours as a 4 x 4 grid of average U and V (0..1 scale, every other pixel read) */
+function colourGrid(p: Pic): Float32Array {
+  const W = p.width, H = p.height, D = p.data, out = new Float32Array(32), cnt = new Float32Array(16);
+  for(let y=0;y<H;y+=2) for(let x=0;x<W;x+=2){ const o = (y*W + x)*4, r = D[o]/255, g = D[o+1]/255, b = D[o+2]/255, Y = 0.299*r + 0.587*g + 0.114*b;
+    const c = Math.min(3, (y*4/H)|0)*4 + Math.min(3, (x*4/W)|0); out[c*2] += (b - Y)*0.565; out[c*2+1] += (r - Y)*0.713; cnt[c]++; }
+  for(let c=0;c<16;c++){ out[c*2] /= Math.max(1, cnt[c]); out[c*2+1] /= Math.max(1, cnt[c]); }
+  return out;
+}
 export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>, dur: number, onP?: (p: number) => void){
   const FPS = 30, ts: number[] = []; for(let t=0.5/FPS; t<dur-0.02; t+=1/FPS) ts.push(+t.toFixed(4));
-  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), last: Float32Array[] = [], cel: Float32Array[] = new Array(n); let pY: Float32Array | null = null, pH: Float32Array | null = null;
+  const n = ts.length, d = new Float32Array(n), hd = new Float32Array(n), sh = new Float32Array(n), far = new Float32Array(n), cd = new Float32Array(n), last: Float32Array[] = [], cel: Float32Array[] = new Array(n); let pY: Float32Array | null = null, pH: Float32Array | null = null, pC: Float32Array | null = null;
   for(let k=0;k<n;k+=150){
     const cv = await small(ts.slice(k, k+150));
-    cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; last.length = 0; return; }
+    cv.forEach((c,j)=>{ const i = k+j; if(!c){ pY = null; pC = null; last.length = 0; return; }
+      // its colours, a 4 x 4 grid of their average (U, V): a cut between two shots as bright as each other but of another
+      // colour moves these and not the brightness (an orange shot, then a green one: the cut was missed, 2026-11-28)
+      { const C = colourGrid(c); if(pC && pC.length === C.length){ let s4 = 0; for(let q=0;q<C.length;q++) s4 += Math.abs(C[q] - pC[q]); cd[i] = s4/(C.length/2); } pC = C; }
       const g = greyOf(c), H = new Float32Array(16); for(let q=0;q<g.Y.length;q++) H[Math.min(15, (g.Y[q]*16)|0)] += 1/g.Y.length;
       if(pY && pH && pY.length === g.Y.length){ let s2=0; for(let q=0;q<g.Y.length;q++) s2 += Math.abs(g.Y[q]-pY[q]); d[i] = s2/g.Y.length; let h2=0; for(let q=0;q<16;q++) h2 += Math.abs(H[q]-pH[q]); hd[i] = h2/2; }
       pY = g.Y; pH = H; sh[i] = sharpOfY(g.Y, g.FW);
@@ -219,7 +230,11 @@ export async function frameCuts(small: (ts: number[]) => Promise<(Pic | null)[]>
   for(let i=3;i<n-1;i++){ const t = i/FPS; if(inF(t)) continue;
     const nb: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nb.push(d[j]); nb.sort((x,y)=>x-y);
     const loc = nb.length ? (nb[(nb.length-1)>>1] + nb[nb.length>>1])/2 : 0;
-    if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)) cuts.push(t); }
+    if(d[i] > 0.07 && d[i] > 2.2*loc && d[i] >= d[i-1] && d[i] >= d[i+1] && (hd[i] > 0.08 || d[i] > 0.15)){ cuts.push(t); continue; }
+    // a colour cut: the colours jump far above their change around it (a pan or a light change moves them over many frames)
+    const nc: number[] = []; for(let j=Math.max(1,i-4); j<=Math.min(n-1,i+4); j++) if(j !== i) nc.push(cd[j]); nc.sort((x,y)=>x-y);
+    const locC = nc.length ? (nc[(nc.length-1)>>1] + nc[nc.length>>1])/2 : 0;
+    if(cd[i] > 0.05 && cd[i] > 3*locC + 0.01 && cd[i] >= cd[i-1] && cd[i] >= cd[i+1] && !cuts.some(c => Math.abs(c - t) < 2.5/FPS)) cuts.push(t); }
   const blank = new Float32Array(16*28);
   return { cuts, flicker, blurs: blurCuts(sh, far, FPS), panels: panelRuns(i => cel[i] || blank, n, 16, 28, FPS) };
 }

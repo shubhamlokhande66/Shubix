@@ -43,14 +43,17 @@ const SCENARIOS = [
 const now = () => Date.now();
 
 // the edit as it is now (in the page): each shot's place, transition, effect, speed and camera move, and the look
+// the studio's effects that are a camera move (Copy a Reel copies these as the move itself, keyframes, not by name)
+const CAM_FX = ['pan', 'punch-soft', 'pan-soft', 'drift', 'hook', 'punch'];
 function shotsNow() {
+  const CAM_FX = ['pan', 'punch-soft', 'pan-soft', 'drift', 'hook', 'punch'];   // (runs in the page: its own copy)
   const S = document.querySelector('.brs').__studio, e = S.edit || [], t0 = e.length ? e[0].start : 0;
   const G = S.grade || {};
   return { mode: S.mode, match: S.copyMatch ? S.copyMatch() : null,
     look: Object.fromEntries(['con', 'sat', 'bri', 'warm', 'teal', 'mono', 'vig', 'grain', 'lift'].map((k) => [k, +(+(G[k] || 0)).toFixed(3)])),
     shots: e.map((s) => { const L = s.end - s.start, need = (s.sp && s.sp.pos ? s.sp.pos(L) : L) * (s.scaleR || 1);
       return { a: +(s.start - t0).toFixed(3), b: +(s.end - t0).toFixed(3), src: s.src, in: +(+s.in).toFixed(2), tr: s.tr || 'hard', efx: s.efx || 'none',
-        speed: +(need / Math.max(0.01, L)).toFixed(3), move: !!(s.ak && s.ak.length >= 2) || ['pan', 'punch-soft', 'pan-soft'].includes(s.efx) }; }) };
+        speed: +(need / Math.max(0.01, L)).toFixed(3), move: !!(s.ak && s.ak.length >= 2) || CAM_FX.includes(s.efx) }; }) };
 }
 /** the copy against the original: cuts within 2 frames, then for the cuts both have the same transition, and per moment
  * of the Reel the same effect, speed (within 15%), camera move and clip; the look by its numbers. All 0..100. */
@@ -66,7 +69,8 @@ function compareEdits(o, c) {
   const len = Math.min(o.shots[o.shots.length - 1].b, c.shots[c.shots.length - 1].b);
   let n = 0, fx = 0, sp = 0, mv = 0, src = 0; const fxWrong = {};
   for (let t = 0.05; t < len; t += 0.1) { const a = at(o, t), b = at(c, t); n++;
-    if (a.efx === b.efx) fx++; else fxWrong[a.efx + '->' + b.efx] = (fxWrong[a.efx + '->' + b.efx] || 0) + 1;
+    // the same effect; or a camera-move effect copied as the move (keyframes): the same motion
+    if (a.efx === b.efx || (CAM_FX.includes(a.efx) && (CAM_FX.includes(b.efx) || (b.efx === 'none' && b.move)))) fx++; else fxWrong[a.efx + '->' + b.efx] = (fxWrong[a.efx + '->' + b.efx] || 0) + 1;
     if (Math.abs(Math.log(a.speed / b.speed)) < Math.log(1.15)) sp++; if (a.move === b.move) mv++; if (a.src === b.src) src++; }
   const lk = Object.keys(o.look).map((k) => Math.max(0, 1 - Math.abs(o.look[k] - c.look[k]) / (k === 'warm' ? 0.5 : 0.15)));
   const parts = { cuts: pc((2 * recall * precision) / Math.max(1e-9, recall + precision)), transitions: hit ? pc(trSame / hit) : null, effects: n ? pc(fx / n) : null,
