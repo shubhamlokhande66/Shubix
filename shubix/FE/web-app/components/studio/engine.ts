@@ -2236,7 +2236,7 @@ const TR_NAME = {hard:'Hard cut', fadein:'Fade-in', flash:'Exposure flash', whip
   slideleft:'Push left', slideright:'Push right', slideup:'Push up', slidedown:'Push down', swipeup:'Swipe up (feed scroll)', zoomout:'Zoom out', blur:'Blur through', flip:'Card flip',
   luma:'Light fade (by brightness)', pixelate:'Pixelate', clock:'Clock wipe', doors:'Doors open', ripple:'Ripple', burn:'Film burn', dropin:'Drop in (bounce)',
   stripes:'Stripes', blinds:'Blinds', checker:'Checkerboard', dots:'Dots', noise:'Noise dissolve', splith:'Split open', wave:'Wave wipe', dipwhite:'Dip to white', chroma:'Colour split', tiles:'Random tiles', panels:'Panels build', hpanels:'Row panels', vpanels:'Column panels', window:'Sliding window',
-  zoomblur:'Zoom blur', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
+  zoomblur:'Zoom blur', flashblur:'Flash blur', stretch:'Stretch smear', shake:'Shake', squeeze:'Squeeze', rotatein:'Rotate in',
   cube:'3D cube', cubeup:'3D cube (up)', flip3d:'3D card flip', swing:'3D door swing'};
 const FX_NAME = {jump:'Punch-in (jump cut)', 'punch-soft':'Soft zoom', 'pan-soft':'Ken Burns (soft)', snap:'Photo snap (freeze + flash)', hook:'Hook zoom + RGB', none:'—', pan:'Ken Burns + beat bounce', zoomburst:'Zoom burst + RGB', drift:'Slow drift + vignette', punch:'Zoom punch', tilt:'Tilt punch', shake:'Shake', bounce:'Beat bounce',
   boxgrow:'Shape: box grows on the beat', grid:'Shape: grid opens on the beat', strips:'Shape: strips on the beat', circle:'Shape: circle pulse', heartbeat:'Shape: heart pulse', starbeat:'Shape: star pulse',
@@ -6600,7 +6600,7 @@ function drawFrame2D(t){
         if(p<0.5){ drawShot(og, pe, pl); og.fillStyle=`rgba(0,0,0,${EASE.inOut(p*2)})`; og.fillRect(0,0,W,H); }
         else { drawShot(og, e, local); og.fillStyle=`rgba(0,0,0,${1-EASE.inOut((p-0.5)*2)})`; og.fillRect(0,0,W,H); }
         break;
-      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing': case 'panels': case 'hpanels': case 'vpanels': case 'window':   // the 2D renderer: a dissolve
+      case 'slideleft': case 'slideright': case 'slideup': case 'slidedown': case 'swipeup': case 'zoomout': case 'blur': case 'flashblur': case 'stretch': case 'flip': case 'luma': case 'pixelate': case 'clock': case 'doors': case 'ripple': case 'burn': case 'dropin': case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles': case 'zoomblur': case 'shake': case 'squeeze': case 'rotatein': case 'cube': case 'cubeup': case 'flip3d': case 'swing': case 'panels': case 'hpanels': case 'vpanels': case 'window':   // the 2D renderer: a dissolve
       case 'dissolve': drawShot(og, pe, pl, {noFx:true}); drawShot(og, e, local, {alpha:EASE.inOut(p)}); break;
       case 'fadein': drawShot(og, e, local, {alpha:q}); break;
       case 'flash': {   // exposure flash: picture blows out to white, then settles
@@ -7056,6 +7056,11 @@ function drawFrameGL(t){
       case 'dropin': S.A = layerOf(pe, pl, {noFx:true}); S.B = layerOf(e, local, {dy:-(1 - EASE.outBack(p))*H}); S.mode = 3; break;
       case 'stripes': case 'blinds': case 'checker': case 'dots': case 'noise': case 'splith': case 'wave': case 'dipwhite': case 'chroma': case 'tiles':
         S.mode = {stripes:17, blinds:18, checker:19, dots:20, noise:21, splith:22, wave:23, dipwhite:24, chroma:25, tiles:26}[e.tr]; S.prog = EASE.inOut(p); break;
+      // seen in trending Reels (2026-11-28 study): the picture blows out to white with a strong sideways smear, on the beat
+      case 'flashblur': { const b = 0.14*W*Math.sin(Math.PI*p); S.A = layerOf(pe, pl, {db:[b,0], noFx:true}); S.B = layerOf(e, local, {db:[b,0]});
+        S.A.expo += 1.6*p; S.B.expo += 1.6*(1-q); S.mode = 1; S.mix = EASE.inOut(p); S.flash = Math.max(S.flash||0, 0.55*Math.sin(Math.PI*p)); break; }
+      // the picture smears up and down into the next shot
+      case 'stretch': { const b = 0.16*H*Math.sin(Math.PI*p); S.A = layerOf(pe, pl, {db:[0,b], dy:-0.06*H*p, noFx:true}); S.B = layerOf(e, local, {db:[0,b], dy:0.06*H*(1-q)}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'zoomblur': S.A = layerOf(pe, pl, {scale:1+1.2*p*p, zb:2.5*p, noFx:true}); S.B = layerOf(e, local, {scale:1+0.8*(1-q)*(1-q), zb:2.5*(1-q)}); S.mode = 1; S.mix = EASE.inOut(p); break;
       case 'shake': { const j = Math.sin(Math.PI*p)*0.05*W, sx = Math.sin(p*90)*j, sy = Math.cos(p*70)*j; S.A = layerOf(pe, pl, {dx:sx, dy:sy, noFx:true}); S.B = layerOf(e, local, {dx:-sx, dy:-sy}); S.mode = 1; S.mix = EASE.inOut(p); break; }
       case 'squeeze': { const k = EASE.inOut(p), a = layerOf(pe, pl, {noFx:true}), [ax, ay, aw, ah] = a.rect, [bx, by, bw, bh] = S.B.rect;
@@ -8119,7 +8124,7 @@ function copyPlan(){
 // the reference's mix of transitions and effects, placed where they suit (energetic ones on drops and hits, soft ones
 // on calm, long shots), counted so the shares match
 const REF_TR = { hard:'hard', dissolve:'dissolve', fade:'dip', flash:'flash', whip:'whip', zoom:'zoom', glitch:'glitch', spin:'spin', iris:'iris', diamond:'diamond', heart:'heart', star:'star', wipe:'wipe', bars:'bars', blur:'blur',
-  burn:'burn', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
+  burn:'burn', flashblur:'flashblur', stretch:'stretch', zoomout:'zoomout', slideleft:'slideleft', slideright:'slideright', panels:'panels', hpanels:'hpanels', vpanels:'vpanels' };
 let copyBudget = null;
 function copyStyle(){
   const R = refProfile, n = plan.length - 1; if(n < 1) return;

@@ -18,7 +18,7 @@ export const CUT_K = 7;   // frames each side of a cut that are looked at (a fad
 export const REF_KINDS: Record<string, string> = { hard: "hard cuts", dissolve: "dissolves", fade: "fades", flash: "flashes", whip: "whip pans", zoom: "zoom-throughs", glitch: "glitches", spin: "spins",
   iris: "circle reveals", diamond: "diamond reveals", heart: "heart reveals", star: "star reveals", wipe: "wipes", bars: "bar reveals", blur: "blur transitions",
   // known by their look (refCopy.ts REF_TRX), the studio's own by these names: learned and copied like the others (2026-11-28)
-  burn: "light leaks", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
+  burn: "light leaks", flashblur: "flash blurs", stretch: "stretch smears", zoomout: "zoom outs", slideleft: "slides left", slideright: "slides right", panels: "panel builds", hpanels: "row builds", vpanels: "column builds" };
 
 // colour statistics of a w x h frame's pixels, plus a 96 x 96 crop at full size for grain
 export function lookStats(d: ArrayLike<number>, w: number, h: number, cd?: ArrayLike<number> | null): Look {
@@ -81,6 +81,7 @@ export function rgbShiftOf(pic: Pic | null){
 // Learning (Teach Shubix from many Reels): a transition this reader does not know. Read as a hard cut, yet not a clean
 // one-frame jump: two or more frames in its middle are neither shot, nor a mix of the two (a dissolve). What it looks like
 // goes to the learning log (Admin -> My trends), with the studio's own transition it seems to be when there is one (ours).
+const streak = (fs: Any[]) => { const a = fs.map(f => f.aniso).filter(x => x !== undefined); return a.length >= 2 && a.filter((x: number) => x < 0.3 || x > 3.3).length * 2 >= a.length; };   // sideways (low) or up-down (high)
 export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   if(c.kind !== 'hard' || c.one || c.flick || c.flickEnd) return null;
   const A = at(-CUT_K), B = at(CUT_K); if(!A || !B) return null;
@@ -97,6 +98,10 @@ export function oddCut(fr: Any[], c: Any, at: (k: number) => Any){
   let guess = 'not known', ours: string | null = null;
   if(side && !soft){ guess = 'push / slide'; ours = side === 'left' ? 'slideleft' : 'slideright'; }
   else if(zoom === 'out'){ guess = 'zoom out'; ours = 'zoomout'; }
+  // blur all one way (aniso low: streaks, not a soft focus): the picture smears into the next shot, blown out to white
+  // or not (seen in trending Reels, 2026-11-28 study); a brighter frame without the streaks is a light leak
+  else if(streak(odd) && light > 0.15){ guess = 'flash blur'; ours = 'flashblur'; }
+  else if(streak(odd) && soft){ guess = 'stretch smear'; ours = 'stretch'; }
   else if(light > 0.15){ guess = 'light leak / film burn'; ours = 'burn'; }
   const sig = [odd.length + ' frames', light > 0.1 ? 'brighter' : light < -0.1 ? 'darker' : 'same light', side ? 'moves ' + side : 'no sideways move',
     zoom ? 'zoom ' + zoom : 'no zoom', soft ? 'soft' : 'sharp'].join(', ');

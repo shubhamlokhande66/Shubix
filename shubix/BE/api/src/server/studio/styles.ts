@@ -16,7 +16,7 @@ import SEEDS from "./seed-styles.json";
 export const CATEGORIES = ["wedding", "travel", "festival", "dance", "talking", "product", "food", "fitness", "vlog", "birthday", "car", "shop", "event", "other"] as const;
 export const KINDS = ["hard", "flash", "fade", "whip", "zoom", "dissolve", "glitch", "spin", "iris", "diamond", "heart", "star", "wipe", "bars", "blur",
   // known by their look, the studio's own by these names (video-engine refCopy.ts REF_TRX), learned since 2026-11-28
-  "burn", "zoomout", "slideleft", "slideright", "panels", "hpanels", "vpanels"] as const;
+  "burn", "flashblur", "stretch", "zoomout", "slideleft", "slideright", "panels", "hpanels", "vpanels"] as const;
 /** the effects in a shot that are learned (refCopy.ts REF_FX) */
 export const FX = ["rgbpulse", "mirror", "strobe"] as const;
 const FIELDS = ["tr", "efx", "sp"] as const;

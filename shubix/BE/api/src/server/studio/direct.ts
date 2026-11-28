@@ -26,7 +26,7 @@ import { SFX_REC } from "@shubix/core/lib/sfx-recorded";
 export const TASK = "studio_director";
 export const TRANSITIONS = ["hard", "fadein", "flash", "whip", "zoom", "glitch", "dip", "dissolve", "iris", "wipe", "bars", "spin", "diamond", "heart", "star",
   "slideleft", "slideright", "slideup", "slidedown", "swipeup", "zoomout", "blur", "flip", "luma", "pixelate", "clock", "doors", "ripple", "burn", "dropin",
-  "stripes", "blinds", "checker", "dots", "noise", "splith", "wave", "dipwhite", "chroma", "tiles", "zoomblur", "shake", "squeeze", "rotatein", "panels", "hpanels", "vpanels", "window"] as const;
+  "stripes", "blinds", "checker", "dots", "noise", "splith", "wave", "dipwhite", "chroma", "tiles", "zoomblur", "flashblur", "stretch", "shake", "squeeze", "rotatein", "panels", "hpanels", "vpanels", "window"] as const;
 /** eases of a camera move into its keyframe (the studio's EASE) */
 export const EASES = ["lin", "inOut", "outCubic", "outExpo", "outBack"] as const;
 export const EFFECTS = ["none", "hook", "zoomburst", "punch", "punch-soft", "tilt", "shake", "bounce", "pan", "pan-soft", "drift", "snap",
@@ -69,7 +69,7 @@ export const RefMoment = z.object({
   at: z.number().min(0).max(600).optional(), flick: z.boolean().optional(), black: z.boolean().optional(),
   /** its speed over the shot (five speeds) or where its picture freezes; a transition and an effect the studio has by that name */
   spd: z.array(z.number().min(0.2).max(4)).length(5).optional(), frz: z.number().min(0).max(1).optional(),
-  trx: z.enum(["slideleft", "slideright", "zoomout", "burn", "panels", "hpanels", "vpanels"]).optional(), fx: z.enum(["rgbpulse", "mirror", "strobe"]).optional(),
+  trx: z.enum(["slideleft", "slideright", "zoomout", "burn", "flashblur", "stretch", "panels", "hpanels", "vpanels"]).optional(), fx: z.enum(["rgbpulse", "mirror", "strobe"]).optional(),
 });
 export const Reference = z.object({
   name: word(80), medianBeats: z.number().min(0).max(64), hookBeats: z.number().min(0).max(64), onBeat: lvl,

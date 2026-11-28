@@ -233,6 +233,9 @@ private fun stateOf(id: String, p: Double, W: Float, H: Float, hasA: Boolean, re
     "stripes", "blinds", "checker", "dots", "noise", "splith", "wave", "dipwhite", "chroma", "tiles" -> {
       s.mode = mapOf("stripes" to 17f, "blinds" to 18f, "checker" to 19f, "dots" to 20f, "noise" to 21f, "splith" to 22f, "wave" to 23f, "dipwhite" to 24f, "chroma" to 25f, "tiles" to 26f).getValue(id)
       s.prog = inOut(p).toFloat() }
+    // the website's flashblur / stretch (engine.ts drawFrameGL)
+    "flashblur" -> { val b = 0.14 * W * sin(PI * p); set(L(dbx = b), L(dbx = b), 1, inOut(p)); s.a.expo = (1.6 * p).toFloat(); s.b.expo = (1.6 * (1 - q)).toFloat(); s.flash = (0.55 * sin(PI * p)).toFloat() }
+    "stretch" -> { val b = 0.16 * H * sin(PI * p); set(L(dy = -0.06 * H * p, dby = b), L(dy = 0.06 * H * (1 - q), dby = b), 1, inOut(p)) }
     "zoomblur" -> set(L(scale = 1 + 1.2 * p * p, zb = 2.5 * p), L(scale = 1 + 0.8 * (1 - q) * (1 - q), zb = 2.5 * (1 - q)), 1, inOut(p))
     "shake" -> { val j = sin(PI * p) * 0.05 * W; val sx = sin(p * 90) * j; val sy = cos(p * 70) * j; set(L(dx = sx, dy = sy), L(dx = -sx, dy = -sy), 1, inOut(p)) }
     "squeeze" -> { val k = inOut(p); val a = L(); a.rect = floatArrayOf(0f, 0f, max(1.0, W * (1 - k)).toFloat(), H); a.clip = 1f
