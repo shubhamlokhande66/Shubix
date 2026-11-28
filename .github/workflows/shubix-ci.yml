@@ -172,6 +172,7 @@ jobs:
           CHANNEL: chrome
           ONLY: ${{ inputs.only }}
           ROUNDTRIP: ${{ inputs.roundtrip && '1' || '' }}
+          SHOTS_IN_LOG: ${{ inputs.roundtrip && '0' || '1' }}
         run: |
           (pnpm start > "$RUNNER_TEMP/web.log" 2>&1 &)
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:3001/studio && break; sleep 2; done
